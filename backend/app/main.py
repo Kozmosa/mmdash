@@ -6,7 +6,7 @@ from app.database import engine, Base, SessionLocal
 from app.api import auth, teams, projects, home, timeline, model, model_version, git
 
 # Import provider modules to trigger registration
-from app.services import notion_provider, local_file_provider
+from app.services import notion_provider, local_file_provider, documosa_provider
 
 settings = get_settings()
 

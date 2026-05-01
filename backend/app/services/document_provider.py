@@ -46,6 +46,43 @@ class DocumentProvider(ABC):
         """
         raise NotImplementedError("OAuth not supported by this provider")
 
+    async def create_page(self, title: str, content: str, credentials: dict) -> dict:
+        """Create a new document in the provider.
+
+        Args:
+            title: Document title.
+            content: Initial Markdown content (may be empty).
+            credentials: Provider-specific credentials dict.
+
+        Returns:
+            {"page_id": str, "title": str}
+
+        Raises:
+            NotImplementedError: if provider does not support creation.
+        """
+        raise NotImplementedError("Create not supported by this provider")
+
+    async def update_page_content(
+        self, page_id: str, content: dict, credentials: dict
+    ) -> dict:
+        """Update document content (full replacement).
+
+        Args:
+            page_id: Document identifier.
+            content: Dict with optional keys:
+                - "title": str (optional)
+                - "markdown": str (mutually exclusive with "blocks")
+                - "blocks": list[dict] (mutually exclusive with "markdown")
+            credentials: Provider-specific credentials dict.
+
+        Returns:
+            {"page_id": str, "title": str, "blocks": list, "markdown": str}
+
+        Raises:
+            NotImplementedError: if provider does not support updates.
+        """
+        raise NotImplementedError("Update not supported by this provider")
+
 
 _PROVIDER_REGISTRY: dict[str, type[DocumentProvider]] = {}
 

@@ -88,6 +88,7 @@ import {
   RotateCcw,
   Loader2,
   AlertCircle,
+  Plus,
 } from "lucide-react";
 
 interface Team {
@@ -145,6 +146,9 @@ export default function ModelPage() {
 
   const [errors, setErrors] = useState<ErrorItem[]>([]);
   const [dismissedErrors, setDismissedErrors] = useState<Set<number>>(new Set());
+
+  const [editMode, setEditMode] = useState(false);
+  const [editContent, setEditContent] = useState("");
 
   const dataCache = useDataCache();
 
@@ -258,9 +262,38 @@ export default function ModelPage() {
       });
       fetchProjects(selectedTeam);
       setPageId("");
-      toast.success("Notion 页面已绑定");
+      toast.success("页面已绑定");
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "绑定失败");
+    }
+  };
+
+  const saveContent = async () => {
+    if (!selectedProject || !editContent) return;
+    try {
+      await api.post(`/model/${selectedProject}/content`, {
+        markdown: editContent,
+      });
+      setMarkdown(editContent);
+      setEditMode(false);
+      toast.success("保存成功");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "保存失败");
+    }
+  };
+
+  const createDocument = async () => {
+    if (!selectedProject) return;
+    const proj = projects.find((p) => p.id === selectedProject);
+    const title = proj ? `${proj.name} 模型` : "新模型文档";
+    try {
+      await api.post(`/model/${selectedProject}/create-page`, {
+        title,
+      });
+      fetchProjects(selectedTeam);
+      toast.success("文档已创建");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "创建失败");
     }
   };
 
@@ -459,10 +492,20 @@ export default function ModelPage() {
                 绑定文档页面
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={!selectedProject}
+                onClick={createDocument}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                创建新文档
+              </Button>
+              <div className="text-xs text-muted-foreground text-center">或手动绑定现有页面</div>
               <form onSubmit={linkPage} className="space-y-3">
                 <Input
-                  placeholder="Page ID（如 model.md 或 Notion Page ID）"
+                  placeholder="Page ID"
                   value={pageId}
                   onChange={(e) => setPageId(e.target.value)}
                   required
@@ -668,14 +711,64 @@ export default function ModelPage() {
                     <Skeleton className="h-4 w-5/6" />
                     <Skeleton className="h-4 w-full" />
                   </div>
-                ) : markdown ? (
-                  <MarkdownRenderer markdown={markdown} />
+                ) : markdown || editMode ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-end gap-2">
+                      {editMode ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditMode(false);
+                              setEditContent(markdown);
+                            }}
+                          >
+                            取消
+                          </Button>
+                          <Button size="sm" onClick={saveContent}>
+                            保存
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditContent(markdown);
+                            setEditMode(true);
+                          }}
+                        >
+                          编辑
+                        </Button>
+                      )}
+                    </div>
+                    {editMode ? (
+                      <textarea
+                        className="w-full min-h-[500px] p-4 rounded-md border bg-background font-mono text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                      />
+                    ) : (
+                      <MarkdownRenderer markdown={markdown} />
+                    )}
+                  </div>
                 ) : (
                   <div className="text-center py-20">
                     <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
                     <p className="text-muted-foreground">
-                      {selectedProject ? "请先绑定 Notion 模型页面" : "请选择一个项目"}
+                      {selectedProject ? "暂无文档内容" : "请选择一个项目"}
                     </p>
+                    {selectedProject && (
+                      <Button
+                        variant="outline"
+                        className="mt-4"
+                        onClick={createDocument}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        创建模型文档
+                      </Button>
+                    )}
                   </div>
                 )}
               </TabsContent>
