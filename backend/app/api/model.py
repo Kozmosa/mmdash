@@ -1,4 +1,6 @@
 import json
+from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,16 @@ from app.services.cache import get_cached_page, set_cached_page
 from app.services.openai_service import analyze_symbols, analyze_structure, explain_formula, find_errors
 
 router = APIRouter()
+
+
+class CreatePageRequest(BaseModel):
+    title: str
+
+
+class UpdateContentRequest(BaseModel):
+    title: str | None = None
+    markdown: str | None = None
+    blocks: list[dict] | None = None
 
 
 def _get_binding(db: Session, user_id: str) -> ProviderBinding:
@@ -131,7 +143,7 @@ def link_model_page(project_id: str, page_id: str, current_user: User = Depends(
 async def update_model_content(
     project_id: str,
     request: Request,
-    content: dict,
+    body: UpdateContentRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -151,6 +163,7 @@ async def update_model_content(
     if token:
         credentials["_token"] = token
 
+    content = body.model_dump(exclude_none=True)
     try:
         result = await provider.update_page_content(project.model_data_page_id, content, credentials)
     except NotImplementedError:
@@ -178,7 +191,7 @@ async def update_model_content(
 async def create_and_bind_model_page(
     project_id: str,
     request: Request,
-    title: str,
+    body: CreatePageRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -197,7 +210,7 @@ async def create_and_bind_model_page(
         credentials["_token"] = token
 
     try:
-        result = await provider.create_page(title, "", credentials)
+        result = await provider.create_page(body.title, "", credentials)
     except NotImplementedError:
         raise HTTPException(status_code=400, detail="Current document provider does not support creating pages")
     except HTTPException:
@@ -211,7 +224,7 @@ async def create_and_bind_model_page(
     return {
         "status": "created",
         "page_id": result["page_id"],
-        "title": result.get("title", title),
+        "title": result.get("title", body.title),
     }
 
 
