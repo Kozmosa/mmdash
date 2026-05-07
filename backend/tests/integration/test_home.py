@@ -106,6 +106,59 @@ class TestListProblems:
         assert response.status_code == 403
 
 
+class TestDeleteProblem:
+    def test_delete_problem_success(self, auth_client, project, db):
+        pf = ProblemFile(
+            project_id=project.id,
+            filename="problem.pdf",
+            file_path="/tmp/problem.pdf",
+            file_type="pdf",
+        )
+        db.add(pf)
+        db.commit()
+        db.refresh(pf)
+
+        response = auth_client.delete(f"/api/home/{project.id}/problems/{pf.id}")
+        assert response.status_code == 204
+        assert db.query(ProblemFile).filter(ProblemFile.id == pf.id).first() is None
+
+    def test_delete_problem_not_found(self, auth_client, project):
+        response = auth_client.delete(f"/api/home/{project.id}/problems/nonexistent")
+        assert response.status_code == 404
+
+    def test_delete_problem_not_member(self, auth_client, db, project):
+        from tests.conftest import create_test_user
+        other_user = create_test_user(db, email="other6@example.com", password="pass123")
+        from app.models import Team, TeamMember
+        other_team = Team(name="Other Team 6", owner_id=other_user.id, invite_code="other6")
+        db.add(other_team)
+        db.commit()
+        db.refresh(other_team)
+        other_project = __import__("app.models", fromlist=["Project"]).Project(
+            team_id=other_team.id, name="Other Project 6"
+        )
+        db.add(other_project)
+        db.commit()
+        db.refresh(other_project)
+
+        pf = ProblemFile(
+            project_id=other_project.id,
+            filename="problem.pdf",
+            file_path="/tmp/problem.pdf",
+            file_type="pdf",
+        )
+        db.add(pf)
+        db.commit()
+        db.refresh(pf)
+
+        response = auth_client.delete(f"/api/home/{other_project.id}/problems/{pf.id}")
+        assert response.status_code == 403
+
+    def test_delete_problem_project_not_found(self, auth_client):
+        response = auth_client.delete("/api/home/nonexistent/problems/nonexistent")
+        assert response.status_code == 404
+
+
 class TestCreateTodo:
     def test_create_todo(self, auth_client, project):
         response = auth_client.post(
