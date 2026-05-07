@@ -43,6 +43,7 @@ import {
   CheckCircle2,
   Circle,
   Loader2,
+  Trash2,
 } from "lucide-react";
 
 interface Team {
@@ -73,6 +74,13 @@ interface Progress {
   personal: { total: number; completed: number; rate: number };
 }
 
+interface ProblemFile {
+  id: string;
+  filename: string;
+  file_type: string;
+  uploaded_at: string;
+}
+
 export default function HomePage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<string>("");
@@ -90,6 +98,8 @@ export default function HomePage() {
   const [loadingTeams, setLoadingTeams] = useState(true);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingTodos, setLoadingTodos] = useState(false);
+  const [problemFiles, setProblemFiles] = useState<ProblemFile[]>([]);
+  const [loadingProblems, setLoadingProblems] = useState(false);
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [joinTeamOpen, setJoinTeamOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
@@ -107,20 +117,25 @@ export default function HomePage() {
   useEffect(() => {
     if (selectedProject) {
       setLoadingTodos(true);
+      setLoadingProblems(true);
       Promise.all([
         api.get(`/home/${selectedProject}/todos`),
         api.get(`/home/${selectedProject}/progress`),
+        api.get(`/home/${selectedProject}/problems`),
       ])
-        .then(([todosRes, progressRes]) => {
+        .then(([todosRes, progressRes, problemsRes]) => {
           setTodos(todosRes.data);
           setProgress(progressRes.data);
+          setProblemFiles(problemsRes.data);
         })
         .catch(() => {
           setTodos([]);
           setProgress(null);
+          setProblemFiles([]);
         })
         .finally(() => {
           setLoadingTodos(false);
+          setLoadingProblems(false);
         });
     }
   }, [selectedProject]);
@@ -203,6 +218,30 @@ export default function HomePage() {
     }
   };
 
+  const fetchProblemFiles = async (projectId: string) => {
+    setLoadingProblems(true);
+    try {
+      const res = await api.get(`/home/${projectId}/problems`);
+      setProblemFiles(res.data);
+    } catch {
+      setProblemFiles([]);
+    } finally {
+      setLoadingProblems(false);
+    }
+  };
+
+  const deleteProblemFile = async (problemId: string) => {
+    if (!selectedProject) return;
+    if (!confirm("确定要删除这个文件吗？")) return;
+    try {
+      await api.delete(`/home/${selectedProject}/problems/${problemId}`);
+      setProblemFiles((prev) => prev.filter((f) => f.id !== problemId));
+      toast.success("文件已删除");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "删除失败");
+    }
+  };
+
   const createTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -266,6 +305,7 @@ export default function HomePage() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       toast.success("题目上传成功");
+      fetchProblemFiles(selectedProject);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "上传失败");
     }
@@ -497,7 +537,7 @@ export default function HomePage() {
               </CardTitle>
               <CardDescription>上传 PDF 或纯文本格式的题目文件</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <Input
                 type="file"
                 accept=".pdf,.txt"
@@ -505,9 +545,42 @@ export default function HomePage() {
                 disabled={!selectedProject}
               />
               {!selectedProject && (
-                <p className="text-xs text-muted-foreground mt-2">
+                <p className="text-xs text-muted-foreground">
                   请先选择一个项目
                 </p>
+              )}
+
+              {loadingProblems ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : problemFiles.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  暂无已上传文件
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {problemFiles.map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="flex-1 text-sm truncate">{f.filename}</span>
+                      <Badge variant="secondary" className="text-xs shrink-0">
+                        {f.file_type === "pdf" ? "PDF" : "文本"}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => deleteProblemFile(f.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
