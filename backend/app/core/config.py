@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     NOTION_REDIRECT_URI: str = "http://localhost:3000/auth/notion/callback"
 
     OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = ""
+    OPENAI_MODEL: str = ""
 
     DOCUMENT_PROVIDER: str = "notion"  # "notion" or "local_file"
     DOC_SERVER_URL: str = "http://localhost:8002"
