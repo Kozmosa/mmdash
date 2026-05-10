@@ -79,6 +79,11 @@ def _parse_markdown_to_blocks(content: str) -> list[dict]:
                 "type": "bulleted_list_item",
                 "content": stripped[2:].strip(),
             })
+        elif re.match(r"^\d+\.\s+", stripped):
+            blocks.append({
+                "type": "numbered_list_item",
+                "content": re.sub(r"^\d+\.\s+", "", stripped).strip(),
+            })
         elif stripped.startswith("> "):
             blocks.append({
                 "type": "quote",
@@ -119,9 +124,9 @@ def _save_page(page_id: str, data: dict):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-async def verify_api_key(X_API_Key: str = Header(...)):
+async def verify_api_key(X_API_Key: Optional[str] = Header(None)):
     if not settings.API_KEY:
-        raise HTTPException(status_code=500, detail="API key not configured on server")
+        return None
     if X_API_Key != settings.API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
     return X_API_Key

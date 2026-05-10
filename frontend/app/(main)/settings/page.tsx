@@ -16,9 +16,13 @@ import {
   KeyRound,
   Save,
   AlertTriangle,
+  Shield,
   Server,
   BookOpen,
+  Zap,
 } from "lucide-react"
+import { ModelSelector } from "@/components/llm/ModelSelector"
+import { PromptSettings } from "@/components/llm/PromptSettings"
 import api from "@/lib/api"
 import { useAuthStore } from "@/stores/auth"
 import { Button } from "@/components/ui/button"
@@ -26,6 +30,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -105,6 +116,8 @@ export default function SettingsPage() {
   const [membersTeamId, setMembersTeamId] = useState<string | null>(null)
   const [members, setMembers] = useState<TeamMember[]>([])
   const [loadingMembers, setLoadingMembers] = useState(false)
+  const [llmTeamId, setLlmTeamId] = useState<string>("")
+  const [llmTeamRole, setLlmTeamRole] = useState<string>("")
 
   // ─── Provider State ────────────────────────────────────────────
   const [currentProvider, setCurrentProvider] = useState<string>("local_file")
@@ -115,6 +128,9 @@ export default function SettingsPage() {
   // ─── Clipboard ─────────────────────────────────────────────────
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
+  const currentMembersTeamRole = members.find((m) => m.user_id === user?.id)?.role
+  const canManageMembers = currentMembersTeamRole === "owner" || currentMembersTeamRole === "admin"
+
   useEffect(() => {
     if (user) {
       setUsername(user.username || "")
@@ -123,6 +139,17 @@ export default function SettingsPage() {
     loadTeams()
     loadProvider()
   }, [user])
+
+  useEffect(() => {
+    if (!llmTeamId && teams.length > 0) {
+      setLlmTeamId(teams[0].id)
+    }
+  }, [teams, llmTeamId])
+
+  useEffect(() => {
+    if (!llmTeamId || !user) return
+    void loadLlmTeamRole(llmTeamId)
+  }, [llmTeamId, user])
 
   // ─── Profile Handlers ──────────────────────────────────────────
   const handleSaveProfile = async () => {
@@ -259,6 +286,38 @@ export default function SettingsPage() {
     }
   }
 
+  const handleUpdateMemberRole = async (teamId: string, userId: string, role: string) => {
+    try {
+      await api.put(`/teams/${teamId}/members/${userId}/role`, null, { params: { role } })
+      if (membersTeamId === teamId) {
+        await openMembers(teamId)
+      }
+    } catch (err: any) {
+      setTeamError(err.response?.data?.detail || "更新成员角色失败")
+    }
+  }
+
+  const handleRemoveMember = async (teamId: string, userId: string) => {
+    try {
+      await api.delete(`/teams/${teamId}/members/${userId}`)
+      if (membersTeamId === teamId) {
+        await openMembers(teamId)
+      }
+    } catch (err: any) {
+      setTeamError(err.response?.data?.detail || "移除成员失败")
+    }
+  }
+
+  const loadLlmTeamRole = async (teamId: string) => {
+    try {
+      const res = await api.get(`/teams/${teamId}/members`)
+      const current = res.data.find((member: TeamMember) => member.user_id === user?.id)
+      setLlmTeamRole(current?.role || "")
+    } catch {
+      setLlmTeamRole("")
+    }
+  }
+
   const copyInviteCode = (code: string, teamId: string) => {
     navigator.clipboard.writeText(code)
     setCopiedId(teamId)
@@ -311,7 +370,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="profile">
             <User className="mr-2 size-4" />
             个人资料
@@ -323,6 +382,10 @@ export default function SettingsPage() {
           <TabsTrigger value="provider">
             <Database className="mr-2 size-4" />
             文档后端
+          </TabsTrigger>
+          <TabsTrigger value="llm">
+            <Zap className="mr-2 size-4" />
+            LLM 模型
           </TabsTrigger>
         </TabsList>
 
@@ -663,6 +726,19 @@ export default function SettingsPage() {
                   {teams.find((t) => t.id === membersTeamId)?.name} 的成员列表
                 </DialogDescription>
               </DialogHeader>
+              <div className="rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
+                <div className="flex items-center gap-2 font-medium">
+                  <Shield className="size-4 text-primary" />
+                  成员权限管理
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Owner/Admin 可以调整成员权限并移除成员
+                </p>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+                <span>成员</span>
+                <span>权限 / 操作</span>
+              </div>
               {loadingMembers ? (
                 <p className="text-muted-foreground">加载中...</p>
               ) : (
@@ -670,7 +746,7 @@ export default function SettingsPage() {
                   {members.map((m) => (
                     <div
                       key={m.id}
-                      className="flex items-center justify-between rounded-lg border p-3"
+                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
                     >
                       <div>
                         <p className="text-sm font-medium">
@@ -678,9 +754,30 @@ export default function SettingsPage() {
                         </p>
                         <p className="text-xs text-muted-foreground">{m.user_email}</p>
                       </div>
-                      <Badge variant={m.role === "owner" ? "default" : "secondary"}>
-                        {m.role === "owner" ? "Owner" : "Member"}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={m.role === "owner" ? "default" : m.role === "admin" ? "outline" : "secondary"}>
+                          {m.role === "owner" ? "Owner" : m.role === "admin" ? "Admin" : "Member"}
+                        </Badge>
+                        {canManageMembers && m.role !== "owner" && (
+                          <Select
+                            value={m.role}
+                            onValueChange={(role) => handleUpdateMemberRole(membersTeamId!, m.user_id, role)}
+                          >
+                            <SelectTrigger className="w-28">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="member">Member</SelectItem>
+                              <SelectItem value="admin">Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {canManageMembers && m.role !== "owner" && (
+                          <Button variant="outline" size="sm" onClick={() => handleRemoveMember(membersTeamId!, m.user_id)}>
+                            移除
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -763,6 +860,46 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ─── LLM Tab ───────────────────────────────────────────── */}
+        <TabsContent value="llm" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>团队上下文</CardTitle>
+              <CardDescription>选择要查看或配置 LLM 的团队</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {teams.length > 0 ? (
+                <Select value={llmTeamId} onValueChange={setLlmTeamId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择团队" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-sm text-muted-foreground">你还没有加入团队，当前仅配置个人模型。</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <ModelSelector
+            teamId={llmTeamId || undefined}
+            canManageTeamLlm={llmTeamRole === "owner" || llmTeamRole === "admin"}
+            teamName={teams.find((team) => team.id === llmTeamId)?.name}
+          />
+
+          <PromptSettings
+            teamId={llmTeamId || undefined}
+            teamName={teams.find((team) => team.id === llmTeamId)?.name}
+            canManage={llmTeamRole === "owner" || llmTeamRole === "admin"}
+          />
         </TabsContent>
       </Tabs>
     </div>

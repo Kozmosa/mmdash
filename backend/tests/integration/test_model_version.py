@@ -146,6 +146,38 @@ class TestDiffCommits:
 
 
 class TestRollbackModel:
+    def test_rollback_preview(self, auth_client, project, provider_binding, db, test_user, mocker):
+        project.model_data_page_id = "page_123"
+        snapshot = ModelSnapshot(
+            project_id=project.id,
+            user_id=test_user.id,
+            commit_message="Target",
+            notion_page_id="page_123",
+            snapshot_content="line1\nrollback",
+        )
+        db.add(snapshot)
+        db.commit()
+        db.refresh(snapshot)
+
+        mock_provider = mocker.MagicMock()
+        mock_provider.fetch_page_content = mocker.AsyncMock(
+            return_value={"blocks": [{"type": "paragraph", "content": "line1\ncurrent"}]}
+        )
+        mock_provider.update_page_content = mocker.AsyncMock()
+        mocker.patch("app.api.model_version.get_provider", return_value=mock_provider)
+        mocker.patch("app.api.model_version.get_cached_page", return_value=None)
+
+        response = auth_client.get(
+            f"/api/model-version/{project.id}/rollback-preview",
+            params={"snapshot_id": snapshot.id},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["snapshot"]["id"] == snapshot.id
+        assert data["can_write"] is True
+        assert "rollback" in data["diff"]
+
     def test_rollback_success(self, auth_client, project, provider_binding, db, test_user, mocker):
         project.model_data_page_id = "page_123"
         snapshot = ModelSnapshot(
@@ -163,6 +195,9 @@ class TestRollbackModel:
         mock_provider.fetch_page_content = mocker.AsyncMock(
             return_value={"blocks": [{"type": "paragraph", "content": "Current"}]}
         )
+        mock_provider.update_page_content = mocker.AsyncMock(
+            return_value={"page_id": "page_123", "blocks": [{"type": "paragraph", "content": "Target"}]}
+        )
         mocker.patch("app.api.model_version.get_provider", return_value=mock_provider)
         mocker.patch("app.api.model_version.get_cached_page", return_value=None)
 
@@ -172,9 +207,39 @@ class TestRollbackModel:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "rollback_prepared"
+        assert data["status"] == "rollback_applied"
         assert data["snapshot_id"] == snapshot.id
         assert "backup_id" in data
+        mock_provider.update_page_content.assert_awaited_once_with(
+            "page_123",
+            {"markdown": "# Target"},
+            {"access_token": "notion_token_123", "_token": auth_client.headers["Authorization"].split(" ", 1)[1]},
+        )
+
+    def test_rollback_unsupported_provider(self, auth_client, project, provider_binding, db, test_user, mocker):
+        from app.services.notion_provider import NotionProvider
+
+        project.model_data_page_id = "page_123"
+        snapshot = ModelSnapshot(
+            project_id=project.id,
+            user_id=test_user.id,
+            commit_message="Target",
+            notion_page_id="page_123",
+            snapshot_content="# Target",
+        )
+        db.add(snapshot)
+        db.commit()
+        db.refresh(snapshot)
+
+        mocker.patch("app.api.model_version.get_provider", return_value=NotionProvider())
+
+        response = auth_client.post(
+            f"/api/model-version/{project.id}/rollback",
+            params={"snapshot_id": snapshot.id},
+        )
+
+        assert response.status_code == 400
+        assert "does not support rollback writeback" in response.json()["detail"]
 
     def test_rollback_snapshot_not_found(self, auth_client, project):
         response = auth_client.post(

@@ -1,6 +1,9 @@
 import os
 import shutil
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+import uuid
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Path
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -17,7 +20,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/{project_id}/upload")
 def upload_problem(
     project_id: str,
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(None),
+    file: UploadFile = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -28,37 +32,47 @@ def upload_problem(
     if not member:
         raise HTTPException(status_code=403, detail="Not a team member")
 
-    file_type = "pdf" if file.filename and file.filename.lower().endswith(".pdf") else "text"
-    file_path = os.path.join(UPLOAD_DIR, f"{project_id}_{file.filename or 'unknown'}")
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    # support both single-file (file) and multi-file (files) uploads
+    incoming = files if files else ([file] if file else [])
+    if not incoming:
+        raise HTTPException(status_code=400, detail="No files provided")
 
-    extracted_text = None
-    if file_type == "pdf":
-        try:
-            from PyPDF2 import PdfReader
-            reader = PdfReader(file_path)
-            extracted_text = "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception:
-            extracted_text = None
-    elif file_type == "text":
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                extracted_text = f.read()
-        except Exception:
-            extracted_text = None
+    created = []
+    for fobj in incoming:
+        file_type = "pdf" if fobj.filename and fobj.filename.lower().endswith(".pdf") else "text"
+        unique = uuid.uuid4().hex
+        file_path = os.path.join(UPLOAD_DIR, f"{project_id}_{unique}_{fobj.filename or 'unknown'}")
+        with open(file_path, "wb") as out_f:
+            shutil.copyfileobj(fobj.file, out_f)
 
-    pf = ProblemFile(
-        project_id=project_id,
-        filename=file.filename or "unknown",
-        file_path=file_path,
-        file_type=file_type,
-        extracted_text=extracted_text,
-    )
-    db.add(pf)
-    db.commit()
-    db.refresh(pf)
-    return {"id": pf.id, "filename": pf.filename, "file_type": pf.file_type, "extracted_text": extracted_text}
+        extracted_text = None
+        if file_type == "pdf":
+            try:
+                from PyPDF2 import PdfReader
+                reader = PdfReader(file_path)
+                extracted_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            except Exception:
+                extracted_text = None
+        elif file_type == "text":
+            try:
+                with open(file_path, "r", encoding="utf-8") as t_f:
+                    extracted_text = t_f.read()
+            except Exception:
+                extracted_text = None
+
+        pf = ProblemFile(
+            project_id=project_id,
+            filename=fobj.filename or "unknown",
+            file_path=file_path,
+            file_type=file_type,
+            extracted_text=extracted_text,
+        )
+        db.add(pf)
+        db.commit()
+        db.refresh(pf)
+        created.append({"id": pf.id, "filename": pf.filename, "file_type": pf.file_type, "extracted_text": extracted_text})
+
+    return created
 
 
 @router.get("/{project_id}/problems")
@@ -71,6 +85,30 @@ def list_problems(project_id: str, current_user: User = Depends(get_current_user
         raise HTTPException(status_code=403, detail="Not a team member")
     files = db.query(ProblemFile).filter(ProblemFile.project_id == project_id).all()
     return [{"id": f.id, "filename": f.filename, "file_type": f.file_type, "uploaded_at": f.uploaded_at} for f in files]
+
+
+@router.get("/{project_id}/problems/{problem_id}/download")
+def download_problem(
+    project_id: str,
+    problem_id: str = Path(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    member = db.query(TeamMember).filter(TeamMember.team_id == project.team_id, TeamMember.user_id == current_user.id).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a team member")
+
+    pf = db.query(ProblemFile).filter(ProblemFile.id == problem_id, ProblemFile.project_id == project_id).first()
+    if not pf:
+        raise HTTPException(status_code=404, detail="Problem file not found")
+
+    if not os.path.exists(pf.file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(pf.file_path, media_type="application/octet-stream", filename=pf.filename)
 
 
 @router.delete("/{project_id}/problems/{problem_id}", status_code=204)

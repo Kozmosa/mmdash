@@ -44,6 +44,7 @@ import {
   Circle,
   Loader2,
   Trash2,
+  Download,
 } from "lucide-react";
 
 interface Team {
@@ -297,9 +298,9 @@ export default function HomePage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedProject || !e.target.files?.[0]) return;
-    const file = e.target.files[0];
+    const files = Array.from(e.target.files);
     const formData = new FormData();
-    formData.append("file", file);
+    files.forEach((file) => formData.append("files", file));
     try {
       await api.post(`/home/${selectedProject}/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -308,6 +309,27 @@ export default function HomePage() {
       fetchProblemFiles(selectedProject);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "上传失败");
+    }
+  };
+
+  const downloadProblemFile = async (problemId: string) => {
+    if (!selectedProject) return;
+    try {
+      const res = await api.get(`/home/${selectedProject}/problems/${problemId}/download`, {
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const filename = problemFiles.find((p) => p.id === problemId)?.filename || "file";
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "下载失败");
     }
   };
 
@@ -570,6 +592,14 @@ export default function HomePage() {
                       <Badge variant="secondary" className="text-xs shrink-0">
                         {f.file_type === "pdf" ? "PDF" : "文本"}
                       </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground"
+                        onClick={() => downloadProblemFile(f.id)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
