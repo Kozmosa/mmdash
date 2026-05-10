@@ -28,6 +28,7 @@ class DocumosaProvider(DocumentProvider):
             "page_id": data["page_id"],
             "title": data.get("title", ""),
             "blocks": data.get("blocks", []),
+            "markdown": data.get("markdown", ""),
         }
 
     async def fetch_page_metadata(self, page_id: str, credentials: dict) -> dict:

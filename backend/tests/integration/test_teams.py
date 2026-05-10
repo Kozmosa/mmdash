@@ -122,6 +122,28 @@ class TestRemoveMember:
         assert response.status_code == 200
         assert response.json()["status"] == "removed"
 
+    def test_admin_can_remove_member_but_not_owner(self, client, db, team, test_user):
+        admin_user = create_test_user(db, email="admin@example.com", password="pass123")
+        target_user = create_test_user(db, email="target@example.com", password="pass123")
+        admin_member = TeamMember(team_id=team.id, user_id=admin_user.id, role="admin")
+        target_member = TeamMember(team_id=team.id, user_id=target_user.id, role="member")
+        db.add_all([admin_member, target_member])
+        db.commit()
+
+        token = login_user(client, admin_user.email, "pass123")
+        response = client.delete(
+            f"/api/teams/{team.id}/members/{target_user.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "removed"
+
+        response = client.delete(
+            f"/api/teams/{team.id}/members/{test_user.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
     def test_remove_member_not_owner(self, client, db, team):
         joiner = create_test_user(db, email="joiner3@example.com", password="pass123")
         member = TeamMember(team_id=team.id, user_id=joiner.id, role="member")
@@ -138,6 +160,23 @@ class TestRemoveMember:
     def test_remove_member_not_found(self, auth_client, team):
         response = auth_client.delete(f"/api/teams/{team.id}/members/nonexistent")
         assert response.status_code == 404
+
+
+class TestMemberRoles:
+    def test_owner_can_promote_member_to_admin(self, client, db, team, test_user):
+        joiner = create_test_user(db, email="promote@example.com", password="pass123")
+        member = TeamMember(team_id=team.id, user_id=joiner.id, role="member")
+        db.add(member)
+        db.commit()
+
+        token = login_user(client, test_user.email, "testpass123")
+        response = client.put(
+            f"/api/teams/{team.id}/members/{joiner.id}/role",
+            params={"role": "admin"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == "admin"
 
 
 class TestDeleteTeam:

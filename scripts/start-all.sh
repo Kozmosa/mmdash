@@ -76,6 +76,8 @@ if [ ! -f "$ROOT_DIR/redis/bin/redis-server" ]; then
     echo "错误: Redis 未安装，请先运行 ./scripts/setup.sh"
     exit 1
 fi
+mkdir -p "$ROOT_DIR/redis/data"
+cd "$ROOT_DIR"
 "$ROOT_DIR/redis/bin/redis-server" "$ROOT_DIR/redis/redis.conf" > "$(log_file redis)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Redis")
