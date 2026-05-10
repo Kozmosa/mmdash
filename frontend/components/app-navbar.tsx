@@ -11,6 +11,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { ModeToggle } from "@/components/mode-toggle"
+import { SidebarTrigger } from "@/components/ui/sidebar"
 
 const pageTitles: Record<string, string> = {
   "/home": "主页",
@@ -26,6 +27,7 @@ export function AppNavbar() {
 
   return (
     <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
+      <SidebarTrigger className="-ml-1" />
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem className="hidden md:block">

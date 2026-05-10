@@ -82,6 +82,112 @@ class TestNotionBlocksToMarkdown:
         assert "$$ E = mc^2 $$" in result
 
 
+class TestMarkdownBlocks:
+    def test_blocks_to_markdown_all_model_page_types(self):
+        from app.services.markdown_blocks import blocks_to_markdown
+
+        result = blocks_to_markdown([
+            {"type": "heading_1", "content": "Title"},
+            {"type": "heading_2", "content": "Section"},
+            {"type": "heading_3", "content": "Subsection"},
+            {"type": "paragraph", "content": "Body"},
+            {"type": "bulleted_list_item", "content": "Bullet"},
+            {"type": "numbered_list_item", "content": "Numbered"},
+            {"type": "code", "content": "print('hi')", "language": "python"},
+            {"type": "equation", "content": "E = mc^2"},
+            {"type": "quote", "content": "Quote"},
+            {"type": "divider", "content": ""},
+        ])
+
+        assert "# Title" in result
+        assert "## Section" in result
+        assert "### Subsection" in result
+        assert "- Bullet" in result
+        assert "1. Numbered" in result
+        assert "```python\nprint('hi')\n```" in result
+        assert "$$ E = mc^2 $$" in result
+        assert "> Quote" in result
+        assert "---" in result
+
+    def test_markdown_to_blocks_numbered_list(self):
+        from app.services.markdown_blocks import markdown_to_blocks
+
+        result = markdown_to_blocks("1. first\n2. second")
+
+        assert result == [
+            {"type": "numbered_list_item", "content": "first"},
+            {"type": "numbered_list_item", "content": "second"},
+        ]
+
+
+class TestLocalFileProvider:
+    class _Response:
+        def __init__(self, data):
+            self._data = data
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._data
+
+    class _Client:
+        def __init__(self):
+            self.calls = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, **kwargs):
+            self.calls.append(("post", url, kwargs))
+            return TestLocalFileProvider._Response({"page_id": "page_1", "title": "Model"})
+
+        async def put(self, url, **kwargs):
+            self.calls.append(("put", url, kwargs))
+            return TestLocalFileProvider._Response({
+                "page_id": "page_1",
+                "title": kwargs["json"].get("title", "Model"),
+                "content": kwargs["json"].get("content", ""),
+                "blocks": [{"type": "paragraph", "content": "Updated"}],
+            })
+
+    @pytest.mark.asyncio
+    async def test_create_page_uses_doc_server_api_key_fallback(self, mocker):
+        from app.services.local_file_provider import LocalFileProvider, settings
+
+        client = self._Client()
+        mocker.patch("app.services.local_file_provider.httpx.AsyncClient", return_value=client)
+        mocker.patch.object(settings, "DOC_SERVER_API_KEY", "secret")
+
+        result = await LocalFileProvider().create_page("Model", "", {})
+
+        assert result == {"page_id": "page_1", "title": "Model"}
+        assert client.calls[0][0] == "post"
+        assert client.calls[0][2]["headers"] == {"X-API-Key": "secret"}
+        assert client.calls[0][2]["json"] == {"title": "Model", "content": ""}
+
+    @pytest.mark.asyncio
+    async def test_update_page_content_converts_blocks_to_markdown(self, mocker):
+        from app.services.local_file_provider import LocalFileProvider
+
+        client = self._Client()
+        mocker.patch("app.services.local_file_provider.httpx.AsyncClient", return_value=client)
+
+        result = await LocalFileProvider().update_page_content(
+            "page_1",
+            {"title": "Updated", "blocks": [{"type": "numbered_list_item", "content": "Step"}]},
+            {"api_key": "key"},
+        )
+
+        assert result["page_id"] == "page_1"
+        assert client.calls[0][0] == "put"
+        assert client.calls[0][2]["headers"] == {"X-API-Key": "key"}
+        assert client.calls[0][2]["json"] == {"title": "Updated", "content": "1. Step"}
+
+
 class TestOpenAIService:
     @pytest.mark.asyncio
     async def test_analyze_symbols_no_client(self, mocker):

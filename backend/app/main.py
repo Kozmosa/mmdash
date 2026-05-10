@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.database import engine, Base, SessionLocal
 from app.api import auth, teams, projects, home, timeline, model, model_version, git
+from app.api import llm
 
 # Import provider modules to trigger registration
 from app.services import notion_provider, local_file_provider, documosa_provider
@@ -103,6 +104,7 @@ app.include_router(timeline.router, prefix="/api/timeline", tags=["时间线"])
 app.include_router(model.router, prefix="/api/model", tags=["模型"])
 app.include_router(model_version.router, prefix="/api/model-version", tags=["模型版本"])
 app.include_router(git.router, prefix="/api/git", tags=["Git"])
+app.include_router(llm.router, prefix="/api/llm", tags=["LLM"])
 
 
 @app.get("/health")
