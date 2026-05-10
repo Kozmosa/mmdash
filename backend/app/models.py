@@ -34,11 +34,13 @@ class Team(Base):
     name = Column(String(100), nullable=False)
     owner_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     invite_code = Column(String(64), unique=True, nullable=False, index=True)
+    llm_prompts = Column(Text, nullable=False, default="{}")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="owned_teams", foreign_keys=[owner_id])
     members = relationship("TeamMember", back_populates="team", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="team", cascade="all, delete-orphan")
+    provider_bindings = relationship("ProviderBinding", back_populates="team", cascade="all, delete-orphan")
 
 
 class TeamMember(Base):
@@ -47,7 +49,7 @@ class TeamMember(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     team_id = Column(String(36), ForeignKey("teams.id"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    role = Column(String(20), default="member")  # owner, member
+    role = Column(String(20), default="member")  # owner, admin, member
     joined_at = Column(DateTime, default=datetime.utcnow)
 
     team = relationship("Team", back_populates="members")
@@ -72,6 +74,7 @@ class ProviderBinding(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    team_id = Column(String(36), ForeignKey("teams.id"), nullable=True)
     provider_type = Column(String(50), nullable=False, default="notion")
     credentials = Column(Text, nullable=False)  # JSON: {"access_token": "..."} or {"api_key": "..."}
     workspace_id = Column(String(255), nullable=True)
@@ -79,6 +82,7 @@ class ProviderBinding(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="provider_bindings")
+    team = relationship("Team", back_populates="provider_bindings")
 
 
 class Project(Base):

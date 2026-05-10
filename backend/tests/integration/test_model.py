@@ -109,6 +109,52 @@ class TestLinkModelPage:
         assert response.status_code == 404
 
 
+class TestCreateAndUpdateModelPage:
+    def test_create_page_binds_project(self, auth_client, project, provider_binding, mocker):
+        provider_binding.provider_type = "local_file"
+        provider_binding.credentials = '{"api_key": "secret"}'
+        db = __import__("sqlalchemy.orm", fromlist=["Session"]).Session.object_session(project)
+        db.commit()
+
+        mock_provider = mocker.MagicMock()
+        mock_provider.create_page = mocker.AsyncMock(return_value={"page_id": "page_local", "title": "Local Model"})
+        mocker.patch("app.api.model.get_provider", return_value=mock_provider)
+
+        response = auth_client.post(
+            f"/api/model/{project.id}/create-page",
+            json={"title": "Local Model"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["page_id"] == "page_local"
+        db.refresh(project)
+        assert project.model_data_page_id == "page_local"
+
+    def test_update_content_with_local_file_provider(self, auth_client, project, provider_binding, mocker):
+        project.model_data_page_id = "page_local"
+        provider_binding.provider_type = "local_file"
+        provider_binding.credentials = '{"api_key": "secret"}'
+        db = __import__("sqlalchemy.orm", fromlist=["Session"]).Session.object_session(project)
+        db.commit()
+
+        mock_provider = mocker.MagicMock()
+        mock_provider.update_page_content = mocker.AsyncMock(return_value={
+            "page_id": "page_local",
+            "title": "Local Model",
+            "blocks": [{"type": "numbered_list_item", "content": "Step"}],
+        })
+        mocker.patch("app.api.model.get_provider", return_value=mock_provider)
+
+        response = auth_client.post(
+            f"/api/model/{project.id}/content",
+            json={"markdown": "1. Step"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["markdown"] == "1. Step"
+        mock_provider.update_page_content.assert_awaited_once()
+
+
 class TestAnalyzeSymbols:
     def test_analyze_symbols(self, auth_client, project, provider_binding, mocker):
         project.model_data_page_id = "page_123"
