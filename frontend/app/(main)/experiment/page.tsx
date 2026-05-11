@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import {
   connectLocalAgent,
   disconnectLocalAgent,
+  getLocalAgentState,
+  type LocalAgentConnectionState,
+  LocalAgentError,
   sendAction,
+  subscribeLocalAgentState,
 } from "@/lib/local_agent";
 import api from "@/lib/api";
 import { useDataCache } from "@/stores/data-cache";
@@ -73,9 +77,13 @@ interface EnvInfo {
 
 export default function ExperimentPage() {
   const [connected, setConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<LocalAgentConnectionState>(
+    getLocalAgentState()
+  );
   const [envInfo, setEnvInfo] = useState<EnvInfo | null>(null);
   const [command, setCommand] = useState("");
   const [shellOutput, setShellOutput] = useState("");
+  const [lastAgentError, setLastAgentError] = useState("");
   const [solverPath, setSolverPath] = useState("");
   const [repoPath, setRepoPath] = useState("");
   const [paramName, setParamName] = useState("");
@@ -108,8 +116,13 @@ export default function ExperimentPage() {
   }, []);
 
   useEffect(() => {
+    const unsubscribe = subscribeLocalAgentState((state) => {
+      setConnectionState(state);
+      setConnected(state === "ready");
+    });
     checkConnection();
     return () => {
+      unsubscribe();
       disconnectLocalAgent();
     };
   }, []);
@@ -207,9 +220,11 @@ export default function ExperimentPage() {
     try {
       await connectLocalAgent();
       setConnected(true);
+      setConnectionState("ready");
       detectEnv();
     } catch {
       setConnected(false);
+      setConnectionState(getLocalAgentState());
     }
   };
 
@@ -217,25 +232,36 @@ export default function ExperimentPage() {
     try {
       const data = await sendAction("detect_env");
       setEnvInfo(data);
+      setLastAgentError("");
     } catch (err: any) {
-      toast.error("环境检测失败: " + err.message);
+      const message = formatLocalAgentError(err);
+      setLastAgentError(message);
+      toast.error("环境检测失败: " + message);
     }
   };
 
   const runShell = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!command) return;
+    if (!repoPath) {
+      toast.error("请先指定 Git 仓库路径，Shell 调试仅允许在仓库范围内执行");
+      return;
+    }
     setLoading(true);
     try {
-      const data = await sendAction("shell", {
+      const data = await sendAction("shell.run", {
         command,
-        cwd: repoPath || undefined,
+        repo_path: repoPath,
+        cwd: repoPath,
       });
+      setLastAgentError("");
       setShellOutput(
         `Exit code: ${data.returncode}\n\nSTDOUT:\n${data.stdout}\n\nSTDERR:\n${data.stderr}`
       );
     } catch (err: any) {
-      toast.error("命令执行失败: " + err.message);
+      const message = formatLocalAgentError(err);
+      setLastAgentError(message);
+      toast.error("命令执行失败: " + message);
     } finally {
       setLoading(false);
     }
@@ -284,49 +310,63 @@ export default function ExperimentPage() {
     }
     setLoading(true);
     try {
-      const data = await sendAction("run_experiment", {
+      const data = await sendAction("experiment.run", {
         solver_path: solverPath,
         param_grid: params,
         git_repo_path: repoPath || ".",
       });
+      setLastAgentError("");
       setExperimentResult(data);
       if (data.result_dir) {
         scanResultFiles(data.result_dir);
       }
       toast.success("实验执行完成");
     } catch (err: any) {
-      toast.error("实验执行失败: " + err.message);
+      const message = formatLocalAgentError(err);
+      setLastAgentError(message);
+      toast.error("实验执行失败: " + message);
     } finally {
       setLoading(false);
     }
   };
 
   const scanResultFiles = async (dir: string) => {
+    if (!repoPath) return;
     try {
-      const data = await sendAction("shell", {
-        command: `find "${dir}" -type f | head -20`,
+      const data = await sendAction("fs.list", {
+        repo_path: repoPath,
+        path: dir,
       });
-      const files = data.stdout.split("\n").filter((f: string) => f.trim());
+      const files = (data.files || []).filter((f: string) => f.trim());
       setResultFiles(files);
       const analysisPath = files.find((f: string) => f.endsWith("analysis.md"));
       if (analysisPath) {
-        const catData = await sendAction("shell", { command: `cat "${analysisPath}"` });
-        setAnalysisContent(catData.stdout);
+        const readData = await sendAction("fs.read", {
+          repo_path: repoPath,
+          path: analysisPath,
+        });
+        setAnalysisContent(readData.content || "");
       }
-    } catch {}
+    } catch (err) {
+      setLastAgentError(formatLocalAgentError(err));
+    }
   };
 
   const saveAnalysis = async () => {
-    if (!experimentResult?.result_dir) return;
+    if (!experimentResult?.result_dir || !repoPath) return;
     const analysisPath = `${experimentResult.result_dir}/analysis.md`;
     try {
-      const escaped = analysisContent.replace(/"/g, '\\"').replace(/\n/g, "\\n");
-      await sendAction("shell", {
-        command: `printf "${escaped}" > "${analysisPath}"`,
+      await sendAction("fs.write", {
+        repo_path: repoPath,
+        path: analysisPath,
+        content: analysisContent,
       });
+      setLastAgentError("");
       toast.success("analysis.md 已保存");
     } catch (err: any) {
-      toast.error("保存失败: " + err.message);
+      const message = formatLocalAgentError(err);
+      setLastAgentError(message);
+      toast.error("保存失败: " + message);
     }
   };
 
@@ -337,33 +377,38 @@ export default function ExperimentPage() {
     }
     setLoading(true);
     try {
-      const addRes = await sendAction("shell", {
-        command: `cd "${repoPath}" && git add .`,
+      const result = await sendAction("git.add_commit_push", {
+        repo_path: repoPath,
+        commit_message: "experiment results",
       });
-      if (addRes.returncode !== 0) {
-        toast.error("git add 失败: " + addRes.stderr);
+      if (result.returncode !== 0) {
+        const failedStep = result.steps?.find((step: any) => step.returncode !== 0);
+        const message = `Git 同步失败: ${failedStep?.command || "unknown"}${failedStep?.stderr ? `: ${failedStep.stderr}` : ""}`;
+        setLastAgentError(message);
+        toast.error(
+          message
+        );
         return;
       }
-      const commitRes = await sendAction("shell", {
-        command: `cd "${repoPath}" && git commit -m "experiment results"`,
-      });
-      if (commitRes.returncode !== 0 && !commitRes.stderr.includes("nothing to commit")) {
-        toast.error("git commit 失败: " + commitRes.stderr);
-        return;
-      }
-      const pushRes = await sendAction("shell", {
-        command: `cd "${repoPath}" && git push`,
-      });
-      if (pushRes.returncode !== 0) {
-        toast.error("git push 失败: " + pushRes.stderr);
-        return;
-      }
+      setLastAgentError("");
       toast.success("Git 同步完成: add -> commit -> push");
     } catch (err: any) {
-      toast.error("Git 操作失败: " + err.message);
+      const message = formatLocalAgentError(err);
+      setLastAgentError(message);
+      toast.error("Git 操作失败: " + message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatLocalAgentError = (error: unknown) => {
+    if (error instanceof LocalAgentError) {
+      return error.requestId ? `${error.message} [req:${error.requestId}]` : error.message;
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return "未知错误";
   };
 
   const fetchExperiments = async () => {
@@ -431,12 +476,20 @@ export default function ExperimentPage() {
                 <Badge variant={connected ? "default" : "destructive"}>
                   {connected ? "已连接" : "未连接"}
                 </Badge>
+                <span className="text-xs text-muted-foreground">
+                  状态: {connectionState}
+                </span>
               </div>
               {!connected && (
                 <Button onClick={checkConnection} className="w-full">
                   <RefreshCw className="h-4 w-4 mr-1" />
                   重新连接
                 </Button>
+              )}
+              {lastAgentError && (
+                <p className="text-xs text-destructive break-all">
+                  最近错误: {lastAgentError}
+                </p>
               )}
             </CardContent>
           </Card>
@@ -494,7 +547,7 @@ export default function ExperimentPage() {
                   onChange={(e) => setCommand(e.target.value)}
                 />
                 <Input
-                  placeholder="工作目录（可选）"
+                  placeholder="Git 仓库路径（Shell 执行范围）"
                   value={repoPath}
                   onChange={(e) => setRepoPath(e.target.value)}
                 />
@@ -759,7 +812,26 @@ export default function ExperimentPage() {
                         <span className="text-muted-foreground">运行次数:</span>{" "}
                         {experimentResult.results?.length}
                       </div>
+                      <div>
+                        <span className="text-muted-foreground">任务状态:</span>{" "}
+                        <Badge
+                          variant={
+                            experimentResult.task?.status === "succeeded"
+                              ? "default"
+                              : experimentResult.task?.status === "failed"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {experimentResult.task?.status || "unknown"}
+                        </Badge>
+                      </div>
                     </div>
+                    {experimentResult.task?.task_id && (
+                      <div className="text-xs text-muted-foreground font-mono break-all">
+                        task_id: {experimentResult.task.task_id}
+                      </div>
+                    )}
 
                     {resultFiles.length > 0 && (
                       <div>

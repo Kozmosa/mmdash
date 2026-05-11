@@ -14,6 +14,48 @@ log_file() {
     echo "$LOG_DIR/$1.log"
 }
 
+wait_for_port() {
+    local port=$1
+    local name=$2
+    local attempts=${3:-30}
+    local i
+    for ((i=1; i<=attempts; i++)); do
+        if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "错误: $name 未在预期时间内监听端口 $port"
+    return 1
+}
+
+wait_for_local_agent_ready() {
+    local attempts=${1:-30}
+    local i
+    for ((i=1; i<=attempts; i++)); do
+        if python - <<'PY' >/dev/null 2>&1
+import asyncio
+import json
+import websockets
+
+async def main():
+    async with websockets.connect("ws://127.0.0.1:8765") as ws:
+        await ws.send(json.dumps({"request_id": "ready-check", "action": "agent.info", "params": {}}))
+        raw = await asyncio.wait_for(ws.recv(), timeout=2)
+        data = json.loads(raw)
+        assert data.get("ok") is True
+
+asyncio.run(main())
+PY
+        then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "错误: Local Agent 未在预期时间内通过协议就绪检查"
+    return 1
+}
+
 # Kill any process listening on a given port
 kill_port() {
     local port=$1
@@ -81,7 +123,7 @@ cd "$ROOT_DIR"
 "$ROOT_DIR/redis/bin/redis-server" "$ROOT_DIR/redis/redis.conf" > "$(log_file redis)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Redis")
-sleep 1
+wait_for_port 6379 "Redis"
 
 # 2. Backend
 echo "[2/6] 启动 Backend (FastAPI)..."
@@ -93,7 +135,7 @@ echo "  → 启动 FastAPI 服务..."
 uv run uvicorn app.main:app --reload --port 8000 > "$(log_file backend)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Backend")
-sleep 1
+wait_for_port 8000 "Backend"
 
 # 3. Cloud Agent
 echo "[3/6] 启动 Cloud Agent..."
@@ -102,7 +144,7 @@ cd "$ROOT_DIR/cloud_agent"
 uv run python main.py > "$(log_file cloud-agent)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("CloudAgent")
-sleep 1
+wait_for_port 8001 "CloudAgent"
 
 # 4. Doc Server
 echo "[4/6] 启动 Doc Server..."
@@ -111,7 +153,7 @@ cd "$ROOT_DIR/doc_server"
 PYTHONPATH="$ROOT_DIR" uv run uvicorn doc_server.main:app --port 8002 > "$(log_file doc-server)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("DocServer")
-sleep 1
+wait_for_port 8002 "DocServer"
 
 # 5. Local Agent
 echo "[5/6] 启动 Local Agent..."
@@ -120,7 +162,8 @@ cd "$ROOT_DIR/local_agent"
 uv run python main.py > "$(log_file local-agent)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("LocalAgent")
-sleep 1
+wait_for_port 8765 "LocalAgent"
+wait_for_local_agent_ready
 
 # 6. Frontend
 echo "[6/6] 启动 Frontend (Next.js)..."
@@ -136,7 +179,7 @@ cd "$ROOT_DIR/frontend"
 npm run dev > "$(log_file frontend)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Frontend")
-sleep 2
+wait_for_port 3000 "Frontend"
 
 echo ""
 echo "========================================"
