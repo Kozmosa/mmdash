@@ -60,7 +60,7 @@ def join_team(data: JoinTeamRequest, current_user: User = Depends(get_current_us
     member = TeamMember(team_id=team.id, user_id=current_user.id, role="member")
     db.add(member)
     db.commit()
-    return {"status": "joined", "team_id": team.id}
+    return {"status": "joined", "team_id": team.id, "team_name": team.name}
 
 
 @router.get("/{team_id}", response_model=TeamResponse)

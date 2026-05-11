@@ -259,11 +259,12 @@ export default function HomePage() {
   const joinTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post("/teams/join", { invite_code: inviteCode });
+      const res = await api.post("/teams/join", { invite_code: inviteCode });
       setInviteCode("");
       setJoinTeamOpen(false);
-      fetchTeams();
-      toast.success("加入团队成功");
+      dataCache.invalidateTeams();
+      await fetchTeams();
+      toast.success(`已成功加入团队「${res.data.team_name}」`);
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "加入失败");
     }

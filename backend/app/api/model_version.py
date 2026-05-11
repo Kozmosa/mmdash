@@ -32,8 +32,30 @@ def _build_diff_chunks(base_text: str, compare_text: str) -> list[dict]:
     return chunks
 
 
-def _get_binding(db: Session, user_id: str) -> ProviderBinding:
-    binding = db.query(ProviderBinding).filter(ProviderBinding.user_id == user_id).first()
+DOCUMENT_PROVIDER_TYPES = ("notion", "local_file", "documosa")
+
+
+def _get_binding(db: Session, user_id: str, team_id: str | None = None) -> ProviderBinding:
+    if team_id:
+        binding = (
+            db.query(ProviderBinding)
+            .filter(
+                ProviderBinding.team_id == team_id,
+                ProviderBinding.provider_type.in_(DOCUMENT_PROVIDER_TYPES),
+            )
+            .order_by(ProviderBinding.created_at.desc())
+            .first()
+        )
+        if binding:
+            return binding
+    binding = (
+        db.query(ProviderBinding)
+        .filter(
+            ProviderBinding.user_id == user_id,
+            ProviderBinding.provider_type.in_(DOCUMENT_PROVIDER_TYPES),
+        )
+        .first()
+    )
     if not binding:
         raise HTTPException(status_code=400, detail="Please bind a document provider first")
     return binding
@@ -94,7 +116,7 @@ async def commit_model(project_id: str, message: str, request: Request, current_
     if not project.model_data_page_id:
         raise HTTPException(status_code=400, detail="No model page linked")
 
-    binding = _get_binding(db, current_user.id)
+    binding = _get_binding(db, current_user.id, project.team_id)
     markdown = await _fetch_current_markdown(project, binding, _extract_bearer_token(request))
 
     snapshot = ModelSnapshot(
@@ -174,7 +196,24 @@ async def rollback_preview(project_id: str, snapshot_id: str, request: Request, 
     if not snapshot:
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
-    binding = db.query(ProviderBinding).filter(ProviderBinding.user_id == current_user.id).first()
+    binding = (
+        db.query(ProviderBinding)
+        .filter(
+            ProviderBinding.team_id == project.team_id,
+            ProviderBinding.provider_type.in_(DOCUMENT_PROVIDER_TYPES),
+        )
+        .order_by(ProviderBinding.created_at.desc())
+        .first()
+    )
+    if not binding:
+        binding = (
+            db.query(ProviderBinding)
+            .filter(
+                ProviderBinding.user_id == current_user.id,
+                ProviderBinding.provider_type.in_(DOCUMENT_PROVIDER_TYPES),
+            )
+            .first()
+        )
     current_markdown = ""
     can_write = False
     provider_type = None
@@ -229,7 +268,7 @@ async def rollback_model(project_id: str, snapshot_id: str, request: Request, cu
     if not project.model_data_page_id:
         raise HTTPException(status_code=400, detail="No model page linked")
 
-    binding = _get_binding(db, current_user.id)
+    binding = _get_binding(db, current_user.id, project.team_id)
     provider = get_provider(binding.provider_type)
     if not _provider_supports_write(provider):
         raise HTTPException(status_code=400, detail="Current document provider does not support rollback writeback")

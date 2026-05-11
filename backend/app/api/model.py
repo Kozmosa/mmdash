@@ -32,7 +32,19 @@ class UpdateContentRequest(BaseModel):
     blocks: list[dict] | None = None
 
 
-def _get_binding(db: Session, user_id: str) -> ProviderBinding:
+def _get_binding(db: Session, user_id: str, team_id: str | None = None) -> ProviderBinding:
+    if team_id:
+        binding = (
+            db.query(ProviderBinding)
+            .filter(
+                ProviderBinding.team_id == team_id,
+                ProviderBinding.provider_type.in_(DOCUMENT_PROVIDER_TYPES),
+            )
+            .order_by(ProviderBinding.created_at.desc())
+            .first()
+        )
+        if binding:
+            return binding
     binding = (
         db.query(ProviderBinding)
         .filter(
@@ -65,7 +77,7 @@ async def _fetch_model_content(project_id: str, current_user: User, db: Session,
     if not project.model_data_page_id:
         raise HTTPException(status_code=400, detail="No model page linked to this project")
 
-    binding = _get_binding(db, current_user.id)
+    binding = _get_binding(db, current_user.id, project.team_id)
     provider = get_provider(binding.provider_type)
     credentials = json.loads(binding.credentials)
     if token:
@@ -140,7 +152,7 @@ async def update_model_content(
     if not project.model_data_page_id:
         raise HTTPException(status_code=400, detail="No model page linked to this project")
 
-    binding = _get_binding(db, current_user.id)
+    binding = _get_binding(db, current_user.id, project.team_id)
     provider = get_provider(binding.provider_type)
     credentials = json.loads(binding.credentials)
     token = _extract_bearer_token(request)
@@ -186,7 +198,7 @@ async def create_and_bind_model_page(
     if not member:
         raise HTTPException(status_code=403, detail="Not a team member")
 
-    binding = _get_binding(db, current_user.id)
+    binding = _get_binding(db, current_user.id, project.team_id)
     provider = get_provider(binding.provider_type)
     credentials = json.loads(binding.credentials)
     token = _extract_bearer_token(request)

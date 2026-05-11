@@ -28,6 +28,8 @@ interface DataCacheState {
   getProjects: (teamId: string) => Project[] | null;
   isProjectsStale: (teamId: string, maxAgeMs?: number) => boolean;
 
+  invalidateTeams: () => void;
+  invalidateProjects: (teamId: string) => void;
   clearCache: () => void;
 }
 
@@ -74,4 +76,15 @@ export const useDataCache = create<DataCacheState>((set, get) => ({
       projects: {},
       projectsFetchedAt: {},
     }),
+
+  invalidateTeams: () =>
+    set({ teamsFetchedAt: null }),
+
+  invalidateProjects: (teamId) =>
+    set((state) => ({
+      projectsFetchedAt: {
+        ...state.projectsFetchedAt,
+        [teamId]: 0,
+      },
+    })),
 }));
