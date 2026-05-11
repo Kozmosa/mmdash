@@ -52,6 +52,7 @@ class ProviderCallback(BaseModel):
 
 class ProviderSwitchRequest(BaseModel):
     provider_type: str  # "notion" or "local_file"
+    team_id: Optional[str] = None  # 团队级 binding
 
 
 # Backward-compatible aliases

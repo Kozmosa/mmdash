@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.database import get_db
-from app.models import User, NotionBinding, ProviderBinding
+from app.models import User, NotionBinding, ProviderBinding, TeamMember
 from app.schemas.auth import (
     UserRegister, UserLogin, UserResponse, TokenResponse,
     ProviderAuthUrl, ProviderCallback, ProviderSwitchRequest,
@@ -180,19 +180,59 @@ async def provider_callback(data: ProviderCallback, current_user: User = Depends
 
 @router.post("/provider/switch")
 def switch_provider(data: ProviderSwitchRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Remove old binding
-    old = db.query(ProviderBinding).filter(ProviderBinding.user_id == current_user.id).first()
-    if old:
-        db.delete(old)
-    # Create new binding with empty credentials
-    new_binding = ProviderBinding(
-        user_id=current_user.id,
-        provider_type=data.provider_type,
-        credentials="{}",
-    )
+    if data.team_id:
+        member = db.query(TeamMember).filter(
+            TeamMember.team_id == data.team_id,
+            TeamMember.user_id == current_user.id
+        ).first()
+        if not member:
+            raise HTTPException(status_code=403, detail="Not a team member")
+        old = db.query(ProviderBinding).filter(
+            ProviderBinding.team_id == data.team_id,
+            ProviderBinding.provider_type.in_(["notion", "local_file", "documosa"])
+        ).first()
+        if old:
+            db.delete(old)
+        new_binding = ProviderBinding(
+            user_id=current_user.id,
+            team_id=data.team_id,
+            provider_type=data.provider_type,
+            credentials="{}",
+        )
+    else:
+        old = db.query(ProviderBinding).filter(ProviderBinding.user_id == current_user.id).first()
+        if old:
+            db.delete(old)
+        new_binding = ProviderBinding(
+            user_id=current_user.id,
+            provider_type=data.provider_type,
+            credentials="{}",
+        )
     db.add(new_binding)
     db.commit()
     return {"status": "switched", "provider_type": data.provider_type}
+
+
+@router.get("/provider/team/{team_id}")
+def get_team_provider(team_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    member = db.query(TeamMember).filter(
+        TeamMember.team_id == team_id,
+        TeamMember.user_id == current_user.id
+    ).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a team member")
+    binding = (
+        db.query(ProviderBinding)
+        .filter(
+            ProviderBinding.team_id == team_id,
+            ProviderBinding.provider_type.in_(["notion", "local_file", "documosa"]),
+        )
+        .order_by(ProviderBinding.created_at.desc())
+        .first()
+    )
+    if not binding:
+        return {"provider_type": "local_file", "is_default": True}
+    return {"provider_type": binding.provider_type, "is_default": False}
 
 
 # ─── Backward-compatible Notion endpoints ─────────────────────────────────────

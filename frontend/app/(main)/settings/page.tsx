@@ -25,6 +25,8 @@ import { ModelSelector } from "@/components/llm/ModelSelector"
 import { PromptSettings } from "@/components/llm/PromptSettings"
 import api from "@/lib/api"
 import { useAuthStore } from "@/stores/auth"
+import { useDataCache } from "@/stores/data-cache"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -124,10 +126,12 @@ export default function SettingsPage() {
   const [providerLoading, setProviderLoading] = useState(false)
   const [providerError, setProviderError] = useState("")
   const [providerSuccess, setProviderSuccess] = useState("")
+  const [providerTeamId, setProviderTeamId] = useState<string>("")
 
   // ─── Clipboard ─────────────────────────────────────────────────
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
+  const dataCache = useDataCache()
   const currentMembersTeamRole = members.find((m) => m.user_id === user?.id)?.role
   const canManageMembers = currentMembersTeamRole === "owner" || currentMembersTeamRole === "admin"
 
@@ -150,6 +154,18 @@ export default function SettingsPage() {
     if (!llmTeamId || !user) return
     void loadLlmTeamRole(llmTeamId)
   }, [llmTeamId, user])
+
+  useEffect(() => {
+    if (!providerTeamId && teams.length > 0) {
+      setProviderTeamId(teams[0].id)
+    }
+  }, [teams, providerTeamId])
+
+  useEffect(() => {
+    if (providerTeamId) {
+      loadTeamProvider(providerTeamId)
+    }
+  }, [providerTeamId])
 
   // ─── Profile Handlers ──────────────────────────────────────────
   const handleSaveProfile = async () => {
@@ -230,11 +246,16 @@ export default function SettingsPage() {
     if (!joinCode.trim()) return
     setJoiningTeam(true)
     try {
-      await api.post("/teams/join", { invite_code: joinCode.trim().toUpperCase() })
+      const res = await api.post("/teams/join", { invite_code: joinCode.trim().toUpperCase() })
       setJoinCode("")
+      toast.success(`已成功加入团队「${res.data.team_name}」`)
+      dataCache.invalidateTeams()
       await loadTeams()
+      await loadProvider()
     } catch (err: any) {
-      setTeamError(err.response?.data?.detail || "加入团队失败")
+      const msg = err.response?.data?.detail || "加入团队失败"
+      setTeamError(msg)
+      toast.error(msg)
     } finally {
       setJoiningTeam(false)
     }
@@ -343,6 +364,16 @@ export default function SettingsPage() {
     }
   }
 
+  const loadTeamProvider = async (teamId: string) => {
+    if (!teamId) return
+    try {
+      const res = await api.get(`/auth/provider/team/${teamId}`)
+      setCurrentProvider(res.data.provider_type)
+    } catch {
+      setCurrentProvider("local_file")
+    }
+  }
+
   const handleSwitchProvider = async (providerType: string) => {
     setProviderError("")
     setProviderSuccess("")
@@ -357,7 +388,10 @@ export default function SettingsPage() {
           return
         }
       }
-      await api.post("/auth/provider/switch", { provider_type: providerType })
+      await api.post("/auth/provider/switch", {
+        provider_type: providerType,
+        team_id: providerTeamId || undefined,
+      })
       setCurrentProvider(providerType)
       setProviderSuccess(`已切换到 ${providerType === "local_file" ? "内置文档服务器" : "Notion"}`)
     } catch (err: any) {
@@ -791,9 +825,28 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>文档后端</CardTitle>
-              <CardDescription>选择文档存储和同步的后端服务</CardDescription>
+              <CardDescription>选择文档存储和同步的后端服务（团队共享设置）</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {teams.length > 0 ? (
+                <div className="space-y-2">
+                  <Label>所属团队</Label>
+                  <Select value={providerTeamId} onValueChange={setProviderTeamId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择团队" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">你还没有加入团队，请先创建或加入一个团队。</p>
+              )}
               {providerError && (
                 <Alert variant="destructive">
                   <AlertDescription>{providerError}</AlertDescription>
