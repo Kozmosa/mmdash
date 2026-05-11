@@ -43,4 +43,5 @@ backend/uploads/
 data/
 package-lock.json
 
-drafts/
+.worktrees/
+drafts/.worktrees/
