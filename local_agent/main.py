@@ -45,14 +45,17 @@ async def handle_detect_env():
     env_info["conda_available"] = conda_path is not None
     if conda_path:
         try:
-            result = subprocess.run(
-                ["conda", "env", "list", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=10,
+            proc = await asyncio.create_subprocess_exec(
+                conda_path, "env", "list", "--json",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            if result.returncode == 0:
-                env_info["conda_envs"] = json.loads(result.stdout).get("envs", [])
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode == 0:
+                env_info["conda_envs"] = json.loads(stdout.decode("utf-8", errors="replace")).get("envs", [])
+        except asyncio.TimeoutError:
+            proc.kill()
+            env_info["conda_envs"] = []
         except Exception:
             env_info["conda_envs"] = []
     # Check gcc
@@ -171,33 +174,49 @@ async def handle_experiment(params: dict):
     }
 
 
-async def handle_client(websocket, path):
-    await register_client(websocket)
-    async for message in websocket:
+async def handle_client(websocket):
+    # Start register_client as a background task so it doesn't block message handling
+    registration_task = asyncio.create_task(register_client(websocket))
+    try:
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+                action = data.get("action")
+                request_id = data.get("request_id")
+                response = {"request_id": request_id, "action": action}
+
+                if action == "detect_env":
+                    response["data"] = await handle_detect_env()
+                elif action == "shell":
+                    response["data"] = await handle_shell_command(
+                        data.get("command", ""), data.get("cwd")
+                    )
+                elif action == "run_experiment":
+                    response["data"] = await handle_experiment(data.get("params", {}))
+                elif action == "ping":
+                    response["data"] = {"status": "pong"}
+                else:
+                    response["error"] = f"Unknown action: {action}"
+
+                await websocket.send(json.dumps(response))
+            except json.JSONDecodeError:
+                try:
+                    await websocket.send(json.dumps({"error": "Invalid JSON"}))
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+            except websockets.exceptions.ConnectionClosed:
+                break
+            except Exception as e:
+                try:
+                    await websocket.send(json.dumps({"error": str(e)}))
+                except websockets.exceptions.ConnectionClosed:
+                    pass
+    finally:
+        registration_task.cancel()
         try:
-            data = json.loads(message)
-            action = data.get("action")
-            request_id = data.get("request_id")
-            response = {"request_id": request_id, "action": action}
-
-            if action == "detect_env":
-                response["data"] = await handle_detect_env()
-            elif action == "shell":
-                response["data"] = await handle_shell_command(
-                    data.get("command", ""), data.get("cwd")
-                )
-            elif action == "run_experiment":
-                response["data"] = await handle_experiment(data.get("params", {}))
-            elif action == "ping":
-                response["data"] = {"status": "pong"}
-            else:
-                response["error"] = f"Unknown action: {action}"
-
-            await websocket.send(json.dumps(response))
-        except json.JSONDecodeError:
-            await websocket.send(json.dumps({"error": "Invalid JSON"}))
-        except Exception as e:
-            await websocket.send(json.dumps({"error": str(e)}))
+            await registration_task
+        except asyncio.CancelledError:
+            pass
 
 
 async def main():
