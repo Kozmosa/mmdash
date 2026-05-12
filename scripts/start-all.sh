@@ -4,6 +4,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$ROOT_DIR/logs"
+FRONTEND_MODE="prod"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dev)
+            FRONTEND_MODE="dev"
+            shift
+            ;;
+        *)
+            echo "错误: 未知参数 $1"
+            echo "用法: ./scripts/start-all.sh [--dev]"
+            exit 1
+            ;;
+    esac
+done
 
 mkdir -p "$LOG_DIR"
 
@@ -26,6 +41,21 @@ wait_for_port() {
         sleep 1
     done
     echo "错误: $name 未在预期时间内监听端口 $port"
+    return 1
+}
+
+wait_for_http() {
+    local url=$1
+    local name=$2
+    local attempts=${3:-60}
+    local i
+    for ((i=1; i<=attempts; i++)); do
+        if curl -sS -I --max-time 2 "$url" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    echo "错误: $name 未在预期时间内通过 HTTP 就绪检查 ($url)"
     return 1
 }
 
@@ -108,6 +138,7 @@ echo "  数模Dashboard - 一键启动所有服务"
 echo "========================================"
 echo ""
 echo "日志目录: $LOG_DIR"
+echo "前端模式: $FRONTEND_MODE"
 echo "按 Ctrl+C 优雅退出"
 echo ""
 
@@ -176,10 +207,17 @@ for pid in $(ps aux | grep "next" | grep -v grep | awk '{print $2}'); do
     fi
 done
 cd "$ROOT_DIR/frontend"
-npm run dev > "$(log_file frontend)" 2>&1 &
+if [ "$FRONTEND_MODE" = "dev" ]; then
+    npm run dev > "$(log_file frontend)" 2>&1 &
+else
+    echo "  → 构建 Frontend 生产包..."
+    npm run build > "$(log_file frontend-build)" 2>&1
+    echo "  → 启动 Frontend 生产服务..."
+    npm run start > "$(log_file frontend)" 2>&1 &
+fi
 PIDS+=($!)
 SERVICES+=("Frontend")
-wait_for_port 3000 "Frontend"
+wait_for_http "http://127.0.0.1:3000" "Frontend"
 
 echo ""
 echo "========================================"
@@ -192,6 +230,11 @@ echo "  CloudAgent:  http://localhost:8001"
 echo "  DocServer:   http://localhost:8002"
 echo "  LocalAgent:  ws://127.0.0.1:8765"
 echo "  Frontend:    http://localhost:3000"
+if [ "$FRONTEND_MODE" = "dev" ]; then
+    echo "  FrontendMode: development"
+else
+    echo "  FrontendMode: production"
+fi
 echo ""
 echo "按 Ctrl+C 停止所有服务"
 echo ""
