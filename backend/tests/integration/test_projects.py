@@ -7,7 +7,16 @@ from tests.conftest import create_test_user, login_user
 
 
 class TestCreateProject:
-    def test_create_project_success(self, auth_client, team, provider_binding):
+    def test_create_project_success(self, auth_client, team, db, test_user):
+        from app.models import ProviderBinding
+        binding = ProviderBinding(
+            user_id=test_user.id,
+            team_id=team.id,
+            provider_type="local_file",
+            credentials="{}",
+        )
+        db.add(binding)
+        db.commit()
         response = auth_client.post(
             "/api/projects",
             json={
@@ -59,7 +68,7 @@ class TestCreateProject:
             params={"team_id": team.id},
         )
         assert response.status_code == 400
-        assert "Please bind a document provider first" in response.json()["detail"]
+        assert "Please configure a team document provider first" in response.json()["detail"]
 
 
 class TestListProjects:

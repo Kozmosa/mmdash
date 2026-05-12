@@ -53,6 +53,14 @@ interface Team {
   invite_code: string;
 }
 
+interface TeamProviderInfo {
+  provider_type: string;
+  is_default: boolean;
+}
+
+type TeamProviderStatus = "idle" | "loading" | "needs_setup" | "configured";
+const PENDING_PROJECT_CREATION_KEY = "pending_project_creation";
+
 interface Project {
   id: string;
   name: string;
@@ -104,16 +112,54 @@ export default function HomePage() {
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [joinTeamOpen, setJoinTeamOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [providerLoading, setProviderLoading] = useState(false);
+  const [providerError, setProviderError] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("local_file");
+  const [teamProviderInfo, setTeamProviderInfo] = useState<TeamProviderInfo | null>(null);
+  const [teamProviderStatus, setTeamProviderStatus] = useState<TeamProviderStatus>("idle");
+  const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     fetchTeams();
   }, []);
 
   useEffect(() => {
+    if (!teams.length) return;
+    const raw = sessionStorage.getItem(PENDING_PROJECT_CREATION_KEY);
+    if (!raw) return;
+    try {
+      const pending = JSON.parse(raw) as {
+        teamId: string;
+        providerType: string;
+        projectName?: string;
+        projectDesc?: string;
+        gitUrl?: string;
+      };
+      const exists = teams.some((team) => team.id === pending.teamId);
+      if (!exists) return;
+      setSelectedTeam(pending.teamId);
+      setSelectedProvider(pending.providerType || "notion");
+      setProjectName(pending.projectName || "");
+      setProjectDesc(pending.projectDesc || "");
+      setGitUrl(pending.gitUrl || "");
+      setCreateProjectOpen(true);
+      sessionStorage.removeItem(PENDING_PROJECT_CREATION_KEY);
+    } catch {
+      sessionStorage.removeItem(PENDING_PROJECT_CREATION_KEY);
+    }
+  }, [teams]);
+
+  useEffect(() => {
     if (selectedTeam) {
       fetchProjects(selectedTeam);
+      fetchTeamProvider(selectedTeam);
     }
   }, [selectedTeam]);
+
+  useEffect(() => {
+    if (!createProjectOpen || !selectedTeam) return;
+    void fetchTeamProvider(selectedTeam);
+  }, [createProjectOpen, selectedTeam]);
 
   useEffect(() => {
     if (selectedProject) {
@@ -198,6 +244,87 @@ export default function HomePage() {
     }
   };
 
+  const fetchTeamProvider = async (teamId: string) => {
+    setTeamProviderStatus("loading");
+    setProviderError("");
+    try {
+      const res = await api.get(`/auth/provider/team/${teamId}`);
+      setTeamProviderInfo(res.data);
+      setSelectedProvider(res.data.provider_type || "local_file");
+      setTeamProviderStatus(res.data.is_default ? "needs_setup" : "configured");
+    } catch {
+      setTeamProviderInfo(null);
+      setSelectedProvider("local_file");
+      setTeamProviderStatus("needs_setup");
+    }
+  };
+
+  const handleCreateProjectOpenChange = (open: boolean) => {
+    setCreateProjectOpen(open);
+    if (!open) {
+      setProviderLoading(false);
+      return;
+    }
+    if (!selectedTeam) {
+      setTeamProviderStatus("idle");
+    }
+  };
+
+  const openCreateProjectDialog = () => {
+    if (!selectedTeam) {
+      toast.error("请先选择团队");
+      return;
+    }
+    setCreateProjectOpen(true);
+  };
+
+  const savePendingProjectCreation = (providerType: string) => {
+    sessionStorage.setItem(
+      PENDING_PROJECT_CREATION_KEY,
+      JSON.stringify({
+        teamId: selectedTeam,
+        providerType,
+        projectName,
+        projectDesc,
+        gitUrl,
+      })
+    );
+  };
+
+  const configureProviderForProjectCreation = async () => {
+    if (!selectedTeam) {
+      toast.error("请先选择团队");
+      return false;
+    }
+    setProviderLoading(true);
+    setProviderError("");
+    try {
+      if (selectedProvider === "local_file") {
+        await api.post("/auth/provider/switch", {
+          provider_type: "local_file",
+          team_id: selectedTeam,
+        });
+        await fetchTeamProvider(selectedTeam);
+        return true;
+      }
+      savePendingProjectCreation("notion");
+      await api.post("/auth/provider/switch", {
+        provider_type: "notion",
+        team_id: selectedTeam,
+      });
+      const res = await api.get("/auth/provider/url");
+      window.location.href = res.data.auth_url;
+      return false;
+    } catch (err: any) {
+      const message = err.response?.data?.detail || "文档后端配置失败";
+      setProviderError(message);
+      toast.error(message);
+      return false;
+    } finally {
+      setProviderLoading(false);
+    }
+  };
+
   const fetchTodos = async (projectId: string) => {
     setLoadingTodos(true);
     try {
@@ -246,10 +373,16 @@ export default function HomePage() {
   const createTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post("/teams", { name: teamName });
+      const res = await api.post("/teams", { name: teamName });
       setTeamName("");
       setCreateTeamOpen(false);
-      fetchTeams();
+      dataCache.invalidateTeams();
+      await fetchTeams();
+      setSelectedTeam(res.data.id);
+      setSelectedProject("");
+      setProjects([]);
+      setTeamProviderInfo(null);
+      setTeamProviderStatus("needs_setup");
       toast.success("团队创建成功");
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "创建失败");
@@ -276,8 +409,18 @@ export default function HomePage() {
       toast.error("请先选择团队");
       return;
     }
+    if (teamProviderStatus === "loading") {
+      toast.error("团队文档后端信息仍在加载中");
+      return;
+    }
     try {
-      await api.post(
+      if (teamProviderStatus === "needs_setup") {
+        const configured = await configureProviderForProjectCreation();
+        if (!configured) {
+          return;
+        }
+      }
+      const projectRes = await api.post(
         "/projects",
         {
           name: projectName,
@@ -290,15 +433,26 @@ export default function HomePage() {
       setProjectDesc("");
       setGitUrl("");
       setCreateProjectOpen(false);
-      fetchProjects(selectedTeam);
+      dataCache.invalidateProjects(selectedTeam);
+      await fetchProjects(selectedTeam);
+      await fetchTeamProvider(selectedTeam);
+      setSelectedProject(projectRes.data.id);
+      await Promise.all([
+        fetchTodos(projectRes.data.id),
+        fetchProgress(projectRes.data.id),
+        fetchProblemFiles(projectRes.data.id),
+      ]);
       toast.success("项目创建成功");
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "创建项目失败");
+    } finally {
+      setProviderLoading(false);
     }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedProject || !e.target.files?.[0]) return;
+    setUploadError("");
     const files = Array.from(e.target.files);
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file));
@@ -307,9 +461,13 @@ export default function HomePage() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       toast.success("题目上传成功");
-      fetchProblemFiles(selectedProject);
+      await fetchProblemFiles(selectedProject);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "上传失败");
+      const message = err.response?.data?.detail || "上传失败";
+      setUploadError(message);
+      toast.error(message);
+    } finally {
+      e.target.value = "";
     }
   };
 
@@ -498,19 +656,50 @@ export default function HomePage() {
                   </SelectContent>
                 </Select>
               )}
-              <Dialog open={createProjectOpen} onOpenChange={setCreateProjectOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="w-full">
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    创建项目
-                  </Button>
-                </DialogTrigger>
+              <Button variant="outline" size="sm" className="w-full" onClick={openCreateProjectDialog}>
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                创建项目
+              </Button>
+              <Dialog open={createProjectOpen} onOpenChange={handleCreateProjectOpenChange}>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>创建项目</DialogTitle>
                     <DialogDescription>在选定团队下创建新项目</DialogDescription>
                   </DialogHeader>
                   <form onSubmit={createProject} className="space-y-4">
+                    {teamProviderStatus === "loading" && (
+                      <div className="space-y-2 rounded-lg border border-dashed p-3">
+                        <p className="text-sm font-medium">正在加载团队文档后端设置</p>
+                        <p className="text-xs text-muted-foreground">
+                          首次创建项目需要确认当前团队的文档后端，请稍候。
+                        </p>
+                      </div>
+                    )}
+                    {teamProviderStatus === "needs_setup" && (
+                      <div className="space-y-2 rounded-lg border border-dashed p-3">
+                        <Label htmlFor="projectProvider">团队文档后端</Label>
+                        <Select value={selectedProvider} onValueChange={setSelectedProvider}>
+                          <SelectTrigger id="projectProvider">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="local_file">内置文档服务器</SelectItem>
+                            <SelectItem value="notion">Notion</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          首次创建项目前，需要先为团队设置文档后端。
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          该设置是团队级的，后续同团队项目会复用当前选择。
+                        </p>
+                      </div>
+                    )}
+                    {providerError && (
+                      <p className="text-xs text-destructive">
+                        文档后端配置失败：{providerError}
+                      </p>
+                    )}
                     <div className="space-y-2">
                       <Label htmlFor="projectName">项目名称</Label>
                       <Input
@@ -540,7 +729,12 @@ export default function HomePage() {
                       />
                     </div>
                     <DialogFooter>
-                      <Button type="submit">创建项目</Button>
+                      <Button
+                        type="submit"
+                        disabled={providerLoading || teamProviderStatus === "loading"}
+                      >
+                        {providerLoading ? "处理中..." : "创建项目"}
+                      </Button>
                     </DialogFooter>
                   </form>
                 </DialogContent>
@@ -570,6 +764,16 @@ export default function HomePage() {
               {!selectedProject && (
                 <p className="text-xs text-muted-foreground">
                   请先选择一个项目
+                </p>
+              )}
+              {teamProviderInfo?.is_default && selectedTeam && !selectedProject && (
+                <p className="text-xs text-muted-foreground">
+                  当前团队尚未显式配置文档后端；首次创建项目时会一并完成设置。
+                </p>
+              )}
+              {uploadError && (
+                <p className="text-xs text-destructive">
+                  上传失败：{uploadError}
                 </p>
               )}
 

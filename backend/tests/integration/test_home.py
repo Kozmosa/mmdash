@@ -18,8 +18,9 @@ class TestUploadProblem:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["filename"] == "test.pdf"
-        assert data["file_type"] == "pdf"
+        assert len(data) == 1
+        assert data[0]["filename"] == "test.pdf"
+        assert data[0]["file_type"] == "pdf"
 
     def test_upload_text(self, auth_client, project):
         file_content = b"This is a test problem file."
@@ -29,9 +30,18 @@ class TestUploadProblem:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["filename"] == "test.txt"
-        assert data["file_type"] == "text"
-        assert "This is a test problem file." in data["extracted_text"]
+        assert len(data) == 1
+        assert data[0]["filename"] == "test.txt"
+        assert data[0]["file_type"] == "text"
+        assert "This is a test problem file." in data[0]["extracted_text"]
+
+    def test_upload_rejects_unsupported_extension(self, auth_client, project):
+        response = auth_client.post(
+            f"/api/home/{project.id}/upload",
+            files={"file": ("test.csv", io.BytesIO(b"a,b\n1,2"), "text/csv")},
+        )
+        assert response.status_code == 400
+        assert "Only PDF and TXT files are supported" in response.json()["detail"]
 
     def test_upload_project_not_found(self, auth_client):
         file_content = b"test"

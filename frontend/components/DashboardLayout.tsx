@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AppSidebar } from "./app-sidebar";
 import { AppNavbar } from "./app-navbar";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -12,18 +13,33 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const setAuth = useAuthStore((s) => s.setAuth);
   const logout = useAuthStore((s) => s.logout);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token || user) return;
+    const storedToken = localStorage.getItem("token");
+    if (!storedToken) {
+      logout();
+      router.replace(`/auth/login?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    if (user) return;
     api
       .get("/auth/me")
-      .then((res) => setAuth(res.data, token))
-      .catch(() => logout());
-  }, [user, setAuth, logout]);
+      .then((res) => setAuth(res.data, storedToken))
+      .catch(() => {
+        logout();
+        router.replace(`/auth/login?next=${encodeURIComponent(pathname)}`);
+      });
+  }, [logout, pathname, router, setAuth, user]);
+
+  if (!token && !user) {
+    return null;
+  }
 
   return (
     <SidebarProvider>
