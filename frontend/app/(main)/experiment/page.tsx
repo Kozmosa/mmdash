@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   connectLocalAgent,
   disconnectLocalAgent,
@@ -110,18 +110,22 @@ export default function ExperimentPage() {
   const [activeTab, setActiveTab] = useState("run");
   const [projects, setProjects] = useState<any[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const isMountedRef = useRef(false);
 
   useEffect(() => {
     fetchProjects();
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     const unsubscribe = subscribeLocalAgentState((state) => {
+      if (!isMountedRef.current) return;
       setConnectionState(state);
       setConnected(state === "ready");
     });
     checkConnection();
     return () => {
+      isMountedRef.current = false;
       unsubscribe();
       disconnectLocalAgent();
     };
@@ -219,10 +223,12 @@ export default function ExperimentPage() {
   const checkConnection = async () => {
     try {
       await connectLocalAgent();
+      if (!isMountedRef.current) return;
       setConnected(true);
       setConnectionState("ready");
-      detectEnv();
+      await detectEnv();
     } catch {
+      if (!isMountedRef.current) return;
       setConnected(false);
       setConnectionState(getLocalAgentState());
     }
@@ -231,9 +237,13 @@ export default function ExperimentPage() {
   const detectEnv = async () => {
     try {
       const data = await sendAction("detect_env");
+      if (!isMountedRef.current) return;
       setEnvInfo(data);
       setLastAgentError("");
     } catch (err: any) {
+      if (!isMountedRef.current || shouldIgnoreLocalAgentError(err)) {
+        return;
+      }
       const message = formatLocalAgentError(err);
       setLastAgentError(message);
       toast.error("环境检测失败: " + message);
@@ -409,6 +419,19 @@ export default function ExperimentPage() {
       return error.message;
     }
     return "未知错误";
+  };
+
+  const shouldIgnoreLocalAgentError = (error: unknown) => {
+    if (!(error instanceof LocalAgentError)) {
+      return false;
+    }
+    if (error.code === "connection_closed" || error.code === "send_failed") {
+      return true;
+    }
+    if (error.code === "connection_failed" && getLocalAgentState() !== "ready") {
+      return true;
+    }
+    return false;
   };
 
   const fetchExperiments = async () => {
