@@ -187,6 +187,32 @@ def finish_task(
     task["stderr_tail"] = trim_output(stderr)
 
 
+def write_experiment_files(result_dir: Path, param_grid: dict[str, Any], results: list[dict[str, Any]], *, note: str | None = None) -> None:
+    log_path = result_dir / "log.txt"
+    log_lines = [json.dumps(item, ensure_ascii=False) for item in results]
+    if note:
+        log_lines.append(json.dumps({"note": note}, ensure_ascii=False))
+    log_path.write_text("\n".join(log_lines) + ("\n" if log_lines else ""), encoding="utf-8")
+
+    snapshot_path = result_dir / "params_snapshot.json"
+    snapshot_path.write_text(json.dumps(param_grid, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    analysis_path = result_dir / "analysis.md"
+    with analysis_path.open("w", encoding="utf-8") as handle:
+        handle.write("# 实验分析\n\n## 参数\n\n```json\n")
+        handle.write(json.dumps(param_grid, ensure_ascii=False, indent=2))
+        handle.write("\n```\n\n## 结果摘要\n\n")
+        if note:
+            handle.write(f"- 状态说明: {note}\n")
+        if results:
+            for result in results:
+                handle.write(
+                    f"- 参数: {result.get('params', {})} -> 返回码: {result.get('returncode', 'unknown')}\n"
+                )
+        else:
+            handle.write("- 尚无可用结果输出\n")
+
+
 async def register_client(websocket):
     connected_clients.add(websocket)
     log_event("client_connected", active_connections=len(connected_clients))
@@ -419,27 +445,32 @@ async def handle_experiment_run(params: dict[str, Any]) -> dict[str, Any]:
                     )
                 )
         except AgentError as error:
+            if error.code == "timeout":
+                note = f"实验执行超时: {error.message}"
+                write_experiment_files(result_dir, param_grid, results, note=note)
+                finish_task(task, status="failed", returncode=-1, stderr=error.message)
+                log_event(
+                    "experiment_run_completed",
+                    task_id=task["task_id"],
+                    status="timeout",
+                    result_dir=str(result_dir),
+                )
+                return {
+                    "task": task,
+                    "status": "timeout",
+                    "result_dir": str(result_dir),
+                    "results": results,
+                    "error": {
+                        "code": error.code,
+                        "message": error.message,
+                        "retryable": error.retryable,
+                        "details": error.details,
+                    },
+                }
             finish_task(task, status="failed", returncode=-1, stderr=error.message)
             raise
 
-        log_path = result_dir / "log.txt"
-        log_path.write_text(
-            "\n".join(json.dumps(item, ensure_ascii=False) for item in results) + ("\n" if results else ""),
-            encoding="utf-8",
-        )
-
-        snapshot_path = result_dir / "params_snapshot.json"
-        snapshot_path.write_text(json.dumps(param_grid, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        analysis_path = result_dir / "analysis.md"
-        with analysis_path.open("w", encoding="utf-8") as handle:
-            handle.write("# 实验分析\n\n## 参数\n\n```json\n")
-            handle.write(json.dumps(param_grid, ensure_ascii=False, indent=2))
-            handle.write("\n```\n\n## 结果摘要\n\n")
-            for result in results:
-                handle.write(
-                    f"- 参数: {result.get('params', {})} -> 返回码: {result['returncode']}\n"
-                )
+        write_experiment_files(result_dir, param_grid, results)
 
         last_result = results[-1] if results else {}
         finish_task(
@@ -517,6 +548,8 @@ async def handle_git_add_commit_push(params: dict[str, Any]) -> dict[str, Any]:
     repo_lock = get_repo_lock(repo_path)
     outputs = []
     returncode = 0
+    status = "success"
+    summary = "Git add/commit/push completed"
 
     async with repo_lock:
         try:
@@ -541,11 +574,24 @@ async def handle_git_add_commit_push(params: dict[str, Any]) -> dict[str, Any]:
                     }
                 )
                 returncode = step_returncode
-                if label.startswith("git commit") and step_returncode != 0 and "nothing to commit" in stderr:
+                nothing_to_commit = (
+                    label.startswith("git commit")
+                    and step_returncode != 0
+                    and "nothing to commit" in (stderr or stdout).lower()
+                )
+                if nothing_to_commit:
                     returncode = 0
                     outputs[-1]["returncode"] = 0
-                    continue
+                    status = "no_changes"
+                    summary = "No local changes to commit"
+                    break
                 if step_returncode != 0:
+                    if label == "git push":
+                        status = "push_failed"
+                        summary = "Local commit succeeded, but push failed"
+                    else:
+                        status = "error"
+                        summary = f"Git step failed: {label}"
                     break
         except AgentError as error:
             finish_task(task, status="failed", returncode=-1, stderr=error.message)
@@ -560,7 +606,16 @@ async def handle_git_add_commit_push(params: dict[str, Any]) -> dict[str, Any]:
         stdout=combined_stdout,
         stderr=combined_stderr,
     )
-    return {"task": task, "steps": outputs, "returncode": returncode}
+    if returncode == 0 and status == "success" and len(outputs) < 3:
+        status = "no_changes"
+        summary = "No local changes to commit"
+    return {
+        "task": task,
+        "steps": outputs,
+        "returncode": returncode,
+        "status": status,
+        "summary": summary,
+    }
 
 
 async def handle_agent_info() -> dict[str, Any]:

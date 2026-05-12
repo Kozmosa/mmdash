@@ -330,7 +330,17 @@ export default function ExperimentPage() {
       if (data.result_dir) {
         scanResultFiles(data.result_dir);
       }
-      toast.success("实验执行完成");
+      if (data.status === "success") {
+        toast.success("实验执行完成");
+      } else if (data.status === "timeout") {
+        const message = data.error?.message || "实验执行超时";
+        setLastAgentError(message);
+        toast.error(message);
+      } else {
+        const message = data.task?.stderr_tail || "实验执行失败";
+        setLastAgentError(message);
+        toast.error(message);
+      }
     } catch (err: any) {
       const message = formatLocalAgentError(err);
       setLastAgentError(message);
@@ -391,6 +401,18 @@ export default function ExperimentPage() {
         repo_path: repoPath,
         commit_message: "experiment results",
       });
+      if (result.status === "no_changes") {
+        setLastAgentError("");
+        toast("没有可提交的本地变更");
+        return;
+      }
+      if (result.status === "push_failed") {
+        const failedStep = result.steps?.find((step: any) => step.returncode !== 0);
+        const message = failedStep?.stderr || result.summary || "远端推送失败";
+        setLastAgentError(message);
+        toast.error(`本地提交已完成，但推送失败: ${message}`);
+        return;
+      }
       if (result.returncode !== 0) {
         const failedStep = result.steps?.find((step: any) => step.returncode !== 0);
         const message = `Git 同步失败: ${failedStep?.command || "unknown"}${failedStep?.stderr ? `: ${failedStep.stderr}` : ""}`;
@@ -401,7 +423,7 @@ export default function ExperimentPage() {
         return;
       }
       setLastAgentError("");
-      toast.success("Git 同步完成: add -> commit -> push");
+      toast.success("本地提交并推送完成");
     } catch (err: any) {
       const message = formatLocalAgentError(err);
       setLastAgentError(message);
@@ -475,6 +497,9 @@ export default function ExperimentPage() {
           <h1 className="text-2xl font-bold tracking-tight">实验和求解</h1>
           <p className="text-sm text-muted-foreground">
             连接本地 Agent，运行实验并管理结果
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            需要提供本机 Git 仓库路径和可直接执行的 solver；参数通过环境变量注入。
           </p>
         </div>
       </div>

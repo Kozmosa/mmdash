@@ -9,6 +9,20 @@ from app.models import User
 
 router = APIRouter()
 
+DOCUMENT_PROVIDER_TYPES = ("notion", "local_file", "documosa")
+
+
+def _get_team_document_binding(db: Session, team_id: str) -> ProviderBinding | None:
+    return (
+        db.query(ProviderBinding)
+        .filter(
+            ProviderBinding.team_id == team_id,
+            ProviderBinding.provider_type.in_(DOCUMENT_PROVIDER_TYPES),
+        )
+        .order_by(ProviderBinding.created_at.desc())
+        .first()
+    )
+
 
 @router.post("", response_model=ProjectResponse)
 def create_project(data: ProjectCreate, team_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -18,10 +32,9 @@ def create_project(data: ProjectCreate, team_id: str, current_user: User = Depen
     member = db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.user_id == current_user.id).first()
     if not member:
         raise HTTPException(status_code=403, detail="Not a team member")
-    # Check document provider binding
-    binding = db.query(ProviderBinding).filter(ProviderBinding.user_id == current_user.id).first()
+    binding = _get_team_document_binding(db, team_id)
     if not binding:
-        raise HTTPException(status_code=400, detail="Please bind a document provider first")
+        raise HTTPException(status_code=400, detail="Please configure a team document provider first")
     project = Project(
         team_id=team_id,
         name=data.name,

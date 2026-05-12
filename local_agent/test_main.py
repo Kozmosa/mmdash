@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -207,3 +208,80 @@ async def test_shell_run_rejects_cwd_outside_repo(tmp_path: Path):
     response = json.loads(websocket.sent[0])
     assert response["ok"] is False
     assert response["error"]["code"] == "path_out_of_bounds"
+
+
+def init_git_repo(repo_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo_path, check=True)
+
+
+@pytest.mark.anyio
+async def test_experiment_run_timeout_returns_structured_business_result(tmp_path: Path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    init_git_repo(repo_path)
+    solver_path = repo_path / "solver_slow.py"
+    solver_path.write_text(
+        "import time\nalpha = 1\nif __name__ == '__main__':\n    time.sleep(2)\n",
+        encoding="utf-8",
+    )
+
+    websocket = FakeWebSocket(
+        [
+            json.dumps(
+                {
+                    "request_id": "1",
+                    "action": "experiment.run",
+                    "params": {
+                        "solver_path": str(solver_path),
+                        "git_repo_path": str(repo_path),
+                        "timeout_seconds": 1,
+                    },
+                }
+            )
+        ]
+    )
+
+    await handle_client(websocket)
+
+    response = json.loads(websocket.sent[0])
+    assert response["ok"] is True
+    assert response["data"]["status"] == "timeout"
+    assert response["data"]["error"]["code"] == "timeout"
+    result_dir = Path(response["data"]["result_dir"])
+    assert (result_dir / "log.txt").exists()
+    assert (result_dir / "analysis.md").exists()
+    assert (result_dir / "params_snapshot.json").exists()
+
+
+@pytest.mark.anyio
+async def test_git_add_commit_push_reports_no_changes_without_failure(tmp_path: Path):
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    init_git_repo(repo_path)
+    (repo_path / "file.txt").write_text("hello", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo_path, check=True, capture_output=True)
+
+    websocket = FakeWebSocket(
+        [
+            json.dumps(
+                {
+                    "request_id": "1",
+                    "action": "git.add_commit_push",
+                    "params": {
+                        "repo_path": str(repo_path),
+                        "commit_message": "noop",
+                    },
+                }
+            )
+        ]
+    )
+
+    await handle_client(websocket)
+
+    response = json.loads(websocket.sent[0])
+    assert response["ok"] is True
+    assert response["data"]["status"] == "no_changes"
+    assert response["data"]["returncode"] == 0

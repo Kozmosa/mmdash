@@ -15,6 +15,10 @@ router = APIRouter()
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+SUPPORTED_FILE_TYPES = {
+    ".pdf": "pdf",
+    ".txt": "text",
+}
 
 
 @router.post("/{project_id}/upload")
@@ -39,9 +43,13 @@ def upload_problem(
 
     created = []
     for fobj in incoming:
-        file_type = "pdf" if fobj.filename and fobj.filename.lower().endswith(".pdf") else "text"
+        filename = fobj.filename or "unknown"
+        ext = os.path.splitext(filename)[1].lower()
+        file_type = SUPPORTED_FILE_TYPES.get(ext)
+        if file_type is None:
+            raise HTTPException(status_code=400, detail="Only PDF and TXT files are supported")
         unique = uuid.uuid4().hex
-        file_path = os.path.join(UPLOAD_DIR, f"{project_id}_{unique}_{fobj.filename or 'unknown'}")
+        file_path = os.path.join(UPLOAD_DIR, f"{project_id}_{unique}_{filename}")
         with open(file_path, "wb") as out_f:
             shutil.copyfileobj(fobj.file, out_f)
 
@@ -62,7 +70,7 @@ def upload_problem(
 
         pf = ProblemFile(
             project_id=project_id,
-            filename=fobj.filename or "unknown",
+            filename=filename,
             file_path=file_path,
             file_type=file_type,
             extracted_text=extracted_text,

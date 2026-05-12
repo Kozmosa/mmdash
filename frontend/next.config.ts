@@ -4,6 +4,7 @@ import withBundleAnalyzer from "@next/bundle-analyzer";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   compress: true,
+  allowedDevOrigins: ["127.0.0.1"],
 
   experimental: {
     optimizePackageImports: [

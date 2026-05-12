@@ -348,16 +348,8 @@ export default function SettingsPage() {
   // ─── Provider Handlers ─────────────────────────────────────────
   const loadProvider = async () => {
     try {
-      const res = await api.get("/auth/me")
-      // Provider info is not directly in user; we infer from binding or use default
-      // We'll try to get provider url to see if there's a binding
-      try {
-        const urlRes = await api.get("/auth/provider/url")
-        // If this succeeds, we have a binding. We can't tell type from url alone.
-        // Default to notion since url endpoint is notion-specific in practice.
-        setCurrentProvider("notion")
-      } catch {
-        setCurrentProvider("local_file")
+      if (providerTeamId) {
+        await loadTeamProvider(providerTeamId)
       }
     } catch {
       // ignore
