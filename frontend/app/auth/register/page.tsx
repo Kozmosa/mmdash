@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { UserPlus } from "lucide-react";
 import api from "@/lib/api";
@@ -19,13 +19,14 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const setAuth = useAuthStore((s) => s.setAuth);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -43,7 +44,8 @@ export default function RegisterPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setAuth(me.data, token);
-      router.push("/home");
+      const next = searchParams.get("next") || "/home";
+      router.push(next);
     } catch (err: any) {
       setError(err.response?.data?.detail || "注册失败");
     } finally {
@@ -119,5 +121,13 @@ export default function RegisterPage() {
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterPageContent />
+    </Suspense>
   );
 }
