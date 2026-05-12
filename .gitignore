@@ -28,6 +28,14 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+.opencode/
+
+# Local environment files
+.env
+backend/.env
+frontend/next-env.d.ts
+docs/superpowers/plans/
+drafts/
 
 # OS
 .DS_Store
