@@ -236,7 +236,10 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
             padding: "0",
             textDecoration: "none",
           },
-          ".cm-focused": {
+          "&.cm-focused": {
+            outline: "none",
+          },
+          "&.cm-editor.cm-focused": {
             outline: "none",
           },
           ".cm-gutters": {
