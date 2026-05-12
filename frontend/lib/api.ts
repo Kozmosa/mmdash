@@ -1,4 +1,5 @@
 import axios from "axios";
+import { clearAuthCookie } from "@/lib/auth-cookie";
 
 const api = axios.create({
   baseURL: "/api",
@@ -20,6 +21,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
+      clearAuthCookie();
       window.location.href = "/auth/login";
     }
     return Promise.reject(error);
