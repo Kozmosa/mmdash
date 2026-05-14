@@ -6,6 +6,8 @@ import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@codemirror/highlight";
 import { FileCode2, Pilcrow } from "lucide-react";
 
 import MarkdownRenderer from "@/components/model/markdown-renderer";
@@ -211,11 +213,29 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
           maxRenderedOptions: 8,
         }),
         EditorView.lineWrapping,
+        syntaxHighlighting(
+          HighlightStyle.define([
+            { tag: tags.heading1 as any, color: "var(--foreground)", fontWeight: "bold" },
+            { tag: tags.heading2 as any, color: "var(--foreground)", fontWeight: "bold" },
+            { tag: tags.heading3 as any, color: "var(--foreground)", fontWeight: "bold" },
+            { tag: tags.strong as any, color: "var(--foreground)", fontWeight: "bold" },
+            { tag: tags.emphasis as any, color: "var(--foreground)", fontStyle: "italic" },
+            { tag: tags.monospace as any, color: "var(--foreground)" },
+            { tag: tags.link as any, color: "var(--primary)", textDecoration: "underline" },
+            { tag: tags.url as any, color: "var(--primary)" },
+            { tag: tags.quote as any, color: "var(--muted-foreground)" },
+            { tag: tags.list as any, color: "var(--foreground)" },
+            { tag: tags.meta as any, color: "var(--muted-foreground)" },
+            { tag: tags.contentSeparator as any, color: "var(--border)" },
+            { tag: tags.escape as any, color: "var(--muted-foreground)" },
+            { tag: tags.bracket as any, color: "var(--muted-foreground)" },
+          ])
+        ),
         EditorView.theme({
           "&": {
             height: "100%",
-            background: "transparent",
-            color: "hsl(var(--foreground))",
+            backgroundColor: "var(--background)",
+            color: "var(--foreground)",
           },
           ".cm-scroller": {
             fontFamily:
@@ -227,6 +247,9 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
             minHeight: "100%",
             padding: "20px 24px",
             textDecoration: "none",
+            color: "var(--foreground)",
+            backgroundColor: "var(--background)",
+            caretColor: "var(--foreground)",
           },
           ".cm-content *": {
             textDecoration: "none",
@@ -235,6 +258,15 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
           ".cm-line": {
             padding: "0",
             textDecoration: "none",
+          },
+          ".cm-selectionBackground, ::selection": {
+            backgroundColor: "var(--muted) !important",
+          },
+          ".cm-cursor, .cm-cursor-primary": {
+            borderLeftColor: "var(--foreground) !important",
+          },
+          ".cm-activeLine": {
+            backgroundColor: "color-mix(in oklch, var(--muted) 30%, transparent) !important",
           },
           "&.cm-focused": {
             outline: "none",
@@ -246,11 +278,11 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
             display: "none",
           },
           ".cm-tooltip": {
-            border: "1px solid hsl(var(--border))",
+            border: "1px solid var(--border)",
             borderRadius: "12px",
             boxShadow: "0 18px 45px rgb(15 23 42 / 0.14)",
             overflow: "hidden",
-            background: "hsl(var(--background))",
+            background: "var(--background)",
           },
           ".cm-tooltip-autocomplete ul": {
             fontFamily: "inherit",
@@ -261,18 +293,18 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
             padding: "8px 10px",
           },
           ".cm-tooltip-autocomplete ul li[aria-selected]": {
-            background: "hsl(var(--muted))",
-            color: "hsl(var(--foreground))",
+            background: "var(--muted)",
+            color: "var(--foreground)",
           },
           ".cm-completionDetail": {
-            color: "hsl(var(--muted-foreground))",
+            color: "var(--muted-foreground)",
             marginLeft: "8px",
           },
           ".cm-completionInfo": {
-            border: "1px solid hsl(var(--border))",
+            border: "1px solid var(--border)",
             borderRadius: "10px",
             padding: "8px 10px",
-            background: "hsl(var(--background))",
+            background: "var(--background)",
           },
         }),
         EditorView.contentAttributes.of({

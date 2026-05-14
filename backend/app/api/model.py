@@ -108,11 +108,19 @@ async def get_model_content(project_id: str, request: Request, current_user: Use
     content = result["content"]
     blocks = content.get("blocks", [])
     markdown = _content_to_markdown(content)
+
+    # Merge unsaved draft if newer than provider content
+    from app.services.cache import get_draft_markdown
+    draft = get_draft_markdown(project_id)
+    if draft and draft != markdown:
+        markdown = draft
+
     return {
         "page_id": result["page_id"],
         "markdown": markdown,
         "blocks": blocks,
         "from_cache": result.get("from_cache", False),
+        "has_draft": bool(draft and draft != _content_to_markdown(content)),
     }
 
 
@@ -136,6 +144,26 @@ def link_model_page(project_id: str, page_id: str, current_user: User = Depends(
     return {"status": "linked", "model_data_page_id": page_id}
 
 
+@router.put("/{project_id}/cache")
+async def cache_model_draft(
+    project_id: str,
+    body: UpdateContentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Auto-save markdown draft to server-side cache (does not write to document provider)."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    member = db.query(TeamMember).filter(TeamMember.team_id == project.team_id, TeamMember.user_id == current_user.id).first()
+    if not member:
+        raise HTTPException(status_code=403, detail="Not a team member")
+
+    from app.services.cache import set_draft_markdown
+    set_draft_markdown(project_id, body.markdown or "")
+    return {"status": "cached"}
+
+
 @router.post("/{project_id}/content")
 async def update_model_content(
     project_id: str,
@@ -144,6 +172,7 @@ async def update_model_content(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Explicit save: reads markdown (from body or draft cache) and writes to document provider."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -153,6 +182,12 @@ async def update_model_content(
     if not project.model_data_page_id:
         raise HTTPException(status_code=400, detail="No model page linked to this project")
 
+    # Use provided markdown or fall back to draft cache
+    markdown = body.markdown
+    if not markdown:
+        from app.services.cache import get_draft_markdown
+        markdown = get_draft_markdown(project_id) or ""
+
     binding = _get_binding(db, current_user.id, project.team_id)
     provider = get_provider(binding.provider_type)
     credentials = json.loads(binding.credentials)
@@ -160,7 +195,12 @@ async def update_model_content(
     if token:
         credentials["_token"] = token
 
-    content = body.model_dump(exclude_none=True)
+    content = {"markdown": markdown}
+    if body.title:
+        content["title"] = body.title
+    if body.blocks:
+        content["blocks"] = body.blocks
+
     try:
         result = await provider.update_page_content(project.model_data_page_id, content, credentials)
     except NotImplementedError:
@@ -170,16 +210,18 @@ async def update_model_content(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update content: {str(e)}")
 
-    # Invalidate cache
-    from app.services.cache import invalidate_page
+    # Invalidate caches
+    from app.services.cache import invalidate_page, delete_draft_markdown, invalidate_llm_cache
     invalidate_page(binding.provider_type, project.model_data_page_id)
+    delete_draft_markdown(project_id)
+    invalidate_llm_cache(project_id)
 
     blocks = result.get("blocks", [])
-    markdown = _content_to_markdown(result)
+    result_md = _content_to_markdown(result)
     return {
         "page_id": result["page_id"],
         "title": result.get("title", ""),
-        "markdown": markdown,
+        "markdown": result_md,
         "blocks": blocks,
     }
 
@@ -235,8 +277,13 @@ async def get_symbols(project_id: str, request: Request, current_user: User = De
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    from app.services.cache import get_cached_llm_result, set_cached_llm_result
+    cached = get_cached_llm_result(project_id, "symbols", markdown)
+    if cached is not None:
+        return {"symbols": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
     symbols = await analyze_symbols_with_configured_model(markdown, project, current_user, db)
-    return {"symbols": symbols, "disclaimer": "仅供参考"}
+    set_cached_llm_result(project_id, "symbols", markdown, json.dumps(symbols))
+    return {"symbols": symbols, "disclaimer": "仅供参考", "cached": False}
 
 
 @router.get("/{project_id}/analyze/structure")
@@ -246,8 +293,13 @@ async def get_structure(project_id: str, request: Request, current_user: User = 
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    from app.services.cache import get_cached_llm_result, set_cached_llm_result
+    cached = get_cached_llm_result(project_id, "structure", markdown)
+    if cached is not None:
+        return {"structure": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
     structure = await analyze_structure_with_configured_model(markdown, project, current_user, db)
-    return {"structure": structure, "disclaimer": "仅供参考"}
+    set_cached_llm_result(project_id, "structure", markdown, json.dumps(structure))
+    return {"structure": structure, "disclaimer": "仅供参考", "cached": False}
 
 
 @router.post("/{project_id}/analyze/formula")
@@ -257,8 +309,14 @@ async def explain_formula_endpoint(project_id: str, formula: str, request: Reque
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    from app.services.cache import get_cached_llm_result, set_cached_llm_result
+    cache_content = f"{formula}\n{markdown[:2000]}"
+    cached = get_cached_llm_result(project_id, "formula", cache_content)
+    if cached is not None:
+        return {"explanation": cached, "disclaimer": "仅供参考", "cached": True}
     explanation = await explain_formula_with_configured_model(formula, markdown[:2000], project, current_user, db)
-    return {"explanation": explanation, "disclaimer": "仅供参考"}
+    set_cached_llm_result(project_id, "formula", cache_content, explanation)
+    return {"explanation": explanation, "disclaimer": "仅供参考", "cached": False}
 
 
 @router.get("/{project_id}/analyze/errors")
@@ -268,5 +326,10 @@ async def get_errors(project_id: str, request: Request, current_user: User = Dep
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    from app.services.cache import get_cached_llm_result, set_cached_llm_result
+    cached = get_cached_llm_result(project_id, "errors", markdown)
+    if cached is not None:
+        return {"errors": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
     errors = await find_errors_with_configured_model(markdown, project, current_user, db)
-    return {"errors": errors, "disclaimer": "仅供参考"}
+    set_cached_llm_result(project_id, "errors", markdown, json.dumps(errors))
+    return {"errors": errors, "disclaimer": "仅供参考", "cached": False}
