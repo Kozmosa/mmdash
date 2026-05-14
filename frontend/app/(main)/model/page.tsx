@@ -302,6 +302,15 @@ export default function ModelPage() {
     dataCache.setProjects(selectedTeam, updatedProjects);
   };
 
+  const cacheDraft = async (content: string) => {
+    if (!selectedProject || !hasDocument) return;
+    try {
+      await api.put(`/model/${selectedProject}/cache`, { markdown: content });
+    } catch {
+      // Draft cache failures are silent — explicit save will catch real errors
+    }
+  };
+
   const persistContent = async (content: string, silent = true) => {
     if (!selectedProject || !hasDocument) return;
     const requestId = saveRequestIdRef.current + 1;
@@ -312,7 +321,7 @@ export default function ModelPage() {
       const isLatestSave = requestId === saveRequestIdRef.current && latestMarkdownRef.current === content;
       if (isLatestSave) {
         setSaveStatus("saved");
-        if (!silent) toast.success("已保存");
+        if (!silent) toast.success("已保存到文档后端");
       }
     } catch (err: any) {
       const isLatestSave = requestId === saveRequestIdRef.current && latestMarkdownRef.current === content;
@@ -329,7 +338,7 @@ export default function ModelPage() {
     if (!hasDocument) return;
     setSaveStatus("saving");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => persistContent(nextMarkdown), 1000);
+    saveTimerRef.current = setTimeout(() => cacheDraft(nextMarkdown), 2000);
   };
 
   const createDocument = async () => {
@@ -495,8 +504,8 @@ export default function ModelPage() {
   };
 
   const saveStatusText = {
-    saved: "已保存",
-    saving: "保存中...",
+    saved: "已保存到文档后端",
+    saving: "已缓存到服务端...",
     failed: "保存失败，点击重试",
     offline: "离线编辑中",
     conflict: "检测到版本冲突",
@@ -506,75 +515,76 @@ export default function ModelPage() {
     <aside
       className={
         aiPanelMode === "fullscreen"
-          ? "fixed inset-x-6 bottom-6 top-24 z-40 overflow-hidden rounded-xl border bg-background shadow-2xl"
-          : "fixed bottom-6 right-28 top-24 z-40 w-[420px] overflow-hidden rounded-xl border bg-background shadow-xl"
+          ? "fixed inset-x-6 bottom-6 top-24 z-40 flex flex-col overflow-hidden rounded-xl border bg-background shadow-2xl"
+          : "fixed bottom-6 right-28 top-24 z-40 flex w-[420px] flex-col overflow-hidden rounded-xl border bg-background shadow-xl"
       }
     >
-      <div className="flex h-full flex-col">
-        <div className="flex items-start justify-between border-b p-5">
-          <div>
-            <h2 className="text-xl font-semibold">{currentToolLabel}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {aiTools.find((tool) => tool.id === activeTool)?.description}
-            </p>
-          </div>
-          <div className="flex gap-1">
-            <Button variant="ghost" size="icon" onClick={() => setAiPanelMode(aiPanelMode === "fullscreen" ? "floating" : "fullscreen")}>
-              {aiPanelMode === "fullscreen" ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => {
-              setAiPanelVisible(false);
-              setAiPanelMode("floating");
-            }}>
-              <X className="size-4" />
-            </Button>
-          </div>
+      <div className="flex items-start justify-between border-b p-5 shrink-0">
+        <div>
+          <h2 className="text-xl font-semibold">{currentToolLabel}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {aiTools.find((tool) => tool.id === activeTool)?.description}
+          </p>
         </div>
-        <div className="flex gap-2 border-b px-5 py-3 text-sm">
-          {(["symbols", "structure", "correction", "formula"] as AITool[]).map((tool) => (
-            <button
-              key={tool}
-              className={`border-b-2 px-1 pb-2 ${activeTool === tool ? "border-foreground font-medium" : "border-transparent text-muted-foreground"}`}
-              onClick={() => openTool(tool)}
-            >
-              {aiTools.find((item) => item.id === tool)?.label}
-            </button>
-          ))}
-        </div>
-        <ScrollArea className="flex-1">
-          <div className="space-y-4 p-5">
-            {analysisLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            ) : (
-              <AIResultContent
-                activeTool={activeTool}
-                symbols={symbols}
-                structure={structure}
-                errors={errors}
-                dismissedErrors={dismissedErrors}
-                formulaInput={formulaInput}
-                setFormulaInput={setFormulaInput}
-                formulaExplanation={formulaExplanation}
-                onFormulaExplain={() => openTool("formula")}
-                onDismissError={(index) => setDismissedErrors((prev) => new Set(prev).add(index))}
-                onCopy={copyResult}
-              />
-            )}
-          </div>
-        </ScrollArea>
-        <div className="grid grid-cols-2 gap-3 border-t p-5">
-          <Button onClick={insertResult} className="bg-foreground text-background hover:bg-foreground/90">
-            插入到文档
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon" onClick={() => void openTool(activeTool)} title="刷新分析">
+            <RotateCcw className="size-4" />
           </Button>
-          <Button variant="outline" onClick={() => copyResult()}>
-            <Copy className="mr-2 size-4" />
-            复制结果
+          <Button variant="ghost" size="icon" onClick={() => setAiPanelMode(aiPanelMode === "fullscreen" ? "floating" : "fullscreen")}>
+            {aiPanelMode === "fullscreen" ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => {
+            setAiPanelVisible(false);
+            setAiPanelMode("floating");
+          }}>
+            <X className="size-4" />
           </Button>
         </div>
+      </div>
+      <div className="flex gap-2 border-b px-5 py-3 text-sm shrink-0">
+        {(["symbols", "structure", "correction", "formula"] as AITool[]).map((tool) => (
+          <button
+            key={tool}
+            className={`border-b-2 px-1 pb-2 ${activeTool === tool ? "border-foreground font-medium" : "border-transparent text-muted-foreground"}`}
+            onClick={() => openTool(tool)}
+          >
+            {aiTools.find((item) => item.id === tool)?.label}
+          </button>
+        ))}
+      </div>
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="space-y-4 p-5">
+          {analysisLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <AIResultContent
+              activeTool={activeTool}
+              symbols={symbols}
+              structure={structure}
+              errors={errors}
+              dismissedErrors={dismissedErrors}
+              formulaInput={formulaInput}
+              setFormulaInput={setFormulaInput}
+              formulaExplanation={formulaExplanation}
+              onFormulaExplain={() => openTool("formula")}
+              onDismissError={(index) => setDismissedErrors((prev) => new Set(prev).add(index))}
+              onCopy={copyResult}
+            />
+          )}
+        </div>
+      </ScrollArea>
+      <div className="grid grid-cols-2 gap-3 border-t p-5 shrink-0">
+        <Button onClick={insertResult} className="bg-foreground text-background hover:bg-foreground/90">
+          插入到文档
+        </Button>
+        <Button variant="outline" onClick={() => copyResult()}>
+          <Copy className="mr-2 size-4" />
+          复制结果
+        </Button>
       </div>
     </aside>
   ) : null;
