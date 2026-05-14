@@ -6,8 +6,7 @@ import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
 import { autocompletion, type CompletionContext } from "@codemirror/autocomplete";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags } from "@codemirror/highlight";
+import { oneDark } from "@codemirror/theme-one-dark";
 import { FileCode2, Pilcrow } from "lucide-react";
 
 import MarkdownRenderer from "@/components/model/markdown-renderer";
@@ -213,24 +212,7 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
           maxRenderedOptions: 8,
         }),
         EditorView.lineWrapping,
-        syntaxHighlighting(
-          HighlightStyle.define([
-            { tag: tags.heading1 as any, color: "var(--foreground)", fontWeight: "bold" },
-            { tag: tags.heading2 as any, color: "var(--foreground)", fontWeight: "bold" },
-            { tag: tags.heading3 as any, color: "var(--foreground)", fontWeight: "bold" },
-            { tag: tags.strong as any, color: "var(--foreground)", fontWeight: "bold" },
-            { tag: tags.emphasis as any, color: "var(--foreground)", fontStyle: "italic" },
-            { tag: tags.monospace as any, color: "var(--foreground)" },
-            { tag: tags.link as any, color: "var(--primary)", textDecoration: "underline" },
-            { tag: tags.url as any, color: "var(--primary)" },
-            { tag: tags.quote as any, color: "var(--muted-foreground)" },
-            { tag: tags.list as any, color: "var(--foreground)" },
-            { tag: tags.meta as any, color: "var(--muted-foreground)" },
-            { tag: tags.contentSeparator as any, color: "var(--border)" },
-            { tag: tags.escape as any, color: "var(--muted-foreground)" },
-            { tag: tags.bracket as any, color: "var(--muted-foreground)" },
-          ])
-        ),
+        oneDark,
         EditorView.theme({
           "&": {
             height: "100%",
@@ -242,6 +224,9 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
               "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace",
             fontSize: "15px",
             lineHeight: "1.65",
+          },
+          "&.cm-focused .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground": {
+            backgroundColor: "rgba(100, 149, 237, 0.4)",
           },
           ".cm-content": {
             minHeight: "100%",
@@ -259,8 +244,8 @@ export const ModelEditorShell = forwardRef<ModelEditorShellHandle, ModelEditorSh
             padding: "0",
             textDecoration: "none",
           },
-          ".cm-selectionBackground, ::selection": {
-            backgroundColor: "var(--muted) !important",
+          ".cm-selectionMatch": {
+            backgroundColor: "rgba(100, 149, 237, 0.25) !important",
           },
           ".cm-cursor, .cm-cursor-primary": {
             borderLeftColor: "var(--foreground) !important",
