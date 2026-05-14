@@ -308,11 +308,12 @@ export default function HomePage() {
         return true;
       }
       savePendingProjectCreation("notion");
+      sessionStorage.setItem("notion_oauth_team_id", selectedTeam);
       await api.post("/auth/provider/switch", {
         provider_type: "notion",
         team_id: selectedTeam,
       });
-      const res = await api.get("/auth/provider/url");
+      const res = await api.get("/auth/provider/url", { params: { provider_type: "notion" } });
       window.location.href = res.data.auth_url;
       return false;
     } catch (err: any) {

@@ -402,6 +402,13 @@ export default function ModelPage() {
         setFormulaExplanation(res.data.explanation || "");
       }
     } catch (err: any) {
+      console.error("[AI Tool] Error details:", {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        url: err.config?.url,
+      });
       toast.error(err.response?.data?.detail || "AI 工具调用失败");
     } finally {
       setAnalysisLoading(false);

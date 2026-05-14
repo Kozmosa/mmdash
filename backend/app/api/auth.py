@@ -138,14 +138,22 @@ def change_password(data: ChangePasswordRequest, current_user: User = Depends(ge
 
 
 def _get_user_provider_binding(db: Session, user_id: str) -> Optional[ProviderBinding]:
-    """Get the active provider binding for a user."""
-    return db.query(ProviderBinding).filter(ProviderBinding.user_id == user_id).first()
+    """Get the active personal (non-team) provider binding for a user."""
+    return (
+        db.query(ProviderBinding)
+        .filter(ProviderBinding.user_id == user_id, ProviderBinding.team_id.is_(None))
+        .first()
+    )
 
 
 @router.get("/provider/url", response_model=ProviderAuthUrl)
-def get_provider_auth_url(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    binding = _get_user_provider_binding(db, current_user.id)
-    provider_type = binding.provider_type if binding else settings.DOCUMENT_PROVIDER
+def get_provider_auth_url(
+    provider_type: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not provider_type:
+        provider_type = settings.DOCUMENT_PROVIDER
     provider = get_provider(provider_type)
     auth_url = provider.get_auth_url()
     if not auth_url:
@@ -155,13 +163,46 @@ def get_provider_auth_url(current_user: User = Depends(get_current_user), db: Se
 
 @router.post("/provider/callback")
 async def provider_callback(data: ProviderCallback, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    binding = _get_user_provider_binding(db, current_user.id)
-    provider_type = binding.provider_type if binding else settings.DOCUMENT_PROVIDER
+    provider_type = data.provider_type or settings.DOCUMENT_PROVIDER
     provider = get_provider(provider_type)
     try:
         creds = await provider.exchange_auth_code(data.code)
-        # Remove old binding if exists
-        old = db.query(ProviderBinding).filter(ProviderBinding.user_id == current_user.id).first()
+        if data.team_id:
+            member = db.query(TeamMember).filter(
+                TeamMember.team_id == data.team_id,
+                TeamMember.user_id == current_user.id
+            ).first()
+            if not member:
+                raise HTTPException(status_code=403, detail="Not a team member")
+            existing = (
+                db.query(ProviderBinding)
+                .filter(
+                    ProviderBinding.team_id == data.team_id,
+                    ProviderBinding.provider_type == provider_type,
+                )
+                .first()
+            )
+            if existing:
+                existing.credentials = __import__("json").dumps(creds)
+                existing.workspace_id = creds.get("workspace_id")
+                existing.workspace_name = creds.get("workspace_name")
+            else:
+                new_binding = ProviderBinding(
+                    user_id=current_user.id,
+                    team_id=data.team_id,
+                    provider_type=provider_type,
+                    credentials=__import__("json").dumps(creds),
+                    workspace_id=creds.get("workspace_id"),
+                    workspace_name=creds.get("workspace_name"),
+                )
+                db.add(new_binding)
+            db.commit()
+            return {"status": "success", "provider_type": provider_type, "team_id": data.team_id}
+        old = (
+            db.query(ProviderBinding)
+            .filter(ProviderBinding.user_id == current_user.id, ProviderBinding.team_id.is_(None))
+            .first()
+        )
         if old:
             db.delete(old)
         new_binding = ProviderBinding(
@@ -174,6 +215,8 @@ async def provider_callback(data: ProviderCallback, current_user: User = Depends
         db.add(new_binding)
         db.commit()
         return {"status": "success", "provider_type": provider_type}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Provider auth failed: {str(e)}")
 
@@ -239,7 +282,7 @@ def get_team_provider(team_id: str, current_user: User = Depends(get_current_use
 
 @router.get("/notion/url", response_model=ProviderAuthUrl)
 def get_notion_auth_url_compat(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return get_provider_auth_url(current_user, db)
+    return get_provider_auth_url(current_user=current_user, db=db)
 
 
 @router.post("/notion/callback")

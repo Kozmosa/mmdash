@@ -43,7 +43,7 @@ class LocalFileProvider(DocumentProvider):
             "title": content.get("title", ""),
         }
 
-    async def create_page(self, title: str, content: str, credentials: dict) -> dict:
+    async def create_page(self, title: str, content: str, credentials: dict, parent_page_id: str | None = None) -> dict:
         url = f"{settings.DOC_SERVER_URL}/api/pages"
         async with httpx.AsyncClient() as client:
             resp = await client.post(

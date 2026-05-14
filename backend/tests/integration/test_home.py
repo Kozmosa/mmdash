@@ -1,7 +1,9 @@
 """Integration tests for home endpoints."""
 
 import io
+import os
 from datetime import datetime, timezone
+from tempfile import TemporaryDirectory
 
 from app.models import Todo, ProblemFile
 
@@ -34,6 +36,27 @@ class TestUploadProblem:
         assert data[0]["filename"] == "test.txt"
         assert data[0]["file_type"] == "text"
         assert "This is a test problem file." in data[0]["extracted_text"]
+
+    def test_upload_multiple_files(self, auth_client, project, mocker):
+        mocker.patch("PyPDF2.PdfReader", return_value=mocker.Mock(
+            pages=[mocker.Mock(extract_text=lambda: "PDF content page 1")]
+        ))
+        response = auth_client.post(
+            f"/api/home/{project.id}/upload",
+            files=[
+                ("files", ("test.pdf", io.BytesIO(b"%PDF-1.4 fake pdf content"), "application/pdf")),
+                ("files", ("test.txt", io.BytesIO(b"hello from txt"), "text/plain")),
+            ],
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert {item["filename"] for item in data} == {"test.pdf", "test.txt"}
+
+    def test_upload_requires_at_least_one_file(self, auth_client, project):
+        response = auth_client.post(f"/api/home/{project.id}/upload")
+        assert response.status_code == 400
+        assert response.json()["detail"] == "No files provided"
 
     def test_upload_rejects_unsupported_extension(self, auth_client, project):
         response = auth_client.post(
@@ -169,6 +192,66 @@ class TestDeleteProblem:
     def test_delete_problem_project_not_found(self, auth_client):
         response = auth_client.delete("/api/home/nonexistent/problems/someid")
         assert response.status_code == 404
+
+
+class TestDownloadProblem:
+    def test_download_problem_success(self, auth_client, project, db):
+        with TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "problem.pdf")
+            with open(file_path, "wb") as handle:
+                handle.write(b"%PDF-1.4 fake pdf content")
+
+            pf = ProblemFile(
+                project_id=project.id,
+                filename="problem.pdf",
+                file_path=file_path,
+                file_type="pdf",
+            )
+            db.add(pf)
+            db.commit()
+            db.refresh(pf)
+
+            response = auth_client.get(f"/api/home/{project.id}/problems/{pf.id}/download")
+            assert response.status_code == 200
+            assert response.content.startswith(b"%PDF-1.4")
+
+    def test_download_problem_missing_on_disk(self, auth_client, project, db):
+        pf = ProblemFile(
+            project_id=project.id,
+            filename="missing.pdf",
+            file_path="/nonexistent/problem.pdf",
+            file_type="pdf",
+        )
+        db.add(pf)
+        db.commit()
+        db.refresh(pf)
+
+        response = auth_client.get(f"/api/home/{project.id}/problems/{pf.id}/download")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "File not found on disk"
+
+    def test_download_after_delete_returns_not_found(self, auth_client, project, db):
+        with TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "problem.txt")
+            with open(file_path, "w", encoding="utf-8") as handle:
+                handle.write("hello")
+
+            pf = ProblemFile(
+                project_id=project.id,
+                filename="problem.txt",
+                file_path=file_path,
+                file_type="text",
+            )
+            db.add(pf)
+            db.commit()
+            db.refresh(pf)
+
+            delete_response = auth_client.delete(f"/api/home/{project.id}/problems/{pf.id}")
+            assert delete_response.status_code == 204
+
+            response = auth_client.get(f"/api/home/{project.id}/problems/{pf.id}/download")
+            assert response.status_code == 404
+            assert response.json()["detail"] == "Problem file not found"
 
 
 class TestCreateTodo:

@@ -68,7 +68,11 @@ def notion_blocks_to_markdown(blocks: list) -> str:
         elif block_type == "code":
             text = _extract_rich_text(block.get("code", {}).get("rich_text", []))
             lang = block.get("code", {}).get("language", "")
-            md_lines.append(f"```{lang}\n{text}\n```")
+            if lang == "markdown":
+                # Preserved markdown content (tables, etc.) — render as-is
+                md_lines.append(text)
+            else:
+                md_lines.append(f"```{lang}\n{text}\n```")
         elif block_type == "equation":
             text = block.get("equation", {}).get("expression", "")
             md_lines.append(f"$$ {text} $$")
@@ -81,4 +85,12 @@ def notion_blocks_to_markdown(blocks: list) -> str:
 
 
 def _extract_rich_text(rich_text: list) -> str:
-    return "".join(t.get("plain_text", "") for t in rich_text)
+    parts = []
+    for t in rich_text:
+        if t.get("type") == "equation":
+            parts.append(f"${t.get('equation', {}).get('expression', '')}$")
+        elif t.get("plain_text"):
+            parts.append(t["plain_text"])
+        elif t.get("text", {}).get("content"):
+            parts.append(t["text"]["content"])
+    return "".join(parts)

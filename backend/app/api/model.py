@@ -24,6 +24,7 @@ DOCUMENT_PROVIDER_TYPES = ("notion", "local_file")
 
 class CreatePageRequest(BaseModel):
     title: str
+    parent_page_id: str | None = None
 
 
 class UpdateContentRequest(BaseModel):
@@ -205,10 +206,13 @@ async def create_and_bind_model_page(
     if token:
         credentials["_token"] = token
 
+    parent_page_id = body.parent_page_id or project.base_data_page_id
     try:
-        result = await provider.create_page(body.title, "", credentials)
+        result = await provider.create_page(body.title, "", credentials, parent_page_id)
     except NotImplementedError:
         raise HTTPException(status_code=400, detail="Current document provider does not support creating pages")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:

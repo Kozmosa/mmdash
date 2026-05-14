@@ -48,6 +48,8 @@ class ProviderAuthUrl(BaseModel):
 
 class ProviderCallback(BaseModel):
     code: str
+    provider_type: Optional[str] = None
+    team_id: Optional[str] = None
 
 
 class ProviderSwitchRequest(BaseModel):

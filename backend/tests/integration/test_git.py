@@ -136,6 +136,24 @@ class TestListExperiments:
             assert response.status_code == 200
             assert response.json()["experiments"] == []
 
+    def test_list_experiments_marks_incomplete_structure(self, auth_client, project):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exp_dir = os.path.join(tmpdir, "results", "20240115_143022_solver_partial")
+            os.makedirs(exp_dir)
+            with open(os.path.join(exp_dir, "analysis.md"), "w") as f:
+                f.write("# Partial")
+
+            response = auth_client.get(
+                f"/api/git/{project.id}/experiments",
+                params={"repo_path": tmpdir},
+            )
+            assert response.status_code == 200
+            exp = response.json()["experiments"][0]
+            assert exp["structure"]["is_complete"] is False
+            assert "fig/" in exp["structure"]["missing"]
+            assert "log.txt" in exp["structure"]["missing"]
+            assert "params_snapshot.json" in exp["structure"]["missing"]
+
 
 class TestGetExperimentDetail:
     def test_get_experiment_detail(self, auth_client, project):
@@ -168,3 +186,19 @@ class TestGetExperimentDetail:
             params={"experiment_dir": "/nonexistent"},
         )
         assert response.status_code == 404
+
+    def test_get_experiment_detail_tolerates_missing_optional_files(self, auth_client, project):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exp_dir = os.path.join(tmpdir, "20240115_143022_solver_partial")
+            os.makedirs(exp_dir)
+
+            response = auth_client.get(
+                f"/api/git/{project.id}/experiment",
+                params={"experiment_dir": exp_dir},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["log"] == ""
+            assert data["analysis"] == ""
+            assert data["params_snapshot"] == {}
+            assert data["fig_files"] == []

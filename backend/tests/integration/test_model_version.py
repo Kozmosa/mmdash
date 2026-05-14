@@ -217,7 +217,17 @@ class TestRollbackModel:
         )
 
     def test_rollback_unsupported_provider(self, auth_client, project, provider_binding, db, test_user, mocker):
-        from app.services.notion_provider import NotionProvider
+        from app.services.document_provider import DocumentProvider
+
+        class ReadOnlyProvider(DocumentProvider):
+            def get_provider_type(self):
+                return "readonly"
+
+            async def fetch_page_content(self, page_id, credentials):
+                return {"page_id": page_id, "blocks": [], "markdown": "", "title": ""}
+
+            async def fetch_page_metadata(self, page_id, credentials):
+                return {"page_id": page_id, "title": ""}
 
         project.model_data_page_id = "page_123"
         snapshot = ModelSnapshot(
@@ -231,7 +241,7 @@ class TestRollbackModel:
         db.commit()
         db.refresh(snapshot)
 
-        mocker.patch("app.api.model_version.get_provider", return_value=NotionProvider())
+        mocker.patch("app.api.model_version.get_provider", return_value=ReadOnlyProvider())
 
         response = auth_client.post(
             f"/api/model-version/{project.id}/rollback",
