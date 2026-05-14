@@ -24,6 +24,7 @@ dependencies = [
     "notion-client==2.2.1",
     "gitpython==3.1.43",
     "python-dotenv==1.0.1",
+    "json-repair>=0.59.10",
 ]
 
 [project.optional-dependencies]

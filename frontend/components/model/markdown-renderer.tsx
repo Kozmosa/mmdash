@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -10,11 +11,79 @@ interface MarkdownRendererProps {
   markdown: string;
 }
 
+function normalizeDisplayMath(md: string): string {
+  // 1. Ensure $$ is alone on its own line (remark-math requires this)
+  const lines = md.split("\n");
+  const out: string[] = [];
+  for (const line of lines) {
+    if (!line.includes("$$")) {
+      out.push(line);
+      continue;
+    }
+    // Split line at $$ boundaries, put each segment on its own line
+    let remaining = line;
+    while (remaining.includes("$$")) {
+      const idx = remaining.indexOf("$$");
+      const before = remaining.slice(0, idx).trim();
+      if (before) out.push(before);
+      out.push("$$");
+      remaining = remaining.slice(idx + 2);
+    }
+    const after = remaining.trim();
+    if (after) out.push(after);
+  }
+  // 2. Remove blank lines inside $$...$$ blocks
+  const result: string[] = [];
+  let inMath = false;
+  for (const line of out) {
+    if (line.trim() === "$$") {
+      inMath = !inMath;
+      result.push("$$");
+    } else if (inMath && line.trim() === "") {
+      continue;
+    } else {
+      result.push(line);
+    }
+  }
+  return result.join("\n");
+}
+
+function wrapBareLatexEnvironments(md: string): string {
+  const lines = md.split("\n");
+  const result: string[] = [];
+  let inMath = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\$\$/.test(line.trim())) {
+      inMath = !inMath;
+      result.push(line);
+    } else if (!inMath && /\\begin\{/.test(line) && !/\$\$/.test(line)) {
+      inMath = true;
+      result.push("$$");
+      result.push(line);
+    } else if (inMath && /\\end\{/.test(line) && !/\$\$/.test(line)) {
+      result.push(line);
+      result.push("$$");
+      inMath = false;
+    } else {
+      result.push(line);
+    }
+  }
+  if (inMath) result.push("$$");
+  return result.join("\n");
+}
+
 export default function MarkdownRenderer({ markdown }: MarkdownRendererProps) {
+  const processed = useMemo(() => {
+    let md = normalizeDisplayMath(markdown);
+    md = wrapBareLatexEnvironments(md);
+    return md;
+  }, [markdown]);
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
+      rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
       components={{
         h1: ({ children, ...props }) => (
           <h1 className="mb-5 mt-2 text-3xl font-bold leading-tight" {...props}>

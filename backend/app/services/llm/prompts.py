@@ -8,37 +8,51 @@ from sqlalchemy.orm import Session
 
 from app.models import Team
 
-DEFAULT_LLM_PROMPTS: dict[str, str] = {
-    "symbols": """Analyze the following mathematical modeling document and extract all mathematical symbols used.
-For each symbol, provide:
-1. The symbol itself
-2. Its meaning/context in the model
-3. Whether it appears to be user-defined or standard notation
+_MATH_DELIMITER_RULE = """
+CRITICAL FORMATTING RULE: All mathematical expressions MUST use consistent delimiters:
+- Inline math (variables, symbols, subscripts, superscripts, formulas): ALWAYS wrap in $...$, e.g. $x(t)$, $\\lambda(t)$, $\\Delta P(t)$
+- Display math (equations, piecewise, multi-line): ALWAYS wrap in $$...$$, e.g. $$\\begin{{cases}}...\\end{{cases}}$$
+NEVER use backticks `...` for math — backticks are for inline code only.
+NEVER use **bold** or *italic* for variable names — use $...$ instead.
+NEVER output raw LaTeX commands without $ or $$ delimiters.
+"""
 
-Return as a JSON array of objects with fields: symbol, meaning, source(\"user\" or \"inferred\").
+DEFAULT_LLM_PROMPTS: dict[str, str] = {
+    "symbols": f"""Analyze the following mathematical modeling document and extract all mathematical symbols used.
+For each symbol, provide:
+1. The symbol itself (using LaTeX notation)
+2. Its meaning/context in the model (explain in Chinese)
+3. Its type: \"variable\", \"parameter\", \"constant\", \"function\", or \"operator\"
+
+Return as a JSON array of objects with fields: symbol, meaning, type.
+The meaning must be in Chinese. Symbols and LaTeX should remain in English.
+{_MATH_DELIMITER_RULE}
 
 Document:
-{content}
+{{content}}
 """,
-    "structure": """Analyze the structure of the following mathematical modeling document.
-Provide:
-1. A brief overall summary
-2. Key sections identified
-3. How the model relates to the problem statement
+    "structure": f"""Analyze the structure of the following mathematical modeling document.
+Provide a Chinese analysis with:
+1. A brief overall summary (in Chinese)
+2. Key sections identified (section titles in Chinese)
+3. How the model relates to the problem statement (in Chinese)
 
 Return as JSON with fields: summary, sections(array), problem_relationship.
+All text content must be in Chinese. Technical terms, code, and formulas may remain in English.
+{_MATH_DELIMITER_RULE}
 
 Document:
-{content}
+{{content}}
 """,
-    "formula": """Explain the following mathematical formula in detail, breaking down each term and its meaning.
+    "formula": f"""Explain the following mathematical formula in detail, breaking down each term and its meaning.
 
-Formula: {formula}
-Context: {context}
+Formula: {{formula}}
+Context: {{context}}
 
-Provide a clear, educational explanation suitable for a math modeling team member.
+Provide a clear, educational explanation in Chinese. Keep variable names, formulas, and mathematical notation in English.
+{_MATH_DELIMITER_RULE}
 """,
-    "errors": """Review the following mathematical modeling document for potential errors.
+    "errors": f"""Review the following mathematical modeling document for potential errors.
 Look for:
 1. Mathematical typos or inconsistent notation
 2. Logical inconsistencies in the model assumptions
@@ -46,15 +60,17 @@ Look for:
 4. Formula errors or dimension mismatches
 
 For each issue found, provide:
-- The relevant text/excerpt
-- A description of the potential error
+- The relevant text/excerpt (original text from the document)
+- A description of the potential error (explain in Chinese)
 - A severity level: \"warning\" or \"error\"
 
 Return as a JSON array of objects with fields: excerpt, description, severity.
+Description must be in Chinese. Keep code, formulas, and technical terms in English.
 If no issues are found, return an empty array.
+{_MATH_DELIMITER_RULE}
 
 Document:
-{content}
+{{content}}
 """,
 }
 

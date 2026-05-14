@@ -14,6 +14,7 @@ import {
   Download,
   FileText,
   GitCommit,
+  Loader2,
   Maximize2,
   Minimize2,
   Network,
@@ -58,6 +59,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import MarkdownRenderer from "@/components/model/markdown-renderer";
+import katex from "katex";
 import { ModelEditorShell, type ModelEditorShellHandle } from "@/components/model/model-editor-shell";
 
 interface Team {
@@ -384,20 +386,22 @@ export default function ModelPage() {
     }
   };
 
-  const openTool = async (tool: AITool) => {
+  const openTool = async (tool: AITool, forceRefresh = false) => {
     setActiveTool(tool);
     setAiPanelVisible(true);
     if (tool === "table" || tool === "formula_block") return;
     setAnalysisLoading(true);
+    const params: Record<string, string> = {};
+    if (forceRefresh) params.refresh = "true";
     try {
       if (tool === "symbols") {
-        const res = await api.get(`/model/${selectedProject}/analyze/symbols`);
+        const res = await api.get(`/model/${selectedProject}/analyze/symbols`, { params });
         setSymbols(res.data.symbols || []);
       } else if (tool === "structure") {
-        const res = await api.get(`/model/${selectedProject}/analyze/structure`);
+        const res = await api.get(`/model/${selectedProject}/analyze/structure`, { params });
         setStructure(res.data.structure || {});
       } else if (tool === "correction") {
-        const res = await api.get(`/model/${selectedProject}/analyze/errors`);
+        const res = await api.get(`/model/${selectedProject}/analyze/errors`, { params });
         setErrors(res.data.errors || []);
         setDismissedErrors(new Set());
       } else if (tool === "formula") {
@@ -406,7 +410,7 @@ export default function ModelPage() {
         setFormulaInput(formula);
         if (!formula) return;
         const res = await api.post(`/model/${selectedProject}/analyze/formula`, null, {
-          params: { formula },
+          params: { formula, ...(forceRefresh ? { refresh: "true" } : {}) },
         });
         setFormulaExplanation(res.data.explanation || "");
       }
@@ -527,7 +531,7 @@ export default function ModelPage() {
           </p>
         </div>
         <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={() => void openTool(activeTool)} title="刷新分析">
+          <Button variant="ghost" size="icon" onClick={() => void openTool(activeTool, true)} title="强制刷新（跳过缓存）">
             <RotateCcw className="size-4" />
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setAiPanelMode(aiPanelMode === "fullscreen" ? "floating" : "fullscreen")}>
@@ -555,10 +559,17 @@ export default function ModelPage() {
       <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-4 p-5">
           {analysisLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-20 w-full" />
+            <div className="flex min-h-60 flex-col items-center justify-center gap-4 rounded-lg border border-dashed text-center">
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">AI 正在分析文档...</p>
+                <p className="mt-1 text-xs text-muted-foreground/60">
+                  {activeTool === "symbols" ? "识别数学符号" :
+                   activeTool === "structure" ? "解析文档结构" :
+                   activeTool === "correction" ? "检查潜在错误" :
+                   activeTool === "formula" ? "解析公式含义" : "处理中"}
+                </p>
+              </div>
             </div>
           ) : (
             <AIResultContent
@@ -1219,6 +1230,15 @@ function AIResultContent({
   return <ResultCard title="公式块" badge="LaTeX" description="$$ x(t+1)=Ax(t)+Bu(t) $$" />;
 }
 
+function KatexInline({ tex }: { tex: string }) {
+  try {
+    const html = katex.renderToString(tex, { throwOnError: false, displayMode: false });
+    return <span className="font-mono text-lg font-semibold" dangerouslySetInnerHTML={{ __html: html }} />;
+  } catch {
+    return <span className="font-mono text-lg font-semibold">{tex}</span>;
+  }
+}
+
 function ResultCard({
   title,
   badge,
@@ -1237,10 +1257,12 @@ function ResultCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-lg font-semibold">{title}</span>
+            <KatexInline tex={title} />
             {badge && <Badge variant="secondary">{badge}</Badge>}
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{description}</p>
+          <div className="mt-2 text-sm leading-6 text-muted-foreground [&_p]:my-1">
+            <MarkdownRenderer markdown={description} />
+          </div>
         </div>
         <div className="flex shrink-0 gap-1">
           {action}

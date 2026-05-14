@@ -271,39 +271,41 @@ async def create_and_bind_model_page(
 
 
 @router.get("/{project_id}/analyze/symbols")
-async def get_symbols(project_id: str, request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_symbols(project_id: str, request: Request, refresh: bool = False, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     result = await get_model_content(project_id, request, current_user, db)
     markdown = result.get("markdown", "")
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     from app.services.cache import get_cached_llm_result, set_cached_llm_result
-    cached = get_cached_llm_result(project_id, "symbols", markdown)
-    if cached is not None:
-        return {"symbols": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
+    if not refresh:
+        cached = get_cached_llm_result(project_id, "symbols", markdown)
+        if cached is not None:
+            return {"symbols": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
     symbols = await analyze_symbols_with_configured_model(markdown, project, current_user, db)
     set_cached_llm_result(project_id, "symbols", markdown, json.dumps(symbols))
     return {"symbols": symbols, "disclaimer": "仅供参考", "cached": False}
 
 
 @router.get("/{project_id}/analyze/structure")
-async def get_structure(project_id: str, request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_structure(project_id: str, request: Request, refresh: bool = False, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     result = await get_model_content(project_id, request, current_user, db)
     markdown = result.get("markdown", "")
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     from app.services.cache import get_cached_llm_result, set_cached_llm_result
-    cached = get_cached_llm_result(project_id, "structure", markdown)
-    if cached is not None:
-        return {"structure": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
+    if not refresh:
+        cached = get_cached_llm_result(project_id, "structure", markdown)
+        if cached is not None:
+            return {"structure": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
     structure = await analyze_structure_with_configured_model(markdown, project, current_user, db)
     set_cached_llm_result(project_id, "structure", markdown, json.dumps(structure))
     return {"structure": structure, "disclaimer": "仅供参考", "cached": False}
 
 
 @router.post("/{project_id}/analyze/formula")
-async def explain_formula_endpoint(project_id: str, formula: str, request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def explain_formula_endpoint(project_id: str, formula: str, request: Request, refresh: bool = False, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     result = await get_model_content(project_id, request, current_user, db)
     markdown = result.get("markdown", "")
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -311,25 +313,27 @@ async def explain_formula_endpoint(project_id: str, formula: str, request: Reque
         raise HTTPException(status_code=404, detail="Project not found")
     from app.services.cache import get_cached_llm_result, set_cached_llm_result
     cache_content = f"{formula}\n{markdown[:2000]}"
-    cached = get_cached_llm_result(project_id, "formula", cache_content)
-    if cached is not None:
-        return {"explanation": cached, "disclaimer": "仅供参考", "cached": True}
+    if not refresh:
+        cached = get_cached_llm_result(project_id, "formula", cache_content)
+        if cached is not None:
+            return {"explanation": cached, "disclaimer": "仅供参考", "cached": True}
     explanation = await explain_formula_with_configured_model(formula, markdown[:2000], project, current_user, db)
     set_cached_llm_result(project_id, "formula", cache_content, explanation)
     return {"explanation": explanation, "disclaimer": "仅供参考", "cached": False}
 
 
 @router.get("/{project_id}/analyze/errors")
-async def get_errors(project_id: str, request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_errors(project_id: str, request: Request, refresh: bool = False, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     result = await get_model_content(project_id, request, current_user, db)
     markdown = result.get("markdown", "")
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     from app.services.cache import get_cached_llm_result, set_cached_llm_result
-    cached = get_cached_llm_result(project_id, "errors", markdown)
-    if cached is not None:
-        return {"errors": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
+    if not refresh:
+        cached = get_cached_llm_result(project_id, "errors", markdown)
+        if cached is not None:
+            return {"errors": json.loads(cached), "disclaimer": "仅供参考", "cached": True}
     errors = await find_errors_with_configured_model(markdown, project, current_user, db)
     set_cached_llm_result(project_id, "errors", markdown, json.dumps(errors))
     return {"errors": errors, "disclaimer": "仅供参考", "cached": False}

@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from fastapi import HTTPException
+from json_repair import repair_json
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -87,16 +88,10 @@ def _parse_json_content(content: str) -> Any:
     if not content:
         return {}
     try:
-        return json.loads(content)
+        return json.loads(repair_json(content))
     except Exception:
-        start = content.find("{")
-        end = content.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(content[start : end + 1])
-            except Exception:
-                return {}
-    return {}
+        logger.warning("json-repair failed, content_preview=%s", content[:500])
+        return {}
 
 
 async def _chat(project: Project, current_user: User, db: Session, prompt: str, json_response: bool) -> str:
