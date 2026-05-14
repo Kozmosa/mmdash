@@ -46,13 +46,14 @@ class DocumentProvider(ABC):
         """
         raise NotImplementedError("OAuth not supported by this provider")
 
-    async def create_page(self, title: str, content: str, credentials: dict) -> dict:
+    async def create_page(self, title: str, content: str, credentials: dict, parent_page_id: str | None = None) -> dict:
         """Create a new document in the provider.
 
         Args:
             title: Document title.
             content: Initial Markdown content (may be empty).
             credentials: Provider-specific credentials dict.
+            parent_page_id: Optional parent page/database ID to create the page under.
 
         Returns:
             {"page_id": str, "title": str}

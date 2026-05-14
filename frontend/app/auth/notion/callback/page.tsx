@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 
 const PENDING_PROJECT_CREATION_KEY = "pending_project_creation";
+const NOTION_OAUTH_TEAM_ID_KEY = "notion_oauth_team_id";
 
 function NotionCallbackContent() {
   const router = useRouter();
@@ -23,9 +24,15 @@ function NotionCallbackContent() {
 
     const completeAuth = async () => {
       try {
-        await api.post("/auth/provider/callback", { code });
+        const teamId = sessionStorage.getItem(NOTION_OAUTH_TEAM_ID_KEY);
+        sessionStorage.removeItem(NOTION_OAUTH_TEAM_ID_KEY);
+        await api.post("/auth/provider/callback", {
+          code,
+          provider_type: "notion",
+          ...(teamId ? { team_id: teamId } : {}),
+        });
         if (cancelled) return;
-        setStatus("授权成功，正在返回项目创建流程...");
+        setStatus("授权成功，正在返回...");
         if (sessionStorage.getItem(PENDING_PROJECT_CREATION_KEY)) {
           router.replace("/home");
           return;

@@ -211,7 +211,11 @@ export function ModelSelector({ teamId, canManageTeamLlm = false, teamName, onMo
 
   async function handleSelectModel(scope: "team" | "personal") {
     const activeScope = scope === "team" ? teamScope : personalScope;
-    if (!activeScope.bindingId || !activeScope.selectedModel) {
+    await saveModelSelection(scope, activeScope.bindingId, activeScope.selectedModel, activeScope);
+  }
+
+  async function saveModelSelection(scope: "team" | "personal", bindingId: string, modelId: string, activeScope: ScopeState) {
+    if (!bindingId || !modelId) {
       setError("请先完成提供商配置并选择模型");
       return;
     }
@@ -220,24 +224,18 @@ export function ModelSelector({ teamId, canManageTeamLlm = false, teamName, onMo
     setError("");
 
     try {
-      await llmApi.selectModel(activeScope.bindingId, activeScope.selectedModel);
+      await llmApi.selectModel(bindingId, modelId);
       const nextBinding = activeScope.binding
-        ? {
-            ...activeScope.binding,
-            selected_model: activeScope.selectedModel,
-          }
+        ? { ...activeScope.binding, selected_model: modelId }
         : activeScope.binding;
-      const nextScope = {
-        ...activeScope,
-        binding: nextBinding,
-      };
+      const nextScope = { ...activeScope, binding: nextBinding, selectedModel: modelId };
       if (scope === "team") {
         setTeamScope(nextScope);
       } else {
         setPersonalScope(nextScope);
       }
-      setSuccess(`已切换到模型「${activeScope.selectedModel}」`);
-      onModelSelected?.(activeScope.bindingId, activeScope.selectedModel);
+      setSuccess(`已切换到模型「${modelId}」`);
+      onModelSelected?.(bindingId, modelId);
     } catch (err: any) {
       setError(
         "保存模型选择失败: " +
@@ -415,7 +413,11 @@ export function ModelSelector({ teamId, canManageTeamLlm = false, teamName, onMo
                             type="button"
                             key={model.id}
                             className="w-full text-left px-3 py-2 border-b last:border-b-0 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => setTeamScope((prev) => ({ ...prev, selectedModel: model.id }))}
+                            onClick={() => {
+                              if (!teamCanEdit) return;
+                              setTeamScope((prev) => ({ ...prev, selectedModel: model.id }));
+                              void saveModelSelection("team", teamScope.bindingId, model.id, { ...teamScope, selectedModel: model.id });
+                            }}
                             disabled={!teamCanEdit}
                           >
                             <div className="flex items-center justify-between gap-2">
@@ -434,10 +436,28 @@ export function ModelSelector({ teamId, canManageTeamLlm = false, teamName, onMo
                   </div>
                 )}
 
-                <Button variant="outline" onClick={() => handleEditConfig("team")} className="w-full">
-                  <Pencil className="mr-2 h-4 w-4" />
-                  重新配置团队模型
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => handleEditConfig("team")} className="flex-1">
+                    <Pencil className="mr-2 h-4 w-4" />
+                    重新配置团队模型
+                  </Button>
+                  {teamScope.models.length > 0 && (
+                    <Button
+                      onClick={() => void handleSelectModel("team")}
+                      disabled={loading || !teamScope.selectedModel}
+                      className="flex-1"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          保存中...
+                        </>
+                      ) : (
+                        "保存团队模型"
+                      )}
+                    </Button>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -552,7 +572,10 @@ export function ModelSelector({ teamId, canManageTeamLlm = false, teamName, onMo
                           type="button"
                           key={model.id}
                           className="w-full text-left px-3 py-2 border-b last:border-b-0 hover:bg-muted/40"
-                          onClick={() => setPersonalScope((prev) => ({ ...prev, selectedModel: model.id }))}
+                          onClick={() => {
+                            setPersonalScope((prev) => ({ ...prev, selectedModel: model.id }));
+                            void saveModelSelection("personal", personalScope.bindingId, model.id, { ...personalScope, selectedModel: model.id });
+                          }}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="truncate">

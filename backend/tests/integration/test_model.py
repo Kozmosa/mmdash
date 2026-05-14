@@ -165,8 +165,8 @@ class TestAnalyzeSymbols:
         mocker.patch("app.api.model.get_cached_page", return_value=None)
 
         mocker.patch(
-            "app.api.model.analyze_symbols",
-            return_value=[{"name": "x", "type": "variable"}],
+            "app.api.model.analyze_symbols_with_configured_model",
+            mocker.AsyncMock(return_value=[{"name": "x", "type": "variable"}]),
         )
 
         response = auth_client.get(f"/api/model/{project.id}/analyze/symbols")
@@ -186,8 +186,8 @@ class TestAnalyzeStructure:
         mocker.patch("app.api.model.get_cached_page", return_value=None)
 
         mocker.patch(
-            "app.api.model.analyze_structure",
-            return_value={"sections": ["Intro", "Method"]},
+            "app.api.model.analyze_structure_with_configured_model",
+            mocker.AsyncMock(return_value={"sections": ["Intro", "Method"]}),
         )
 
         response = auth_client.get(f"/api/model/{project.id}/analyze/structure")
@@ -206,8 +206,8 @@ class TestExplainFormula:
         mocker.patch("app.api.model.get_cached_page", return_value=None)
 
         mocker.patch(
-            "app.api.model.explain_formula",
-            return_value="Energy equals mass times speed of light squared.",
+            "app.api.model.explain_formula_with_configured_model",
+            mocker.AsyncMock(return_value="Energy equals mass times speed of light squared."),
         )
 
         response = auth_client.post(
@@ -229,8 +229,8 @@ class TestFindErrors:
         mocker.patch("app.api.model.get_cached_page", return_value=None)
 
         mocker.patch(
-            "app.api.model.find_errors",
-            return_value=[{"line": 1, "message": "Division by zero"}],
+            "app.api.model.find_errors_with_configured_model",
+            mocker.AsyncMock(return_value=[{"line": 1, "message": "Division by zero"}]),
         )
 
         response = auth_client.get(f"/api/model/{project.id}/analyze/errors")

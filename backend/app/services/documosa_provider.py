@@ -42,7 +42,7 @@ class DocumosaProvider(DocumentProvider):
             "title": data.get("title", ""),
         }
 
-    async def create_page(self, title: str, content: str, credentials: dict) -> dict:
+    async def create_page(self, title: str, content: str, credentials: dict, parent_page_id: str | None = None) -> dict:
         url = f"{self._base_url(credentials)}/api/mmdash/documents"
         async with httpx.AsyncClient() as client:
             resp = await client.post(

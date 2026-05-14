@@ -90,7 +90,7 @@ class TestLogin:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         assert response.status_code == 400
-        assert "Incorrect email or password" in response.json()["detail"]
+        assert "Incorrect username/email or password" in response.json()["detail"]
 
     def test_login_nonexistent_user(self, client):
         response = client.post(
@@ -99,7 +99,7 @@ class TestLogin:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         assert response.status_code == 400
-        assert "Incorrect email or password" in response.json()["detail"]
+        assert "Incorrect username/email or password" in response.json()["detail"]
 
     def test_login_missing_fields(self, client):
         response = client.post(

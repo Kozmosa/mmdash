@@ -374,7 +374,10 @@ export default function SettingsPage() {
     try {
       if (providerType === "notion") {
         // Need OAuth first
-        const res = await api.get("/auth/provider/url")
+        if (providerTeamId) {
+          sessionStorage.setItem("notion_oauth_team_id", providerTeamId)
+        }
+        const res = await api.get("/auth/provider/url", { params: { provider_type: "notion" } })
         if (res.data.auth_url) {
           window.location.href = res.data.auth_url
           return

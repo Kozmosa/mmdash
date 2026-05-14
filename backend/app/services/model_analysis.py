@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any
 
 from fastapi import HTTPException
@@ -8,6 +9,8 @@ from app.core.config import get_settings
 from app.models import Project, ProviderBinding, User
 from app.services.llm.factory import get_provider_for_binding
 from app.services.llm.prompts import get_team_llm_prompts
+
+logger = logging.getLogger("mmdash.llm")
 
 settings = get_settings()
 
@@ -53,12 +56,19 @@ def _find_llm_binding(project: Project, current_user: User, db: Session) -> Prov
 def _get_provider_and_model(project: Project, current_user: User, db: Session):
     binding = _find_llm_binding(project, current_user, db)
     if binding:
+        logger.info(
+            "LLM binding found: id=%s provider=%s team_id=%s user_id=%s",
+            binding.id, binding.provider_type, binding.team_id, binding.user_id,
+        )
         credentials = _load_credentials(binding)
         selected_model = credentials.get("selected_model")
+        logger.info("LLM credentials: has_api_key=%s selected_model=%s", bool(credentials.get("api_key")), selected_model)
         if not selected_model:
+            logger.warning("LLM binding exists but no model selected (binding id=%s)", binding.id)
             raise HTTPException(status_code=400, detail="请先在设置页选择要使用的模型")
         return get_provider_for_binding(binding), selected_model
 
+    logger.info("No LLM binding found, falling back to env OPENAI_API_KEY (present=%s)", bool(settings.OPENAI_API_KEY))
     if settings.OPENAI_API_KEY:
         return get_provider_for_binding(None), DEFAULT_ENV_MODEL
 
@@ -94,6 +104,7 @@ async def _chat(project: Project, current_user: User, db: Session, prompt: str, 
     kwargs: dict[str, Any] = {"temperature": 0.3}
     if json_response:
         kwargs["response_format"] = {"type": "json_object"}
+    logger.info("LLM call: model=%s prompt_len=%d json_response=%s prompt_preview=%s", model, len(prompt), json_response, prompt[:200])
     try:
         response = await provider.create_chat_completion(
             model=model,
@@ -101,8 +112,11 @@ async def _chat(project: Project, current_user: User, db: Session, prompt: str, 
             **kwargs,
         )
     except Exception as e:
+        logger.error("LLM call failed: model=%s error=%s", model, str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=f"LLM provider error: {str(e)}")
-    return _extract_message_content(response)
+    content = _extract_message_content(response)
+    logger.info("LLM response: model=%s content_len=%d content_preview=%s", model, len(content), content[:200])
+    return content
 
 
 async def analyze_symbols_with_configured_model(
@@ -111,14 +125,17 @@ async def analyze_symbols_with_configured_model(
     current_user: User,
     db: Session,
 ) -> list[dict[str, Any]]:
+    logger.info("Analyze symbols: project_id=%s input_len=%d", project.id, len(markdown_text))
     prompt = get_team_llm_prompts(db, project.team_id)["symbols"].format(content=markdown_text[:4000])
     content = await _chat(project, current_user, db, prompt, True)
     data = _parse_json_content(content)
+    logger.info("Analyze symbols parsed: type=%s keys=%s", type(data).__name__, list(data.keys()) if isinstance(data, dict) else "N/A")
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
         symbols = data.get("symbols", [])
         return symbols if isinstance(symbols, list) else []
+    logger.warning("Analyze symbols returned unexpected format, returning []")
     return []
 
 
