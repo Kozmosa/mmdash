@@ -85,7 +85,7 @@ async def fetch_zotero_items(config: ZoteroConfig) -> tuple[list[dict], int]:
     return all_items, last_version
 
 
-async def sync_zotero_for_project(project_id: str, db: Session) -> dict:
+async def sync_zotero_for_project(project_id: str, db: Session, user_id: str | None = None) -> dict:
     config = db.query(ZoteroConfig).filter(ZoteroConfig.project_id == project_id).first()
     if not config:
         return {"status": "no_config"}
@@ -119,7 +119,7 @@ async def sync_zotero_for_project(project_id: str, db: Session) -> dict:
             else:
                 citation = Citation(
                     project_id=project_id,
-                    user_id=config.project.owner_id,
+                    user_id=user_id or config.project.team.owner_id,
                     **parsed,
                 )
                 db.add(citation)
