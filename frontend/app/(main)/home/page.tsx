@@ -163,6 +163,12 @@ export default function HomePage() {
 
   useEffect(() => {
     if (selectedProject) {
+      localStorage.setItem("current_project_id", selectedProject);
+    }
+  }, [selectedProject]);
+
+  useEffect(() => {
+    if (selectedProject) {
       setLoadingTodos(true);
       setLoadingProblems(true);
       Promise.all([
