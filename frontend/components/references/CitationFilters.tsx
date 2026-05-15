@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search } from "lucide-react"
@@ -19,6 +20,21 @@ interface Props {
 }
 
 export function CitationFilters({ filters, onChange }: Props) {
+  const [localQ, setLocalQ] = useState(filters.q)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localQ !== filters.q) {
+        onChange({ ...filters, q: localQ })
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [localQ])
+
+  useEffect(() => {
+    setLocalQ(filters.q)
+  }, [filters.q])
+
   const update = (key: keyof Filters, value: string) => {
     onChange({ ...filters, [key]: value })
   }
@@ -30,8 +46,8 @@ export function CitationFilters({ filters, onChange }: Props) {
         <Input
           placeholder="搜索标题、作者、刊名..."
           className="pl-8 w-[280px]"
-          value={filters.q}
-          onChange={(e) => update("q", e.target.value)}
+          value={localQ}
+          onChange={(e) => setLocalQ(e.target.value)}
         />
       </div>
       <Input

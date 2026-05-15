@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Project, TeamMember, User, Citation, ZoteroConfig
 from app.api.auth import get_current_user
-from app.services.bibtex import generate_bibtex
+from app.services.bibtex import generate_bibtex_batch
 from app.services.zotero_sync import sync_zotero_for_project
 
 router = APIRouter()
@@ -147,12 +147,9 @@ def export_bibtex(
         query = query.filter(Citation.id.in_(body.ids))
 
     citations = query.all()
-    if not citations:
-        raise HTTPException(status_code=404, detail="No citations found")
 
-    bibtex_entries = []
-    for c in citations:
-        bibtex_entries.append(generate_bibtex({
+    entries = [
+        {
             "bibtex_type": c.bibtex_type,
             "bibtex_key": c.bibtex_key,
             "title": c.title,
@@ -164,9 +161,10 @@ def export_bibtex(
             "pages": c.pages,
             "doi": c.doi,
             "url": c.url,
-        }))
-
-    content = "\n\n".join(bibtex_entries)
+        }
+        for c in citations
+    ]
+    content = generate_bibtex_batch(entries)
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(content, media_type="text/plain; charset=utf-8")
 
@@ -204,7 +202,8 @@ def list_citations(
     if source:
         query = query.filter(Citation.source == source)
 
-    sort_column = getattr(Citation, sort_by, Citation.created_at)
+    allowed_sort = {"created_at", "title", "year", "journal", "authors"}
+    sort_column = getattr(Citation, sort_by, Citation.created_at) if sort_by in allowed_sort else Citation.created_at
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
@@ -258,6 +257,9 @@ def create_citation(
     db: Session = Depends(get_db),
 ):
     _check_project_access(project_id, current_user, db)
+
+    if not title or not title.strip():
+        raise HTTPException(status_code=400, detail="Title is required")
 
     citation = Citation(
         project_id=project_id,
@@ -326,6 +328,8 @@ def update_citation(
     for field in fields:
         value = locals().get(field)
         if value is not None:
+            if field == "title" and value == "":
+                raise HTTPException(status_code=400, detail="Title cannot be empty")
             setattr(citation, field, value)
 
     citation.updated_at = datetime.utcnow()

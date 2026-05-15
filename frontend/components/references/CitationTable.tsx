@@ -71,8 +71,7 @@ export function CitationTable({ citations, loading, selectedIds, onSelectChange,
           <TableRow>
             <TableHead className="w-[40px]">
               <Checkbox
-                checked={allSelected}
-                data-state={someSelected ? "indeterminate" : allSelected ? "checked" : "unchecked"}
+                checked={someSelected ? "indeterminate" : allSelected}
                 onCheckedChange={toggleAll}
               />
             </TableHead>
@@ -101,10 +100,10 @@ export function CitationTable({ citations, loading, selectedIds, onSelectChange,
               </TableCell>
               <TableCell>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(c)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(c)} aria-label="编辑">
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDelete(c.id)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDelete(c.id)} aria-label="删除">
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

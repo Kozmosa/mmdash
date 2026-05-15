@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useAuthStore } from "@/stores/auth"
 import api from "@/lib/api"
 import { CitationTable } from "@/components/references/CitationTable"
@@ -52,7 +52,7 @@ export default function ReferencesPage() {
     if (pid) setCurrentProjectId(pid)
   }, [])
 
-  const fetchCitations = async () => {
+  const fetchCitations = useCallback(async () => {
     if (!currentProjectId) return
     setLoading(true)
     try {
@@ -71,9 +71,9 @@ export default function ReferencesPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentProjectId, filters])
 
-  const fetchSyncStatus = async () => {
+  const fetchSyncStatus = useCallback(async () => {
     if (!currentProjectId) return
     try {
       const res = await api.get(`/references/${currentProjectId}/sync-status`)
@@ -81,15 +81,15 @@ export default function ReferencesPage() {
     } catch (e) {
       setSyncStatus(null)
     }
-  }
+  }, [currentProjectId])
 
   useEffect(() => {
     fetchCitations()
-  }, [currentProjectId, filters])
+  }, [fetchCitations])
 
   useEffect(() => {
     fetchSyncStatus()
-  }, [currentProjectId])
+  }, [fetchSyncStatus])
 
   const handleDelete = async (id: string) => {
     if (!confirm("确定删除这条引文？")) return

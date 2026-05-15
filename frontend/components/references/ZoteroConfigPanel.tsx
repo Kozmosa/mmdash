@@ -7,13 +7,22 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import api from "@/lib/api"
 
+interface ZoteroConfig {
+  library_id: string
+  library_type: string
+  api_key_masked: string
+  last_sync_at: string | null
+  last_sync_status: string
+  last_sync_error: string | null
+}
+
 interface Props {
   projectId: string
   onConfigChange: () => void
 }
 
 export function ZoteroConfigPanel({ projectId, onConfigChange }: Props) {
-  const [config, setConfig] = useState<any>(null)
+  const [config, setConfig] = useState<ZoteroConfig | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ api_key: "", library_id: "", library_type: "user" })
 
