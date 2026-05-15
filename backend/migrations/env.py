@@ -14,6 +14,7 @@ from app.database import Base
 from app.models import (
     User, Team, TeamMember, NotionBinding, ProviderBinding,
     Project, Todo, ProblemFile, TimelineEvent, ModelSnapshot,
+    Citation, ZoteroConfig,
 )
 
 # this is the Alembic Config object, which provides

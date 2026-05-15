@@ -18,6 +18,7 @@ const pageTitles: Record<string, string> = {
   "/timeline": "时间线",
   "/model": "模型",
   "/experiment": "实验和求解",
+  "/references": "引文管理",
   "/settings": "设置",
 }
 
