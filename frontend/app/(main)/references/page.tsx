@@ -44,7 +44,7 @@ export default function ReferencesPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingCitation, setEditingCitation] = useState<Citation | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
-  const [filters, setFilters] = useState({ q: "", year_from: "", year_to: "", source: "", sort_by: "created_at", sort_order: "desc" })
+  const [filters, setFilters] = useState({ q: "", year_from: "", year_to: "", source: "all", sort_by: "created_at", sort_order: "desc" })
   const [currentProjectId, setCurrentProjectId] = useState("")
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export default function ReferencesPage() {
       if (filters.q) params.append("q", filters.q)
       if (filters.year_from) params.append("year_from", filters.year_from)
       if (filters.year_to) params.append("year_to", filters.year_to)
-      if (filters.source) params.append("source", filters.source)
+      if (filters.source && filters.source !== "all") params.append("source", filters.source)
       params.append("sort_by", filters.sort_by)
       params.append("sort_order", filters.sort_order)
 

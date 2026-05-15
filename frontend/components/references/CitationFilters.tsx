@@ -51,7 +51,7 @@ export function CitationFilters({ filters, onChange }: Props) {
           <SelectValue placeholder="来源" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">全部</SelectItem>
+          <SelectItem value="all">全部</SelectItem>
           <SelectItem value="manual">手动</SelectItem>
           <SelectItem value="zotero">Zotero</SelectItem>
         </SelectContent>

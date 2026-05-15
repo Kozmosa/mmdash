@@ -87,7 +87,11 @@ export function CitationForm({ open, onClose, projectId, citation, onSuccess }: 
     try {
       const data = new URLSearchParams()
       Object.entries(form).forEach(([k, v]) => {
-        if (v) data.append(k, v)
+        if (k === "year" && v === "") {
+          // skip empty year to avoid FastAPI int conversion error
+        } else {
+          data.append(k, v)
+        }
       })
 
       if (citation) {
