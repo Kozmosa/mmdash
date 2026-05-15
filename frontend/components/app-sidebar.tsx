@@ -7,6 +7,7 @@ import {
   CalendarDays,
   FileText,
   FlaskConical,
+  BookOpen,
   Settings,
   LogOut,
   ChevronsUpDown,
@@ -41,6 +42,7 @@ const navItems = [
   { href: "/timeline", label: "时间线", icon: CalendarDays },
   { href: "/model", label: "模型", icon: FileText },
   { href: "/experiment", label: "实验和求解", icon: FlaskConical },
+  { href: "/references", label: "引文管理", icon: BookOpen },
   { href: "/settings", label: "设置", icon: Settings },
 ]
 

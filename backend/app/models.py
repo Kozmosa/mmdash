@@ -100,6 +100,59 @@ class Project(Base):
     team = relationship("Team", back_populates="projects")
     todos = relationship("Todo", back_populates="project", cascade="all, delete-orphan")
     problem_files = relationship("ProblemFile", back_populates="project", cascade="all, delete-orphan")
+    citations = relationship("Citation", back_populates="project", cascade="all, delete-orphan")
+    zotero_config = relationship("ZoteroConfig", back_populates="project", uselist=False, cascade="all, delete-orphan")
+
+
+class Citation(Base):
+    __tablename__ = "citations"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    title = Column(String(500), nullable=False)
+    authors = Column(Text, nullable=True)
+    journal = Column(String(255), nullable=True)
+    year = Column(Integer, nullable=True)
+    volume = Column(String(50), nullable=True)
+    issue = Column(String(50), nullable=True)
+    pages = Column(String(100), nullable=True)
+    doi = Column(String(255), nullable=True, index=True)
+    url = Column(String(500), nullable=True)
+    abstract = Column(Text, nullable=True)
+
+    bibtex_key = Column(String(100), nullable=True)
+    bibtex_type = Column(String(50), default="article")
+
+    zotero_item_key = Column(String(50), nullable=True, index=True)
+    zotero_version = Column(Integer, nullable=True)
+    source = Column(String(20), default="manual")
+
+    extra_data = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = relationship("Project", back_populates="citations")
+    user = relationship("User")
+
+
+class ZoteroConfig(Base):
+    __tablename__ = "zotero_configs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=False, unique=True)
+    api_key = Column(String(255), nullable=False)
+    library_id = Column(String(50), nullable=False)
+    library_type = Column(String(20), default="user")
+    last_sync_version = Column(Integer, nullable=True)
+    last_sync_at = Column(DateTime, nullable=True)
+    last_sync_status = Column(String(20), default="idle")
+    last_sync_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    project = relationship("Project", back_populates="zotero_config")
 
 
 class Todo(Base):
