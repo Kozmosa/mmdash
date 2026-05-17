@@ -151,6 +151,8 @@ def create_todo(
     content: str,
     is_team_todo: bool = False,
     due_date: str = None,
+    reminder_enabled: bool = False,
+    reminder_minutes: int = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -160,18 +162,22 @@ def create_todo(
     member = db.query(TeamMember).filter(TeamMember.team_id == project.team_id, TeamMember.user_id == current_user.id).first()
     if not member:
         raise HTTPException(status_code=403, detail="Not a team member")
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    dt_due = datetime.fromisoformat(due_date) if due_date else None
+    reminder_at = (dt_due - timedelta(minutes=reminder_minutes)) if (dt_due and reminder_minutes is not None) else None
     todo = Todo(
         project_id=project_id,
         user_id=current_user.id,
         content=content,
         is_team_todo=is_team_todo,
-        due_date=datetime.fromisoformat(due_date) if due_date else None,
+        due_date=dt_due,
+        reminder_enabled=reminder_enabled,
+        reminder_at=reminder_at,
     )
     db.add(todo)
     db.commit()
     db.refresh(todo)
-    return {"id": todo.id, "content": todo.content, "completed": todo.completed, "is_team_todo": todo.is_team_todo}
+    return {"id": todo.id, "content": todo.content, "completed": todo.completed, "is_team_todo": todo.is_team_todo, "due_date": todo.due_date, "reminder_enabled": todo.reminder_enabled, "reminder_at": todo.reminder_at}
 
 
 @router.get("/{project_id}/todos")
@@ -183,7 +189,7 @@ def list_todos(project_id: str, current_user: User = Depends(get_current_user), 
     if not member:
         raise HTTPException(status_code=403, detail="Not a team member")
     todos = db.query(Todo).filter(Todo.project_id == project_id).all()
-    return [{"id": t.id, "content": t.content, "completed": t.completed, "is_team_todo": t.is_team_todo, "user_id": t.user_id, "due_date": t.due_date} for t in todos]
+    return [{"id": t.id, "content": t.content, "completed": t.completed, "is_team_todo": t.is_team_todo, "user_id": t.user_id, "due_date": t.due_date, "reminder_enabled": t.reminder_enabled, "reminder_at": t.reminder_at} for t in todos]
 
 
 @router.put("/{project_id}/todos/{todo_id}")
