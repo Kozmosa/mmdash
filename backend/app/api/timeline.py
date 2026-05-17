@@ -18,6 +18,8 @@ def create_event(
     start_time: str = "",
     end_time: str = "",
     is_team_event: bool = False,
+    reminder_enabled: bool = False,
+    reminder_minutes_before: int = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -35,6 +37,8 @@ def create_event(
         start_time=datetime.fromisoformat(start_time) if start_time else datetime.utcnow(),
         end_time=datetime.fromisoformat(end_time) if end_time else None,
         is_team_event=is_team_event,
+        reminder_enabled=reminder_enabled,
+        reminder_minutes_before=reminder_minutes_before,
     )
     db.add(event)
     db.commit()
@@ -46,6 +50,8 @@ def create_event(
         "start_time": event.start_time,
         "end_time": event.end_time,
         "is_team_event": event.is_team_event,
+        "reminder_enabled": event.reminder_enabled,
+        "reminder_minutes_before": event.reminder_minutes_before,
     }
 
 
@@ -66,6 +72,8 @@ def list_events(project_id: str, current_user: User = Depends(get_current_user),
         "end_time": e.end_time.isoformat() if e.end_time else None,
         "is_team_event": e.is_team_event,
         "user_id": e.user_id,
+        "reminder_enabled": e.reminder_enabled,
+        "reminder_minutes_before": e.reminder_minutes_before,
     } for e in events]
 
 
