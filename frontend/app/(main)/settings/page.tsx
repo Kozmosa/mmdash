@@ -467,6 +467,50 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>通知设置</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">桌面通知</p>
+                  <p className="text-sm text-muted-foreground">
+                    {typeof window !== "undefined" && ("Notification" in window)
+                      ? Notification.permission === "granted"
+                        ? "已开启"
+                        : Notification.permission === "denied"
+                        ? "已拒绝（可在浏览器设置中重新开启）"
+                        : "未授权"
+                      : "浏览器不支持桌面通知"}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  disabled={
+                    typeof window !== "undefined" &&
+                    "Notification" in window &&
+                    Notification.permission === "denied"
+                  }
+                  onClick={async () => {
+                    if (typeof window !== "undefined" && "Notification" in window) {
+                      const perm = await Notification.requestPermission();
+                      if (perm === "granted") {
+                        new Notification("数模Dashboard", { body: "通知已开启！" });
+                      }
+                    }
+                  }}
+                >
+                  {typeof window !== "undefined" &&
+                  "Notification" in window &&
+                  Notification.permission === "granted"
+                    ? "已开启"
+                    : "去开启"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>修改密码</CardTitle>
               <CardDescription>更新您的登录密码</CardDescription>
             </CardHeader>
