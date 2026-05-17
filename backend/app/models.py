@@ -209,6 +209,32 @@ class TimelineEvent(Base):
     user = relationship("User")
 
 
+class IMUserBinding(Base):
+    __tablename__ = "im_user_bindings"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    provider_type = Column(String(50), nullable=False)
+    im_user_id = Column(String(255), nullable=False)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
+class IMProjectBinding(Base):
+    __tablename__ = "im_project_bindings"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=False)
+    provider_type = Column(String(50), nullable=False)
+    im_chat_id = Column(String(255), nullable=False)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    project = relationship("Project")
+
+
 class ModelSnapshot(Base):
     __tablename__ = "model_snapshots"
 
