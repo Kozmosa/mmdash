@@ -57,7 +57,24 @@ if ! command -v npm &> /dev/null; then
 fi
 npm install
 
-# 5. Summary
+# 5. Feishu CLI (optional — for IM notifications)
+echo ""
+echo "[可选] 安装飞书 CLI (用于 IM 通知)..."
+if ! command -v lark-cli &>/dev/null; then
+    if command -v npm &>/dev/null; then
+        npm install -g @larksuite/cli 2>/dev/null && echo "  ✓ 飞书 CLI 安装完成" || echo "  ⚠ 飞书 CLI 安装失败，可稍后手动安装"
+    else
+        echo "  ⚠ 未检测到 npm，跳过飞书 CLI 安装"
+    fi
+else
+    echo "  ✓ 飞书 CLI 已安装"
+fi
+if command -v lark-cli &>/dev/null; then
+    lark-cli config init 2>/dev/null || true
+    echo "  → 请手动运行 'lark-cli auth login --recommend' 完成飞书登录"
+fi
+
+# 6. Summary
 echo ""
 echo "========================================"
 echo "  初始化完成！"
