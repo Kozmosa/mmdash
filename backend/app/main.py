@@ -10,7 +10,9 @@ from app.database import engine, Base, SessionLocal
 from app.api import auth, teams, projects, home, timeline, model, model_version, git
 from app.api import llm
 from app.api import references
+from app.api import reminders
 from app.services.zotero_sync import start_sync_scheduler, stop_sync_scheduler
+from app.services.reminder_scheduler import start_reminder_scheduler, stop_reminder_scheduler
 
 # Import provider modules to trigger registration
 from app.services import notion_provider, local_file_provider, documosa_provider
@@ -122,6 +124,7 @@ app.include_router(model_version.router, prefix="/api/model-version", tags=["模
 app.include_router(git.router, prefix="/api/git", tags=["Git"])
 app.include_router(llm.router, prefix="/api/llm", tags=["LLM"])
 app.include_router(references.router, prefix="/api/references", tags=["引文管理"])
+app.include_router(reminders.router, prefix="/api/reminders", tags=["提醒"])
 
 
 @app.get("/health")
@@ -132,8 +135,10 @@ def health_check():
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(start_sync_scheduler())
+    asyncio.create_task(start_reminder_scheduler())
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     stop_sync_scheduler()
+    stop_reminder_scheduler()
