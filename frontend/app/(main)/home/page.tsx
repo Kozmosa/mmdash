@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { useDataCache } from "@/stores/data-cache";
 import { toast } from "sonner";
+import { useReminderPolling } from "@/hooks/use-reminder-polling";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,6 +74,9 @@ interface Todo {
   content: string;
   completed: boolean;
   is_team_todo: boolean;
+  due_date: string | null;
+  reminder_enabled: boolean;
+  reminder_at: string | null;
 }
 
 interface Progress {
@@ -104,6 +108,9 @@ export default function HomePage() {
   const [gitUrl, setGitUrl] = useState("");
   const [todoContent, setTodoContent] = useState("");
   const [isTeamTodo, setIsTeamTodo] = useState(false);
+  const [todoDueDate, setTodoDueDate] = useState("");
+  const [todoReminder, setTodoReminder] = useState(false);
+  const [todoReminderMinutes, setTodoReminderMinutes] = useState(15);
   const [loadingTeams, setLoadingTeams] = useState(true);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingTodos, setLoadingTodos] = useState(false);
@@ -192,6 +199,8 @@ export default function HomePage() {
         });
     }
   }, [selectedProject]);
+
+  useReminderPolling(selectedProject);
 
   const dataCache = useDataCache();
 
@@ -504,10 +513,19 @@ export default function HomePage() {
     if (!selectedProject) return;
     try {
       await api.post(`/home/${selectedProject}/todos`, null, {
-        params: { content: todoContent, is_team_todo: isTeamTodo },
+        params: {
+          content: todoContent,
+          is_team_todo: isTeamTodo,
+          due_date: todoDueDate || undefined,
+          reminder_enabled: todoReminder,
+          reminder_minutes: todoReminder ? todoReminderMinutes : undefined,
+        },
       });
       setTodoContent("");
       setIsTeamTodo(false);
+      setTodoDueDate("");
+      setTodoReminder(false);
+      setTodoReminderMinutes(15);
       fetchTodos(selectedProject);
       fetchProgress(selectedProject);
       toast.success("TODO 添加成功");
@@ -850,6 +868,35 @@ export default function HomePage() {
                     disabled={!selectedProject}
                   />
                 </div>
+                <input
+                  type="date"
+                  value={todoDueDate}
+                  onChange={(e) => setTodoDueDate(e.target.value)}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+                {todoDueDate && (
+                  <label className="flex items-center gap-1 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={todoReminder}
+                      onChange={(e) => setTodoReminder(e.target.checked)}
+                    />
+                    提醒
+                  </label>
+                )}
+                {todoDueDate && todoReminder && (
+                  <select
+                    value={todoReminderMinutes}
+                    onChange={(e) => setTodoReminderMinutes(Number(e.target.value))}
+                    className="border rounded px-1 py-0.5 text-xs"
+                  >
+                    <option value={5}>5分钟前</option>
+                    <option value={15}>15分钟前</option>
+                    <option value={30}>30分钟前</option>
+                    <option value={60}>1小时前</option>
+                    <option value={1440}>1天前</option>
+                  </select>
+                )}
                 <div className="flex items-center gap-2 pb-2">
                   <Checkbox
                     id="teamTodo"
@@ -895,6 +942,21 @@ export default function HomePage() {
                       >
                         {t.content}
                       </span>
+                      {t.due_date && (
+                        <span
+                          className={
+                            new Date(t.due_date) < new Date()
+                              ? "text-xs ml-2 px-1.5 py-0.5 rounded bg-red-100 text-red-700"
+                              : "text-xs ml-2 px-1.5 py-0.5 rounded bg-blue-100 text-blue-700"
+                          }
+                        >
+                          {new Date(t.due_date).toLocaleDateString("zh-CN", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      )}
+                      {t.reminder_enabled && <span className="text-xs ml-1">🔔</span>}
                       {t.is_team_todo && (
                         <Badge variant="secondary" className="text-xs">
                           团队
