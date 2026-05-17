@@ -66,7 +66,7 @@ import re
 def _parse_inline_rich_text(text: str) -> list[dict]:
     """Parse a single line of markdown into Notion rich_text objects with inline formatting."""
     if not text:
-        return []
+        return [{"type": "text", "text": {"content": ""}}]
 
     patterns = [
         # (<name>, <regex>, <annotations dict>, <is_equation>)
@@ -269,51 +269,6 @@ def _is_special_line(line: str) -> bool:
     return False
 
 
-async def clear_page_children(page_id: str, access_token: str) -> None:
-    """Remove all child blocks from a page."""
-    async with httpx.AsyncClient() as client:
-        next_cursor = None
-        while True:
-            params = {"page_size": 100}
-            if next_cursor:
-                params["start_cursor"] = next_cursor
-            resp = await client.get(
-                f"https://api.notion.com/v1/blocks/{page_id}/children",
-                headers={"Authorization": f"Bearer {access_token}", **NOTION_HEADERS},
-                params=params,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            for block in data.get("results", []):
-                try:
-                    await client.delete(
-                        f"https://api.notion.com/v1/blocks/{block['id']}",
-                        headers={"Authorization": f"Bearer {access_token}", **NOTION_HEADERS},
-                    )
-                except Exception:
-                    pass  # Some blocks (e.g., child databases) cannot be deleted
-            if not data.get("has_more"):
-                break
-            next_cursor = data.get("next_cursor")
-
-
-async def append_page_children(page_id: str, blocks: list[dict], access_token: str) -> dict:
-    """Append blocks to a page in chunks of 100 (Notion API limit)."""
-    CHUNK_SIZE = 100
-    last_result = {}
-    async with httpx.AsyncClient() as client:
-        for i in range(0, len(blocks), CHUNK_SIZE):
-            chunk = blocks[i : i + CHUNK_SIZE]
-            resp = await client.patch(
-                f"https://api.notion.com/v1/blocks/{page_id}/children",
-                headers={"Authorization": f"Bearer {access_token}", **NOTION_HEADERS},
-                json={"children": chunk},
-            )
-            resp.raise_for_status()
-            last_result = resp.json()
-    return last_result
-
-
 async def _get_all_children(page_id: str, access_token: str) -> list[dict]:
     """Fetch all child blocks of a page (with pagination)."""
     all_children = []
@@ -394,8 +349,8 @@ async def diff_and_apply_blocks(page_id: str, desired_blocks: list[dict], access
                 # Append the new block after the previous block (or at top if i==0)
                 after_id = current_blocks[i - 1]["id"] if i > 0 else None
                 await _append_after(page_id, [desired], access_token, after_id)
-                # Insert into current_blocks to keep indices aligned
-                current_blocks.insert(i, desired)
+                # Replace deleted block in-place (NOT insert — insert would shift stale data right)
+                current_blocks[i] = desired
         elif i < len(current_blocks):
             await delete_block(current_blocks[i]["id"], access_token)
         else:

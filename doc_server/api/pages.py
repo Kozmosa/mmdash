@@ -34,8 +34,8 @@ def _generate_page_id() -> str:
 
 
 def _parse_markdown_to_blocks(content: str) -> list[dict]:
-    """Simple markdown parser that produces Notion-compatible block structures."""
-    blocks = []
+    """Parse markdown subset into simplified blocks (aligned with backend markdown_blocks.py)."""
+    blocks: list[dict] = []
     lines = content.split("\n")
     i = 0
     while i < len(lines):
@@ -47,24 +47,14 @@ def _parse_markdown_to_blocks(content: str) -> list[dict]:
             continue
 
         if stripped.startswith("# "):
-            blocks.append({
-                "type": "heading_1",
-                "content": stripped[2:].strip(),
-            })
+            blocks.append({"type": "heading_1", "content": stripped[2:].strip()})
         elif stripped.startswith("## "):
-            blocks.append({
-                "type": "heading_2",
-                "content": stripped[3:].strip(),
-            })
+            blocks.append({"type": "heading_2", "content": stripped[3:].strip()})
         elif stripped.startswith("### "):
-            blocks.append({
-                "type": "heading_3",
-                "content": stripped[4:].strip(),
-            })
+            blocks.append({"type": "heading_3", "content": stripped[4:].strip()})
         elif stripped.startswith("```"):
-            # Code block
-            lang = stripped[3:].strip()
-            code_lines = []
+            language = stripped[3:].strip()
+            code_lines: list[str] = []
             i += 1
             while i < len(lines) and not lines[i].strip().startswith("```"):
                 code_lines.append(lines[i])
@@ -72,38 +62,48 @@ def _parse_markdown_to_blocks(content: str) -> list[dict]:
             blocks.append({
                 "type": "code",
                 "content": "\n".join(code_lines),
-                "language": lang,
+                "language": language,
             })
         elif stripped.startswith("- ") or stripped.startswith("* "):
-            blocks.append({
-                "type": "bulleted_list_item",
-                "content": stripped[2:].strip(),
-            })
+            blocks.append({"type": "bulleted_list_item", "content": stripped[2:].strip()})
         elif re.match(r"^\d+\.\s+", stripped):
             blocks.append({
                 "type": "numbered_list_item",
                 "content": re.sub(r"^\d+\.\s+", "", stripped).strip(),
             })
         elif stripped.startswith("> "):
-            blocks.append({
-                "type": "quote",
-                "content": stripped[2:].strip(),
-            })
-        elif stripped == "---" or stripped == "***":
-            blocks.append({
-                "type": "divider",
-                "content": "",
-            })
+            quote_lines = [stripped[2:].strip()]
+            i += 1
+            while i < len(lines) and lines[i].strip().startswith("> "):
+                quote_lines.append(lines[i].strip()[2:].strip())
+                i += 1
+            blocks.append({"type": "quote", "content": " ".join(quote_lines)})
+            continue
+        elif stripped in {"---", "***"}:
+            blocks.append({"type": "divider", "content": ""})
+        elif stripped.startswith("|") and stripped.endswith("|"):
+            table_lines = [line]
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("|") and lines[j].strip().endswith("|"):
+                table_lines.append(lines[j])
+                j += 1
+            if len(table_lines) >= 2 and re.match(r"^[\|\s\-:]+$", table_lines[1].strip()):
+                blocks.append({"type": "table", "content": "\n".join(table_lines)})
+                i = j
+                continue
+            blocks.append({"type": "paragraph", "content": stripped})
         elif stripped.startswith("$$") and stripped.endswith("$$"):
-            blocks.append({
-                "type": "equation",
-                "content": stripped[2:-2].strip(),
-            })
+            blocks.append({"type": "equation", "content": stripped[2:-2].strip()})
+        elif stripped == "$$":
+            eq_lines = []
+            i += 1
+            while i < len(lines) and lines[i].strip() != "$$":
+                eq_lines.append(lines[i].strip())
+                i += 1
+            blocks.append({"type": "equation", "content": "\n".join(eq_lines)})
         else:
-            blocks.append({
-                "type": "paragraph",
-                "content": stripped,
-            })
+            blocks.append({"type": "paragraph", "content": stripped})
+
         i += 1
 
     return blocks
@@ -126,6 +126,9 @@ def _save_page(page_id: str, data: dict):
 
 async def verify_api_key(X_API_Key: Optional[str] = Header(None)):
     if not settings.API_KEY:
+        if not settings.DEBUG:
+            import logging
+            logging.warning("DOC_SERVER_API_KEY is not set — document endpoints are unauthenticated")
         return None
     if X_API_Key != settings.API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")

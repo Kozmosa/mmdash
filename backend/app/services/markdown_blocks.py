@@ -20,6 +20,8 @@ def blocks_to_markdown(blocks: list[dict]) -> str:
             md_lines.append(f"- {content}")
         elif block_type == "numbered_list_item":
             md_lines.append(f"1. {content}")
+        elif block_type == "table":
+            md_lines.append(content)
         elif block_type == "code":
             language = block.get("language", "")
             md_lines.append(f"```{language}\n{content}\n```")
@@ -30,7 +32,7 @@ def blocks_to_markdown(blocks: list[dict]) -> str:
         elif block_type == "divider":
             md_lines.append("---")
 
-    return "\n".join(md_lines)
+    return "\n\n".join(md_lines)
 
 
 def content_to_markdown(content: dict) -> str:
@@ -86,6 +88,20 @@ def markdown_to_blocks(markdown: str) -> list[dict]:
             blocks.append({"type": "quote", "content": stripped[2:].strip()})
         elif stripped in {"---", "***"}:
             blocks.append({"type": "divider", "content": ""})
+        elif stripped.startswith("|") and stripped.endswith("|"):
+            # Table: collect consecutive |...| lines (at least header + separator)
+            table_lines = [line]
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("|") and lines[j].strip().endswith("|"):
+                table_lines.append(lines[j])
+                j += 1
+            if len(table_lines) >= 2 and re.match(r"^[\|\s\-:]+$", table_lines[1].strip()):
+                # Second line is a separator row → treat as table
+                blocks.append({"type": "table", "content": "\n".join(table_lines)})
+                i = j
+                continue
+            # Fall through to paragraph if not a valid table
+            blocks.append({"type": "paragraph", "content": stripped})
         elif stripped.startswith("$$") and stripped.endswith("$$"):
             blocks.append({"type": "equation", "content": stripped[2:-2].strip()})
         else:
