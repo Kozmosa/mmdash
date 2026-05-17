@@ -2,6 +2,8 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
+from sqlalchemy.orm import Session
+
 from app.database import SessionLocal
 from app.models import TimelineEvent, Todo
 
@@ -10,16 +12,18 @@ logger = logging.getLogger(__name__)
 INTERVAL_SECONDS = 30
 DETECTION_WINDOW_SECONDS = 35
 
-_stop_event: asyncio.Event | None = None
+_stop_event = asyncio.Event()
 
 
-def _check_reminders(db, now=None):
+def _check_reminders(db: Session, now: datetime | None = None) -> tuple[list[TimelineEvent], list[Todo]]:
     """Check for reminders due within the detection window.
+
     Marks matching records with reminder_detected=True.
     Returns (events, todos) lists of detected records.
     """
     if now is None:
         now = datetime.utcnow()
+    window_start = now - timedelta(seconds=INTERVAL_SECONDS)
     window_end = now + timedelta(seconds=DETECTION_WINDOW_SECONDS)
 
     # TimelineEvent: computed reminder time = start_time - reminder_minutes_before
@@ -33,7 +37,7 @@ def _check_reminders(db, now=None):
     for e in events:
         if e.reminder_minutes_before is not None:
             reminder_time = e.start_time - timedelta(minutes=e.reminder_minutes_before)
-            if now <= reminder_time <= window_end:
+            if window_start <= reminder_time <= window_end:
                 e.reminder_detected = True
                 detected_events.append(e)
 
@@ -42,7 +46,7 @@ def _check_reminders(db, now=None):
         Todo.reminder_enabled == True,
         Todo.reminder_detected == False,
         Todo.reminder_at.isnot(None),
-        Todo.reminder_at.between(now, window_end),
+        Todo.reminder_at.between(window_start, window_end),
     ).all()
 
     for t in todos:
@@ -59,8 +63,6 @@ def _check_reminders(db, now=None):
 
 
 async def _run_loop():
-    global _stop_event
-    _stop_event = asyncio.Event()
     while not _stop_event.is_set():
         try:
             db = SessionLocal()
@@ -79,12 +81,8 @@ async def _run_loop():
 
 
 def start_reminder_scheduler():
-    global _stop_event
-    _stop_event = asyncio.Event()
     return asyncio.create_task(_run_loop())
 
 
 def stop_reminder_scheduler():
-    global _stop_event
-    if _stop_event:
-        _stop_event.set()
+    _stop_event.set()
