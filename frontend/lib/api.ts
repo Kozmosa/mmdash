@@ -93,4 +93,20 @@ export const llmApi = {
   },
 };
 
+// Reminder API endpoints
+export const reminderApi = {
+  async getPending(projectId: string) {
+    const res = await api.get(`/reminders/${projectId}/pending`);
+    return res.data as {
+      events: { id: string; title: string; description: string; start_time: string }[];
+      todos: { id: string; content: string; due_date: string | null }[];
+    };
+  },
+
+  async ack(projectId: string, type: "event" | "todo", ids: string[]) {
+    const res = await api.post(`/reminders/${projectId}/ack`, { type, ids });
+    return res.data;
+  },
+};
+
 export default api;
