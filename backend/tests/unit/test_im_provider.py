@@ -70,30 +70,22 @@ class TestFeishuCLIProvider:
 
     def test_is_configured_cli_exists_auth_fails(self, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/lark-cli")
-
-        async def mock_status():
-            from collections import namedtuple
-            Process = namedtuple("Process", ["returncode"])
-            p = Process(returncode=1)
-            return p
-
+        monkeypatch.setattr(
+            "app.services.feishu_cli_provider.subprocess.run",
+            lambda *args, **kwargs: type("R", (), {"returncode": 1})(),
+        )
         from app.services.feishu_cli_provider import FeishuCLIProvider
         p = FeishuCLIProvider()
-        p._auth_status = mock_status
         assert p.is_configured() is False
 
     def test_is_configured_ok(self, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/lark-cli")
-
-        async def mock_status():
-            from collections import namedtuple
-            Process = namedtuple("Process", ["returncode"])
-            p = Process(returncode=0)
-            return p
-
+        monkeypatch.setattr(
+            "app.services.feishu_cli_provider.subprocess.run",
+            lambda *args, **kwargs: type("R", (), {"returncode": 0})(),
+        )
         from app.services.feishu_cli_provider import FeishuCLIProvider
         p = FeishuCLIProvider()
-        p._auth_status = mock_status
         assert p.is_configured() is True
 
     @pytest.mark.asyncio
