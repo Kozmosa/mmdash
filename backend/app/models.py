@@ -164,6 +164,10 @@ class Todo(Base):
     content = Column(Text, nullable=False)
     is_team_todo = Column(Boolean, default=False)
     due_date = Column(DateTime, nullable=True)
+    reminder_enabled = Column(Boolean, default=False)
+    reminder_at = Column(DateTime, nullable=True)
+    reminder_detected = Column(Boolean, default=False)
+    reminder_acked = Column(Boolean, default=False)
     completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -196,6 +200,10 @@ class TimelineEvent(Base):
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=True)
     is_team_event = Column(Boolean, default=False)
+    reminder_enabled = Column(Boolean, default=False)
+    reminder_minutes = Column(Integer, nullable=True)
+    reminder_detected = Column(Boolean, default=False)
+    reminder_acked = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User")
