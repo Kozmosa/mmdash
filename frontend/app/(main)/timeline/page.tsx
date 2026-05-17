@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { useDataCache } from "@/stores/data-cache";
+import { useReminderPolling } from "@/hooks/use-reminder-polling";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,8 @@ interface TimelineEvent {
   start_time: string;
   end_time: string | null;
   is_team_event: boolean;
+  reminder_enabled: boolean;
+  reminder_minutes_before: number | null;
 }
 
 export default function TimelinePage() {
@@ -85,6 +88,8 @@ export default function TimelinePage() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [isTeamEvent, setIsTeamEvent] = useState(false);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState(15);
   const [loadingTeams, setLoadingTeams] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const dataCache = useDataCache();
@@ -106,6 +111,8 @@ export default function TimelinePage() {
       fetchEvents(selectedProject);
     }
   }, [selectedProject]);
+
+  useReminderPolling(selectedProject);
 
   const fetchTeams = async () => {
     const cached = dataCache.getTeams();
@@ -187,6 +194,8 @@ export default function TimelinePage() {
           start_time: startTime,
           end_time: endTime || undefined,
           is_team_event: isTeamEvent,
+          reminder_enabled: reminderEnabled,
+          reminder_minutes_before: reminderEnabled ? reminderMinutesBefore : undefined,
         },
       });
       setTitle("");
@@ -194,6 +203,8 @@ export default function TimelinePage() {
       setStartTime("");
       setEndTime("");
       setIsTeamEvent(false);
+      setReminderEnabled(false);
+      setReminderMinutesBefore(15);
       setAddDialogOpen(false);
       fetchEvents(selectedProject);
       toast.success("日程添加成功");
@@ -302,6 +313,27 @@ export default function TimelinePage() {
                 />
                 <Label htmlFor="isTeamEvent">团队日程</Label>
               </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={reminderEnabled}
+                  onChange={(e) => setReminderEnabled(e.target.checked)}
+                />
+                开启提醒
+              </label>
+              {reminderEnabled && (
+                <select
+                  value={reminderMinutesBefore}
+                  onChange={(e) => setReminderMinutesBefore(Number(e.target.value))}
+                  className="border rounded px-2 py-1 text-sm"
+                >
+                  <option value={5}>5分钟前</option>
+                  <option value={15}>15分钟前</option>
+                  <option value={30}>30分钟前</option>
+                  <option value={60}>1小时前</option>
+                  <option value={1440}>1天前</option>
+                </select>
+              )}
               <DialogFooter>
                 <Button type="submit">添加</Button>
               </DialogFooter>
@@ -421,6 +453,7 @@ export default function TimelinePage() {
                           <div className="min-w-0">
                             <h3 className="font-medium truncate">
                               {evt.title}
+                              {evt.reminder_enabled && <span className="text-sm ml-1">🔔</span>}
                             </h3>
                             {evt.description && (
                               <p className="text-sm text-muted-foreground mt-1">
