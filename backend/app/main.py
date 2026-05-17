@@ -11,6 +11,7 @@ from app.api import auth, teams, projects, home, timeline, model, model_version,
 from app.api import llm
 from app.api import references
 from app.api import reminders
+from app.api import im
 from app.services.zotero_sync import start_sync_scheduler, stop_sync_scheduler
 from app.services.reminder_scheduler import start_reminder_scheduler, stop_reminder_scheduler
 
@@ -126,6 +127,7 @@ app.include_router(git.router, prefix="/api/git", tags=["Git"])
 app.include_router(llm.router, prefix="/api/llm", tags=["LLM"])
 app.include_router(references.router, prefix="/api/references", tags=["引文管理"])
 app.include_router(reminders.router, prefix="/api/reminders", tags=["提醒"])
+app.include_router(im.router, prefix="/api/im", tags=["IM"])
 
 
 @app.get("/health")
