@@ -201,7 +201,7 @@ class TimelineEvent(Base):
     end_time = Column(DateTime, nullable=True)
     is_team_event = Column(Boolean, default=False)
     reminder_enabled = Column(Boolean, default=False)
-    reminder_minutes = Column(Integer, nullable=True)
+    reminder_minutes_before = Column(Integer, nullable=True)
     reminder_detected = Column(Boolean, default=False)
     reminder_acked = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
