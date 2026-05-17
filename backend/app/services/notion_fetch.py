@@ -81,6 +81,8 @@ def notion_blocks_to_markdown(blocks: list) -> str:
             md_lines.append(f"> {text}")
         elif block_type == "divider":
             md_lines.append("---")
+        elif block_type == "table":
+            md_lines.append(block.get("content", ""))
     return "\n\n".join(md_lines)
 
 
@@ -89,8 +91,23 @@ def _extract_rich_text(rich_text: list) -> str:
     for t in rich_text:
         if t.get("type") == "equation":
             parts.append(f"${t.get('equation', {}).get('expression', '')}$")
-        elif t.get("plain_text"):
-            parts.append(t["plain_text"])
-        elif t.get("text", {}).get("content"):
-            parts.append(t["text"]["content"])
+            continue
+        text = t.get("plain_text") or t.get("text", {}).get("content") or ""
+        if not text:
+            continue
+        ann = t.get("annotations", {}) or {}
+        if ann.get("code"):
+            text = f"`{text}`"
+        if ann.get("bold") and ann.get("italic"):
+            text = f"***{text}***"
+        elif ann.get("bold"):
+            text = f"**{text}**"
+        elif ann.get("italic"):
+            text = f"*{text}*"
+        if ann.get("strikethrough"):
+            text = f"~~{text}~~"
+        link_url = t.get("text", {}).get("link", {}).get("url")
+        if link_url:
+            text = f"[{text}]({link_url})"
+        parts.append(text)
     return "".join(parts)

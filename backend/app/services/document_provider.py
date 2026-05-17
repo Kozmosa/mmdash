@@ -7,6 +7,14 @@ class DocumentProvider(ABC):
 
     All document providers (Notion, local file system, etc.) must implement
     this interface to be used interchangeably by the backend.
+
+    Concurrent edit semantics differ by provider:
+    - NotionProvider: position-based diff with partial merge. Concurrent edits
+      to the same block position may interleave; last save to a given position
+      wins that position.
+    - LocalFileProvider: full-page PUT. The last write wins entirely —
+      earlier concurrent writes are fully overwritten.
+    - DocumosaProvider: same as LocalFileProvider (full replacement).
     """
 
     @abstractmethod

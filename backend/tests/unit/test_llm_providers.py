@@ -18,13 +18,17 @@ class TestOpenAIProvider:
         assert provider.base_url == "https://custom.com"
 
     @pytest.mark.asyncio
-    async def test_list_models_without_key(self):
+    async def test_list_models_without_key(self, monkeypatch):
+        import app.services.llm.openai_provider as oai
+        monkeypatch.setattr(oai.settings, "OPENAI_API_KEY", "")
         provider = OpenAIProvider(api_key=None)
         models = await provider.list_models()
         assert models == []
 
     @pytest.mark.asyncio
-    async def test_create_chat_completion_without_key(self):
+    async def test_create_chat_completion_without_key(self, monkeypatch):
+        import app.services.llm.openai_provider as oai
+        monkeypatch.setattr(oai.settings, "OPENAI_API_KEY", "")
         provider = OpenAIProvider(api_key=None)
         with pytest.raises(RuntimeError, match="No API key"):
             await provider.create_chat_completion(
@@ -78,8 +82,11 @@ class TestProviderFactory:
         assert isinstance(provider, DeepseekProvider)
         assert provider.api_key == "sk-deepseek"
 
-    def test_factory_with_invalid_json(self):
-        # Should handle gracefully
+    def test_factory_with_invalid_json(self, monkeypatch):
+        # Should handle gracefully — patch the module-level settings reference
+        # that OpenAIProvider.__init__ uses
+        import app.services.llm.openai_provider as oai
+        monkeypatch.setattr(oai.settings, "OPENAI_API_KEY", "")
         binding = ProviderBinding(
             id="test-id",
             user_id="user-1",

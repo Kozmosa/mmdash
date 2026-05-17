@@ -91,7 +91,11 @@ kill_port() {
     local port=$1
     local pname=$2
     local pids
-    pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+    # Use ss first (more reliable), fall back to lsof
+    pids=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
+    if [ -z "$pids" ]; then
+        pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+    fi
     if [ -n "$pids" ]; then
         echo "  → 端口 $port 被占用，正在停止旧 $pname 进程..."
         echo "$pids" | xargs kill -9 2>/dev/null || true
