@@ -20,10 +20,11 @@ import {
   Server,
   BookOpen,
   Zap,
+  MessageSquare,
 } from "lucide-react"
 import { ModelSelector } from "@/components/llm/ModelSelector"
 import { PromptSettings } from "@/components/llm/PromptSettings"
-import api from "@/lib/api"
+import api, { imApi } from "@/lib/api"
 import { useAuthStore } from "@/stores/auth"
 import { useDataCache } from "@/stores/data-cache"
 import { toast } from "sonner"
@@ -128,6 +129,16 @@ export default function SettingsPage() {
   const [providerSuccess, setProviderSuccess] = useState("")
   const [providerTeamId, setProviderTeamId] = useState<string>("")
 
+  // ─── IM State ──────────────────────────────────────────────────
+  const [feishuUserId, setFeishuUserId] = useState("")
+  const [userBindingEnabled, setUserBindingEnabled] = useState(true)
+  const [projectChatId, setProjectChatId] = useState("")
+  const [projectBindingEnabled, setProjectBindingEnabled] = useState(true)
+  const [imSelectedProject, setImSelectedProject] = useState("")
+  const [imTeamId, setImTeamId] = useState("")
+  const [imProjects, setImProjects] = useState<{id: string; name: string}[]>([])
+  const [providerStatus, setProviderStatus] = useState<{type: string; configured: boolean; name: string}[]>([])
+
   // ─── Clipboard ─────────────────────────────────────────────────
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
@@ -166,6 +177,37 @@ export default function SettingsPage() {
       loadTeamProvider(providerTeamId)
     }
   }, [providerTeamId])
+
+  // ─── IM Effects ─────────────────────────────────────────────────
+  useEffect(() => {
+    imApi.getStatus().then((data) => setProviderStatus(data.providers)).catch(() => {})
+    imApi.getUserBinding().then((data) => {
+      if (data.binding) {
+        setFeishuUserId(data.binding.im_user_id)
+        setUserBindingEnabled(data.binding.enabled)
+      }
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!imSelectedProject) return
+    imApi.getProjectBinding(imSelectedProject).then((data) => {
+      if (data.binding) {
+        setProjectChatId(data.binding.im_chat_id)
+        setProjectBindingEnabled(data.binding.enabled)
+      } else {
+        setProjectChatId("")
+        setProjectBindingEnabled(true)
+      }
+    }).catch(() => {})
+  }, [imSelectedProject])
+
+  useEffect(() => {
+    if (!imTeamId) return
+    api.get("/projects", { params: { team_id: imTeamId } }).then((res) => {
+      setImProjects(res.data)
+    }).catch(() => setImProjects([]))
+  }, [imTeamId])
 
   // ─── Profile Handlers ──────────────────────────────────────────
   const handleSaveProfile = async () => {
@@ -396,10 +438,40 @@ export default function SettingsPage() {
     }
   }
 
+  // ─── IM Handlers ───────────────────────────────────────────────
+  const handleSaveUserBinding = async () => {
+    try {
+      await imApi.saveUserBinding({ provider_type: "feishu_cli", im_user_id: feishuUserId, enabled: userBindingEnabled })
+      toast.success("个人绑定已保存")
+    } catch { toast.error("保存失败") }
+  }
+
+  const handleVerifyUser = async () => {
+    try {
+      const res = await imApi.verify({ provider_type: "feishu_cli", recipient_type: "user", recipient_id: feishuUserId })
+      toast.success(res.success ? "验证消息已发送，请查看飞书" : "发送失败：飞书 CLI 未配置")
+    } catch { toast.error("验证失败") }
+  }
+
+  const handleSaveProjectBinding = async () => {
+    if (!imSelectedProject) return
+    try {
+      await imApi.saveProjectBinding(imSelectedProject, { provider_type: "feishu_cli", im_chat_id: projectChatId, enabled: projectBindingEnabled })
+      toast.success("项目绑定已保存")
+    } catch { toast.error("保存失败") }
+  }
+
+  const handleVerifyProjectChat = async () => {
+    try {
+      const res = await imApi.verify({ provider_type: "feishu_cli", recipient_type: "chat", recipient_id: projectChatId })
+      toast.success(res.success ? "验证消息已发送，请查看飞书群" : "发送失败：飞书 CLI 未配置")
+    } catch { toast.error("验证失败") }
+  }
+
   return (
     <div className="space-y-6">
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+        <TabsList className="grid w-full grid-cols-5 max-w-2xl">
           <TabsTrigger value="profile">
             <User className="mr-2 size-4" />
             个人资料
@@ -415,6 +487,10 @@ export default function SettingsPage() {
           <TabsTrigger value="llm">
             <Zap className="mr-2 size-4" />
             LLM 模型
+          </TabsTrigger>
+          <TabsTrigger value="im">
+            <MessageSquare className="mr-2 size-4" />
+            IM 通知
           </TabsTrigger>
         </TabsList>
 
@@ -992,6 +1068,98 @@ export default function SettingsPage() {
             teamName={teams.find((team) => team.id === llmTeamId)?.name}
             canManage={llmTeamRole === "owner" || llmTeamRole === "admin"}
           />
+        </TabsContent>
+
+        {/* ─── IM通知 Tab ──────────────────────────────────────────── */}
+        <TabsContent value="im" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>飞书状态</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                {providerStatus.length === 0 && <span className="text-sm text-muted-foreground">正在检查...</span>}
+                {providerStatus.map((p) => (
+                  <Badge key={p.type} variant={p.configured ? "default" : "secondary"}>
+                    {p.type}: {p.configured ? "已连接" : "未配置"}
+                  </Badge>
+                ))}
+              </div>
+              {providerStatus.length > 0 && providerStatus.every(p => !p.configured) && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  请先安装飞书 CLI: <code>npm i -g @larksuite/cli</code>，然后运行 <code>lark-cli auth login --recommend</code>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>个人飞书绑定</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="飞书用户 ID (user_id)"
+                  value={feishuUserId}
+                  onChange={(e) => setFeishuUserId(e.target.value)}
+                />
+                <Button variant="outline" onClick={handleVerifyUser} disabled={!feishuUserId}>验证</Button>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={userBindingEnabled} onChange={(e) => setUserBindingEnabled(e.target.checked)} />
+                启用飞书通知
+              </label>
+              <Button onClick={handleSaveUserBinding}>保存个人设置</Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>项目群绑定</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <select
+                value={imTeamId}
+                onChange={(e) => setImTeamId(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm bg-background"
+              >
+                <option value="">选择团队...</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>{team.name}</option>
+                ))}
+              </select>
+              {imTeamId && (
+                <select
+                  value={imSelectedProject}
+                  onChange={(e) => setImSelectedProject(e.target.value)}
+                  className="border rounded px-2 py-2 w-full text-sm bg-background"
+                >
+                  <option value="">选择项目...</option>
+                  {imProjects.map((p: any) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+              {imSelectedProject && (
+                <>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="飞书群 Chat ID"
+                      value={projectChatId}
+                      onChange={(e) => setProjectChatId(e.target.value)}
+                    />
+                    <Button variant="outline" onClick={handleVerifyProjectChat} disabled={!projectChatId}>验证</Button>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={projectBindingEnabled} onChange={(e) => setProjectBindingEnabled(e.target.checked)} />
+                    启用群通知
+                  </label>
+                  <Button onClick={handleSaveProjectBinding}>保存项目设置</Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
