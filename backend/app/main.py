@@ -16,6 +16,7 @@ from app.services.reminder_scheduler import start_reminder_scheduler, stop_remin
 
 # Import provider modules to trigger registration
 from app.services import notion_provider, local_file_provider, documosa_provider
+from app.services import feishu_cli_provider  # triggers IM provider registration
 
 # Dev logging: output all mmdash logs to stdout
 logging.basicConfig(
