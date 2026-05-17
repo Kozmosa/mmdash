@@ -80,8 +80,8 @@ async def _run_loop():
             pass  # Normal tick — no stop signal, continue loop
 
 
-def start_reminder_scheduler():
-    return asyncio.create_task(_run_loop())
+async def start_reminder_scheduler():
+    await _run_loop()
 
 
 def stop_reminder_scheduler():
