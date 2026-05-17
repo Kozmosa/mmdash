@@ -70,9 +70,12 @@ async def _run_loop():
                 db.close()
         except Exception:
             logger.exception("Reminder check failed")
-        await asyncio.wait_for(
-            _stop_event.wait(), timeout=INTERVAL_SECONDS
-        )
+        try:
+            await asyncio.wait_for(
+                _stop_event.wait(), timeout=INTERVAL_SECONDS
+            )
+        except asyncio.TimeoutError:
+            pass  # Normal tick — no stop signal, continue loop
 
 
 def start_reminder_scheduler():
