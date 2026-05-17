@@ -109,4 +109,37 @@ export const reminderApi = {
   },
 };
 
+// IM notification API endpoints
+export const imApi = {
+  async getStatus() {
+    const res = await api.get("/im/status");
+    return res.data as { providers: { type: string; configured: boolean; name: string }[] };
+  },
+
+  async getUserBinding() {
+    const res = await api.get("/im/user-binding");
+    return res.data as { binding: { id: string; provider_type: string; im_user_id: string; enabled: boolean } | null };
+  },
+
+  async saveUserBinding(data: { provider_type: string; im_user_id: string; enabled: boolean }) {
+    const res = await api.post("/im/user-binding", data);
+    return res.data;
+  },
+
+  async getProjectBinding(projectId: string) {
+    const res = await api.get(`/im/project-binding/${projectId}`);
+    return res.data as { binding: { id: string; provider_type: string; im_chat_id: string; enabled: boolean } | null };
+  },
+
+  async saveProjectBinding(projectId: string, data: { provider_type: string; im_chat_id: string; enabled: boolean }) {
+    const res = await api.post(`/im/project-binding/${projectId}`, data);
+    return res.data;
+  },
+
+  async verify(data: { provider_type: string; recipient_type: string; recipient_id: string }) {
+    const res = await api.post("/im/verify", data);
+    return res.data as { success: boolean; error?: string };
+  },
+};
+
 export default api;
