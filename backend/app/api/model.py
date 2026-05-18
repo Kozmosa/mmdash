@@ -208,6 +208,8 @@ async def update_model_content(
     except HTTPException:
         raise
     except Exception as e:
+        import logging
+        logging.getLogger("mmdash.model").exception("Failed to update content via %s", binding.provider_type)
         raise HTTPException(status_code=500, detail=f"Failed to update content: {str(e)}")
 
     # Invalidate caches
