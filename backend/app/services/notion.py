@@ -348,14 +348,21 @@ async def diff_and_apply_blocks(page_id: str, desired_blocks: list[dict], access
                 await delete_block(curr["id"], access_token)
                 # Append the new block after the previous block (or at top if i==0)
                 after_id = current_blocks[i - 1]["id"] if i > 0 else None
-                await _append_after(page_id, [desired], access_token, after_id)
-                # Replace deleted block in-place (NOT insert — insert would shift stale data right)
-                current_blocks[i] = desired
+                result = await _append_after(page_id, [desired], access_token, after_id)
+                # Use the Notion-returned block (has real "id") — not the id-less desired block
+                created = result.get("results", [])
+                if created:
+                    current_blocks[i] = created[0]
+                else:
+                    current_blocks[i] = desired  # fallback, shouldn't happen
         elif i < len(current_blocks):
             await delete_block(current_blocks[i]["id"], access_token)
         else:
             after_id = current_blocks[-1]["id"] if current_blocks else None
-            await _append_after(page_id, desired_blocks[i:], access_token, after_id)
+            result = await _append_after(page_id, desired_blocks[i:], access_token, after_id)
+            # Extend with real Notion blocks that have proper "id" fields
+            for block in result.get("results", []):
+                current_blocks.append(block)
             break
 
 
