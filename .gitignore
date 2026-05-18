@@ -53,3 +53,4 @@ package-lock.json
 
 .worktrees/
 drafts/.worktrees/
+backend/.coverage
