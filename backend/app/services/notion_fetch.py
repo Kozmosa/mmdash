@@ -1,4 +1,5 @@
 import httpx
+
 from app.services.cache import get_cached_notion_page, set_cached_notion_page
 from app.services.notion import _CLIENT_TIMEOUT, _get_all_children
 
@@ -85,15 +86,41 @@ def notion_blocks_to_markdown(blocks: list) -> str:
 
 
 def _extract_rich_text(rich_text: list) -> str:
+    """Extract plain text from a Notion rich_text array.
+
+    Tries multiple paths because the ``or``-chain pattern
+    (``plain_text or text.content or ""``) silently produces
+    empty strings when both fields are falsy, which can happen
+    for edge-case block types or API version skew.
+    """
     parts = []
     for t in rich_text:
-        if t.get("type") == "equation":
-            parts.append(f"${t.get('equation', {}).get('expression', '')}$")
+        rt_type = t.get("type", "")
+
+        if rt_type == "equation":
+            expr = t.get("equation", {}).get("expression", "")
+            parts.append(f"${expr}$")
             continue
-        text = t.get("plain_text") or t.get("text", {}).get("content") or ""
+
+        # 1) Prefer plain_text (Notion fills it on every text-bearing RT)
+        text = t.get("plain_text")
+        if text:
+            pass
+        # 2) Fall back to text.content for mentions / edge cases
+        elif isinstance(t.get("text"), dict):
+            text = t["text"].get("content") or ""
+        # 3) Last resort: check href for link-type RTs
+        elif t.get("href"):
+            text = t["href"]
+        else:
+            text = ""
+
         if not text:
+            _logger.warning("NOTION-READ-DIAG: RT item yielded no text: type=%s keys=%s raw=%s",
+                            rt_type, list(t.keys()), _json.dumps(t, ensure_ascii=False)[:300])
             continue
-        ann = t.get("annotations", {}) or {}
+
+        ann = t.get("annotations") or {}
         if ann.get("code"):
             text = f"`{text}`"
         if ann.get("bold") and ann.get("italic"):
@@ -104,8 +131,13 @@ def _extract_rich_text(rich_text: list) -> str:
             text = f"*{text}*"
         if ann.get("strikethrough"):
             text = f"~~{text}~~"
-        link_url = t.get("text", {}).get("link", {}).get("url")
-        if link_url:
-            text = f"[{text}]({link_url})"
+        # link can be null in Notion API responses — get() returns None, not default
+        txt_obj = t.get("text")
+        if isinstance(txt_obj, dict):
+            link_obj = txt_obj.get("link")
+            if isinstance(link_obj, dict):
+                link_url = link_obj.get("url")
+                if link_url:
+                    text = f"[{text}]({link_url})"
         parts.append(text)
     return "".join(parts)
