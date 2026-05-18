@@ -44,7 +44,7 @@ wait_for_port() {
         if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
             return 0
         fi
-        sleep 1
+        sleep 0.2
     done
     echo "错误: $name 未在预期时间内监听端口 $port"
     return 1
@@ -59,7 +59,7 @@ wait_for_http() {
         if curl -sS -I --max-time 2 "$url" >/dev/null 2>&1; then
             return 0
         fi
-        sleep 1
+        sleep 0.2
     done
     echo "错误: $name 未在预期时间内通过 HTTP 就绪检查 ($url)"
     return 1
@@ -86,7 +86,7 @@ PY
         then
             return 0
         fi
-        sleep 1
+        sleep 0.2
     done
     echo "错误: Local Agent 未在预期时间内通过协议就绪检查"
     return 1
