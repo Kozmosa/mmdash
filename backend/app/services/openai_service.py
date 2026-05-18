@@ -4,7 +4,10 @@ from app.core.config import get_settings
 from app.services.llm.prompts import DEFAULT_LLM_PROMPTS
 
 settings = get_settings()
-openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+_openai_kwargs = {"api_key": settings.OPENAI_API_KEY}
+if settings.OPENAI_BASE_URL:
+    _openai_kwargs["base_url"] = settings.OPENAI_BASE_URL
+openai_client = openai.AsyncOpenAI(**_openai_kwargs) if settings.OPENAI_API_KEY else None
 
 
 def _render_prompt(template: str, **values: str) -> str:
@@ -21,7 +24,7 @@ async def analyze_symbols(markdown_text: str, prompt: str | None = None) -> list
     prompt = _render_prompt(prompt or DEFAULT_LLM_PROMPTS["symbols"], content=markdown_text[:4000])
     try:
         resp = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.OPENAI_MODEL or "gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
@@ -40,7 +43,7 @@ async def analyze_structure(markdown_text: str, prompt: str | None = None) -> di
     prompt = _render_prompt(prompt or DEFAULT_LLM_PROMPTS["structure"], content=markdown_text[:4000])
     try:
         resp = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.OPENAI_MODEL or "gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
@@ -58,7 +61,7 @@ async def explain_formula(formula: str, context: str = "", prompt: str | None = 
     prompt = _render_prompt(prompt or DEFAULT_LLM_PROMPTS["formula"], formula=formula, context=context)
     try:
         resp = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.OPENAI_MODEL or "gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
@@ -74,7 +77,7 @@ async def find_errors(markdown_text: str, prompt: str | None = None) -> list:
     prompt = _render_prompt(prompt or DEFAULT_LLM_PROMPTS["errors"], content=markdown_text[:4000])
     try:
         resp = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.OPENAI_MODEL or "gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,

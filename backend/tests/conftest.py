@@ -3,6 +3,19 @@ import sys
 
 import pytest
 from fastapi.testclient import TestClient
+from app.core.config import get_settings
+
+
+def requires_api_key():
+    """Check if OPENAI_API_KEY is configured. Returns True if available."""
+    return bool(get_settings().OPENAI_API_KEY)
+
+
+# Auto-skip marker: @pytest.mark.requires_api
+# Tests decorated with this skip automatically when OPENAI_API_KEY is empty.
+# Usage: @pytest.mark.requires_api
+# Run: uv run pytest          → skips API-dependent tests
+# Run: OPENAI_API_KEY=sk-xxx uv run pytest  → runs them
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -155,3 +168,15 @@ def provider_binding(db, test_user):
     db.commit()
     db.refresh(binding)
     return binding
+
+
+# ─── Conditional test execution ──────────────────────────────────────────────
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip @pytest.mark.requires_api tests when OPENAI_API_KEY is empty."""
+    if get_settings().OPENAI_API_KEY:
+        return
+    skip_api = pytest.mark.skip(reason="OPENAI_API_KEY not configured")
+    for item in items:
+        if "requires_api" in item.keywords:
+            item.add_marker(skip_api)
