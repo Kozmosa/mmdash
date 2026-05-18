@@ -14,6 +14,12 @@ def mock_notion():
     return MockNotionAPI()
 
 
+@pytest.fixture(autouse=True)
+def _zero_rate_limit_delay(monkeypatch):
+    """Disable the rate-limit sleep during tests."""
+    monkeypatch.setattr("app.services.notion._RATE_LIMIT_DELAY", 0.0)
+
+
 @pytest.fixture
 def provider():
     from app.services.notion_provider import NotionProvider
@@ -90,16 +96,16 @@ class TestFetchContent:
              "paragraph": {"rich_text": [{"type": "text", "text": {"content": "This is content."}, "annotations": {"bold": False, "italic": False, "strikethrough": False, "underline": False, "code": False, "color": "default"}}], "color": "default"}},
         ])
 
-        # Mock the HTTP layer: blocks fetch + metadata fetch
+        # Mock the HTTP layer: blocks fetch (via notion._get_all_children) + metadata fetch
         class MockClient:
             def __init__(self, *a, **kw): pass
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-            async def get(self, url, headers=None):
+            async def get(self, url, headers=None, params=None):
                 from tests.mock_notion_api import MockNotionResponse
                 if "/blocks/" in url and "/children" in url:
-                    return mock_notion.get_block_children("page-1", {})
+                    return mock_notion.get_block_children("page-1", params or {})
                 if "/pages/" in url:
                     return MockNotionResponse(200, {
                         "object": "page",
@@ -112,8 +118,8 @@ class TestFetchContent:
                     })
                 return MockNotionResponse(404, {})
 
-        # Need to patch both notion_fetch and notion modules
-        with patch("app.services.notion_fetch.httpx.AsyncClient", MockClient):
+        with patch("app.services.notion.httpx.AsyncClient", MockClient), \
+             patch("app.services.notion_fetch.httpx.AsyncClient", MockClient):
             result = await provider.fetch_page_content("page-1", credentials)
 
         assert result["page_id"] == "page-1"
@@ -132,10 +138,10 @@ class TestFetchContent:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-            async def get(self, url, headers=None):
+            async def get(self, url, headers=None, params=None):
                 from tests.mock_notion_api import MockNotionResponse
                 if "/blocks/" in url:
-                    return mock_notion.get_block_children("page-2", {})
+                    return mock_notion.get_block_children("page-2", params or {})
                 if "/pages/" in url:
                     return MockNotionResponse(200, {
                         "object": "page",
@@ -144,7 +150,8 @@ class TestFetchContent:
                     })
                 return MockNotionResponse(404, {})
 
-        with patch("app.services.notion_fetch.httpx.AsyncClient", MockClient):
+        with patch("app.services.notion.httpx.AsyncClient", MockClient), \
+             patch("app.services.notion_fetch.httpx.AsyncClient", MockClient):
             result = await provider.fetch_page_content("page-2", credentials)
 
         assert result["title"] == ""
@@ -162,15 +169,16 @@ class TestFetchContent:
             def __init__(self, *a, **kw): pass
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
-            async def get(self, url, headers=None):
+            async def get(self, url, headers=None, params=None):
                 from tests.mock_notion_api import MockNotionResponse
                 if "/blocks/" in url:
-                    return mock_notion.get_block_children("page-3", {})
+                    return mock_notion.get_block_children("page-3", params or {})
                 if "/pages/" in url:
                     return MockNotionResponse(500, {"error": "Internal error"})
                 return MockNotionResponse(404, {})
 
-        with patch("app.services.notion_fetch.httpx.AsyncClient", MockClient):
+        with patch("app.services.notion.httpx.AsyncClient", MockClient), \
+             patch("app.services.notion_fetch.httpx.AsyncClient", MockClient):
             result = await provider.fetch_page_content("page-3", credentials)
 
         # Should not crash — title is empty, content still fetched
@@ -408,3 +416,86 @@ class TestUpdateContent:
 
         assert "From blocks" in result["markdown"]
         assert len(result["blocks"]) == 1
+
+
+class TestCacheInvalidation:
+    """Verify cache is invalidated after Notion writes."""
+
+    @pytest.mark.asyncio
+    async def test_update_invalidates_cache(self, provider, mock_notion, credentials):
+        """update_page_content should call invalidate_page after diff."""
+        mock_notion.add_page("page-1", [])
+
+        class MockClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def get(self, url, headers=None, params=None):
+                return mock_notion.handle("GET", url, params=params or {})
+            async def patch(self, url, headers=None, json=None):
+                resp = mock_notion.handle("PATCH", url, json=json or {})
+                resp.raise_for_status()
+                return resp
+            async def delete(self, url, headers=None):
+                resp = mock_notion.handle("DELETE", url)
+                resp.raise_for_status()
+                return resp
+
+        with patch("app.services.notion.httpx.AsyncClient", MockClient), \
+             patch("app.services.notion_provider.invalidate_page") as mock_invalidate:
+            await provider.update_page_content(
+                "page-1",
+                {"markdown": "New content"},
+                credentials,
+            )
+
+        mock_invalidate.assert_called_once_with("notion", "page-1")
+
+    @pytest.mark.asyncio
+    async def test_create_invalidates_cache(self, provider, credentials):
+        """create_page should call invalidate_page after creation."""
+        class MockClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def post(self, url, headers=None, json=None):
+                from tests.mock_notion_api import MockNotionResponse
+                if "/pages" in url:
+                    return MockNotionResponse(200, {"id": "new-page", "object": "page"})
+                if "/search" in url:
+                    return MockNotionResponse(200, {
+                        "results": [{"id": "p1", "properties": {"title": {"type": "title", "title": [{"plain_text": "P1"}]}}}],
+                    })
+                return MockNotionResponse(404, {})
+
+        with patch("app.services.notion.httpx.AsyncClient", MockClient), \
+             patch("app.services.notion_provider.invalidate_page") as mock_invalidate:
+            await provider.create_page("Test", "", credentials, "parent-1")
+
+        mock_invalidate.assert_called_once_with("notion", "new-page")
+
+    @pytest.mark.asyncio
+    async def test_update_title_only_does_not_invalidate(self, provider, mock_notion, credentials):
+        """Title-only update (no blocks) should NOT invalidate — no content changed."""
+        mock_notion.add_page("page-1", [])
+
+        class MockClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def get(self, url, headers=None, params=None):
+                return mock_notion.handle("GET", url, params=params or {})
+            async def patch(self, url, headers=None, json=None):
+                resp = mock_notion.handle("PATCH", url, json=json or {})
+                resp.raise_for_status()
+                return resp
+
+        with patch("app.services.notion.httpx.AsyncClient", MockClient), \
+             patch("app.services.notion_provider.invalidate_page") as mock_invalidate:
+            await provider.update_page_content(
+                "page-1",
+                {"title": "New Title Only"},
+                credentials,
+            )
+
+        mock_invalidate.assert_not_called()

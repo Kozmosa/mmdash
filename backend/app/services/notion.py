@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any
 
@@ -6,10 +7,16 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+_CLIENT_TIMEOUT = httpx.Timeout(30.0, read=60.0)
+_RATE_LIMIT_DELAY = 0.4  # Notion rate limit: ~3 req/s
+
 
 async def exchange_code_for_token(code: str) -> dict:
-    """Exchange Notion OAuth code for access token."""
-    async with httpx.AsyncClient() as client:
+    """Exchange Notion OAuth code for access token.
+
+    Raises ValueError with the Notion error_description on failure.
+    """
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         resp = await client.post(
             "https://api.notion.com/v1/oauth/token",
             auth=(settings.NOTION_CLIENT_ID, settings.NOTION_CLIENT_SECRET),
@@ -22,13 +29,26 @@ async def exchange_code_for_token(code: str) -> dict:
                 "Content-Type": "application/json",
             },
         )
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            error_body = {}
+            try:
+                error_body = resp.json()
+            except Exception:
+                pass
+            error_msg = (
+                error_body.get("error_description")
+                or error_body.get("error")
+                or str(e)
+            )
+            raise ValueError(f"Notion OAuth error: {error_msg}") from e
         return resp.json()
 
 
 async def search_accessible_pages(access_token: str) -> list[dict]:
     """Search for pages the integration can access. Returns list of {id, title}."""
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         resp = await client.post(
             "https://api.notion.com/v1/search",
             headers={
@@ -74,6 +94,7 @@ def _parse_inline_rich_text(text: str) -> list[dict]:
         ("bold", r"\*\*(.+?)\*\*", {"bold": True}, False),
         ("italic", r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", {"italic": True}, False),
         ("code", r"`(.+?)`", {"code": True}, False),
+        ("strikethrough", r"~~(.+?)~~", {"strikethrough": True}, False),
         ("link", r"\[(.+?)\]\((.+?)\)", {}, False),
         ("inline_math", r"\$(.+?)\$", {}, True),
     ]
@@ -272,7 +293,7 @@ def _is_special_line(line: str) -> bool:
 async def _get_all_children(page_id: str, access_token: str) -> list[dict]:
     """Fetch all child blocks of a page (with pagination)."""
     all_children = []
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         next_cursor = None
         while True:
             params = {"page_size": 100}
@@ -376,7 +397,7 @@ async def update_block(block_id: str, block: dict, access_token: str) -> None:
     """Update a block's content in-place (same type required)."""
     block_type = block["type"]
     payload: dict[str, Any] = {block_type: block[block_type]}
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         resp = await client.patch(
             f"https://api.notion.com/v1/blocks/{block_id}",
             headers={"Authorization": f"Bearer {access_token}", **NOTION_HEADERS},
@@ -386,24 +407,41 @@ async def update_block(block_id: str, block: dict, access_token: str) -> None:
 
 
 async def delete_block(block_id: str, access_token: str) -> None:
-    """Delete a single block."""
-    async with httpx.AsyncClient() as client:
+    """Delete a single block.
+
+    Silently skips blocks that cannot be deleted (HTTP 4xx, e.g. child
+    databases).  Server errors and network failures propagate so the
+    caller can decide whether to retry.
+    """
+    import logging
+    _logger = logging.getLogger(__name__)
+
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         try:
             resp = await client.delete(
                 f"https://api.notion.com/v1/blocks/{block_id}",
                 headers={"Authorization": f"Bearer {access_token}", **NOTION_HEADERS},
             )
             resp.raise_for_status()
-        except Exception:
-            pass  # Some blocks (e.g., child databases) cannot be deleted
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code < 500:
+                _logger.warning("Cannot delete block %s (HTTP %s)", block_id, e.response.status_code)
+                return
+            raise
 
 
 async def diff_and_apply_blocks(page_id: str, desired_blocks: list[dict], access_token: str) -> None:
-    """Apply block changes incrementally: PATCH unchanged types, only DELETE/APPEND diffs."""
+    """Apply block changes incrementally: PATCH unchanged types, only DELETE/APPEND diffs.
+
+    Respects Notion's rate limit (~3 req/s) with a short delay between operations.
+    """
     current_blocks = await _get_all_children(page_id, access_token)
 
     max_len = max(len(current_blocks), len(desired_blocks))
     for i in range(max_len):
+        if i > 0:
+            await asyncio.sleep(_RATE_LIMIT_DELAY)
+
         if i < len(current_blocks) and i < len(desired_blocks):
             curr, desired = current_blocks[i], desired_blocks[i]
             if curr["type"] == desired["type"]:
@@ -435,7 +473,7 @@ async def _append_after(page_id: str, blocks: list[dict], access_token: str, aft
     """Append blocks after a specific block, or at the top if after_id is None."""
     CHUNK_SIZE = 100
     last_result = {}
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         for i in range(0, len(blocks), CHUNK_SIZE):
             chunk = blocks[i : i + CHUNK_SIZE]
             body: dict[str, Any] = {"children": chunk}
@@ -457,7 +495,7 @@ async def _append_after(page_id: str, blocks: list[dict], access_token: str, aft
 
 async def create_page(parent_page_id: str, title: str, access_token: str) -> str:
     """Create a new Notion page under parent_page_id. Returns the new page id."""
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         resp = await client.post(
             "https://api.notion.com/v1/pages",
             headers={

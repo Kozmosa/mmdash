@@ -15,6 +15,7 @@ function NotionCallbackContent() {
 
   useEffect(() => {
     const code = searchParams.get("code");
+    const state = searchParams.get("state");
     if (!code) {
       setError("缺少授权回调 code");
       return;
@@ -29,6 +30,7 @@ function NotionCallbackContent() {
         await api.post("/auth/provider/callback", {
           code,
           provider_type: "notion",
+          ...(state ? { state } : {}),
           ...(teamId ? { team_id: teamId } : {}),
         });
         if (cancelled) return;

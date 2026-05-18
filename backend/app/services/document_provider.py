@@ -39,8 +39,12 @@ class DocumentProvider(ABC):
         """Return provider type identifier, e.g. 'notion', 'local_file'."""
         pass
 
-    def get_auth_url(self) -> Optional[str]:
+    def get_auth_url(self, state: str | None = None) -> Optional[str]:
         """Return OAuth authorization URL if this provider uses OAuth.
+
+        Args:
+            state: Optional CSRF state token. If provided, the provider
+                   should use this instead of generating its own.
 
         Returns None if no OAuth flow is needed (e.g. API key auth).
         """
@@ -74,7 +78,11 @@ class DocumentProvider(ABC):
     async def update_page_content(
         self, page_id: str, content: dict, credentials: dict
     ) -> dict:
-        """Update document content (full replacement).
+        """Update document content.
+
+        Concurrent-edit semantics are provider-dependent (see class docstring).
+        NotionProvider uses position-based incremental diff; LocalFileProvider
+        and DocumosaProvider use full-page PUT.
 
         Args:
             page_id: Document identifier.
