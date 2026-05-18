@@ -292,15 +292,80 @@ async def _get_all_children(page_id: str, access_token: str) -> list[dict]:
     return all_children
 
 
+_TEXT_BLOCK_TYPES = frozenset({
+    "paragraph", "heading_1", "heading_2", "heading_3",
+    "bulleted_list_item", "numbered_list_item", "quote",
+})
+
+
 def _blocks_equivalent(curr: dict, desired: dict) -> bool:
-    """Check if two Notion blocks have the same content (ignoring id)."""
+    """Check if two Notion blocks have the same content (ignoring id).
+
+    Only compares core content fields (rich_text, expression, language).
+    Ignores API-auto-filled decoration fields like color, icon, caption,
+    is_toggleable — since Notion always returns them but our markdown
+    converter does not produce them.
+    """
     if curr.get("type") != desired.get("type"):
         return False
-    # Compare the type-specific content dict, ignoring block ids
     block_type = curr["type"]
-    curr_content = curr.get(block_type, {})
-    desired_content = desired.get(block_type, {})
-    return json_dumps_stable(curr_content) == json_dumps_stable(desired_content)
+
+    if block_type in _TEXT_BLOCK_TYPES:
+        return _rich_text_equivalent(
+            curr.get(block_type, {}).get("rich_text", []),
+            desired.get(block_type, {}).get("rich_text", []),
+        )
+
+    if block_type == "code":
+        curr_lang = curr.get("code", {}).get("language", "")
+        desired_lang = desired.get("code", {}).get("language", "")
+        if curr_lang != desired_lang:
+            return False
+        return _rich_text_equivalent(
+            curr.get("code", {}).get("rich_text", []),
+            desired.get("code", {}).get("rich_text", []),
+        )
+
+    if block_type == "equation":
+        return (
+            curr.get("equation", {}).get("expression", "")
+            == desired.get("equation", {}).get("expression", "")
+        )
+
+    if block_type == "divider":
+        return True
+
+    if block_type == "table":
+        return curr.get("table", {}).get("content", "") == desired.get("table", {}).get("content", "")
+
+    # Unknown type: fall back to full comparison
+    return json_dumps_stable(curr.get(block_type, {})) == json_dumps_stable(desired.get(block_type, {}))
+
+
+def _rich_text_equivalent(a: list, b: list) -> bool:
+    """Compare rich_text arrays by text content and annotations (ignoring id)."""
+    if len(a) != len(b):
+        return False
+    for ai, bi in zip(a, b):
+        if ai.get("type") != bi.get("type"):
+            return False
+        if ai.get("type") == "equation":
+            if (ai.get("equation", {}).get("expression", "")
+                    != bi.get("equation", {}).get("expression", "")):
+                return False
+        else:
+            if (ai.get("text", {}).get("content", "")
+                    != bi.get("text", {}).get("content", "")):
+                return False
+            if (ai.get("text", {}).get("link") != bi.get("text", {}).get("link")):
+                return False
+            # Compare only non-null annotation values that are truthy
+            a_ann = ai.get("annotations", {}) or {}
+            b_ann = bi.get("annotations", {}) or {}
+            for key in ("bold", "italic", "strikethrough", "underline", "code"):
+                if bool(a_ann.get(key)) != bool(b_ann.get(key)):
+                    return False
+    return True
 
 
 def json_dumps_stable(obj: dict) -> str:
