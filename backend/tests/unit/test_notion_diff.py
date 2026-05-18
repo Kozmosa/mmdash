@@ -828,3 +828,112 @@ class TestDeleteBlockErrorHandling:
             from app.services.notion import delete_block
             # Should not raise
             await delete_block("missing-block-id", "ntn_test")
+
+
+class TestExtractRichText:
+    """Regression tests for _extract_rich_text edge cases found in production."""
+
+    def test_link_null_does_not_crash(self):
+        """A text RT with link:null (Notion's default for non-link text)
+        must not crash with 'NoneType' object has no attribute 'get'."""
+        from app.services.notion_fetch import _extract_rich_text
+
+        rt = [
+            {
+                "type": "text",
+                "text": {"content": "Hello", "link": None},
+                "annotations": {"bold": False, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": "default"},
+                "plain_text": "Hello",
+                "href": None,
+            }
+        ]
+        result = _extract_rich_text(rt)
+        assert result == "Hello"
+
+    def test_link_with_url_extracts_correctly(self):
+        """A text RT with a real link should produce [text](url)."""
+        from app.services.notion_fetch import _extract_rich_text
+
+        rt = [
+            {
+                "type": "text",
+                "text": {"content": "Click here", "link": {"url": "https://example.com"}},
+                "annotations": {"bold": False, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": "default"},
+                "plain_text": "Click here",
+                "href": "https://example.com",
+            }
+        ]
+        result = _extract_rich_text(rt)
+        assert result == "[Click here](https://example.com)"
+
+    def test_bold_with_link_null(self):
+        """Bold text with link:null — the exact crash case from production."""
+        from app.services.notion_fetch import _extract_rich_text
+
+        rt = [
+            {
+                "type": "text",
+                "text": {"content": "任务二：最优动态调价策略", "link": None},
+                "annotations": {"bold": True, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": "default"},
+                "plain_text": "任务二：最优动态调价策略",
+                "href": None,
+            }
+        ]
+        result = _extract_rich_text(rt)
+        assert "任务二：最优动态调价策略" in result
+        assert result.startswith("**")
+
+    def test_plain_text_missing_falls_back_to_text_content(self):
+        """When plain_text is missing, fall back to text.content."""
+        from app.services.notion_fetch import _extract_rich_text
+
+        rt = [
+            {
+                "type": "text",
+                "text": {"content": "Fallback content", "link": None},
+                "annotations": {"bold": False, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": "default"},
+                "plain_text": "",
+                "href": None,
+            }
+        ]
+        result = _extract_rich_text(rt)
+        assert result == "Fallback content"
+
+    def test_mixed_rich_text(self):
+        """Multiple RT items with bold, italic, equation, and link:null."""
+        from app.services.notion_fetch import _extract_rich_text
+
+        rt = [
+            {
+                "type": "text",
+                "text": {"content": "normal ", "link": None},
+                "annotations": {"bold": False, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": "default"},
+                "plain_text": "normal ",
+                "href": None,
+            },
+            {
+                "type": "text",
+                "text": {"content": "bold", "link": None},
+                "annotations": {"bold": True, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": "default"},
+                "plain_text": "bold",
+                "href": None,
+            },
+            {
+                "type": "equation",
+                "equation": {"expression": "x^2"},
+                "annotations": {"bold": False, "italic": False, "strikethrough": False,
+                                "underline": False, "code": False, "color": "default"},
+                "plain_text": "x^2",
+                "href": None,
+            },
+        ]
+        result = _extract_rich_text(rt)
+        assert "normal " in result
+        assert "**bold**" in result
+        assert "$x^2$" in result

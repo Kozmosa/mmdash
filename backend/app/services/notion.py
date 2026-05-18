@@ -79,6 +79,7 @@ async def search_accessible_pages(access_token: str) -> list[dict]:
 
 
 NOTION_HEADERS = {"Notion-Version": "2022-06-28", "Content-Type": "application/json"}
+_GET_HEADERS = {"Notion-Version": "2022-06-28"}
 
 import re
 
@@ -301,7 +302,7 @@ async def _get_all_children(page_id: str, access_token: str) -> list[dict]:
                 params["start_cursor"] = next_cursor
             resp = await client.get(
                 f"https://api.notion.com/v1/blocks/{page_id}/children",
-                headers={"Authorization": f"Bearer {access_token}", **NOTION_HEADERS},
+                headers={"Authorization": f"Bearer {access_token}", **_GET_HEADERS},
                 params=params,
             )
             resp.raise_for_status()
