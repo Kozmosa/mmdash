@@ -258,16 +258,15 @@ fi
 
 echo ""
 echo "========================================"
-echo "  所有服务已启动 (3 阶段并行)"
+echo "  所有服务已启动"
 echo "========================================"
 echo ""
 echo "  Redis:       http://localhost:6379"
-echo "  Backend:     http://localhost:8000  ─┐"
-echo "  DocServer:   http://localhost:8002   ├─ Phase 2 (并行)"
-echo "  LocalAgent:  ws://127.0.0.1:8765  ─┘"
-echo "  CloudAgent:  http://localhost:8001 ─┐"
-echo "  Frontend:    http://localhost:3000  ├─ Phase 3 (并行)"
-echo "                                      ─┘"
+echo "  Backend:     http://localhost:8000"
+echo "  CloudAgent:  http://localhost:8001"
+echo "  DocServer:   http://localhost:8002"
+echo "  LocalAgent:  ws://127.0.0.1:8765"
+echo "  Frontend:    http://localhost:3000"
 if [ "$FRONTEND_MODE" = "dev" ]; then
     echo "  FrontendMode: development"
 else
