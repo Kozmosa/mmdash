@@ -160,8 +160,8 @@ echo "前端模式: $FRONTEND_MODE"
 echo "按 Ctrl+C 优雅退出"
 echo ""
 
-# 1. Redis
-echo "[1/6] 启动 Redis..."
+# 1. Redis (must start first — all other services depend on it)
+echo "[1/2] 启动 Redis + Backend..."
 kill_port 6379 "Redis"
 if [ ! -f "$ROOT_DIR/redis/bin/redis-server" ]; then
     echo "错误: Redis 未安装，请先运行 ./scripts/setup.sh"
@@ -172,64 +172,60 @@ cd "$ROOT_DIR"
 "$ROOT_DIR/redis/bin/redis-server" "$ROOT_DIR/redis/redis.conf" > "$(log_file redis)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Redis")
-CWD_VARS+=("$ROOT_DIR")
 wait_for_port 6379 "Redis" || { echo "Redis 启动失败，正在退出..."; cleanup; exit 1; }
 
-# 2. Backend
-echo "[2/6] 启动 Backend (FastAPI)..."
-kill_port 8000 "Backend"
+# Alembic migration (must run before Backend starts)
 cd "$ROOT_DIR/backend"
 echo "  → 运行数据库迁移 (alembic upgrade head)..."
 if ! uv run alembic upgrade head > "$(log_file backend-alembic)" 2>&1; then
     echo "错误: 数据库迁移失败，请查看 $(log_file backend-alembic)"
     exit 1
 fi
-echo "  → 启动 FastAPI 服务..."
+
+# ── Phase 2: Backend + DocServer + LocalAgent (parallel) ────────────────────
+# Services without mutual dependencies start simultaneously.
+FAILED=""
+
+kill_port 8000 "Backend"
+cd "$ROOT_DIR/backend"
 uv run uvicorn app.main:app --reload --port 8000 > "$(log_file backend)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Backend")
-CWD_VARS+=("$ROOT_DIR/backend")
-if ! wait_for_port 8000 "Backend" 45; then
-    echo "Backend 启动失败，正在退出..."
-    cleanup
-    exit 1
-fi
 
-# 3. Cloud Agent
-echo "[3/6] 启动 Cloud Agent..."
-kill_port 8001 "CloudAgent"
-cd "$ROOT_DIR/cloud_agent"
-uv run python main.py > "$(log_file cloud-agent)" 2>&1 &
-PIDS+=($!)
-SERVICES+=("CloudAgent")
-CWD_VARS+=("$ROOT_DIR/cloud_agent")
-wait_for_port 8001 "CloudAgent" || { echo "CloudAgent 启动失败，正在退出..."; cleanup; exit 1; }
-
-# 4. Doc Server
-echo "[4/6] 启动 Doc Server..."
 kill_port 8002 "DocServer"
 cd "$ROOT_DIR/doc_server"
 PYTHONPATH="$ROOT_DIR" uv run uvicorn doc_server.main:app --port 8002 > "$(log_file doc-server)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("DocServer")
-CWD_VARS+=("$ROOT_DIR/doc_server")
-wait_for_port 8002 "DocServer" || { echo "DocServer 启动失败，正在退出..."; cleanup; exit 1; }
 
-# 5. Local Agent
-echo "[5/6] 启动 Local Agent..."
 kill_port 8765 "LocalAgent"
 cd "$ROOT_DIR/local_agent"
 uv run python main.py > "$(log_file local-agent)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("LocalAgent")
-CWD_VARS+=("$ROOT_DIR/local_agent")
-wait_for_port 8765 "LocalAgent" || { echo "LocalAgent 启动失败，正在退出..."; cleanup; exit 1; }
-wait_for_local_agent_ready || { echo "LocalAgent 协议就绪检查失败，正在退出..."; cleanup; exit 1; }
 
-# 6. Frontend
-echo "[6/6] 启动 Frontend (Next.js)..."
+# Wait for all three ports in parallel
+echo "  → 等待 Backend / DocServer / LocalAgent 就绪..."
+wait_for_port 8000 "Backend" 45 || FAILED="Backend $FAILED"
+wait_for_port 8002 "DocServer" 15 || FAILED="DocServer $FAILED"
+wait_for_port 8765 "LocalAgent" 15 || FAILED="LocalAgent $FAILED"
+wait_for_local_agent_ready || FAILED="LocalAgent(ws) $FAILED"
+
+if [ -n "$FAILED" ]; then
+    echo "错误: 以下服务启动失败: $FAILED"
+    cleanup
+    exit 1
+fi
+
+# ── Phase 3: Cloud Agent + Frontend (parallel, both need Backend up) ─────────
+
+kill_port 8001 "CloudAgent"
+cd "$ROOT_DIR/cloud_agent"
+uv run python main.py > "$(log_file cloud-agent)" 2>&1 &
+PIDS+=($!)
+SERVICES+=("CloudAgent")
+
 kill_port 3000 "Frontend"
-# Also clean up any zombie Next.js dev servers for this project
 for pid in $(ps aux | grep "next" | grep -v grep | awk '{print $2}'); do
     cwd=$(readlink /proc/$pid/cwd 2>/dev/null || true)
     if [[ "$cwd" == *"mmdash/frontend"* ]]; then
@@ -247,27 +243,31 @@ else
 fi
 PIDS+=($!)
 SERVICES+=("Frontend")
-CWD_VARS+=("$ROOT_DIR/frontend")
-# Dev mode Next.js takes longer — give it 90s
+
+FAILED=""
+wait_for_port 8001 "CloudAgent" 15 || FAILED="CloudAgent $FAILED"
 FRONTEND_WAIT=60
 [ "$FRONTEND_MODE" = "dev" ] && FRONTEND_WAIT=90
-if ! wait_for_http "http://127.0.0.1:3000" "Frontend" $FRONTEND_WAIT; then
-    echo "Frontend 启动失败，正在退出..."
+wait_for_http "http://127.0.0.1:3000" "Frontend" $FRONTEND_WAIT || FAILED="Frontend $FAILED"
+
+if [ -n "$FAILED" ]; then
+    echo "错误: 以下服务启动失败: $FAILED"
     cleanup
     exit 1
 fi
 
 echo ""
 echo "========================================"
-echo "  所有服务已启动"
+echo "  所有服务已启动 (3 阶段并行)"
 echo "========================================"
 echo ""
 echo "  Redis:       http://localhost:6379"
-echo "  Backend:     http://localhost:8000"
-echo "  CloudAgent:  http://localhost:8001"
-echo "  DocServer:   http://localhost:8002"
-echo "  LocalAgent:  ws://127.0.0.1:8765"
-echo "  Frontend:    http://localhost:3000"
+echo "  Backend:     http://localhost:8000  ─┐"
+echo "  DocServer:   http://localhost:8002   ├─ Phase 2 (并行)"
+echo "  LocalAgent:  ws://127.0.0.1:8765  ─┘"
+echo "  CloudAgent:  http://localhost:8001 ─┐"
+echo "  Frontend:    http://localhost:3000  ├─ Phase 3 (并行)"
+echo "                                      ─┘"
 if [ "$FRONTEND_MODE" = "dev" ]; then
     echo "  FrontendMode: development"
 else
