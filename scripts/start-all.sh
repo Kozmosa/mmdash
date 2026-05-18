@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
+# Note: NOT using `set -e` — we handle failures explicitly per step.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -24,6 +25,7 @@ mkdir -p "$LOG_DIR"
 
 PIDS=()
 SERVICES=()
+CWD_VARS=()
 
 log_file() {
     echo "$LOG_DIR/$1.log"
@@ -35,6 +37,10 @@ wait_for_port() {
     local attempts=${3:-30}
     local i
     for ((i=1; i<=attempts; i++)); do
+        # Use ss first (more reliable), fall back to lsof
+        if ss -tlnp "sport = :$port" 2>/dev/null | grep -q ":$port"; then
+            return 0
+        fi
         if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
             return 0
         fi
@@ -86,7 +92,6 @@ PY
     return 1
 }
 
-# Kill any process listening on a given port
 kill_port() {
     local port=$1
     local pname=$2
@@ -129,13 +134,22 @@ cleanup() {
         fi
     done
 
-    wait
+    wait 2>/dev/null || true
     echo "  所有服务已停止"
     echo "  日志目录: $LOG_DIR"
+}
+
+# Ensure cleanup only runs once
+_CLEANED_UP=false
+_cleanup_once() {
+    if [ "$_CLEANED_UP" = false ]; then
+        _CLEANED_UP=true
+        cleanup
+    fi
     exit 0
 }
 
-trap cleanup INT TERM
+trap _cleanup_once INT TERM
 
 echo "========================================"
 echo "  数模Dashboard - 一键启动所有服务"
@@ -158,19 +172,28 @@ cd "$ROOT_DIR"
 "$ROOT_DIR/redis/bin/redis-server" "$ROOT_DIR/redis/redis.conf" > "$(log_file redis)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Redis")
-wait_for_port 6379 "Redis"
+CWD_VARS+=("$ROOT_DIR")
+wait_for_port 6379 "Redis" || { echo "Redis 启动失败，正在退出..."; cleanup; exit 1; }
 
 # 2. Backend
 echo "[2/6] 启动 Backend (FastAPI)..."
 kill_port 8000 "Backend"
 cd "$ROOT_DIR/backend"
 echo "  → 运行数据库迁移 (alembic upgrade head)..."
-uv run alembic upgrade head > "$(log_file backend-alembic)" 2>&1
+if ! uv run alembic upgrade head > "$(log_file backend-alembic)" 2>&1; then
+    echo "错误: 数据库迁移失败，请查看 $(log_file backend-alembic)"
+    exit 1
+fi
 echo "  → 启动 FastAPI 服务..."
 uv run uvicorn app.main:app --reload --port 8000 > "$(log_file backend)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("Backend")
-wait_for_port 8000 "Backend"
+CWD_VARS+=("$ROOT_DIR/backend")
+if ! wait_for_port 8000 "Backend" 45; then
+    echo "Backend 启动失败，正在退出..."
+    cleanup
+    exit 1
+fi
 
 # 3. Cloud Agent
 echo "[3/6] 启动 Cloud Agent..."
@@ -179,7 +202,8 @@ cd "$ROOT_DIR/cloud_agent"
 uv run python main.py > "$(log_file cloud-agent)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("CloudAgent")
-wait_for_port 8001 "CloudAgent"
+CWD_VARS+=("$ROOT_DIR/cloud_agent")
+wait_for_port 8001 "CloudAgent" || { echo "CloudAgent 启动失败，正在退出..."; cleanup; exit 1; }
 
 # 4. Doc Server
 echo "[4/6] 启动 Doc Server..."
@@ -188,7 +212,8 @@ cd "$ROOT_DIR/doc_server"
 PYTHONPATH="$ROOT_DIR" uv run uvicorn doc_server.main:app --port 8002 > "$(log_file doc-server)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("DocServer")
-wait_for_port 8002 "DocServer"
+CWD_VARS+=("$ROOT_DIR/doc_server")
+wait_for_port 8002 "DocServer" || { echo "DocServer 启动失败，正在退出..."; cleanup; exit 1; }
 
 # 5. Local Agent
 echo "[5/6] 启动 Local Agent..."
@@ -197,8 +222,9 @@ cd "$ROOT_DIR/local_agent"
 uv run python main.py > "$(log_file local-agent)" 2>&1 &
 PIDS+=($!)
 SERVICES+=("LocalAgent")
-wait_for_port 8765 "LocalAgent"
-wait_for_local_agent_ready
+CWD_VARS+=("$ROOT_DIR/local_agent")
+wait_for_port 8765 "LocalAgent" || { echo "LocalAgent 启动失败，正在退出..."; cleanup; exit 1; }
+wait_for_local_agent_ready || { echo "LocalAgent 协议就绪检查失败，正在退出..."; cleanup; exit 1; }
 
 # 6. Frontend
 echo "[6/6] 启动 Frontend (Next.js)..."
@@ -221,7 +247,15 @@ else
 fi
 PIDS+=($!)
 SERVICES+=("Frontend")
-wait_for_http "http://127.0.0.1:3000" "Frontend"
+CWD_VARS+=("$ROOT_DIR/frontend")
+# Dev mode Next.js takes longer — give it 90s
+FRONTEND_WAIT=60
+[ "$FRONTEND_MODE" = "dev" ] && FRONTEND_WAIT=90
+if ! wait_for_http "http://127.0.0.1:3000" "Frontend" $FRONTEND_WAIT; then
+    echo "Frontend 启动失败，正在退出..."
+    cleanup
+    exit 1
+fi
 
 echo ""
 echo "========================================"
@@ -243,19 +277,38 @@ echo ""
 echo "按 Ctrl+C 停止所有服务"
 echo ""
 
-# Keep the script running
+# Keep the script running with retry-based health monitoring.
+# 3 consecutive failures needed before triggering cleanup — this handles
+# transient restarts (e.g., uvicorn --reload window) gracefully.
+FAILURE_COUNT=0
+MAX_FAILURES=3
 while true; do
     all_alive=true
     for i in "${!PIDS[@]}"; do
         if ! kill -0 "${PIDS[$i]}" 2>/dev/null; then
-            echo "警告: ${SERVICES[$i]} 已退出"
             all_alive=false
         fi
     done
+
     if [ "$all_alive" = false ]; then
-        echo ""
-        echo "有服务异常退出，正在关闭其他服务..."
-        cleanup
+        FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        for i in "${!PIDS[@]}"; do
+            if ! kill -0 "${PIDS[$i]}" 2>/dev/null; then
+                echo "警告: ${SERVICES[$i]} 已退出 (${FAILURE_COUNT}/${MAX_FAILURES})"
+            fi
+        done
+
+        if [ "$FAILURE_COUNT" -ge "$MAX_FAILURES" ]; then
+            echo ""
+            echo "服务连续 ${MAX_FAILURES} 次检测失败，正在关闭所有服务..."
+            _cleanup_once
+        fi
+    else
+        # All alive — reset failure counter
+        if [ "$FAILURE_COUNT" -gt 0 ]; then
+            echo "所有服务已恢复"
+        fi
+        FAILURE_COUNT=0
     fi
     sleep 3
 done
