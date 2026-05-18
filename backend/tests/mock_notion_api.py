@@ -108,6 +108,10 @@ class MockNotionAPI:
         if method == "PATCH" and "/blocks/" in url and "/children" in url:
             page_id = url.split("/blocks/")[1].split("/children")[0]
             return self.append_block_children(page_id, kwargs.get("json", {}))
+        if method == "PATCH" and "/pages/" in url:
+            page_id = url.split("/pages/")[1]
+            return self.update_page(page_id, kwargs.get("json", {}))
+
         if method == "PATCH" and "/blocks/" in url:
             block_id = url.split("/blocks/")[1]
             return self.update_block(block_id, kwargs.get("json", {}))
@@ -152,6 +156,13 @@ class MockNotionAPI:
             "results": results,
             "has_more": False,
         })
+
+    def update_page(self, page_id: str, body: dict) -> MockNotionResponse:
+        """Update page properties (title etc)."""
+        if page_id not in self._pages:
+            return MockNotionResponse(404, {"object": "error", "message": "Page not found", "status": 404})
+        # In a real mock we'd update stored properties, but for tests just return success
+        return MockNotionResponse(200, {"object": "page", "id": page_id})
 
     def update_block(self, block_id: str, body: dict) -> MockNotionResponse:
         for page_id, blocks in self._blocks.items():
