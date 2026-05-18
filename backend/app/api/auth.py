@@ -1,3 +1,4 @@
+import json
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -155,7 +156,11 @@ def get_provider_auth_url(
     if not provider_type:
         provider_type = settings.DOCUMENT_PROVIDER
     provider = get_provider(provider_type)
-    auth_url = provider.get_auth_url()
+    state = secrets.token_urlsafe(32)
+    # store before building URL so state exists when callback arrives
+    from app.services.cache import store_oauth_state
+    store_oauth_state(state)
+    auth_url = provider.get_auth_url(state=state)
     if not auth_url:
         raise HTTPException(status_code=400, detail="This provider does not require OAuth")
     return {"auth_url": auth_url}
@@ -165,6 +170,10 @@ def get_provider_auth_url(
 async def provider_callback(data: ProviderCallback, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     provider_type = data.provider_type or settings.DOCUMENT_PROVIDER
     provider = get_provider(provider_type)
+    if data.state:
+        from app.services.cache import validate_and_consume_oauth_state
+        if not validate_and_consume_oauth_state(data.state):
+            raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
     try:
         creds = await provider.exchange_auth_code(data.code)
         if data.team_id:
@@ -183,7 +192,7 @@ async def provider_callback(data: ProviderCallback, current_user: User = Depends
                 .first()
             )
             if existing:
-                existing.credentials = __import__("json").dumps(creds)
+                existing.credentials = json.dumps(creds)
                 existing.workspace_id = creds.get("workspace_id")
                 existing.workspace_name = creds.get("workspace_name")
             else:
@@ -191,7 +200,7 @@ async def provider_callback(data: ProviderCallback, current_user: User = Depends
                     user_id=current_user.id,
                     team_id=data.team_id,
                     provider_type=provider_type,
-                    credentials=__import__("json").dumps(creds),
+                    credentials=json.dumps(creds),
                     workspace_id=creds.get("workspace_id"),
                     workspace_name=creds.get("workspace_name"),
                 )
@@ -208,7 +217,7 @@ async def provider_callback(data: ProviderCallback, current_user: User = Depends
         new_binding = ProviderBinding(
             user_id=current_user.id,
             provider_type=provider_type,
-            credentials=__import__("json").dumps(creds),
+            credentials=json.dumps(creds),
             workspace_id=creds.get("workspace_id"),
             workspace_name=creds.get("workspace_name"),
         )

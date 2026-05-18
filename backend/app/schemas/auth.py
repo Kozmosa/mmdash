@@ -50,6 +50,7 @@ class ProviderCallback(BaseModel):
     code: str
     provider_type: Optional[str] = None
     team_id: Optional[str] = None
+    state: Optional[str] = None
 
 
 class ProviderSwitchRequest(BaseModel):

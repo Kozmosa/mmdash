@@ -1,36 +1,27 @@
 import httpx
 from app.services.cache import get_cached_notion_page, set_cached_notion_page
+from app.services.notion import _CLIENT_TIMEOUT, _get_all_children
 
 
 async def fetch_notion_page_content(page_id: str, access_token: str) -> dict:
-    """Fetch Notion page content (blocks) with caching."""
+    """Fetch Notion page content (blocks) with caching and full pagination."""
     cached = get_cached_notion_page(page_id)
     if cached:
         return cached
 
-    async with httpx.AsyncClient() as client:
-        # Fetch page blocks
-        blocks_resp = await client.get(
-            f"https://api.notion.com/v1/blocks/{page_id}/children",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Notion-Version": "2022-06-28",
-            },
-        )
-        blocks_resp.raise_for_status()
-        blocks_data = blocks_resp.json()
+    blocks = await _get_all_children(page_id, access_token)
 
-        result = {
-            "page_id": page_id,
-            "blocks": blocks_data.get("results", []),
-        }
-        set_cached_notion_page(page_id, result)
-        return result
+    result = {
+        "page_id": page_id,
+        "blocks": blocks,
+    }
+    set_cached_notion_page(page_id, result)
+    return result
 
 
 async def fetch_notion_page_metadata(page_id: str, access_token: str) -> dict:
     """Fetch Notion page metadata."""
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         resp = await client.get(
             f"https://api.notion.com/v1/pages/{page_id}",
             headers={
@@ -82,7 +73,14 @@ def notion_blocks_to_markdown(blocks: list) -> str:
         elif block_type == "divider":
             md_lines.append("---")
         elif block_type == "table":
-            md_lines.append(block.get("content", ""))
+            # Real Notion table blocks have nested table_row children that
+            # aren't fetched by the flat block list.  Render as a placeholder
+            # so the table isn't silently lost.
+            md_lines.append("*(table)*")
+        elif block_type == "table_row":
+            cells = block.get("table_row", {}).get("cells", [])
+            row = " | ".join(_extract_rich_text(cell) for cell in cells)
+            md_lines.append(f"| {row} |")
     return "\n\n".join(md_lines)
 
 

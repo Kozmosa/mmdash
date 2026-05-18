@@ -4,8 +4,15 @@ Tests cover real Notion API behavior observed from actual API probing.
 """
 
 import copy
+import httpx
 import pytest
 from unittest.mock import AsyncMock, patch
+
+
+@pytest.fixture(autouse=True)
+def _zero_rate_limit_delay(monkeypatch):
+    """Disable the rate-limit sleep during tests."""
+    monkeypatch.setattr("app.services.notion._RATE_LIMIT_DELAY", 0.0)
 
 
 @pytest.fixture
@@ -766,3 +773,58 @@ class TestCreatePage:
         assert req["json"]["parent"]["page_id"] == "parent-1"
         title_blocks = req["json"]["properties"]["title"]["title"]
         assert title_blocks[0]["text"]["content"] == "My Page"
+
+
+class TestDeleteBlockErrorHandling:
+    """delete_block should silently skip 4xx errors but propagate 5xx and network errors."""
+
+    @pytest.mark.asyncio
+    async def test_delete_block_swallows_400(self):
+        """HTTP 400 (block cannot be deleted) → should not raise."""
+        class MockClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def delete(self, url, headers=None):
+                from tests.mock_notion_api import MockNotionResponse
+                resp = MockNotionResponse(400, {"message": "Block cannot be deleted"})
+                resp.raise_for_status()
+
+        with patch("app.services.notion.httpx.AsyncClient", MockClient):
+            from app.services.notion import delete_block
+            # Should not raise
+            await delete_block("some-block-id", "ntn_test")
+
+    @pytest.mark.asyncio
+    async def test_delete_block_propagates_500(self):
+        """HTTP 500 (server error) → should propagate."""
+        class MockClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def delete(self, url, headers=None):
+                from tests.mock_notion_api import MockNotionResponse
+                resp = MockNotionResponse(500, {"message": "Internal error"})
+                resp.raise_for_status()
+
+        with patch("app.services.notion.httpx.AsyncClient", MockClient):
+            from app.services.notion import delete_block
+            with pytest.raises(httpx.HTTPStatusError):
+                await delete_block("some-block-id", "ntn_test")
+
+    @pytest.mark.asyncio
+    async def test_delete_block_propagates_404(self):
+        """HTTP 404 (already deleted) → should swallow (4xx)."""
+        class MockClient:
+            def __init__(self, *a, **kw): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+            async def delete(self, url, headers=None):
+                from tests.mock_notion_api import MockNotionResponse
+                resp = MockNotionResponse(404, {"message": "Block not found"})
+                resp.raise_for_status()
+
+        with patch("app.services.notion.httpx.AsyncClient", MockClient):
+            from app.services.notion import delete_block
+            # Should not raise
+            await delete_block("missing-block-id", "ntn_test")

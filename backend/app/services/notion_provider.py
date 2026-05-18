@@ -1,7 +1,9 @@
+import httpx
 import secrets
 from typing import Optional
 
 from app.core.config import get_settings
+from app.services.cache import invalidate_page
 from app.services.document_provider import DocumentProvider, register_provider
 from app.services.notion_fetch import (
     fetch_notion_page_content,
@@ -9,6 +11,8 @@ from app.services.notion_fetch import (
     notion_blocks_to_markdown,
 )
 from app.services.notion import (
+    _CLIENT_TIMEOUT,
+    _append_after,
     exchange_code_for_token,
     create_page as create_notion_page,
     search_accessible_pages,
@@ -60,8 +64,8 @@ class NotionProvider(DocumentProvider):
                 break
         return {"page_id": page_id, "title": title}
 
-    def get_auth_url(self) -> Optional[str]:
-        state = secrets.token_urlsafe(32)
+    def get_auth_url(self, state: str | None = None) -> Optional[str]:
+        state = state or secrets.token_urlsafe(32)
         return (
             f"https://api.notion.com/v1/oauth/authorize?"
             f"client_id={settings.NOTION_CLIENT_ID}&"
@@ -86,6 +90,11 @@ class NotionProvider(DocumentProvider):
                 raise ValueError("No accessible Notion pages found. Please share a page with the integration first.")
             parent_page_id = pages[0]["id"]
         page_id = await create_notion_page(parent_page_id, title, credentials["access_token"])
+        if content:
+            blocks = markdown_to_notion_blocks(content)
+            if blocks:
+                await _append_after(page_id, blocks, credentials["access_token"], after_id=None)
+        invalidate_page("notion", page_id)
         return {"page_id": page_id, "title": title}
 
     async def list_accessible_pages(self, credentials: dict) -> list[dict]:
@@ -99,7 +108,7 @@ class NotionProvider(DocumentProvider):
         if not blocks and markdown:
             blocks = markdown_to_notion_blocks(markdown)
 
-        async with __import__("httpx").AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
             if title:
                 await client.patch(
                     f"https://api.notion.com/v1/pages/{page_id}",
@@ -112,6 +121,7 @@ class NotionProvider(DocumentProvider):
                 )
             if blocks is not None:
                 await diff_and_apply_blocks(page_id, blocks, token)
+                invalidate_page("notion", page_id)
 
         if markdown:
             result_md = markdown

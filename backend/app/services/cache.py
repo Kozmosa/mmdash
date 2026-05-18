@@ -135,3 +135,29 @@ def delete_draft_markdown(project_id: str):
         _get_redis().delete(_draft_cache_key(project_id))
     except redis.ConnectionError:
         pass
+
+
+# ─── OAuth State Cache ──────────────────────────────────────────────────────
+
+_OAUTH_STATE_TTL = 600  # 10 minutes
+
+
+def store_oauth_state(state: str):
+    """Store an OAuth state token for CSRF validation."""
+    try:
+        _get_redis().setex(f"oauth:state:{state}", _OAUTH_STATE_TTL, "1")
+    except redis.ConnectionError:
+        pass
+
+
+def validate_and_consume_oauth_state(state: str) -> bool:
+    """Validate an OAuth state token and consume it (one-time use)."""
+    try:
+        key = f"oauth:state:{state}"
+        r = _get_redis()
+        if r.get(key):
+            r.delete(key)
+            return True
+    except redis.ConnectionError:
+        return False
+    return False
