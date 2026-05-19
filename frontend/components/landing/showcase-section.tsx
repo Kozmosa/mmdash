@@ -12,7 +12,7 @@ const fadeInUp = {
 interface Copy {
   showcase: {
     title: string; subtitle: string;
-    cards: { title: string; text: string }[];
+    cards: readonly { title: string; text: string }[];
   };
 }
 

@@ -11,7 +11,7 @@ const fadeInUp = {
 
 interface Copy {
   scenarios: {
-    title: string; subtitle: string; items: string[];
+    title: string; subtitle: string; items: readonly string[];
   };
 }
 
