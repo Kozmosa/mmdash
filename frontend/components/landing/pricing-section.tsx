@@ -9,13 +9,13 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "/auth/login";
 
 interface Tier {
   name: string; price: string; description: string;
-  features: string[]; highlighted: boolean;
+  features: readonly string[]; highlighted: boolean;
 }
 
 interface Copy {
   pricing: {
     title: string; subtitle: string; recommended: string;
-    getStarted: string; perMonth: string; tiers: Tier[];
+    getStarted: string; perMonth: string; tiers: readonly Tier[];
   };
 }
 

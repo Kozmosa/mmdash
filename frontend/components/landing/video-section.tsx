@@ -11,7 +11,7 @@ const fadeInUp = {
 interface Copy {
   video: {
     title: string; subtitle: string; pulse: string;
-    preview: string; cards: string[];
+    preview: string; cards: readonly string[];
   };
 }
 

@@ -9,7 +9,7 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "/auth/login";
 interface Copy {
   cta: {
     title: string; subtitle: string; primary: string;
-    secondary: string; chips: string[];
+    secondary: string; chips: readonly string[];
   };
 }
 

@@ -14,7 +14,7 @@ const fadeInUp = {
 interface Copy {
   hero: {
     titleLine1: string; titleLine2: string; subtitle: string;
-    primary: string; secondary: string; tags: string[];
+    primary: string; secondary: string; tags: readonly string[];
     scroll: string; mockupTitle: string;
   };
 }

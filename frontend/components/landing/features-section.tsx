@@ -16,14 +16,14 @@ const stagger = {
 
 interface FeatureItem {
   type: "evidence" | "outline" | "version";
-  title: string; subtitle: string; bullets: string[]; reverse: boolean;
+  title: string; subtitle: string; bullets: readonly string[]; reverse: boolean;
 }
 
 interface Copy {
-  features: { title: string; subtitle: string; items: FeatureItem[] };
+  features: { title: string; subtitle: string; items: readonly FeatureItem[] };
   visuals: {
-    evidence: string[]; outlineTitle: string; outline: string[];
-    versionTitle: string; versions: string[];
+    evidence: readonly string[]; outlineTitle: string; outline: readonly string[];
+    versionTitle: string; versions: readonly string[];
   };
 }
 
