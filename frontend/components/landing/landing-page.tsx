@@ -16,7 +16,7 @@ type Locale = "zh" | "en";
 const copy = {
   zh: {
     nav: {
-      features: "功能", showcase: "展示", scenarios: "场景",
+      gettingStarted: "快速上手", features: "功能", showcase: "展示", scenarios: "场景",
       pricing: "价格", docs: "文档", signIn: "登录",
       startShort: "开始", start: "免费开始",
       languageTarget: "EN", languageLabel: "Switch to English",
@@ -86,7 +86,7 @@ const copy = {
   },
   en: {
     nav: {
-      features: "Features", showcase: "Showcase", scenarios: "Scenarios",
+      gettingStarted: "Getting Started", features: "Features", showcase: "Showcase", scenarios: "Scenarios",
       pricing: "Pricing", docs: "Docs", signIn: "Sign in",
       startShort: "Start", start: "Start for free",
       languageTarget: "中", languageLabel: "切换到中文",

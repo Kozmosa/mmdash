@@ -10,7 +10,7 @@ type Locale = "zh" | "en";
 
 interface Copy {
   nav: {
-    features: string; showcase: string; scenarios: string;
+    gettingStarted: string; features: string; showcase: string; scenarios: string;
     pricing: string; docs: string; signIn: string;
     startShort: string; start: string; languageTarget: string;
     languageLabel: string; themeToDark: string; themeToLight: string;
@@ -42,7 +42,7 @@ export function NavBar({
           <a href="#showcase">{t.nav.showcase}</a>
           <a href="#scenarios">{t.nav.scenarios}</a>
           <a href="#pricing">{t.nav.pricing}</a>
-          <a href="#docs">{t.nav.docs}</a>
+          <a href="/getting-started">{t.nav.gettingStarted}</a>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
