@@ -1,56 +1,50 @@
-# SQLite database
-backend/mmdash.db
-backend/app.db
-
-# Redis local installation
-redis/bin/
-redis/data/
+# Environment and secrets
+.env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
 .Python
-env/
-venv/
 .venv/
-
-# uv
-uv.lock
+venv/
+env/
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Node
+# Node.js
 node_modules/
 .next/
+dist/
+build/
 *.tsbuildinfo
 
-# IDE
+# Runtime data and logs
+data/
+logs/
+uploads/
+*.db
+*.sqlite
+*.sqlite3
+
+# Local Git worktrees
+.worktrees/
+
+# Retained v0.0 local runtime data
+/redis/bin/
+/redis/data/
+
+# Editors and OS files
 .vscode/
 .idea/
 .opencode/
-
-# Local environment files
-.env
-backend/.env
-frontend/next-env.d.ts
-docs/superpowers/plans/
-drafts/
-
-# OS
 .DS_Store
 Thumbs.db
 
-logs/
-
-# doc_server data directory
-doc_server/data/
-
-# Runtime uploads and test data
-backend/uploads/
-data/
-package-lock.json
-
-.worktrees/
-drafts/.worktrees/
-backend/.coverage
+# Local drafts
+drafts/
