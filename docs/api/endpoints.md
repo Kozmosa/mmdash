@@ -16,6 +16,7 @@ machine-readable source of truth.
 | Web BFF | File stream | `GET` | `/api/projects/{projectId}/files/{filePath}` | `bff.file.download` | file proxy | `web-bff.yaml` |
 | Web BFF | File metadata | `HEAD` | `/api/projects/{projectId}/files/{filePath}` | `bff.file.head` | file proxy | `web-bff.yaml` |
 | Web BFF | File stream | `PUT` | `/api/projects/{projectId}/files/{filePath}` | `bff.file.upload` | file proxy | `web-bff.yaml` |
+| MCP Gateway | MCP Tool | `tools/call` | `/mcp` | `system.echo` | engineering baseline | `system.echo.json` |
 
 ## Browser BFF conventions
 

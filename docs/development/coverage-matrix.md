@@ -10,3 +10,4 @@ evidence. It is expanded as product modules are implemented.
 | Searchable API reference      | `contracts/openapi`, `docs/api`                  | API documentation    | `pnpm api:check`                     |
 | Browser application shell     | `apps/web` App Router, providers, route registry | web foundation       | `apps/web/test` and production build |
 | Browser API boundary          | Fastify BFF and generated Core client             | web-bff foundation   | BFF unit and streaming proxy tests   |
+| Agent API boundary            | MCP Gateway, token/session policy, tool registry  | MCP foundation       | MCP v2 transport and permission tests |

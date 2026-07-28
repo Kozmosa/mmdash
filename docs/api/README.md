@@ -7,11 +7,15 @@ machine-readable contracts live in
 - [`core.yaml`](../../contracts/openapi/core.yaml) for Core consumers;
 - [`web-bff.yaml`](../../contracts/openapi/web-bff.yaml) for browser-facing
   HTTP, SSE, WebSocket, and file-stream routes.
+- [`contracts/json-schema/mcp-tools`](../../contracts/json-schema/mcp-tools)
+  for MCP tool input and structured-output schemas.
 
 ## Find an API quickly
 
 1. Search [`endpoints.md`](endpoints.md) by service, method, path, module, or
    `operationId`.
+   For tool details, search [`mcp-tools.md`](mcp-tools.md) by tool name,
+   project scope, or token kind.
 2. Open the matching `operationId` in the named OpenAPI contract for request
    and response schemas.
 3. Use `pnpm api:check` after editing the contract. CI rejects operations that
@@ -59,6 +63,7 @@ pnpm --filter @mmdash/core-client generate
 ## Related documents
 
 - [Endpoint catalog](endpoints.md)
+- [MCP tool catalog](mcp-tools.md)
 - [Local development](../development/README.md)
 - [Web BFF development](../development/web-bff.md)
 - [Architecture](../architecture/README.md)

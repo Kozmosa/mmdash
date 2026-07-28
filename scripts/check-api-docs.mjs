@@ -16,6 +16,19 @@ for (const contractFile of contractFiles) {
   );
 }
 
+const mcpContractDirectory = "contracts/json-schema/mcp-tools";
+const mcpContractFiles = (await readdir(mcpContractDirectory))
+  .filter((file) => file.endsWith(".json"))
+  .sort();
+for (const contractFile of mcpContractFiles) {
+  const contract = JSON.parse(
+    await readFile(`${mcpContractDirectory}/${contractFile}`, "utf8"),
+  );
+  if (typeof contract["x-operation-id"] === "string") {
+    operationIds.push(contract["x-operation-id"]);
+  }
+}
+
 if (operationIds.length === 0) {
   console.error("OpenAPI contracts have no operationId entries.");
   process.exit(1);
@@ -33,5 +46,5 @@ if (missing.length > 0) {
 }
 
 console.log(
-  `API catalog covers ${operationIds.length} operation(s) across ${contractFiles.length} contract(s).`,
+  `API catalog covers ${operationIds.length} operation(s) across ${contractFiles.length + mcpContractFiles.length} contract(s).`,
 );
