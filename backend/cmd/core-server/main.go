@@ -9,6 +9,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
+	"github.com/mmdash/mmdash/backend/internal/datahub"
 	"github.com/mmdash/mmdash/backend/internal/events"
 	"github.com/mmdash/mmdash/backend/internal/example"
 	"github.com/mmdash/mmdash/backend/internal/jobs"
@@ -111,6 +112,64 @@ func run(logger *logging.Logger) error {
 			Transaction: transactionManager,
 		},
 	}
+	dataStore := datahub.PostgresStore{
+		Clock:       systemClock,
+		DB:          db,
+		Generator:   idGenerator,
+		Outbox:      outboxWriter,
+		Transaction: transactionManager,
+	}
+	dataAdapters := datahub.NewAdapterRegistry()
+	if err := dataAdapters.Register("project", datahub.ReaderFunc(
+		func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			return projectService.Get(ctx, caller, object.ProjectID)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("context-proposal", datahub.ReaderFunc(
+		func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			if err := projectService.Authorize(
+				ctx, caller, object.ProjectID, datahub.PermissionContextPropose,
+			); err != nil {
+				return nil, err
+			}
+			return dataStore.GetProposal(ctx, object.ProjectID, object.SourceID)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("project-context", datahub.ReaderFunc(
+		func(ctx context.Context, _ auth.Identity, object datahub.Object) (interface{}, error) {
+			return dataStore.GetContext(ctx, object.ProjectID, object.SourceID)
+		},
+	)); err != nil {
+		return err
+	}
+	projections := datahub.NewProjectionRegistry()
+	if err := projections.Register(
+		"project.created",
+		datahub.ProjectorFunc(dataStore.ProjectCreated),
+	); err != nil {
+		return err
+	}
+	if err := projections.Register(
+		"project.updated",
+		datahub.ProjectorFunc(dataStore.ProjectUpdated),
+	); err != nil {
+		return err
+	}
+	if err := eventBus.Register(eventbus.Consumer{
+		Name:     "datahub.projections",
+		Patterns: projections.Patterns(),
+		Handler:  projections.Handle,
+	}); err != nil {
+		return err
+	}
+	dataService := datahub.Service{
+		Access: projectService, Adapters: dataAdapters,
+		Clock: systemClock, Store: dataStore,
+	}
 	settingsCodec, err := settings.NewSecretCodec(processConfig.Settings.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("initialize settings encryption: %w", err)
@@ -163,6 +222,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(events.Module{Service: eventService}); err != nil {
+		return err
+	}
+	if err := modules.Register(datahub.Module{Service: dataService}); err != nil {
 		return err
 	}
 	if err := modules.Register(settings.Module{

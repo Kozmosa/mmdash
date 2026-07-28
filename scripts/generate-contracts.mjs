@@ -66,6 +66,8 @@ function renderGoHandlerTypes(document) {
     "FailJobRequest",
     "EmitTestEventRequest",
     "ReplayEventRequest",
+    "CreateContextProposalRequest",
+    "ReviewContextProposalRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {

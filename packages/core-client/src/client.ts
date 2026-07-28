@@ -279,6 +279,109 @@ export class CoreClient {
     );
   }
 
+  async listDataObjects(
+    projectId: string,
+    context: CoreRequestContext,
+    options: { cursor?: string; limit?: number; type?: string } = {},
+  ): Promise<components["schemas"]["DataObjectPage"]> {
+    const query = new URLSearchParams();
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    if (options.type) query.set("type", options.type);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/objects${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async readDataObject(
+    projectId: string,
+    objectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["DataObjectRead"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/objects/${encodeURIComponent(objectId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listDataActivity(
+    projectId: string,
+    context: CoreRequestContext,
+    options: { cursor?: string; limit?: number } = {},
+  ): Promise<components["schemas"]["DataActivityPage"]> {
+    const query = new URLSearchParams();
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/activity${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listProjectContext(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectContextList"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listContextProposals(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ContextProposalList"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context/proposals`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createContextProposal(
+    projectId: string,
+    input: components["schemas"]["CreateContextProposalRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ContextProposal"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context/proposals`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async reviewContextProposal(
+    projectId: string,
+    proposalId: string,
+    input: components["schemas"]["ReviewContextProposalRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ContextProposal"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context/proposals/${encodeURIComponent(proposalId)}/review`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async getProjectHome(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["HomeAggregate"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/home`,
+      { method: "GET" },
+      context,
+    );
+  }
+
   async request<T>(
     path: string,
     options: CoreRequestOptions,

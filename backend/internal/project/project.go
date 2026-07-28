@@ -37,6 +37,9 @@ const (
 	PermissionJobsCreate     Permission = "project.jobs.create"
 	PermissionJobsRead       Permission = "project.jobs.read"
 	PermissionJobsCancel     Permission = "project.jobs.cancel"
+	PermissionDataRead       Permission = "project.data.read"
+	PermissionContextPropose Permission = "project.context.propose"
+	PermissionContextReview  Permission = "project.context.review"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -51,6 +54,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionJobsCreate,
 		PermissionJobsRead,
 		PermissionJobsCancel,
+		PermissionDataRead,
+		PermissionContextPropose,
+		PermissionContextReview,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -62,6 +68,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionJobsCreate,
 		PermissionJobsRead,
 		PermissionJobsCancel,
+		PermissionDataRead,
+		PermissionContextPropose,
+		PermissionContextReview,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -70,16 +79,31 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionJobsCreate,
 		PermissionJobsRead,
 		PermissionJobsCancel,
+		PermissionDataRead,
+		PermissionContextPropose,
+		PermissionContextReview,
 	},
-	RoleViewer: {PermissionRead, PermissionSettingsRead, PermissionJobsRead},
+	RoleViewer: {
+		PermissionRead,
+		PermissionSettingsRead,
+		PermissionJobsRead,
+		PermissionDataRead,
+	},
 	RoleAgent: {
 		PermissionRead,
 		PermissionSettingsRead,
 		PermissionJobsCreate,
 		PermissionJobsRead,
 		PermissionJobsCancel,
+		PermissionDataRead,
+		PermissionContextPropose,
 	},
-	RoleBox: {PermissionRead, PermissionSettingsRead, PermissionJobsRead},
+	RoleBox: {
+		PermissionRead,
+		PermissionSettingsRead,
+		PermissionJobsRead,
+		PermissionDataRead,
+	},
 }
 
 // Project is the authoritative project record.
