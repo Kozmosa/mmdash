@@ -427,3 +427,76 @@ func (request ReplayEventRequest) Validate() error {
 	}
 	return nil
 }
+
+// CreateContextProposalRequest is generated from the Core request-body schema.
+type CreateContextProposalRequest struct {
+	Title           string    `json:"title"`
+	Content         string    `json:"content"`
+	ContextType     string    `json:"context_type"`
+	SourceObjectIDs *[]string `json:"source_object_ids,omitempty"`
+	Rationale       *string   `json:"rationale,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateContextProposalRequest) Validate() error {
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 200 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.Content == "" {
+		return fmt.Errorf("content is required")
+	}
+	if len(request.Content) < 1 {
+		return fmt.Errorf("content is too short")
+	}
+	if len(request.Content) > 20000 {
+		return fmt.Errorf("content is too long")
+	}
+	if request.ContextType == "" {
+		return fmt.Errorf("context_type is required")
+	}
+	if len(request.ContextType) < 1 {
+		return fmt.Errorf("context_type is too short")
+	}
+	if len(request.ContextType) > 100 {
+		return fmt.Errorf("context_type is too long")
+	}
+	if request.SourceObjectIDs != nil {
+		if len(*request.SourceObjectIDs) > 100 {
+			return fmt.Errorf("source_object_ids has too many items")
+		}
+	}
+	if request.Rationale != nil {
+		if len(*request.Rationale) > 2000 {
+			return fmt.Errorf("rationale is too long")
+		}
+	}
+	return nil
+}
+
+// ReviewContextProposalRequest is generated from the Core request-body schema.
+type ReviewContextProposalRequest struct {
+	Decision   string  `json:"decision"`
+	ReviewNote *string `json:"review_note,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ReviewContextProposalRequest) Validate() error {
+	if request.Decision == "" {
+		return fmt.Errorf("decision is required")
+	}
+	if request.Decision != "accepted" && request.Decision != "rejected" {
+		return fmt.Errorf("decision has an unsupported value")
+	}
+	if request.ReviewNote != nil {
+		if len(*request.ReviewNote) > 2000 {
+			return fmt.Errorf("review_note is too long")
+		}
+	}
+	return nil
+}
