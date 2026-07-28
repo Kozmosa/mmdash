@@ -72,4 +72,5 @@ layer only when their module documentation explains why.
 - [MCP Gateway foundation](mcp-gateway.md)
 - [CLI development and packaging](cli.md)
 - [Go Core Server foundation](core.md)
+- [Worker development](worker.md)
 - [Contract development](contracts.md)

@@ -33,6 +33,16 @@ machine-readable source of truth.
 | Core        | HTTP          | `PATCH`       | `/v1/settings/projects/{projectId}/{typeKey}`       | `settings.projects.update`         | settings             | `core.yaml`        |
 | Core        | HTTP          | `DELETE`      | `/v1/settings/projects/{projectId}/{typeKey}`       | `settings.projects.delete`         | settings             | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/settings/projects/{projectId}/{typeKey}/test`  | `settings.projects.test`           | settings             | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs`                                          | `jobs.create`                      | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/claim`                                    | `jobs.claim`                       | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/workers/heartbeat`                        | `jobs.workers.heartbeat`           | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/jobs/{jobId}`                                  | `jobs.get`                         | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/cancel`                           | `jobs.cancel`                      | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/heartbeat`                        | `jobs.lease.renew`                 | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/jobs/{jobId}/logs`                             | `jobs.logs.list`                   | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/logs`                             | `jobs.logs.append`                 | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/complete`                         | `jobs.complete`                    | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/fail`                             | `jobs.fail`                        | jobs                 | `core.yaml`        |
 | Web BFF     | HTTP          | `GET`         | `/health/live`                                      | `bff.health.live`                  | health               | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/health/ready`                                     | `bff.health.ready`                 | health               | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/example`                                      | `bff.example.check`                | example proxy        | `web-bff.yaml`     |
@@ -92,6 +102,9 @@ machine-readable source of truth.
   running service.
 - All Core JSON errors carry stable `code` and `message` fields; request-bound
   errors also carry `request_id`. Internal causes are never serialized.
+- Worker operations (`jobs.claim`, Worker heartbeat, lease renewal, log append,
+  completion, and failure) require an Auth-issued API token. The Python Worker
+  calls these operations and never connects to PostgreSQL.
 
 ## `example.check`
 
