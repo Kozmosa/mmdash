@@ -23,9 +23,10 @@ pnpm smoke
 pnpm dev:down
 ```
 
-The smoke test verifies Web → Web BFF → Core → PostgreSQL. Local ports are
-Web `3000`, BFF `3001`, Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and
-MinIO Console `9001`.
+The smoke verifies login/project creation, Web → BFF → Core → PostgreSQL,
+Worker Job handling, Outbox delivery, Data Hub routing, Audit/request IDs, MCP
+health, CLI startup, and metrics. Local ports are Web `3000`, BFF `3001`, Core
+`8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO Console `9001`.
 
 The production-shaped public entry is defined only in the repository-root
 `Caddyfile`, using `mmdash.com`. If Caddy 2.10 or newer is installed, validate
@@ -52,6 +53,7 @@ DATABASE_URL=postgres://mmdash:mmdash@localhost:5432/mmdash?sslmode=disable pnpm
 | `pnpm api:check`                              | Check OpenAPI operations against the API catalog   |
 | `pnpm contracts:generate`                     | Regenerate TypeScript and Go contract outputs      |
 | `pnpm contracts:check`                        | Validate schemas, mocks, generation, compatibility |
+| `pnpm foundation:check`                       | Validate stage-3.15 static and process foundations  |
 | `pnpm commit:check -- "feat(scope): summary"` | Validate a commit subject                          |
 
 ## Create a module
@@ -73,4 +75,5 @@ layer only when their module documentation explains why.
 - [CLI development and packaging](cli.md)
 - [Go Core Server foundation](core.md)
 - [Worker development](worker.md)
+- [Stage 3.15 foundation acceptance](foundation-acceptance.md)
 - [Contract development](contracts.md)

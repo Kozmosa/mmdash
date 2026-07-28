@@ -74,5 +74,6 @@ pnpm --filter @mmdash/core-client generate
 - [Contracts, code generation, and compatibility](contracts.md)
 - [MCP tool catalog](mcp-tools.md)
 - [Local development](../development/README.md)
+- [Stage 3.15 foundation acceptance](../development/foundation-acceptance.md)
 - [Web BFF development](../development/web-bff.md)
 - [Architecture](../architecture/README.md)
