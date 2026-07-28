@@ -1,4 +1,6 @@
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
+    pnpm_config_registry=https://registry.npmmirror.com
 RUN corepack enable
 WORKDIR /workspace
 
@@ -14,7 +16,7 @@ COPY tsconfig.base.json ./
 COPY apps/web apps/web
 RUN pnpm --filter @mmdash/web build
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /workspace/apps/web/.next/standalone ./
