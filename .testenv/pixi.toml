@@ -1,0 +1,22 @@
+[workspace]
+name = "mmdash-testenv"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64"]
+
+[dependencies]
+go = "1.22.*"
+minio-server = "2025.01.*"
+nodejs = "24.*"
+postgresql = "16.*"
+python = "3.13.*"
+uv = "0.11.*"
+
+[tasks]
+doctor = "node ../scripts/testenv.mjs doctor"
+install = "node ../scripts/testenv.mjs install"
+reset = "node ../scripts/testenv.mjs reset"
+stop = "node ../scripts/testenv.mjs stop"
+test = { cmd = "node ../scripts/testenv.mjs test", depends-on = ["install"] }
+check = { cmd = "node ../scripts/testenv.mjs check", depends-on = ["install"] }
+dev = { cmd = "node ../scripts/testenv.mjs dev", depends-on = ["install"] }
+smoke = { cmd = "node ../scripts/testenv.mjs smoke", depends-on = ["install"] }
