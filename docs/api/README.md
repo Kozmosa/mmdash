@@ -68,6 +68,7 @@ pnpm --filter @mmdash/core-client generate
 - [Auth, Project, and RBAC](auth-projects.md)
 - [Settings and secret management](settings.md)
 - [Jobs and Worker protocol](jobs.md)
+- [Events, Outbox, and replay](events.md)
 - [Contracts, code generation, and compatibility](contracts.md)
 - [MCP tool catalog](mcp-tools.md)
 - [Local development](../development/README.md)

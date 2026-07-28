@@ -27,6 +27,9 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	if config.ShutdownTimeout != 10*time.Second {
 		t.Fatalf("unexpected shutdown timeout: %s", config.ShutdownTimeout)
 	}
+	if config.Outbox.PollInterval != 500*time.Millisecond {
+		t.Fatalf("unexpected Outbox poll interval: %s", config.Outbox.PollInterval)
+	}
 }
 
 func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
@@ -54,6 +57,17 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected short settings encryption key to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+		"OUTBOX_POLL_INTERVAL":      "invalid",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid Outbox interval to fail")
 	}
 }
 

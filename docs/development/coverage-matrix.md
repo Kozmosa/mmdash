@@ -17,3 +17,5 @@ evidence. It is expanded as product modules are implemented.
 | Team projects and role-based access         | Core Project, BFF project routes, Web project list     | project              | Go RBAC tests and BFF forwarding tests         |
 | Typed configuration and secret management   | Core Settings, BFF settings routes, Web settings slots | settings             | Go registry/crypto/service and BFF proxy tests |
 | Generated contracts and compatibility gates | OpenAPI, JSON Schema, TS/Go generation, Mock Server    | contracts            | `pnpm contracts:check` and Go validation tests |
+| Durable asynchronous work                   | Core Job Queue and Python Worker HTTP runtime          | jobs/worker          | Go queue-policy and Python runtime tests       |
+| Reliable domain-event delivery              | Event Bus, Outbox Processor, delivery/replay tables    | events/outbox        | Go Bus, Processor, idempotency, and API tests  |
