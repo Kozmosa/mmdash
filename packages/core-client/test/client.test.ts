@@ -76,4 +76,34 @@ describe("CoreClient", () => {
       "http://core.test/v1/data/projects/project%2F1/home",
     ]);
   });
+
+  it("uses stable audit ingestion and search routes", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], has_more: false }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = new CoreClient("http://core.test", fetchImplementation);
+    const context = { requestId: "request-1" };
+
+    await client.recordAuditEvent(
+      {
+        action: "mcp.tool.called",
+        category: "mcp",
+        outcome: "success",
+        source: "mcp-gateway",
+      },
+      context,
+    );
+    await client.listAuditEvents(context, {
+      action: "mcp.tool.called",
+      limit: 25,
+      projectId: "project-1",
+    });
+
+    expect(fetchImplementation.mock.calls.map(([url]) => url)).toEqual([
+      "http://core.test/v1/audit/events",
+      "http://core.test/v1/audit/events?action=mcp.tool.called&limit=25&project_id=project-1",
+    ]);
+  });
 });

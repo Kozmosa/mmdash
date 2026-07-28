@@ -27,6 +27,10 @@ tags:
     description: Outbox inspection, registered consumers, and explicit replay.
   - name: Data Hub
     description: Cross-module object discovery, activity, and human-confirmed project context.
+  - name: Audit
+    description: Append-only security/activity audit ingestion and authorized search.
+  - name: Observability
+    description: Service metrics and diagnostic metadata.
 paths:
   /health/live:
     get:
@@ -71,6 +75,19 @@ paths:
           description: The canonical Core OpenAPI document.
           content:
             application/yaml:
+              schema:
+                type: string
+  /metrics:
+    get:
+      tags: [Observability]
+      summary: Read bounded-label Prometheus metrics
+      operationId: observability.metrics.get
+      security: []
+      responses:
+        "200":
+          description: Prometheus text exposition for Core.
+          content:
+            text/plain:
               schema:
                 type: string
   /v1/example:
@@ -872,6 +889,82 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HomeAggregate"
+  /v1/audit/events:
+    get:
+      tags: [Audit]
+      summary: Search the append-only audit trail
+      operationId: audit.events.list
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            enum: [success, denied, error]
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Cursor-paginated audit events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Audit]
+      summary: Record an event from a trusted mmdash service
+      description: Requires an API or Box token; caller identity is derived by Core.
+      operationId: audit.events.record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordAuditEventRequest"
+      responses:
+        "201":
+          description: Immutable audit event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEvent"
+        "403":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -1838,6 +1931,118 @@ components:
         failed_at:
           type: string
           format: date-time
+    RecordAuditEventRequest:
+      type: object
+      additionalProperties: false
+      required: [category, action, outcome, source]
+      properties:
+        category:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+          maxLength: 100
+        action:
+          type: string
+          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          maxLength: 200
+        outcome:
+          type: string
+          enum: [success, denied, error]
+        source:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+          maxLength: 100
+        project_id:
+          type: string
+          format: uuid
+        resource_type:
+          type: string
+          maxLength: 100
+        resource_id:
+          type: string
+          maxLength: 500
+        occurred_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+          minimum: 0
+        error_code:
+          type: string
+          maxLength: 200
+        metadata:
+          type: object
+          additionalProperties: true
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - audit_id
+        - occurred_at
+        - recorded_at
+        - request_id
+        - actor_kind
+        - category
+        - action
+        - outcome
+        - source
+        - resource_type
+        - resource_id
+        - error_code
+        - metadata
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+        actor_id:
+          type: string
+          format: uuid
+        actor_kind:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+        action:
+          type: string
+        outcome:
+          type: string
+          enum: [success, denied, error]
+        source:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        duration_ms:
+          type: integer
+          minimum: 0
+        error_code:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    AuditEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
     DataObject:
       type: object
       additionalProperties: false

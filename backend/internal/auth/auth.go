@@ -18,6 +18,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 )
 
 // User is the public account projection.
@@ -175,6 +176,7 @@ func (service Service) Login(ctx context.Context, email string, password string)
 	}); err != nil {
 		return LoginResult{}, fmt.Errorf("create session: %w", err)
 	}
+	requestctx.SetActor(ctx, user.ID, "session")
 	return LoginResult{
 		AccessToken: accessToken,
 		ExpiresAt:   expiresAt,
@@ -199,18 +201,25 @@ func (service Service) Authenticate(ctx context.Context, authorization string) (
 		if err != nil || session.UserID != claims.Subject {
 			return Identity{}, ErrUnauthenticated
 		}
-		return Identity{Kind: "session", SessionID: session.ID, User: user}, nil
+		identity := Identity{Kind: "session", SessionID: session.ID, User: user}
+		requestctx.SetActor(ctx, identity.User.ID, identity.Kind)
+		return identity, nil
 	}
 	token, user, err := service.Store.FindToken(ctx, hashToken(secret), now)
 	if err != nil {
 		return Identity{}, ErrUnauthenticated
 	}
-	return Identity{
+	identity := Identity{
 		Kind:      token.Kind,
 		ProjectID: token.ProjectID,
 		TokenID:   token.ID,
 		User:      user,
-	}, nil
+	}
+	requestctx.SetActor(ctx, identity.User.ID, identity.Kind)
+	if identity.ProjectID != "" {
+		requestctx.SetProject(ctx, identity.ProjectID)
+	}
+	return identity, nil
 }
 
 // Logout revokes the current browser session.

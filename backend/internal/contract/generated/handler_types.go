@@ -500,3 +500,67 @@ func (request ReviewContextProposalRequest) Validate() error {
 	}
 	return nil
 }
+
+// RecordAuditEventRequest is generated from the Core request-body schema.
+type RecordAuditEventRequest struct {
+	Category     string                  `json:"category"`
+	Action       string                  `json:"action"`
+	Outcome      string                  `json:"outcome"`
+	Source       string                  `json:"source"`
+	ProjectID    *string                 `json:"project_id,omitempty"`
+	ResourceType *string                 `json:"resource_type,omitempty"`
+	ResourceID   *string                 `json:"resource_id,omitempty"`
+	OccurredAt   *time.Time              `json:"occurred_at,omitempty"`
+	DurationMs   *int64                  `json:"duration_ms,omitempty"`
+	ErrorCode    *string                 `json:"error_code,omitempty"`
+	Metadata     *map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RecordAuditEventRequest) Validate() error {
+	if request.Category == "" {
+		return fmt.Errorf("category is required")
+	}
+	if len(request.Category) > 100 {
+		return fmt.Errorf("category is too long")
+	}
+	if request.Action == "" {
+		return fmt.Errorf("action is required")
+	}
+	if len(request.Action) > 200 {
+		return fmt.Errorf("action is too long")
+	}
+	if request.Outcome == "" {
+		return fmt.Errorf("outcome is required")
+	}
+	if request.Outcome != "success" && request.Outcome != "denied" && request.Outcome != "error" {
+		return fmt.Errorf("outcome has an unsupported value")
+	}
+	if request.Source == "" {
+		return fmt.Errorf("source is required")
+	}
+	if len(request.Source) > 100 {
+		return fmt.Errorf("source is too long")
+	}
+	if request.ResourceType != nil {
+		if len(*request.ResourceType) > 100 {
+			return fmt.Errorf("resource_type is too long")
+		}
+	}
+	if request.ResourceID != nil {
+		if len(*request.ResourceID) > 500 {
+			return fmt.Errorf("resource_id is too long")
+		}
+	}
+	if request.DurationMs != nil {
+		if *request.DurationMs < 0 {
+			return fmt.Errorf("duration_ms is below its minimum")
+		}
+	}
+	if request.ErrorCode != nil {
+		if len(*request.ErrorCode) > 200 {
+			return fmt.Errorf("error_code is too long")
+		}
+	}
+	return nil
+}

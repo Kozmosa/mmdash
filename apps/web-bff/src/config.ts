@@ -6,6 +6,7 @@ const configSchema = z
     BFF_HOST: z.string().min(1).default("0.0.0.0"),
     BFF_PORT: z.coerce.number().int().positive().max(65_535).default(3001),
     CORE_BASE_URL: z.string().url().default("http://localhost:8080"),
+    MMDASH_VERSION: z.string().min(1).max(100).default("0.1.0"),
     NODE_ENV: z
       .enum(["development", "production", "test"])
       .default("development"),
@@ -23,8 +24,7 @@ const configSchema = z
     }
   });
 
-const defaultDevelopmentSecret =
-  "development-only-cookie-secret-change-me";
+const defaultDevelopmentSecret = "development-only-cookie-secret-change-me";
 
 export type BffConfig = {
   cookieSecret: string;
@@ -32,6 +32,7 @@ export type BffConfig = {
   host: string;
   nodeEnv: "development" | "production" | "test";
   port: number;
+  version: string;
 };
 
 export function loadConfig(
@@ -48,5 +49,6 @@ export function loadConfig(
     host: parsed.BFF_HOST,
     nodeEnv: parsed.NODE_ENV,
     port: parsed.BFF_PORT,
+    version: parsed.MMDASH_VERSION,
   };
 }

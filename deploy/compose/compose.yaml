@@ -58,6 +58,7 @@ services:
     environment:
       CORE_ADDR: :8080
       CORE_OPENAPI_PATH: /app/contracts/openapi/core.yaml
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
       AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-24h}
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@mmdash.local}
@@ -93,6 +94,7 @@ services:
       BFF_HOST: 0.0.0.0
       BFF_PORT: 3001
       CORE_BASE_URL: http://core:8080
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
     depends_on:
       core:
         condition: service_healthy
@@ -140,6 +142,8 @@ services:
       MCP_CLI_TOOLS: ${MCP_CLI_TOOLS:-*}
       MCP_GATEWAY_HOST: 0.0.0.0
       MCP_GATEWAY_PORT: 3002
+      MCP_CORE_AUDIT_TOKEN: ${MCP_CORE_AUDIT_TOKEN:-}
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
     depends_on:
       core:
         condition: service_healthy

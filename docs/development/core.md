@@ -26,6 +26,7 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `CORE_OPENAPI_PATH`           | `contracts/openapi/core.yaml` | Contract served at `/openapi.yaml`                             |
 | `CORE_STARTUP_TIMEOUT`        | `15s`                         | Dependency initialization deadline                             |
 | `CORE_SHUTDOWN_TIMEOUT`       | `10s`                         | Graceful HTTP drain deadline                                   |
+| `MMDASH_VERSION`              | `0.1.0`                       | Version in liveness and build-info metrics                     |
 | `DATABASE_URL`                | required                      | PostgreSQL DSN                                                 |
 | `DATABASE_MAX_OPEN_CONNS`     | `20`                          | Pool upper bound                                               |
 | `DATABASE_MAX_IDLE_CONNS`     | `5`                           | Idle pool bound                                                |
@@ -47,14 +48,16 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `OUTBOX_RETRY_DELAY`          | `2s`                          | Baseline publication and consumer retry delay                  |
 
 Configuration validates all values before opening listeners. JSON logging
-redacts fields whose names contain token, secret, password, credential, or
-authorization.
+recursively redacts credential, authorization, secret, token, password,
+cookie, access/API/private-key, passphrase, DSN, database-URL, and
+connection-string fields.
 
 ## HTTP and request context
 
 - `/health/live` reports process liveness.
 - `/health/ready` checks PostgreSQL and object storage with a deadline.
 - `/openapi.yaml` serves the same contract used to generate Core clients.
+- `/metrics` serves bounded-label Prometheus metrics and build version.
 - Every response carries `X-Request-ID`; valid inbound IDs are preserved.
 - `X-Mmdash-User-ID` and `X-Mmdash-Project-ID` are normalized into request
   context for trusted gateways.

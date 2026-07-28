@@ -67,7 +67,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     done(null, payload);
   });
 
-  registerHealthRoutes(app, coreClient);
+  registerHealthRoutes(app, coreClient, config.version);
   registerAuthRoutes(app, coreClient, config);
   registerExampleRoutes(app, coreClient);
   registerProjectRoutes(app, coreClient);
