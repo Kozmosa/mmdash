@@ -22,11 +22,17 @@ htmlcov/
 # Node.js
 node_modules/
 .pnpm-store/
+/package-lock.json
 .next/
 dist/
 build/
 *.tsbuildinfo
 .generated/
+
+# Isolated Pixi development environment
+/.testenv/*
+!/.testenv/pixi.toml
+!/.testenv/pixi.lock
 
 # Runtime data and logs
 data/
