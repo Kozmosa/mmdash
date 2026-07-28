@@ -9,6 +9,7 @@ machine-readable source of truth.
 | Core        | HTTP          | `GET`         | `/health/live`                                                        | `health.live`                      | platform health      | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/health/ready`                                                       | `health.ready`                     | platform health      | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/openapi.yaml`                                                       | `system.openapi.get`               | platform contract    | `core.yaml`        |
+| Core        | Metrics       | `GET`         | `/metrics`                                                            | `observability.metrics.get`        | platform metrics     | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/example`                                                         | `example.check`                    | engineering baseline | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/auth/login`                                                      | `auth.login`                       | auth                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/auth/logout`                                                     | `auth.logout`                      | auth                 | `core.yaml`        |
@@ -55,6 +56,8 @@ machine-readable source of truth.
 | Core        | HTTP          | `POST`        | `/v1/data/projects/{projectId}/context/proposals`                     | `data.context.proposals.create`    | datahub              | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/data/projects/{projectId}/context/proposals/{proposalId}/review` | `data.context.proposals.review`    | datahub              | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/home`                                  | `data.home.get`                    | datahub              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/audit/events`                                                    | `audit.events.list`                | audit                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/audit/events`                                                    | `audit.events.record`              | audit                | `core.yaml`        |
 | Web BFF     | HTTP          | `GET`         | `/health/live`                                                        | `bff.health.live`                  | health               | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/health/ready`                                                       | `bff.health.ready`                 | health               | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/example`                                                        | `bff.example.check`                | example proxy        | `web-bff.yaml`     |
@@ -117,6 +120,8 @@ machine-readable source of truth.
 - Worker operations (`jobs.claim`, Worker heartbeat, lease renewal, log append,
   completion, and failure) require an Auth-issued API token. The Python Worker
   calls these operations and never connects to PostgreSQL.
+- Audit rows are append-only and searchable by request, actor, project,
+  category, action, outcome, and source. `/metrics` uses bounded labels only.
 
 ## `example.check`
 

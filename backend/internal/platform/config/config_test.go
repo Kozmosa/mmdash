@@ -30,6 +30,9 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	if config.Outbox.PollInterval != 500*time.Millisecond {
 		t.Fatalf("unexpected Outbox poll interval: %s", config.Outbox.PollInterval)
 	}
+	if config.Version != "0.1.0" {
+		t.Fatalf("unexpected service version: %s", config.Version)
+	}
 }
 
 func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {

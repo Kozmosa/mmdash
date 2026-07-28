@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 )
 
 // Role is one of the stable collaboration roles.
@@ -40,6 +41,8 @@ const (
 	PermissionDataRead       Permission = "project.data.read"
 	PermissionContextPropose Permission = "project.context.propose"
 	PermissionContextReview  Permission = "project.context.review"
+	PermissionAuditRead      Permission = "project.audit.read"
+	PermissionAuditWrite     Permission = "project.audit.write"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -57,6 +60,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionContextPropose,
 		PermissionContextReview,
+		PermissionAuditRead,
+		PermissionAuditWrite,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -71,6 +76,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionContextPropose,
 		PermissionContextReview,
+		PermissionAuditRead,
+		PermissionAuditWrite,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -82,12 +89,14 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionContextPropose,
 		PermissionContextReview,
+		PermissionAuditWrite,
 	},
 	RoleViewer: {
 		PermissionRead,
 		PermissionSettingsRead,
 		PermissionJobsRead,
 		PermissionDataRead,
+		PermissionAuditWrite,
 	},
 	RoleAgent: {
 		PermissionRead,
@@ -97,12 +106,14 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionJobsCancel,
 		PermissionDataRead,
 		PermissionContextPropose,
+		PermissionAuditWrite,
 	},
 	RoleBox: {
 		PermissionRead,
 		PermissionSettingsRead,
 		PermissionJobsRead,
 		PermissionDataRead,
+		PermissionAuditWrite,
 	},
 }
 
@@ -192,7 +203,11 @@ func (service Service) Create(
 	if identity.Kind != "session" && identity.Kind != "api" {
 		return Project{}, ErrForbidden
 	}
-	return service.Store.Create(ctx, identity.User.ID, input)
+	created, err := service.Store.Create(ctx, identity.User.ID, input)
+	if err == nil {
+		requestctx.SetProject(ctx, created.ID)
+	}
+	return created, err
 }
 
 // List returns projects visible to the caller.
@@ -305,6 +320,7 @@ func (service Service) Authorize(
 	projectID string,
 	required Permission,
 ) error {
+	requestctx.SetProject(ctx, projectID)
 	role, permissions, err := service.Permissions(ctx, identity, projectID)
 	if err != nil {
 		return err

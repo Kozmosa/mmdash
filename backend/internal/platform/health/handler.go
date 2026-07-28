@@ -19,6 +19,7 @@ type Checker interface {
 type Handler struct {
 	Checkers []Checker
 	Timeout  time.Duration
+	Version  string
 }
 
 // RegisterRoutes mounts health endpoints.
@@ -31,10 +32,14 @@ func (handler Handler) live(response http.ResponseWriter, request *http.Request)
 	if !httpx.RequireMethod(response, request, http.MethodGet) {
 		return
 	}
+	version := handler.Version
+	if version == "" {
+		version = "development"
+	}
 	httpx.WriteJSON(response, http.StatusOK, map[string]string{
 		"service": "core",
 		"status":  "ok",
-		"version": "0.1.0",
+		"version": version,
 	})
 }
 

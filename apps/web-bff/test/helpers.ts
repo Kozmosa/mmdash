@@ -13,6 +13,7 @@ export const testConfig: BffConfig = {
   host: "127.0.0.1",
   nodeEnv: "test",
   port: 3001,
+  version: "0.1.0-test",
 };
 
 export async function signedSessionCookie(
