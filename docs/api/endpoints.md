@@ -4,22 +4,91 @@ Search this file by `operationId`, method/name, path, service, or module. The
 catalog is the human-readable lookup index; the linked OpenAPI contract is the
 machine-readable source of truth.
 
-| Service | Kind | Method / name | Path | `operationId` | Module | Contract |
-| --- | --- | --- | --- | --- | --- | --- |
-| Core | HTTP | `GET` | `/health/live` | `health.live` | platform health | `core.yaml` |
-| Core | HTTP | `GET` | `/health/ready` | `health.ready` | platform health | `core.yaml` |
-| Core | HTTP | `GET` | `/openapi.yaml` | `system.openapi.get` | platform contract | `core.yaml` |
-| Core | HTTP | `GET` | `/v1/example` | `example.check` | engineering baseline | `core.yaml` |
-| Web BFF | HTTP | `GET` | `/health/live` | `bff.health.live` | health | `web-bff.yaml` |
-| Web BFF | HTTP | `GET` | `/health/ready` | `bff.health.ready` | health | `web-bff.yaml` |
-| Web BFF | HTTP | `GET` | `/api/example` | `bff.example.check` | example proxy | `web-bff.yaml` |
-| Web BFF | HTTP | `GET` | `/api/projects/{projectId}/pages/{pageId}` | `bff.page.get` | page aggregation | `web-bff.yaml` |
-| Web BFF | SSE | `GET` | `/api/projects/{projectId}/events` | `bff.events.stream` | stream proxy | `web-bff.yaml` |
-| Web BFF | WebSocket | `CONNECT` | `/api/projects/{projectId}/socket` | `bff.socket.connect` | stream proxy | `web-bff.yaml` |
-| Web BFF | File stream | `GET` | `/api/projects/{projectId}/files/{filePath}` | `bff.file.download` | file proxy | `web-bff.yaml` |
-| Web BFF | File metadata | `HEAD` | `/api/projects/{projectId}/files/{filePath}` | `bff.file.head` | file proxy | `web-bff.yaml` |
-| Web BFF | File stream | `PUT` | `/api/projects/{projectId}/files/{filePath}` | `bff.file.upload` | file proxy | `web-bff.yaml` |
-| MCP Gateway | MCP Tool | `tools/call` | `/mcp` | `system.echo` | engineering baseline | `system.echo.json` |
+| Service     | Kind          | Method / name | Path                                                                  | `operationId`                      | Module               | Contract           |
+| ----------- | ------------- | ------------- | --------------------------------------------------------------------- | ---------------------------------- | -------------------- | ------------------ |
+| Core        | HTTP          | `GET`         | `/health/live`                                                        | `health.live`                      | platform health      | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/health/ready`                                                       | `health.ready`                     | platform health      | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/openapi.yaml`                                                       | `system.openapi.get`               | platform contract    | `core.yaml`        |
+| Core        | Metrics       | `GET`         | `/metrics`                                                            | `observability.metrics.get`        | platform metrics     | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/example`                                                         | `example.check`                    | engineering baseline | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/login`                                                      | `auth.login`                       | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/logout`                                                     | `auth.logout`                      | auth                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/auth/me`                                                         | `auth.me`                          | auth                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/auth/tokens`                                                     | `auth.tokens.list`                 | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/tokens`                                                     | `auth.tokens.create`               | auth                 | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/auth/tokens/{tokenId}`                                           | `auth.tokens.revoke`               | auth                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects`                                                        | `projects.list`                    | project              | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects`                                                        | `projects.create`                  | project              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}`                                            | `projects.get`                     | project              | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}`                                            | `projects.update`                  | project              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/members`                                    | `projects.members.list`            | project              | `core.yaml`        |
+| Core        | HTTP          | `PUT`         | `/v1/projects/{projectId}/members/{userId}`                           | `projects.members.upsert`          | project              | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/members/{userId}`                           | `projects.members.remove`          | project              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/permissions`                                | `projects.permissions.get`         | project              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/settings/types`                                                  | `settings.types.list`              | settings             | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/settings/system/{typeKey}`                                       | `settings.system.get`              | settings             | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/settings/system/{typeKey}`                                       | `settings.system.update`           | settings             | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/settings/system/{typeKey}`                                       | `settings.system.delete`           | settings             | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/settings/system/{typeKey}/test`                                  | `settings.system.test`             | settings             | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/settings/projects/{projectId}/{typeKey}`                         | `settings.projects.get`            | settings             | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/settings/projects/{projectId}/{typeKey}`                         | `settings.projects.update`         | settings             | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/settings/projects/{projectId}/{typeKey}`                         | `settings.projects.delete`         | settings             | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/settings/projects/{projectId}/{typeKey}/test`                    | `settings.projects.test`           | settings             | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs`                                                            | `jobs.create`                      | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/claim`                                                      | `jobs.claim`                       | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/workers/heartbeat`                                          | `jobs.workers.heartbeat`           | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/jobs/{jobId}`                                                    | `jobs.get`                         | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/cancel`                                             | `jobs.cancel`                      | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/heartbeat`                                          | `jobs.lease.renew`                 | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/jobs/{jobId}/logs`                                               | `jobs.logs.list`                   | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/logs`                                               | `jobs.logs.append`                 | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/complete`                                           | `jobs.complete`                    | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/fail`                                               | `jobs.fail`                        | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/events/test`                                                     | `events.test.emit`                 | events/outbox        | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/events/consumers`                                                | `events.consumers.list`            | events/event bus     | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/events/{eventId}`                                                | `events.get`                       | events/outbox        | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/events/{eventId}/replay`                                         | `events.replay`                    | events/outbox        | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/objects`                               | `data.list`                        | datahub              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/objects/{objectId}`                    | `data.read`                        | datahub              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/activity`                              | `data.activity.list`               | datahub              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/context`                               | `data.context.list`                | datahub              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/context/proposals`                     | `data.context.proposals.list`      | datahub              | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/data/projects/{projectId}/context/proposals`                     | `data.context.proposals.create`    | datahub              | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/data/projects/{projectId}/context/proposals/{proposalId}/review` | `data.context.proposals.review`    | datahub              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/home`                                  | `data.home.get`                    | datahub              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/audit/events`                                                    | `audit.events.list`                | audit                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/audit/events`                                                    | `audit.events.record`              | audit                | `core.yaml`        |
+| Web BFF     | HTTP          | `GET`         | `/health/live`                                                        | `bff.health.live`                  | health               | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/health/ready`                                                       | `bff.health.ready`                 | health               | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/example`                                                        | `bff.example.check`                | example proxy        | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/auth/login`                                                     | `bff.auth.login`                   | auth                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/auth/me`                                                        | `bff.auth.me`                      | auth                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/auth/logout`                                                    | `bff.auth.logout`                  | auth                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects`                                                       | `bff.projects.list`                | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects`                                                       | `bff.projects.create`              | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}`                                           | `bff.projects.get`                 | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}`                                           | `bff.projects.update`              | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/members`                                   | `bff.projects.members.list`        | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PUT`         | `/api/projects/{projectId}/members/{userId}`                          | `bff.projects.members.upsert`      | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/members/{userId}`                          | `bff.projects.members.remove`      | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/permissions`                               | `bff.projects.permissions.get`     | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/settings/types`                                                 | `bff.settings.system.types.list`   | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/settings/system/{typeKey}`                                      | `bff.settings.system.get`          | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/settings/system/{typeKey}`                                      | `bff.settings.system.update`       | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/settings/system/{typeKey}`                                      | `bff.settings.system.delete`       | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/settings/system/{typeKey}/test`                                 | `bff.settings.system.test`         | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/settings/types`                            | `bff.settings.projects.types.list` | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/settings/{typeKey}`                        | `bff.settings.projects.get`        | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/settings/{typeKey}`                        | `bff.settings.projects.update`     | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/settings/{typeKey}`                        | `bff.settings.projects.delete`     | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/settings/{typeKey}/test`                   | `bff.settings.projects.test`       | settings             | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/pages/{pageId}`                            | `bff.page.get`                     | page aggregation     | `web-bff.yaml`     |
+| Web BFF     | SSE           | `GET`         | `/api/projects/{projectId}/events`                                    | `bff.events.stream`                | stream proxy         | `web-bff.yaml`     |
+| Web BFF     | WebSocket     | `CONNECT`     | `/api/projects/{projectId}/socket`                                    | `bff.socket.connect`               | stream proxy         | `web-bff.yaml`     |
+| Web BFF     | File stream   | `GET`         | `/api/projects/{projectId}/files/{filePath}`                          | `bff.file.download`                | file proxy           | `web-bff.yaml`     |
+| Web BFF     | File metadata | `HEAD`        | `/api/projects/{projectId}/files/{filePath}`                          | `bff.file.head`                    | file proxy           | `web-bff.yaml`     |
+| Web BFF     | File stream   | `PUT`         | `/api/projects/{projectId}/files/{filePath}`                          | `bff.file.upload`                  | file proxy           | `web-bff.yaml`     |
+| MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                | `system.echo`                      | engineering baseline | `system.echo.json` |
 
 ## Browser BFF conventions
 
@@ -32,9 +101,9 @@ machine-readable source of truth.
   `message`, and `request_id`.
 - SSE and file bodies pass through without application buffering. The
   WebSocket route proxies frames bidirectionally.
-- `/api/projects/{projectId}/pages/{pageId}` is an extension point. Stage 3.4
-  registers `workspace-shell`, whose `context` fragment contains the current
-  browser-safe user and project projection.
+- `/api/projects/{projectId}/pages/{pageId}` is an extension point. The
+  `workspace-shell` aggregator returns browser-safe user/project context; the
+  `home` aggregator delegates its typed aggregate to Core Data Hub.
 
 ## Core platform conventions
 
@@ -48,6 +117,11 @@ machine-readable source of truth.
   running service.
 - All Core JSON errors carry stable `code` and `message` fields; request-bound
   errors also carry `request_id`. Internal causes are never serialized.
+- Worker operations (`jobs.claim`, Worker heartbeat, lease renewal, log append,
+  completion, and failure) require an Auth-issued API token. The Python Worker
+  calls these operations and never connects to PostgreSQL.
+- Audit rows are append-only and searchable by request, actor, project,
+  category, action, outcome, and source. `/metrics` uses bounded labels only.
 
 ## `example.check`
 

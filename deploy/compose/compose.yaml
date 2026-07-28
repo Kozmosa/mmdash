@@ -4,8 +4,11 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
+      # PostgreSQL 初始数据库名；生产按租户/环境命名策略设置。
       POSTGRES_DB: ${POSTGRES_DB:-mmdash}
+      # PostgreSQL 应用账号；生产必须替换开发默认账号，并限制其权限。
       POSTGRES_USER: ${POSTGRES_USER:-mmdash}
+      # PostgreSQL 应用账号密码；生产必须使用 Secret 管理器注入的强随机值。
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mmdash}
     healthcheck:
       test:
@@ -25,7 +28,9 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
+      # MinIO 管理账号；生产必须替换默认值，建议仅用于初始化而非应用访问。
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mmdash}
+      # MinIO 管理账号密码；生产必须使用 Secret 管理器注入的强随机值。
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -44,7 +49,9 @@ services:
       dockerfile: backend/Dockerfile
     command: migrate
     environment:
+      # 迁移使用的 PostgreSQL DSN；生产必须指向生产数据库并启用 TLS（sslmode=require/verify-full）。
       DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
+      # 容器内迁移文件目录；生产镜像布局不变时可保留。
       MIGRATIONS_DIR: /app/migrations
     depends_on:
       postgres:
@@ -56,14 +63,37 @@ services:
       context: ../..
       dockerfile: backend/Dockerfile
     environment:
+      # Core HTTP 监听地址；容器部署通常可保留，由入口/编排控制暴露端口。
       CORE_ADDR: :8080
+      # 容器内 OpenAPI 文件位置；生产镜像布局不变时可保留。
       CORE_OPENAPI_PATH: /app/contracts/openapi/core.yaml
+      # 运行版本，写入 health 与 metrics；生产必须设置为实际发布版本/构建号。
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
+      # Session/API Token 签名密钥；生产必须替换为 Secret 管理器提供的高熵值。
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
+      # 浏览器 Session 有效期；生产按安全策略调整。
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-24h}
+      # 首个管理员邮箱；生产必须设置为受控管理员账号。
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@mmdash.local}
+      # 首个管理员显示名；生产应设置为实际运维/管理员名称。
+      AUTH_BOOTSTRAP_DISPLAY_NAME: ${AUTH_BOOTSTRAP_DISPLAY_NAME:-mmdash Admin}
+      # 首个管理员密码；生产必须使用 Secret 管理器注入的强随机值。
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-mmdash-local-admin}
+      # Settings AES-GCM 加密主密钥；生产必须替换为稳定的 Secret，轮换需有迁移方案。
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-development-settings-encryption-key-change-me}
+      # Core 使用的 PostgreSQL DSN；生产必须使用生产主机、账号、密码和 TLS。
       DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
+      # 空闲数据库连接上限；生产按数据库容量与副本数调优。
       DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
+      # 数据库连接池总上限；生产必须按数据库容量与 Core 副本数调优。
       DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
+      # S3/MinIO 服务地址；生产必须替换为受控对象存储的内部 HTTPS 地址。
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      # 对象存储访问账号；生产必须使用最小权限的应用账号，不使用 root 账号。
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-mmdash}
+      # 对象存储访问密钥；生产必须使用 Secret 管理器注入。
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
+      # 权威 Artifact Bucket；生产应设置为环境专用 Bucket。
       OBJECT_STORAGE_BUCKET: mmdash
     depends_on:
       migrate:
@@ -83,10 +113,16 @@ services:
       context: ../..
       dockerfile: apps/web-bff/Dockerfile
     environment:
+      # 浏览器会话 Cookie 签名密钥；生产必须替换为 Secret 管理器提供的高熵值。
       BFF_COOKIE_SECRET: ${BFF_COOKIE_SECRET:-local-compose-cookie-secret-change-12345}
+      # BFF 监听主机；容器部署通常可保留。
       BFF_HOST: 0.0.0.0
+      # BFF 监听端口；生产可保留或按平台端口策略调整。
       BFF_PORT: 3001
+      # Core 内部服务地址；生产必须改为实际服务发现/DNS 地址。
       CORE_BASE_URL: http://core:8080
+      # BFF 版本；生产必须与发布版本/构建号保持一致。
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
     depends_on:
       core:
         condition: service_healthy
@@ -103,9 +139,12 @@ services:
       context: ../..
       dockerfile: apps/web/Dockerfile
       args:
+        # Next.js 构建期 /api rewrite 目标；生产必须指向实际 BFF 内部地址。
         BFF_INTERNAL_URL: http://web-bff:3001
     environment:
+      # Next.js 服务端监听端口；生产可保留或按平台端口策略调整。
       PORT: 3000
+      # Next.js 监听主机；容器部署通常可保留。
       HOSTNAME: 0.0.0.0
     depends_on:
       web-bff:
@@ -123,17 +162,32 @@ services:
       context: ../..
       dockerfile: apps/mcp-gateway/Dockerfile
     environment:
+      # Core 内部服务地址；生产必须改为实际服务发现/DNS 地址。
       CORE_BASE_URL: http://core:8080
+      # Agent Token 可访问项目范围；生产必须收敛为显式项目 ID，禁止使用 *。
       MCP_AGENT_PROJECTS: ${MCP_AGENT_PROJECTS:-*}
+      # Agent 调用鉴权 Token；生产必须使用 Secret 管理器注入的强随机值。
       MCP_AGENT_TOKEN: ${MCP_AGENT_TOKEN:-local-agent-token-change-before-production}
+      # Agent 可调用 Tool 范围；生产必须设置最小权限清单，禁止使用 *。
       MCP_AGENT_TOOLS: ${MCP_AGENT_TOOLS:-*}
+      # 允许的 Host Header；生产必须仅包含正式域名。
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mmdash.com,localhost,127.0.0.1}
+      # CORS 允许来源；生产必须仅包含正式 HTTPS 前端域名。
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-https://mmdash.com,http://localhost:3002}
+      # CLI Token 可访问项目范围；生产必须收敛为显式项目 ID，禁止使用 *。
       MCP_CLI_PROJECTS: ${MCP_CLI_PROJECTS:-*}
+      # CLI 调用鉴权 Token；生产必须使用 Secret 管理器注入的强随机值。
       MCP_CLI_TOKEN: ${MCP_CLI_TOKEN:-local-cli-token-change-before-production}
+      # CLI 可调用 Tool 范围；生产必须设置最小权限清单，禁止使用 *。
       MCP_CLI_TOOLS: ${MCP_CLI_TOOLS:-*}
+      # MCP Gateway 监听主机；容器部署通常可保留。
       MCP_GATEWAY_HOST: 0.0.0.0
+      # MCP Gateway 监听端口；生产可保留或按平台端口策略调整。
       MCP_GATEWAY_PORT: 3002
+      # 写入 Core Audit 的专用 Token；生产启用 MCP 审计时必须由 Core 签发并注入。
+      MCP_CORE_AUDIT_TOKEN: ${MCP_CORE_AUDIT_TOKEN:-}
+      # MCP Gateway 版本；生产必须与发布版本/构建号保持一致。
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
     depends_on:
       core:
         condition: service_healthy
@@ -144,6 +198,26 @@ services:
       retries: 20
     ports:
       - "3002:3002"
+
+  worker:
+    profiles: ["worker"]
+    build:
+      context: ../..
+      dockerfile: workers/mmdash-worker/Dockerfile
+    environment:
+      # Core 内部服务地址；生产必须改为实际服务发现/DNS 地址。
+      MMDASH_CORE_URL: http://core:8080
+      # Worker 的 Core API Token；生产必须由 Core 签发、按项目/权限最小化并通过 Secret 注入。
+      MMDASH_WORKER_API_TOKEN: ${MMDASH_WORKER_API_TOKEN:-}
+      # Worker 实例标识；生产每个副本必须唯一，建议由编排平台注入 Pod/任务 ID。
+      MMDASH_WORKER_ID: ${MMDASH_WORKER_ID:-mmdash-worker-1}
+      # Job 租约秒数；生产按最长任务执行时间和故障恢复目标调优。
+      MMDASH_WORKER_LEASE_SECONDS: ${MMDASH_WORKER_LEASE_SECONDS:-60}
+      # 无任务时的轮询间隔秒数；生产按吞吐、延迟与数据库负载调优。
+      MMDASH_WORKER_POLL_SECONDS: ${MMDASH_WORKER_POLL_SECONDS:-2}
+    depends_on:
+      core:
+        condition: service_healthy
 
 volumes:
   postgres-data:

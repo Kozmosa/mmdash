@@ -1,6 +1,7 @@
 import { Settings } from "lucide-react";
 
 import { SettingsSlotGrid } from "@/features/settings/settings-slot-grid";
+import { RegisteredSettingsPanel } from "@/features/settings/registered-settings-panel";
 import { settingsSlots } from "@/features/settings/registry";
 
 export default function SettingsPage() {
@@ -21,6 +22,20 @@ export default function SettingsPage() {
         </p>
       </header>
       <SettingsSlotGrid slots={settingsSlots.list()} />
+      <section
+        className="space-y-3"
+        aria-labelledby="registered-settings-title"
+      >
+        <div>
+          <h2 className="text-lg font-semibold" id="registered-settings-title">
+            已注册配置类型
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            字段契约、密钥标记和连接测试能力由所属模块注册
+          </p>
+        </div>
+        <RegisteredSettingsPanel />
+      </section>
     </section>
   );
 }

@@ -1,4 +1,6 @@
 FROM node:24-alpine AS base
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
+    pnpm_config_registry=https://registry.npmmirror.com
 RUN corepack enable
 WORKDIR /workspace
 
@@ -15,14 +17,12 @@ COPY packages/core-client packages/core-client
 RUN pnpm --filter @mmdash/core-client build
 RUN pnpm --filter @mmdash/web-bff build
 RUN pnpm --filter @mmdash/web-bff deploy --prod /out
+RUN test -f /out/dist/main.js \
+    && test -d "$(readlink -f /out/node_modules/@mmdash/core-client)/dist"
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-COPY --from=build /workspace/apps/web-bff/dist ./dist
-COPY --from=build /out/node_modules ./node_modules
-COPY --from=build /workspace/packages/core-client/dist ./node_modules/@mmdash/core-client/dist
-COPY --from=build /workspace/packages/core-client/package.json ./node_modules/@mmdash/core-client/package.json
-COPY --from=build /out/package.json ./
+COPY --from=build /out ./
 EXPOSE 3001
 CMD ["node", "dist/main.js"]

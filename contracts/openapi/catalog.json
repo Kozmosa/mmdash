@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "contracts": [
+    {
+      "id": "core",
+      "source": "core.yaml",
+      "audience": ["web-bff", "mcp-gateway", "cli", "worker", "box"],
+      "typescriptClient": "packages/core-client/src/generated/core.ts",
+      "goHandlers": "backend/internal/contract/generated/handler_types.go"
+    },
+    {
+      "id": "web-bff",
+      "source": "web-bff.yaml",
+      "audience": ["browser"]
+    }
+  ]
+}

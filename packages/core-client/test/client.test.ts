@@ -38,13 +38,10 @@ describe("CoreClient", () => {
 
   it("maps Core errors", async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({ code: "NOT_FOUND", message: "Missing" }),
-        {
-          headers: { "content-type": "application/json" },
-          status: 404,
-        },
-      ),
+      new Response(JSON.stringify({ code: "NOT_FOUND", message: "Missing" }), {
+        headers: { "content-type": "application/json" },
+        status: 404,
+      }),
     );
     const client = new CoreClient("http://core.test", fetchImplementation);
 
@@ -54,5 +51,59 @@ describe("CoreClient", () => {
       body: { code: "NOT_FOUND", message: "Missing" },
       status: 404,
     });
+  });
+
+  it("uses stable Data Hub list, read, and home routes", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], has_more: false }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = new CoreClient("http://core.test", fetchImplementation);
+    const context = { requestId: "request-1" };
+
+    await client.listDataObjects("project/1", context, {
+      cursor: "next",
+      limit: 25,
+      type: "project context",
+    });
+    await client.readDataObject("project/1", "object/1", context);
+    await client.getProjectHome("project/1", context);
+
+    expect(fetchImplementation.mock.calls.map(([url]) => url)).toEqual([
+      "http://core.test/v1/data/projects/project%2F1/objects?cursor=next&limit=25&type=project+context",
+      "http://core.test/v1/data/projects/project%2F1/objects/object%2F1",
+      "http://core.test/v1/data/projects/project%2F1/home",
+    ]);
+  });
+
+  it("uses stable audit ingestion and search routes", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], has_more: false }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = new CoreClient("http://core.test", fetchImplementation);
+    const context = { requestId: "request-1" };
+
+    await client.recordAuditEvent(
+      {
+        action: "mcp.tool.called",
+        category: "mcp",
+        outcome: "success",
+        source: "mcp-gateway",
+      },
+      context,
+    );
+    await client.listAuditEvents(context, {
+      action: "mcp.tool.called",
+      limit: 25,
+      projectId: "project-1",
+    });
+
+    expect(fetchImplementation.mock.calls.map(([url]) => url)).toEqual([
+      "http://core.test/v1/audit/events",
+      "http://core.test/v1/audit/events?action=mcp.tool.called&limit=25&project_id=project-1",
+    ]);
   });
 });

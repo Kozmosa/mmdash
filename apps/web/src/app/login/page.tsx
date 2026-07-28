@@ -1,8 +1,8 @@
 "use client";
 
 import { FlaskConical } from "lucide-react";
-import Link from "next/link";
-import type { FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,32 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { apiClient } from "@/lib/api-client";
 
 export default function LoginPage() {
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    toast.info("认证能力将在 Auth 基座阶段接入。");
+    const form = new FormData(event.currentTarget);
+    setSubmitting(true);
+    try {
+      await apiClient.request("/auth/login", {
+        body: {
+          email: String(form.get("email") ?? ""),
+          password: String(form.get("password") ?? ""),
+        },
+        method: "POST",
+      });
+      toast.success("登录成功");
+      router.replace("/projects");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "登录失败");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -55,15 +76,9 @@ export default function LoginPage() {
             </label>
           </CardContent>
           <CardFooter className="flex-col">
-            <Button className="w-full" type="submit">
-              登录
+            <Button className="w-full" disabled={submitting} type="submit">
+              {submitting ? "登录中…" : "登录"}
             </Button>
-            <Link
-              className="mt-3 text-xs text-muted-foreground underline-offset-4 hover:underline"
-              href="/projects"
-            >
-              查看工程壳
-            </Link>
           </CardFooter>
         </form>
       </Card>
