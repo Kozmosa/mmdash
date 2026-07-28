@@ -66,3 +66,6 @@ layer only when their module documentation explains why.
 ## More guides
 
 - [Web foundation](web.md)
+- [Web BFF foundation](web-bff.md)
+- [MCP Gateway foundation](mcp-gateway.md)
+- [CLI development and packaging](cli.md)
