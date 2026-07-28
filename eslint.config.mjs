@@ -6,6 +6,8 @@ export default tseslint.config(
   {
     ignores: [
       "**/.next/**",
+      "**/.pytest_cache/**",
+      "**/.venv/**",
       "**/dist/**",
       "**/node_modules/**",
       "archive/**",

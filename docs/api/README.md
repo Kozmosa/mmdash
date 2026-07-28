@@ -1,15 +1,19 @@
 # API documentation
 
-This directory is the human-readable index for mmdash APIs. The canonical
-machine-readable Core contract is
-[`contracts/openapi/core.yaml`](../../contracts/openapi/core.yaml).
+This directory is the human-readable index for mmdash APIs. Canonical
+machine-readable contracts live in
+[`contracts/openapi`](../../contracts/openapi), currently:
+
+- [`core.yaml`](../../contracts/openapi/core.yaml) for Core consumers;
+- [`web-bff.yaml`](../../contracts/openapi/web-bff.yaml) for browser-facing
+  HTTP, SSE, WebSocket, and file-stream routes.
 
 ## Find an API quickly
 
 1. Search [`endpoints.md`](endpoints.md) by service, method, path, module, or
    `operationId`.
-2. Open the matching operation in the OpenAPI contract for request and response
-   schemas.
+2. Open the matching `operationId` in the named OpenAPI contract for request
+   and response schemas.
 3. Use `pnpm api:check` after editing the contract. CI rejects operations that
    are absent from the endpoint catalog.
 
@@ -45,8 +49,16 @@ The browser client lives at `apps/web/src/lib/api-client.ts`. It uses same-origi
 `/api`, sends browser credentials, serializes JSON bodies, and converts BFF
 errors into a stable `ApiError` containing `status`, `code`, and `requestId`.
 
+The generated Core types and runtime wrapper live in `packages/core-client`.
+Regenerate its types after changing `core.yaml` with:
+
+```bash
+pnpm --filter @mmdash/core-client generate
+```
+
 ## Related documents
 
 - [Endpoint catalog](endpoints.md)
 - [Local development](../development/README.md)
+- [Web BFF development](../development/web-bff.md)
 - [Architecture](../architecture/README.md)

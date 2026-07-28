@@ -80,6 +80,7 @@ services:
       context: ../..
       dockerfile: apps/web-bff/Dockerfile
     environment:
+      BFF_COOKIE_SECRET: ${BFF_COOKIE_SECRET:-local-compose-cookie-secret-change-12345}
       BFF_HOST: 0.0.0.0
       BFF_PORT: 3001
       CORE_BASE_URL: http://core:8080

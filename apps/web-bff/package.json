@@ -4,16 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "pnpm --filter @mmdash/core-client build",
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
+    "pretest": "pnpm --filter @mmdash/core-client build",
     "test": "vitest run"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@mmdash/core-client": "workspace:*",
     "fastify": "^5.6.2",
-    "pino": "^9.7.0"
+    "pino": "^9.7.0",
+    "ws": "^8.18.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

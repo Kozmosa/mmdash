@@ -1,13 +1,23 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
-const openapi = await readFile("contracts/openapi/core.yaml", "utf8");
 const catalog = await readFile("docs/api/endpoints.md", "utf8");
-const operationIds = [
-  ...openapi.matchAll(/^\s+operationId:\s+([A-Za-z0-9_.-]+)\s*$/gm),
-].map((match) => match[1]);
+const contractDirectory = "contracts/openapi";
+const contractFiles = (await readdir(contractDirectory))
+  .filter((file) => file.endsWith(".yaml") || file.endsWith(".yml"))
+  .sort();
+const operationIds = [];
+
+for (const contractFile of contractFiles) {
+  const openapi = await readFile(`${contractDirectory}/${contractFile}`, "utf8");
+  operationIds.push(
+    ...[...openapi.matchAll(/^\s+operationId:\s+([A-Za-z0-9_.-]+)\s*$/gm)].map(
+      (match) => match[1],
+    ),
+  );
+}
 
 if (operationIds.length === 0) {
-  console.error("Core OpenAPI contract has no operationId entries.");
+  console.error("OpenAPI contracts have no operationId entries.");
   process.exit(1);
 }
 
@@ -22,4 +32,6 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log(`API catalog covers ${operationIds.length} operation(s).`);
+console.log(
+  `API catalog covers ${operationIds.length} operation(s) across ${contractFiles.length} contract(s).`,
+);

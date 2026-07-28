@@ -1,11 +1,11 @@
 import { buildApp } from "./app.js";
+import { loadConfig } from "./config.js";
 
-const port = Number.parseInt(process.env.BFF_PORT ?? "3001", 10);
-const host = process.env.BFF_HOST ?? "0.0.0.0";
-const app = buildApp();
+const config = loadConfig();
+const app = buildApp({ config });
 
 try {
-  await app.listen({ host, port });
+  await app.listen({ host: config.host, port: config.port });
 } catch (error) {
   app.log.error(error);
   process.exitCode = 1;

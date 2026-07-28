@@ -1,29 +1,76 @@
+import websocket from "@fastify/websocket";
+import { CoreClient } from "@mmdash/core-client";
 import Fastify, { type FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
+
+import {
+  createDefaultPageRegistry,
+  type PageAggregatorRegistry,
+} from "./aggregation/page-aggregator.js";
+import { registerBrowserAuth } from "./auth/browser-auth.js";
+import { type BffConfig, loadConfig } from "./config.js";
+import { registerProjectContext } from "./context/project-context.js";
+import { registerErrorHandler } from "./errors/error-handler.js";
+import { registerHttpStreamRoutes } from "./proxy/http-streams.js";
+import { registerWebSocketRoutes } from "./proxy/websocket.js";
+import { registerExampleRoutes } from "./routes/example.js";
+import { registerHealthRoutes } from "./routes/health.js";
+import { registerPageRoutes } from "./routes/pages.js";
 
 export type BuildAppOptions = {
-  coreBaseUrl?: string;
+  config?: BffConfig;
+  coreClient?: CoreClient;
   fetchImplementation?: typeof fetch;
+  logger?: boolean;
+  pageRegistry?: PageAggregatorRegistry;
 };
 
+const requestIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
+
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: true });
-  const coreBaseUrl =
-    options.coreBaseUrl ?? process.env.CORE_BASE_URL ?? "http://localhost:8080";
-  const fetchImplementation = options.fetchImplementation ?? fetch;
+  const config = options.config ?? loadConfig();
+  const app = Fastify({
+    genReqId(request) {
+      const candidate = request.headers["x-request-id"];
+      return typeof candidate === "string" && requestIdPattern.test(candidate)
+        ? candidate
+        : randomUUID();
+    },
+    logger: options.logger ?? true,
+  });
+  const coreClient =
+    options.coreClient ??
+    new CoreClient(config.coreBaseUrl, options.fetchImplementation);
+  const pageRegistry =
+    options.pageRegistry ?? createDefaultPageRegistry();
 
-  app.get("/health/live", async () => ({ status: "ok" }));
-  app.get("/api/example", async (request, reply) => {
-    const requestId =
-      typeof request.headers["x-request-id"] === "string"
-        ? request.headers["x-request-id"]
-        : crypto.randomUUID();
-    const response = await fetchImplementation(`${coreBaseUrl}/v1/example`, {
-      headers: { "x-request-id": requestId },
-    });
+  app.register(websocket, {
+    errorHandler(error, socket, request) {
+      request.log.error({ err: error }, "websocket handler failed");
+      socket.close(1011, "WebSocket proxy failed");
+    },
+    options: {
+      maxPayload: 1024 * 1024,
+    },
+  });
+  registerBrowserAuth(app, config.cookieSecret);
+  registerProjectContext(app);
+  registerErrorHandler(app);
 
-    reply.header("x-request-id", requestId);
-    reply.code(response.status);
-    return reply.send(await response.json());
+  app.addHook("onSend", async (request, reply, payload) => {
+    reply.header("x-request-id", request.id);
+    return payload;
+  });
+  app.addContentTypeParser("*", (request, payload, done) => {
+    done(null, payload);
+  });
+
+  registerHealthRoutes(app, coreClient);
+  registerExampleRoutes(app, coreClient);
+  registerPageRoutes(app, coreClient, pageRegistry);
+  registerHttpStreamRoutes(app, coreClient);
+  app.register(async function websocketRoutesScope(scopedApp) {
+    registerWebSocketRoutes(scopedApp, coreClient);
   });
 
   return app;

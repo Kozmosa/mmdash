@@ -1,0 +1,33 @@
+import type { FastifyInstance } from "fastify";
+
+import {
+  encodeSessionAssertion,
+  sessionCookieName,
+  type SessionAssertion,
+} from "../src/auth/browser-auth.js";
+import type { BffConfig } from "../src/config.js";
+
+export const testConfig: BffConfig = {
+  cookieSecret: "test-cookie-secret-that-is-at-least-32-characters",
+  coreBaseUrl: "http://core.test",
+  host: "127.0.0.1",
+  nodeEnv: "test",
+  port: 3001,
+};
+
+export async function signedSessionCookie(
+  app: FastifyInstance,
+  overrides: Partial<SessionAssertion> = {},
+): Promise<string> {
+  await app.ready();
+  const assertion = encodeSessionAssertion({
+    display_name: "Test User",
+    email: "test@example.com",
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    session_id: "session-1",
+    user_id: "user-1",
+    ...overrides,
+  });
+  const signed = app.signCookie(assertion);
+  return `${sessionCookieName}=${encodeURIComponent(signed)}`;
+}
