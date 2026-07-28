@@ -3,8 +3,24 @@ package __MODULE__
 
 import "net/http"
 
+// Dependencies contains narrow platform or cross-module interfaces.
+// Do not pass another module's repository or database tables here.
+type Dependencies struct{}
+
 // Module registers the module's application services and transports.
-type Module struct{}
+type Module struct {
+	dependencies Dependencies
+}
+
+// New constructs the module from explicit dependencies.
+func New(dependencies Dependencies) Module {
+	return Module{dependencies: dependencies}
+}
+
+// Name returns the module registry name.
+func (Module) Name() string {
+	return "__MODULE__"
+}
 
 // RegisterRoutes mounts the module's HTTP handlers.
 func (Module) RegisterRoutes(mux *http.ServeMux) {

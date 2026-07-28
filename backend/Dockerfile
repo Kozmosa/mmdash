@@ -12,6 +12,7 @@ WORKDIR /app
 COPY --from=build /out/core-server /usr/local/bin/core-server
 COPY --from=build /out/migrate /usr/local/bin/migrate
 COPY backend/migrations ./migrations
+COPY contracts/openapi/core.yaml ./contracts/openapi/core.yaml
 USER mmdash
 EXPOSE 8080
 CMD ["core-server"]

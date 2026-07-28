@@ -12,3 +12,4 @@ evidence. It is expanded as product modules are implemented.
 | Browser API boundary          | Fastify BFF and generated Core client             | web-bff foundation   | BFF unit and streaming proxy tests   |
 | Agent API boundary            | MCP Gateway, token/session policy, tool registry  | MCP foundation       | MCP v2 transport and permission tests |
 | Local CLI shell               | Installable command registry and platform paths   | CLI foundation       | CLI command, path, build, and pack tests |
+| Authoritative Core boundary   | Go modular monolith and platform infrastructure   | Core foundation      | Go platform/module tests and readiness checks |

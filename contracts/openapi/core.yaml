@@ -9,9 +9,55 @@ servers:
   - url: http://localhost:8080
     description: Local Core Server
 tags:
+  - name: Health
+    description: Process liveness and dependency readiness.
+  - name: System
+    description: Core platform metadata.
   - name: Engineering
     description: Non-domain endpoints used to verify the technical baseline.
 paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Check whether the Core process is alive
+      operationId: health.live
+      responses:
+        "200":
+          description: The Core process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Liveness"
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Check Core dependency readiness
+      operationId: health.ready
+      responses:
+        "200":
+          description: PostgreSQL and object storage are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: One or more dependencies are unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+  /openapi.yaml:
+    get:
+      tags: [System]
+      summary: Read the running Core OpenAPI contract
+      operationId: system.openapi.get
+      responses:
+        "200":
+          description: The canonical Core OpenAPI document.
+          content:
+            application/yaml:
+              schema:
+                type: string
   /v1/example:
     get:
       tags: [Engineering]
@@ -32,6 +78,33 @@ paths:
                 $ref: "#/components/schemas/Error"
 components:
   schemas:
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [service, status, version]
+      properties:
+        service:
+          type: string
+          const: core
+        status:
+          type: string
+          const: ok
+        version:
+          type: string
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [dependencies, status]
+      properties:
+        dependencies:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ready, unavailable]
+          required: [postgres, object_storage]
+        status:
+          type: string
+          enum: [ready, not_ready]
     ExampleCheck:
       type: object
       additionalProperties: false
@@ -57,3 +130,5 @@ components:
           type: string
         request_id:
           type: string
+        details:
+          description: Optional operation-specific structured details.

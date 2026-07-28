@@ -6,6 +6,9 @@ machine-readable source of truth.
 
 | Service | Kind | Method / name | Path | `operationId` | Module | Contract |
 | --- | --- | --- | --- | --- | --- | --- |
+| Core | HTTP | `GET` | `/health/live` | `health.live` | platform health | `core.yaml` |
+| Core | HTTP | `GET` | `/health/ready` | `health.ready` | platform health | `core.yaml` |
+| Core | HTTP | `GET` | `/openapi.yaml` | `system.openapi.get` | platform contract | `core.yaml` |
 | Core | HTTP | `GET` | `/v1/example` | `example.check` | engineering baseline | `core.yaml` |
 | Web BFF | HTTP | `GET` | `/health/live` | `bff.health.live` | health | `web-bff.yaml` |
 | Web BFF | HTTP | `GET` | `/health/ready` | `bff.health.ready` | health | `web-bff.yaml` |
@@ -32,6 +35,19 @@ machine-readable source of truth.
 - `/api/projects/{projectId}/pages/{pageId}` is an extension point. Stage 3.4
   registers `workspace-shell`, whose `context` fragment contains the current
   browser-safe user and project projection.
+
+## Core platform conventions
+
+- Core is the authoritative state boundary. Other processes call its
+  contract and do not connect to PostgreSQL or object storage directly.
+- `GET /health/live` only checks the process. `GET /health/ready` checks both
+  `postgres` and `object_storage`, returning HTTP 503 and `not_ready` when
+  either is unavailable.
+- `GET /openapi.yaml` serves the canonical contract configured at process
+  startup, so operators and generated clients can be compared against the
+  running service.
+- All Core JSON errors carry stable `code` and `message` fields; request-bound
+  errors also carry `request_id`. Internal causes are never serialized.
 
 ## `example.check`
 

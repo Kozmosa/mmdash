@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+    "/health/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check whether the Core process is alive */
+        get: operations["health.live"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Core dependency readiness */
+        get: operations["health.ready"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/openapi.yaml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the running Core OpenAPI contract */
+        get: operations["system.openapi.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/example": {
         parameters: {
             query?: never;
@@ -25,6 +76,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Liveness: {
+            /** @constant */
+            service: "core";
+            /** @constant */
+            status: "ok";
+            version: string;
+        };
+        Readiness: {
+            dependencies: {
+                [key: string]: "ready" | "unavailable";
+            };
+            /** @enum {string} */
+            status: "ready" | "not_ready";
+        };
         ExampleCheck: {
             /** @constant */
             status: "ok";
@@ -37,6 +102,8 @@ export interface components {
             code: string;
             message: string;
             request_id?: string;
+            /** @description Optional operation-specific structured details. */
+            details?: unknown;
         };
     };
     responses: never;
@@ -47,6 +114,75 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "health.live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Core process is alive. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Liveness"];
+                };
+            };
+        };
+    };
+    "health.ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description PostgreSQL and object storage are ready. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Readiness"];
+                };
+            };
+            /** @description One or more dependencies are unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Readiness"];
+                };
+            };
+        };
+    };
+    "system.openapi.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The canonical Core OpenAPI document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/yaml": string;
+                };
+            };
+        };
+    };
     "example.check": {
         parameters: {
             query?: never;

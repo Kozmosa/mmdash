@@ -18,3 +18,7 @@ audit correlation; they are not presented as protocol-level MCP sessions.
 
 The design baseline is maintained under `docs/design/v0.1`. Implementation
 decisions that change module boundaries belong under `docs/adr`.
+
+More detail:
+
+- [Core platform boundaries](core-platform.md)

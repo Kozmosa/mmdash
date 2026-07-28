@@ -11,5 +11,7 @@ cross-layer install.
    `contracts/openapi/core.yaml`.
 5. Register every layer explicitly, update `docs/api/endpoints.md`, and add
    unit plus boundary tests.
+6. Keep dependencies narrow: application services or read-only query
+   interfaces are allowed; another module's repository or tables are not.
 
 This review step keeps module ownership and public contracts intentional.

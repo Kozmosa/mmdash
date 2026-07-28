@@ -45,6 +45,8 @@ and use low-latency response flushing for streams.
   access storage directly.
 - Error responses use a stable code, a safe message, and a `request_id` when a
   request context exists.
+- Core publishes its running canonical contract at `GET /openapi.yaml` and
+  reports PostgreSQL plus object-storage readiness at `GET /health/ready`.
 - Timestamps are UTC RFC 3339 strings. IDs are opaque strings.
 - New list endpoints use cursor pagination unless their result is explicitly
   bounded.

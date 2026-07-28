@@ -69,3 +69,4 @@ layer only when their module documentation explains why.
 - [Web BFF foundation](web-bff.md)
 - [MCP Gateway foundation](mcp-gateway.md)
 - [CLI development and packaging](cli.md)
+- [Go Core Server foundation](core.md)

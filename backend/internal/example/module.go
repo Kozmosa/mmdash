@@ -3,9 +3,11 @@ package example
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
+	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
 )
 
 // StorageChecker is the narrow persistence boundary used by the example module.
@@ -35,36 +37,38 @@ func New(checker StorageChecker) Module {
 	return Module{checker: checker}
 }
 
+// Name returns the module registry name.
+func (Module) Name() string {
+	return "example"
+}
+
 // RegisterRoutes registers the example module's HTTP contract.
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/example", module.handleCheck)
 }
 
 func (module Module) handleCheck(response http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
-		response.Header().Set("Allow", http.MethodGet)
-		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+	if !httpx.RequireMethod(response, request, http.MethodGet) {
 		return
 	}
 
 	checkedAt, err := module.checker.Check(request.Context())
 	if err != nil {
-		writeJSON(response, http.StatusServiceUnavailable, map[string]string{
-			"code":    "STORAGE_UNAVAILABLE",
-			"message": "PostgreSQL is unavailable",
-		})
+		httpx.WriteError(
+			response,
+			request,
+			apperror.New(
+				http.StatusServiceUnavailable,
+				"STORAGE_UNAVAILABLE",
+				"PostgreSQL is unavailable",
+			).WithCause(err),
+		)
 		return
 	}
 
-	writeJSON(response, http.StatusOK, map[string]string{
+	httpx.WriteJSON(response, http.StatusOK, map[string]string{
 		"status":     "ok",
 		"storage":    "postgres",
 		"checked_at": checkedAt.UTC().Format(time.RFC3339Nano),
 	})
-}
-
-func writeJSON(response http.ResponseWriter, status int, body interface{}) {
-	response.Header().Set("Content-Type", "application/json")
-	response.WriteHeader(status)
-	_ = json.NewEncoder(response).Encode(body)
 }

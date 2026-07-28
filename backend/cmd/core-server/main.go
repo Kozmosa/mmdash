@@ -2,60 +2,82 @@ package main
 
 import (
 	"context"
-	"errors"
-	"log"
-	"net/http"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/example"
+	"github.com/mmdash/mmdash/backend/internal/platform/clock"
+	"github.com/mmdash/mmdash/backend/internal/platform/config"
+	"github.com/mmdash/mmdash/backend/internal/platform/coreapp"
 	"github.com/mmdash/mmdash/backend/internal/platform/database"
+	"github.com/mmdash/mmdash/backend/internal/platform/health"
+	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/logging"
+	"github.com/mmdash/mmdash/backend/internal/platform/module"
+	"github.com/mmdash/mmdash/backend/internal/platform/objectstorage"
+	"github.com/mmdash/mmdash/backend/internal/platform/server"
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is required")
-	}
-
-	db, err := database.OpenPostgres(ctx, databaseURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	mux := http.NewServeMux()
-	example.New(example.PostgresChecker{DB: db}).RegisterRoutes(mux)
-
-	server := &http.Server{
-		Addr:              envOrDefault("CORE_ADDR", ":8080"),
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	go func() {
-		<-ctx.Done()
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownContext); err != nil {
-			log.Printf("core server shutdown: %v", err)
-		}
-	}()
-
-	log.Printf("core server listening on %s", server.Addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	logger := logging.New(os.Stderr, clock.System{})
+	if err := run(logger); err != nil {
+		logger.Error("core.failed", map[string]interface{}{"error": err.Error()})
+		os.Exit(1)
 	}
 }
 
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func run(logger *logging.Logger) error {
+	processConfig, err := config.Load(os.LookupEnv)
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
 	}
-	return fallback
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	startupContext, cancelStartup := context.WithTimeout(ctx, processConfig.StartupTimeout)
+	defer cancelStartup()
+
+	db, err := database.OpenPostgres(startupContext, processConfig.Database)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	storage, err := objectstorage.NewMinIO(processConfig.ObjectStorage)
+	if err != nil {
+		return err
+	}
+	if err := storage.Check(startupContext); err != nil {
+		return err
+	}
+	openAPI, err := os.ReadFile(processConfig.OpenAPIPath)
+	if err != nil {
+		return fmt.Errorf("read Core OpenAPI contract: %w", err)
+	}
+
+	modules := module.NewRegistry()
+	if err := modules.Register(example.New(example.PostgresChecker{DB: db})); err != nil {
+		return err
+	}
+	handler := coreapp.NewHandler(coreapp.Options{
+		Health: health.Handler{
+			Checkers: []health.Checker{
+				database.Checker{DB: db},
+				storage,
+			},
+		},
+		IDGenerator: identity.Generator{},
+		Logger:      logger,
+		Modules:     modules,
+		OpenAPI:     openAPI,
+	})
+
+	return server.New(
+		processConfig.Addr,
+		handler,
+		logger,
+		processConfig.ShutdownTimeout,
+	).Run(ctx)
 }
