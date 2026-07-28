@@ -61,52 +61,44 @@ pnpm.cmd contracts:check
 pnpm.cmd api:check
 ```
 
-## Docker 验收状态与阻塞证据
+## Docker 验收结果
 
-3.15 提交之后才开始 Docker 测试，符合阶段约束。测试中：
+3.15 提交之后执行了完整 Docker 测试，符合阶段约束。2026-07-28 的最终
+验收结果：
 
-1. 修复了本机卡死的 Docker Desktop/WSL2 engine，`docker version` 已能返回
-   Docker Desktop 4.12.0 / Engine 20.10.17；
-2. Go Core/Migrate 镜像成功构建；
-3. 本机 daemon 配置的 `https://docker.1ms.run` 在读取
-   `node:24-alpine` blob 时返回 `403 Forbidden`；
-4. 显式尝试 DaoCloud 镜像超过 60 秒无输出，已按要求停止，不再消耗时间轮询；
-5. 因基础镜像未就绪，完整 Compose 启动和 `pnpm smoke` 尚未完成。
+- PostgreSQL、MinIO、Core、Web BFF、Web、MCP Gateway 均为
+  `running (healthy)`；
+- Migration 容器成功应用 `000001`–`000008` 并以状态 0 退出；
+- Worker 镜像通过 Compose 以一次性模式领取并完成 `system.test` Job；
+- 完整 smoke 通过，输出：
 
-当前 Compose 仅显示已退出的 `mmdash-postgres-1` 与 `mmdash-minio-1`，
-没有运行中的本项目容器。停止的镜像拉取没有创建仓库临时文件。
-
-## 由用户执行的 Docker 测试流程
-
-### 1. 修复基础镜像下载
-
-在 Docker Desktop → Settings → Docker Engine 中移除当前返回 403 的
-`https://docker.1ms.run`（以及已知失败的 `docker.1panel.live`），或者替换为
-你已经验证可用的 registry mirror，然后 Apply & Restart。
-
-优先使用可用镜像。没有可用镜像时，再在 Docker Desktop → Settings →
-Resources → Proxies 中配置：
-
-```text
-HTTP proxy:  http://127.0.0.1:22334
-HTTPS proxy: http://127.0.0.1:22334
+```json
+{
+  "audit_events": 1,
+  "event_id": "ad927fa3-9c91-41f9-9aac-0d8ab83ac057",
+  "job_id": "ea10efbe-675b-4130-a7d8-7c306a18f2a1",
+  "project_id": "df96ef83-c7b2-4978-ac50-93a2092cf883",
+  "status": "passed"
+}
 ```
 
-若使用代理回退，Docker Engine JSON 中不要保留一个始终返回 403 的 mirror，
-否则请求仍会先被该 mirror 阻断。
+首次 smoke 暴露并已修复两个仅真实 PostgreSQL 能发现的问题：
 
-验证基础镜像：
+- Data Hub Project projector 在同一 prepared statement 中将 `$2` 同时推断
+  为 UUID 和 text；现先固定为 UUID，再转换为 source ID text；
+- Outbox 重试 SQL 的 `CASE` 时间参数缺少显式 `timestamptz` 类型，导致失败
+  记录自身无法落库；
+- smoke 现要求 Outbox 至少有一个成功 delivery，避免空数组的 `every()`
+  产生假阳性。
 
-```powershell
-docker version
-docker pull node:24-alpine
-docker pull python:3.12-slim
-docker pull alpine:3.20
-docker pull postgres:16-alpine
-docker pull minio/minio:latest
-```
+`.dockerignore` 同步改为递归排除各语言缓存、虚拟环境和
+`__pycache__`，避免这些本机目录进入 Docker build context。
 
-### 2. 构建并启动整栈
+交割时整栈仍保持运行，便于继续检查；如不再使用，执行下文的 `down`。
+
+## Docker 复验流程
+
+### 1. 构建并启动整栈
 
 从 `I:\Project\mmdash` 执行：
 
@@ -119,7 +111,7 @@ docker compose -f deploy/compose/compose.yaml ps
 
 所有长期服务应为 `running`/`healthy`，`migrate` 应为成功退出。
 
-### 3. 执行 3.15 全链路 smoke
+### 2. 执行 3.15 全链路 smoke
 
 ```powershell
 $env:MMDASH_SMOKE_WORKER_MODE = "docker"

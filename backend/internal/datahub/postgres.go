@@ -440,7 +440,7 @@ func (store PostgresStore) projectEvent(
 			INSERT INTO data_objects (
 				object_id, project_id, object_type, source_module, source_id,
 				title, summary, status, metadata, occurred_at, created_at, updated_at
-			) VALUES ($1, $2, 'project', 'project', $2, $3, '', $4,
+			) VALUES ($1, $2, 'project', 'project', $2::uuid::text, $3, '', $4,
 			          '{}'::jsonb, $5, $5, $5)
 			ON CONFLICT (source_module, object_type, source_id) DO UPDATE
 			SET title = EXCLUDED.title,
@@ -460,7 +460,7 @@ func (store PostgresStore) projectEvent(
 			       $6, '{}'::jsonb, $7, $8
 			FROM data_objects
 			WHERE source_module = 'project' AND object_type = 'project'
-			  AND source_id = $2
+			  AND source_id = $2::uuid::text
 			ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING
 		`, activityID, projectID, event.EventID, event.EventType, name, actor,
 			event.OccurredAt, store.Clock.Now().UTC())
