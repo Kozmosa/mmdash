@@ -11,12 +11,6 @@ export const metadata: Metadata = {
   description: "Mathematical modeling and research workspace",
 };
 
-const bootstrapUser = {
-  id: "bootstrap-user",
-  displayName: "开发者",
-  email: "developer@mmdash.local",
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
@@ -24,7 +18,7 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <AppProviders>
-          <UserProvider user={bootstrapUser}>{children}</UserProvider>
+          <UserProvider>{children}</UserProvider>
         </AppProviders>
       </body>
     </html>

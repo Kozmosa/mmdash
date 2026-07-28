@@ -3,15 +3,19 @@
 Search this file by tool name, project scope, token kind, or contract. The
 machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 
-| Tool | Purpose | Project scoped | Token kinds | Input/output contract | Status |
-| --- | --- | --- | --- | --- | --- |
-| `system.echo` | Verify the complete MCP Gateway boundary | Yes | CLI, Agent | `system.echo.json` | Stage 3.5 test tool |
+| Tool          | Purpose                                  | Project scoped | Token kinds | Input/output contract | Status              |
+| ------------- | ---------------------------------------- | -------------- | ----------- | --------------------- | ------------------- |
+| `system.echo` | Verify the complete MCP Gateway boundary | Yes            | CLI, Agent  | `system.echo.json`    | Stage 3.5 test tool |
 
 ## `system.echo`
 
 Read-only and idempotent test tool. It verifies parameter validation,
 project-level and tool-level authorization, session correlation, safe error
 conversion, and audit recording without touching business storage.
+
+Audit is always emitted as structured JSON. When `MCP_CORE_AUDIT_TOKEN` is
+configured, the same `request_id`, project, outcome, tool name, delegated
+principal, and logical session are persisted through `audit.events.record`.
 
 Input:
 

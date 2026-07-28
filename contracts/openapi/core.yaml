@@ -15,12 +15,29 @@ tags:
     description: Core platform metadata.
   - name: Engineering
     description: Non-domain endpoints used to verify the technical baseline.
+  - name: Auth
+    description: Users, sessions, and revocable access credentials.
+  - name: Projects
+    description: Collaborative projects, membership, roles, and permissions.
+  - name: Settings
+    description: Typed system/project configuration, redacted secrets, and connection tests.
+  - name: Jobs
+    description: Durable asynchronous jobs and the authenticated Worker protocol.
+  - name: Events
+    description: Outbox inspection, registered consumers, and explicit replay.
+  - name: Data Hub
+    description: Cross-module object discovery, activity, and human-confirmed project context.
+  - name: Audit
+    description: Append-only security/activity audit ingestion and authorized search.
+  - name: Observability
+    description: Service metrics and diagnostic metadata.
 paths:
   /health/live:
     get:
       tags: [Health]
       summary: Check whether the Core process is alive
       operationId: health.live
+      security: []
       responses:
         "200":
           description: The Core process is alive.
@@ -33,6 +50,7 @@ paths:
       tags: [Health]
       summary: Check Core dependency readiness
       operationId: health.ready
+      security: []
       responses:
         "200":
           description: PostgreSQL and object storage are ready.
@@ -51,6 +69,7 @@ paths:
       tags: [System]
       summary: Read the running Core OpenAPI contract
       operationId: system.openapi.get
+      security: []
       responses:
         "200":
           description: The canonical Core OpenAPI document.
@@ -58,11 +77,25 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /metrics:
+    get:
+      tags: [Observability]
+      summary: Read bounded-label Prometheus metrics
+      operationId: observability.metrics.get
+      security: []
+      responses:
+        "200":
+          description: Prometheus text exposition for Core.
+          content:
+            text/plain:
+              schema:
+                type: string
   /v1/example:
     get:
       tags: [Engineering]
       summary: Verify the example module and PostgreSQL path
       operationId: example.check
+      security: []
       responses:
         "200":
           description: PostgreSQL is reachable.
@@ -76,8 +109,2277 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      operationId: auth.login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: A revocable browser session was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current browser session
+      operationId: auth.logout
+      responses:
+        "204":
+          description: Session revoked.
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Resolve the current identity
+      operationId: auth.me
+      responses:
+        "200":
+          description: Current authenticated identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Identity"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/tokens:
+    get:
+      tags: [Auth]
+      summary: List token metadata owned by the current user
+      operationId: auth.tokens.list
+      responses:
+        "200":
+          description: Token metadata without secrets.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AccessToken"
+    post:
+      tags: [Auth]
+      summary: Issue an API, Agent, or Box token
+      operationId: auth.tokens.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: Token secret returned once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedToken"
+  /v1/auth/tokens/{tokenId}:
+    parameters:
+      - $ref: "#/components/parameters/TokenId"
+    delete:
+      tags: [Auth]
+      summary: Revoke an access token
+      operationId: auth.tokens.revoke
+      responses:
+        "204":
+          description: Token revoked.
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects:
+    get:
+      tags: [Projects]
+      summary: List projects visible to the current identity
+      operationId: projects.list
+      parameters:
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Visible collaborative projects.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+    post:
+      tags: [Projects]
+      summary: Create a collaborative project
+      operationId: projects.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created with the caller as owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /v1/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Get a project
+      operationId: projects.get
+      responses:
+        "200":
+          description: Project detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Projects]
+      summary: Update or archive a project
+      operationId: projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Updated project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /v1/projects/{projectId}/members:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: List project collaborators
+      operationId: projects.members.list
+      responses:
+        "200":
+          description: Project team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberList"
+  /v1/projects/{projectId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Projects]
+      summary: Add a collaborator or change their role
+      operationId: projects.members.upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectMemberRequest"
+      responses:
+        "200":
+          description: Updated collaborator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMember"
+    delete:
+      tags: [Projects]
+      summary: Remove a collaborator
+      operationId: projects.members.remove
+      responses:
+        "204":
+          description: Collaborator removed.
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Get the current identity's effective project permissions
+      operationId: projects.permissions.get
+      responses:
+        "200":
+          description: Effective role and permission names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPermissions"
+  /v1/settings/types:
+    get:
+      tags: [Settings]
+      summary: List registered configuration types for a scope
+      operationId: settings.types.list
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/SettingScope"
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Module-owned configuration type descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingTypeList"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/settings/system/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted system setting
+      operationId: settings.system.get
+      responses:
+        "200":
+          description: Redacted system setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Settings]
+      summary: Update a system setting
+      operationId: settings.system.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a system setting
+      operationId: settings.system.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /v1/settings/system/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved system configuration
+      operationId: settings.system.test
+      responses:
+        "200":
+          description: Safe per-check connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTestResult"
+  /v1/settings/projects/{projectId}/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted project setting
+      operationId: settings.projects.get
+      responses:
+        "200":
+          description: Redacted project setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Settings]
+      summary: Update a project setting
+      operationId: settings.projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a project setting
+      operationId: settings.projects.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /v1/settings/projects/{projectId}/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved project configuration
+      operationId: settings.projects.test
+      responses:
+        "200":
+          description: Safe per-check connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTestResult"
+  /v1/jobs:
+    post:
+      tags: [Jobs]
+      summary: Create an idempotent project job
+      operationId: jobs.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobRequest"
+      responses:
+        "200":
+          description: Existing job returned for the same idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "201":
+          description: Job created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+  /v1/jobs/claim:
+    post:
+      tags: [Jobs]
+      summary: Atomically claim the next eligible job
+      description: "Requires an API token. Returns `job: null` when no job is available."
+      operationId: jobs.claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimJobRequest"
+      responses:
+        "200":
+          description: Claimed job or an empty poll result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobClaim"
+  /v1/jobs/workers/heartbeat:
+    post:
+      tags: [Jobs]
+      summary: Record Worker process liveness and capabilities
+      description: Requires an API token.
+      operationId: jobs.workers.heartbeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerHeartbeatRequest"
+      responses:
+        "204":
+          description: Heartbeat recorded.
+  /v1/jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [Jobs]
+      summary: Read a project job
+      operationId: jobs.get
+      responses:
+        "200":
+          description: Authoritative job state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/jobs/{jobId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [Jobs]
+      summary: Cancel queued work or signal a running Worker
+      operationId: jobs.cancel
+      responses:
+        "200":
+          description: Updated job state or cancellation signal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+  /v1/jobs/{jobId}/heartbeat:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [Jobs]
+      summary: Renew a Worker-owned job lease
+      description: Requires an API token and returns any cancellation signal.
+      operationId: jobs.lease.renew
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewJobLeaseRequest"
+      responses:
+        "200":
+          description: Renewed lease and current job state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/jobs/{jobId}/logs:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [Jobs]
+      summary: Read append-only job logs
+      operationId: jobs.logs.list
+      responses:
+        "200":
+          description: Ordered job log entries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobLogList"
+    post:
+      tags: [Jobs]
+      summary: Append a log under an active Worker lease
+      description: Requires an API token.
+      operationId: jobs.logs.append
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppendJobLogRequest"
+      responses:
+        "201":
+          description: Log appended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobLog"
+  /v1/jobs/{jobId}/complete:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [Jobs]
+      summary: Submit a successful job result
+      description: Requires an API token and an active Worker lease.
+      operationId: jobs.complete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteJobRequest"
+      responses:
+        "200":
+          description: Terminal job state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+  /v1/jobs/{jobId}/fail:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [Jobs]
+      summary: Submit a handler failure
+      description: Core applies retry, cancellation, timeout, and max-attempt policy.
+      operationId: jobs.fail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FailJobRequest"
+      responses:
+        "200":
+          description: Retried or terminal job state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+  /v1/events/test:
+    post:
+      tags: [Events]
+      summary: Enqueue an engineering test event
+      description: System administrator endpoint used by foundation smoke checks.
+      operationId: events.test.emit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmitTestEventRequest"
+      responses:
+        "201":
+          description: Test event committed to system_outbox.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventEnqueued"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/events/consumers:
+    get:
+      tags: [Events]
+      summary: List registered in-process event consumers
+      operationId: events.consumers.list
+      responses:
+        "200":
+          description: Deterministic consumer registry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventConsumerList"
+  /v1/events/{eventId}:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      tags: [Events]
+      summary: Inspect Outbox publication and consumer delivery state
+      operationId: events.get
+      responses:
+        "200":
+          description: Event envelope and all live/replay deliveries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutboxEventState"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/events/{eventId}/replay:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      tags: [Events]
+      summary: Explicitly replay an event to one or all matching consumers
+      operationId: events.replay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayEventRequest"
+      responses:
+        "202":
+          description: Replay deliveries created with a fresh idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventReplay"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/objects:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List project objects
+      description: Stable `data.list` routing entry point for users and Agents.
+      operationId: data.list
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Cursor-paginated object projections.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataObjectPage"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/objects/{objectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: objectId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Data Hub]
+      summary: Read one project object through its domain adapter
+      description: Stable `data.read` routing entry point; full content remains domain-owned.
+      operationId: data.read
+      responses:
+        "200":
+          description: Registry projection plus authoritative module content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataObjectRead"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/activity:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List the project activity timeline
+      operationId: data.activity.list
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Cursor-paginated activity projections.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataActivityPage"
+  /v1/data/projects/{projectId}/context:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List human-confirmed project context
+      operationId: data.context.list
+      responses:
+        "200":
+          description: Formal project context only; pending proposals are excluded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectContextList"
+  /v1/data/projects/{projectId}/context/proposals:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List context proposals
+      operationId: data.context.proposals.list
+      responses:
+        "200":
+          description: Context proposals visible to collaborators who may propose.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextProposalList"
+    post:
+      tags: [Data Hub]
+      summary: Propose information for formal project context
+      description: Agents may create proposals but cannot confirm them.
+      operationId: data.context.proposals.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContextProposalRequest"
+      responses:
+        "201":
+          description: Pending context proposal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextProposal"
+  /v1/data/projects/{projectId}/context/proposals/{proposalId}/review:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: proposalId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [Data Hub]
+      summary: Accept or reject a context proposal
+      description: Requires a human browser session and context-review permission.
+      operationId: data.context.proposals.review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewContextProposalRequest"
+      responses:
+        "200":
+          description: Reviewed proposal; acceptance also creates formal context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextProposal"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/home:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: Read the project-home aggregate DTO shell
+      operationId: data.home.get
+      responses:
+        "200":
+          description: Typed empty sections ready for future domain contributors.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeAggregate"
+  /v1/audit/events:
+    get:
+      tags: [Audit]
+      summary: Search the append-only audit trail
+      operationId: audit.events.list
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            enum: [success, denied, error]
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Cursor-paginated audit events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Audit]
+      summary: Record an event from a trusted mmdash service
+      description: Requires an API or Box token; caller identity is derived by Core.
+      operationId: audit.events.record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordAuditEventRequest"
+      responses:
+        "201":
+          description: Immutable audit event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEvent"
+        "403":
+          $ref: "#/components/responses/Error"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT or opaque token
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TokenId:
+      name: tokenId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TypeKey:
+      name: typeKey
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9_.-]*$"
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Error:
+      description: Stable Core error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name, status, system_role, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        system_role:
+          type: string
+          enum: [admin, member]
+        created_at:
+          type: string
+          format: date-time
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+    LoginResult:
+      type: object
+      additionalProperties: false
+      required: [access_token, expires_at, session_id, user]
+      properties:
+        access_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+          format: uuid
+        user:
+          $ref: "#/components/schemas/User"
+    Identity:
+      type: object
+      additionalProperties: false
+      required: [kind, user]
+      properties:
+        kind:
+          type: string
+          enum: [session, api, agent, box]
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        token_id:
+          type: string
+          format: uuid
+        user:
+          $ref: "#/components/schemas/User"
+    AccessToken:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, kind, name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [api, agent, box]
+        name:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    CreateTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          enum: [api, agent, box]
+        name:
+          type: string
+          minLength: 1
+        project_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+    IssuedToken:
+      type: object
+      additionalProperties: false
+      required: [token, credential]
+      properties:
+        token:
+          type: string
+        credential:
+          $ref: "#/components/schemas/AccessToken"
+    ProjectRole:
+      type: string
+      enum: [owner, maintainer, editor, viewer, agent, box]
+    Project:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - problem_title
+        - problem_summary
+        - project_constraints
+        - source_artifact_ids
+        - created_by
+        - created_at
+        - updated_at
+        - role
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        problem_title:
+          type: string
+        problem_summary:
+          type: string
+        project_constraints:
+          type: array
+          items:
+            type: string
+        source_artifact_ids:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+          format: uuid
+        archived_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+    ProjectList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        problem_title:
+          type: string
+        problem_summary:
+          type: string
+        project_constraints:
+          type: array
+          items:
+            type: string
+        source_artifact_ids:
+          type: array
+          items:
+            type: string
+    UpdateProjectRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+        problem_title:
+          type: string
+        problem_summary:
+          type: string
+        project_constraints:
+          type: array
+          items:
+            type: string
+        source_artifact_ids:
+          type: array
+          items:
+            type: string
+        archived:
+          type: boolean
+    ProjectMember:
+      type: object
+      additionalProperties: false
+      required: [user_id, email, display_name, role, joined_at]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+        joined_at:
+          type: string
+          format: date-time
+    UpdateProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+    MemberList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+    ProjectPermissions:
+      type: object
+      additionalProperties: false
+      required: [role, permissions]
+      properties:
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+        permissions:
+          type: array
+          items:
+            type: string
+    SettingScope:
+      type: string
+      enum: [system, project]
+    SettingFieldKind:
+      type: string
+      enum: [boolean, number, secret, select, string, url]
+    SettingFieldDefinition:
+      type: object
+      additionalProperties: false
+      required: [key, kind, label, required]
+      properties:
+        key:
+          type: string
+        kind:
+          $ref: "#/components/schemas/SettingFieldKind"
+        label:
+          type: string
+        description:
+          type: string
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+    SettingType:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - owner
+        - title
+        - description
+        - scopes
+        - fields
+        - order
+        - test_supported
+      properties:
+        key:
+          type: string
+        owner:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettingScope"
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettingFieldDefinition"
+        order:
+          type: integer
+        test_supported:
+          type: boolean
+    SettingTypeList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettingType"
+    SettingValues:
+      type: object
+      additionalProperties: true
+      description: |
+        Type-validated values. Secret fields are returned as `********`;
+        sending that sentinel preserves the existing encrypted value.
+    UpdateSettingRequest:
+      type: object
+      additionalProperties: false
+      required: [values]
+      properties:
+        values:
+          $ref: "#/components/schemas/SettingValues"
+    Setting:
+      type: object
+      additionalProperties: false
+      required:
+        [scope, scope_id, type_key, values, version, updated_by, updated_at]
+      properties:
+        scope:
+          $ref: "#/components/schemas/SettingScope"
+        scope_id:
+          type: string
+        type_key:
+          type: string
+        values:
+          $ref: "#/components/schemas/SettingValues"
+        version:
+          type: integer
+          format: int64
+        updated_by:
+          type: string
+          format: uuid
+        updated_at:
+          type: string
+          format: date-time
+    ConnectionCheck:
+      type: object
+      additionalProperties: false
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [passed, failed]
+        message:
+          type: string
+    ConnectionTestResult:
+      type: object
+      additionalProperties: false
+      required: [status, checked_at, checks]
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, unsupported]
+        checked_at:
+          type: string
+          format: date-time
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectionCheck"
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelled, timed_out]
+    Job:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - project_id
+        - job_type
+        - payload
+        - status
+        - priority
+        - attempts
+        - max_attempts
+        - available_at
+        - timeout_seconds
+        - created_by
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        job_type:
+          type: string
+          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        payload:
+          type: object
+          additionalProperties: true
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        priority:
+          type: integer
+        idempotency_key:
+          type: string
+        attempts:
+          type: integer
+          minimum: 0
+        max_attempts:
+          type: integer
+          minimum: 1
+        available_at:
+          type: string
+          format: date-time
+        timeout_seconds:
+          type: integer
+          minimum: 1
+        timeout_at:
+          type: string
+          format: date-time
+        locked_by:
+          type: string
+        lease_expires_at:
+          type: string
+          format: date-time
+        cancel_requested_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        result:
+          type: object
+          additionalProperties: true
+        error_code:
+          type: string
+        error_message:
+          type: string
+        created_by:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateJobRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, job_type, payload]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        job_type:
+          type: string
+          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        payload:
+          type: object
+          additionalProperties: true
+        priority:
+          type: integer
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 500
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 100
+        available_at:
+          type: string
+          format: date-time
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+    ClaimJobRequest:
+      type: object
+      additionalProperties: false
+      required: [worker_id, job_types]
+      properties:
+        worker_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        job_types:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        lease_seconds:
+          type: integer
+          minimum: 10
+          maximum: 900
+    JobClaim:
+      type: object
+      additionalProperties: false
+      required: [job]
+      properties:
+        job:
+          oneOf:
+            - $ref: "#/components/schemas/Job"
+            - type: "null"
+    WorkerHeartbeatRequest:
+      type: object
+      additionalProperties: false
+      required: [worker_id, version, capabilities]
+      properties:
+        worker_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        version:
+          type: string
+          minLength: 1
+        capabilities:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    RenewJobLeaseRequest:
+      type: object
+      additionalProperties: false
+      required: [worker_id, lease_seconds]
+      properties:
+        worker_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        lease_seconds:
+          type: integer
+          minimum: 10
+          maximum: 900
+    AppendJobLogRequest:
+      type: object
+      additionalProperties: false
+      required: [worker_id, level, message]
+      properties:
+        worker_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        level:
+          type: string
+          enum: [debug, info, warning, error]
+        message:
+          type: string
+          minLength: 1
+        fields:
+          type: object
+          additionalProperties: true
+    CompleteJobRequest:
+      type: object
+      additionalProperties: false
+      required: [worker_id, result]
+      properties:
+        worker_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        result:
+          type: object
+          additionalProperties: true
+    FailJobRequest:
+      type: object
+      additionalProperties: false
+      required: [worker_id, code, message, retryable]
+      properties:
+        worker_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+        code:
+          type: string
+          minLength: 1
+        message:
+          type: string
+          minLength: 1
+        retryable:
+          type: boolean
+        retry_delay_seconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+    JobLog:
+      type: object
+      additionalProperties: false
+      required: [id, attempt, level, message, fields, worker_id, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        attempt:
+          type: integer
+          minimum: 1
+        level:
+          type: string
+          enum: [debug, info, warning, error]
+        message:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+        worker_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    JobLogList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobLog"
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - event_type
+        - schema_version
+        - occurred_at
+        - producer
+        - project_id
+        - actor
+        - correlation_id
+        - causation_id
+        - payload
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        schema_version:
+          type: integer
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+        producer:
+          type: string
+        project_id:
+          type: [string, "null"]
+        actor:
+          oneOf:
+            - type: object
+              additionalProperties:
+                type: string
+            - type: "null"
+        correlation_id:
+          type: [string, "null"]
+        causation_id:
+          type: [string, "null"]
+        payload:
+          type: object
+          additionalProperties: true
+    EmitTestEventRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 500
+        payload:
+          type: object
+          additionalProperties: true
+    EventEnqueued:
+      type: object
+      additionalProperties: false
+      required: [event_id, status]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: pending
+    ReplayEventRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        consumer_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    EventReplay:
+      type: object
+      additionalProperties: false
+      required: [id, event_id, requested_by, reason, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        consumer_name:
+          type: string
+        requested_by:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    EventConsumer:
+      type: object
+      additionalProperties: false
+      required: [name, patterns]
+      properties:
+        name:
+          type: string
+        patterns:
+          type: array
+          items:
+            type: string
+    EventConsumerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventConsumer"
+    OutboxRecord:
+      type: object
+      additionalProperties: false
+      required: [event, status, attempts, max_attempts, available_at]
+      properties:
+        event:
+          $ref: "#/components/schemas/EventEnvelope"
+        status:
+          type: string
+          enum: [pending, publishing, published, failed]
+        attempts:
+          type: integer
+        max_attempts:
+          type: integer
+        available_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+        failed_at:
+          type: string
+          format: date-time
+        locked_by:
+          type: string
+        lease_expires_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+    EventDelivery:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - consumer_name
+        - delivery_key
+        - status
+        - attempts
+        - max_attempts
+        - available_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        consumer_name:
+          type: string
+        delivery_key:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, succeeded, failed]
+        attempts:
+          type: integer
+        max_attempts:
+          type: integer
+        available_at:
+          type: string
+          format: date-time
+        locked_by:
+          type: string
+        lease_expires_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OutboxEventState:
+      type: object
+      additionalProperties: false
+      required: [record, deliveries, failures, replays]
+      properties:
+        record:
+          $ref: "#/components/schemas/OutboxRecord"
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventDelivery"
+        failures:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventFailure"
+        replays:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReplay"
+    EventFailure:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - delivery_id
+        - event_id
+        - consumer_name
+        - delivery_key
+        - attempt
+        - error_message
+        - failed_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        delivery_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        consumer_name:
+          type: string
+        delivery_key:
+          type: string
+        attempt:
+          type: integer
+          minimum: 1
+        error_message:
+          type: string
+        failed_at:
+          type: string
+          format: date-time
+    RecordAuditEventRequest:
+      type: object
+      additionalProperties: false
+      required: [category, action, outcome, source]
+      properties:
+        category:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+          maxLength: 100
+        action:
+          type: string
+          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          maxLength: 200
+        outcome:
+          type: string
+          enum: [success, denied, error]
+        source:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+          maxLength: 100
+        project_id:
+          type: string
+          format: uuid
+        resource_type:
+          type: string
+          maxLength: 100
+        resource_id:
+          type: string
+          maxLength: 500
+        occurred_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+          minimum: 0
+        error_code:
+          type: string
+          maxLength: 200
+        metadata:
+          type: object
+          additionalProperties: true
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - audit_id
+        - occurred_at
+        - recorded_at
+        - request_id
+        - actor_kind
+        - category
+        - action
+        - outcome
+        - source
+        - resource_type
+        - resource_id
+        - error_code
+        - metadata
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+        actor_id:
+          type: string
+          format: uuid
+        actor_kind:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+        action:
+          type: string
+        outcome:
+          type: string
+          enum: [success, denied, error]
+        source:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        duration_ms:
+          type: integer
+          minimum: 0
+        error_code:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    AuditEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
+    DataObject:
+      type: object
+      additionalProperties: false
+      required:
+        - object_id
+        - project_id
+        - object_type
+        - source_module
+        - source_id
+        - title
+        - summary
+        - status
+        - version
+        - metadata
+        - occurred_at
+        - created_at
+        - updated_at
+      properties:
+        object_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        object_type:
+          type: string
+        source_module:
+          type: string
+        source_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DataObjectPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataObject"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
+    DataObjectRead:
+      type: object
+      additionalProperties: false
+      required: [object, content]
+      properties:
+        object:
+          $ref: "#/components/schemas/DataObject"
+        content:
+          description: Authoritative content returned by the registered domain adapter.
+    DataActivity:
+      type: object
+      additionalProperties: false
+      required:
+        - activity_id
+        - project_id
+        - activity_type
+        - title
+        - summary
+        - actor
+        - metadata
+        - occurred_at
+        - created_at
+      properties:
+        activity_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        object_id:
+          type: string
+          format: uuid
+        activity_type:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        actor:
+          type: object
+          additionalProperties:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    DataActivityPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataActivity"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
+    CreateContextProposalRequest:
+      type: object
+      additionalProperties: false
+      required: [title, content, context_type]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        context_type:
+          type: string
+          minLength: 1
+          maxLength: 100
+        source_object_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+        rationale:
+          type: string
+          maxLength: 2000
+    ReviewContextProposalRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [accepted, rejected]
+        review_note:
+          type: string
+          maxLength: 2000
+    ContextProposal:
+      type: object
+      additionalProperties: false
+      required:
+        - proposal_id
+        - project_id
+        - title
+        - content
+        - context_type
+        - source_object_ids
+        - rationale
+        - proposed_by
+        - status
+        - review_note
+        - created_at
+        - updated_at
+      properties:
+        proposal_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        context_type:
+          type: string
+        source_object_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        rationale:
+          type: string
+        proposed_by:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+        reviewed_by:
+          type: string
+          format: uuid
+        reviewed_at:
+          type: string
+          format: date-time
+        review_note:
+          type: string
+        promoted_context_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ContextProposalList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContextProposal"
+    ProjectContext:
+      type: object
+      additionalProperties: false
+      required:
+        - context_id
+        - project_id
+        - title
+        - content
+        - context_type
+        - source_object_ids
+        - proposed_by
+        - confirmed_by
+        - confirmed_at
+        - created_at
+        - updated_at
+      properties:
+        context_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        context_type:
+          type: string
+        source_object_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        proposed_by:
+          type: string
+          format: uuid
+        confirmed_by:
+          type: string
+          format: uuid
+        confirmed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectContextList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectContext"
+    HomeSection:
+      type: object
+      additionalProperties: false
+      required: [available, total, items]
+      properties:
+        available:
+          type: boolean
+        total:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items: {}
+    HomeAggregate:
+      type: object
+      additionalProperties: false
+      required:
+        - project_id
+        - generated_at
+        - problem
+        - milestones
+        - todos
+        - models
+        - experiments
+        - article
+        - agent
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        generated_at:
+          type: string
+          format: date-time
+        problem:
+          $ref: "#/components/schemas/HomeSection"
+        milestones:
+          $ref: "#/components/schemas/HomeSection"
+        todos:
+          $ref: "#/components/schemas/HomeSection"
+        models:
+          $ref: "#/components/schemas/HomeSection"
+        experiments:
+          $ref: "#/components/schemas/HomeSection"
+        article:
+          $ref: "#/components/schemas/HomeSection"
+        agent:
+          $ref: "#/components/schemas/HomeSection"
     Liveness:
       type: object
       additionalProperties: false
@@ -132,3 +2434,5 @@ components:
           type: string
         details:
           description: Optional operation-specific structured details.
+security:
+  - bearerAuth: []

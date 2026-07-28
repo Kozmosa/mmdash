@@ -31,8 +31,11 @@ tested before it appears in the sidebar.
 - `ApiClient` sends same-origin `/api` requests with browser credentials and
   converts safe BFF errors into `ApiError`.
 
-The bootstrap user and project label are shell-only values. Auth and Project
-stages replace them with BFF data.
+`UserProvider` resolves the signed browser session from `/api/auth/me`.
+`/login` creates the revocable Core session through BFF, and `/projects`
+loads, creates, archives, and enters collaborative projects through BFF.
+Workspace project-detail hydration remains a follow-up concern for richer
+domain pages.
 
 ## Shared UI
 
@@ -54,8 +57,10 @@ bundles. Domain-specific components belong under `features/<module>`.
 
 `SettingsSlotRegistry` stores ordered descriptors and rejects duplicate IDs.
 Each future domain module owns its settings UI and explicitly registers one
-descriptor. The Settings shell displays unimplemented descriptors without
-inventing temporary business state.
+descriptor. The Settings shell also reads Core's project-scoped type registry
+through BFF, so registered field contracts, secret markers, and connection
+test support can be discovered without hard-coding provider configuration in
+the shell.
 
 ## Visual baseline
 

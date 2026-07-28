@@ -7,7 +7,11 @@ import {
 import { randomUUID } from "node:crypto";
 
 import type { AuditSink } from "./audit/audit.js";
-import { JsonAuditSink } from "./audit/audit.js";
+import {
+  CompositeAuditSink,
+  CoreAuditSink,
+  JsonAuditSink,
+} from "./audit/audit.js";
 import {
   principalFromAuthInfo,
   TokenAuthenticator,
@@ -44,10 +48,16 @@ export function buildGateway(
   options: BuildGatewayOptions = {},
 ): GatewayFetchHandler {
   const config = options.config ?? loadConfig();
-  const audit = options.audit ?? new JsonAuditSink();
   const authorizer = options.authorizer ?? new PatternAuthorizer();
-  const coreClient =
-    options.coreClient ?? new CoreClient(config.coreBaseUrl);
+  const coreClient = options.coreClient ?? new CoreClient(config.coreBaseUrl);
+  const audit =
+    options.audit ??
+    (config.coreAuditToken
+      ? new CompositeAuditSink([
+          new JsonAuditSink(),
+          new CoreAuditSink(coreClient, config.coreAuditToken),
+        ])
+      : new JsonAuditSink());
   const now = options.now ?? Date.now;
   const registry = options.registry ?? createDefaultToolRegistry();
   const sessions =
@@ -65,13 +75,18 @@ export function buildGateway(
         principal,
         requestId: readExtra(requestContext.authInfo?.extra, "requestId"),
         sessionId: readExtra(requestContext.authInfo?.extra, "sessionId"),
+        version: config.version,
       });
     },
     {
       legacy: "stateless",
       onerror(error) {
         process.stderr.write(
-          `${JSON.stringify({ event: "mcp.handler.error", message: error.message })}\n`,
+          `${JSON.stringify({
+            error_name: error.name,
+            event: "mcp.handler.error",
+            message: "MCP handler failed",
+          })}\n`,
         );
       },
       responseMode: "auto",
@@ -81,13 +96,7 @@ export function buildGateway(
   return {
     close: () => handler.close(),
     fetch: (request) =>
-      handleGatewayRequest(
-        request,
-        config,
-        authenticator,
-        sessions,
-        handler,
-      ),
+      handleGatewayRequest(request, config, authenticator, sessions, handler),
     tools: registry.list(),
   };
 }
@@ -110,7 +119,7 @@ async function handleGatewayRequest(
     return jsonResponse(200, {
       service: "mcp-gateway",
       status: "ok",
-      version: "0.1.0",
+      version: config.version,
     });
   }
   if (url.pathname !== "/mcp" && !url.pathname.startsWith("/mcp/")) {

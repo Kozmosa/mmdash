@@ -14,8 +14,11 @@ import { registerErrorHandler } from "./errors/error-handler.js";
 import { registerHttpStreamRoutes } from "./proxy/http-streams.js";
 import { registerWebSocketRoutes } from "./proxy/websocket.js";
 import { registerExampleRoutes } from "./routes/example.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPageRoutes } from "./routes/pages.js";
+import { registerProjectRoutes } from "./routes/projects.js";
+import { registerSettingsRoutes } from "./routes/settings.js";
 
 export type BuildAppOptions = {
   config?: BffConfig;
@@ -41,8 +44,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const coreClient =
     options.coreClient ??
     new CoreClient(config.coreBaseUrl, options.fetchImplementation);
-  const pageRegistry =
-    options.pageRegistry ?? createDefaultPageRegistry();
+  const pageRegistry = options.pageRegistry ?? createDefaultPageRegistry();
 
   app.register(websocket, {
     errorHandler(error, socket, request) {
@@ -65,8 +67,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     done(null, payload);
   });
 
-  registerHealthRoutes(app, coreClient);
+  registerHealthRoutes(app, coreClient, config.version);
+  registerAuthRoutes(app, coreClient, config);
   registerExampleRoutes(app, coreClient);
+  registerProjectRoutes(app, coreClient);
+  registerSettingsRoutes(app, coreClient);
   registerPageRoutes(app, coreClient, pageRegistry);
   registerHttpStreamRoutes(app, coreClient);
   app.register(async function websocketRoutesScope(scopedApp) {

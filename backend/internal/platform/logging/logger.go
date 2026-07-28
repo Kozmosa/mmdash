@@ -40,7 +40,7 @@ func (logger *Logger) write(level, event string, fields map[string]interface{}) 
 		"timestamp": logger.clock.Now().UTC().Format(time.RFC3339Nano),
 	}
 	for key, value := range fields {
-		entry[key] = redact(key, value)
+		entry[key] = Sanitize(key, value)
 	}
 	contents, err := json.Marshal(entry)
 	if err != nil {
@@ -51,17 +51,36 @@ func (logger *Logger) write(level, event string, fields map[string]interface{}) 
 	_, _ = logger.writer.Write(append(contents, '\n'))
 }
 
-func redact(key string, value interface{}) interface{} {
+// Sanitize recursively redacts values whose keys indicate credentials.
+func Sanitize(key string, value interface{}) interface{} {
 	normalized := strings.ToLower(key)
-	for _, fragment := range []string{"authorization", "credential", "password", "secret", "token"} {
+	for _, fragment := range []string{
+		"access_key", "api_key", "apikey", "authorization", "connection_string",
+		"cookie", "credential", "database_url", "dsn", "passphrase",
+		"password", "private_key", "secret", "token",
+	} {
 		if strings.Contains(normalized, fragment) {
 			return "[REDACTED]"
 		}
 	}
-	if values, ok := value.(map[string]interface{}); ok {
+	switch values := value.(type) {
+	case map[string]interface{}:
 		sanitized := make(map[string]interface{}, len(values))
 		for nestedKey, nestedValue := range values {
-			sanitized[nestedKey] = redact(nestedKey, nestedValue)
+			sanitized[nestedKey] = Sanitize(nestedKey, nestedValue)
+		}
+		return sanitized
+	case map[string]string:
+		sanitized := make(map[string]string, len(values))
+		for nestedKey, nestedValue := range values {
+			clean := Sanitize(nestedKey, nestedValue)
+			sanitized[nestedKey], _ = clean.(string)
+		}
+		return sanitized
+	case []interface{}:
+		sanitized := make([]interface{}, len(values))
+		for index, nestedValue := range values {
+			sanitized[index] = Sanitize(key, nestedValue)
 		}
 		return sanitized
 	}

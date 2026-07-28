@@ -3,11 +3,13 @@ package coreapp
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
@@ -15,23 +17,37 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/logging"
+	"github.com/mmdash/mmdash/backend/internal/platform/metrics"
 	"github.com/mmdash/mmdash/backend/internal/platform/module"
 	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 )
 
 // Options contains explicitly composed Core dependencies.
 type Options struct {
+	Audit       func(context.Context, HTTPObservation) error
 	Health      health.Handler
 	Logger      *logging.Logger
 	Modules     *module.Registry
+	Metrics     *metrics.Registry
 	OpenAPI     []byte
 	IDGenerator identity.Generator
+}
+
+// HTTPObservation is the bounded, secret-free request audit surface.
+type HTTPObservation struct {
+	DurationMS int64
+	Method     string
+	Path       string
+	Status     int
 }
 
 // NewHandler creates the complete Core HTTP handler.
 func NewHandler(options Options) http.Handler {
 	mux := http.NewServeMux()
 	options.Health.RegisterRoutes(mux)
+	if options.Metrics != nil {
+		options.Metrics.RegisterRoutes(mux)
+	}
 	registerOpenAPI(mux, options.OpenAPI)
 	options.Modules.Mount(mux)
 	mux.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
@@ -43,7 +59,7 @@ func NewHandler(options Options) http.Handler {
 	})
 
 	handler := recoveryMiddleware(options.Logger, mux)
-	handler = accessLogMiddleware(options.Logger, handler)
+	handler = accessLogMiddleware(options.Logger, options.Metrics, options.Audit, handler)
 	handler = requestctx.Middleware(options.IDGenerator, handler)
 	return handler
 }
@@ -82,18 +98,39 @@ func recoveryMiddleware(logger *logging.Logger, next http.Handler) http.Handler 
 	})
 }
 
-func accessLogMiddleware(logger *logging.Logger, next http.Handler) http.Handler {
+func accessLogMiddleware(
+	logger *logging.Logger,
+	metricRegistry *metrics.Registry,
+	audit func(context.Context, HTTPObservation) error,
+	next http.Handler,
+) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		startedAt := time.Now()
 		recorder := &statusRecorder{ResponseWriter: response}
 		next.ServeHTTP(recorder, request)
-		logger.Info("http.request.completed", map[string]interface{}{
-			"duration_ms": time.Since(startedAt).Milliseconds(),
+		duration := time.Since(startedAt)
+		values := requestctx.TrustedSnapshot(request.Context())
+		logFields := map[string]interface{}{
+			"duration_ms": duration.Milliseconds(),
 			"method":      request.Method,
 			"path":        request.URL.Path,
-			"request_id":  requestctx.RequestID(request.Context()),
+			"project_id":  values.ProjectID,
+			"request_id":  values.RequestID,
 			"status":      recorder.statusCode(),
-		})
+			"user_id":     values.ActorID,
+		}
+		if recorder.statusCode() >= http.StatusInternalServerError {
+			logger.Error("http.request.completed", logFields)
+		} else {
+			logger.Info("http.request.completed", logFields)
+		}
+		metricRegistry.ObserveHTTP(request.Method, recorder.statusCode(), duration)
+		if audit != nil && strings.HasPrefix(request.URL.Path, "/v1/") {
+			_ = audit(request.Context(), HTTPObservation{
+				DurationMS: duration.Milliseconds(), Method: request.Method,
+				Path: request.URL.Path, Status: recorder.statusCode(),
+			})
+		}
 	})
 }
 

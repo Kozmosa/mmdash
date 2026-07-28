@@ -41,3 +41,17 @@ func TestReadinessReportsDependencyState(t *testing.T) {
 		t.Fatalf("unexpected response: %s", response.Body.String())
 	}
 }
+
+func TestLivenessReportsInjectedServiceVersion(t *testing.T) {
+	handler := Handler{Version: "0.1.0-test"}
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/health/live", nil),
+	)
+	if !strings.Contains(response.Body.String(), `"version":"0.1.0-test"`) {
+		t.Fatalf("unexpected response: %s", response.Body.String())
+	}
+}

@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "generate": "openapi-typescript ../../contracts/openapi/core.yaml -o src/generated/core.ts",
+    "generate": "node ../../scripts/generate-core-client.mjs",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run"
   },

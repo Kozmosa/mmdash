@@ -65,7 +65,15 @@ pnpm --filter @mmdash/core-client generate
 ## Related documents
 
 - [Endpoint catalog](endpoints.md)
+- [Auth, Project, and RBAC](auth-projects.md)
+- [Settings and secret management](settings.md)
+- [Jobs and Worker protocol](jobs.md)
+- [Events, Outbox, and replay](events.md)
+- [Data Hub, object routing, and Project Context](datahub.md)
+- [Audit and observability](audit-observability.md)
+- [Contracts, code generation, and compatibility](contracts.md)
 - [MCP tool catalog](mcp-tools.md)
 - [Local development](../development/README.md)
+- [Stage 3.15 foundation acceptance](../development/foundation-acceptance.md)
 - [Web BFF development](../development/web-bff.md)
 - [Architecture](../architecture/README.md)
