@@ -214,11 +214,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [role]
-              properties:
-                role:
-                  $ref: "./core.yaml#/components/schemas/ProjectRole"
+              $ref: "./core.yaml#/components/schemas/UpdateProjectMemberRequest"
       responses:
         "200":
           description: Updated collaborator.

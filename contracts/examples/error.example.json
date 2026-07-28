@@ -1,0 +1,8 @@
+{
+  "code": "INVALID_REQUEST",
+  "message": "Request body is invalid",
+  "request_id": "request-12345678",
+  "details": {
+    "field": "name"
+  }
+}

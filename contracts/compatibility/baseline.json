@@ -1,0 +1,1370 @@
+{
+  "jsonSchema": {
+    "contracts/events/event-envelope.schema.json": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "causation_id",
+        "correlation_id",
+        "event_id",
+        "event_type",
+        "occurred_at",
+        "payload",
+        "producer",
+        "project_id",
+        "schema_version"
+      ],
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "$ref": "../common/dtos.schema.json#/$defs/Actor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "causation_id": {
+          "type": ["string", "null"]
+        },
+        "correlation_id": {
+          "type": ["string", "null"]
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        },
+        "occurred_at": {
+          "$ref": "../common/dtos.schema.json#/$defs/Timestamp"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "project_id": {
+          "type": ["string", "null"]
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "contracts/json-schema/common/dtos.schema.json": {
+      "$defs": {
+        "Actor": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "CursorPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["has_more"],
+          "properties": {
+            "has_more": {
+              "type": "boolean"
+            },
+            "next_cursor": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "Error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "details": true,
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "request_id": {
+              "$ref": "#/$defs/RequestId"
+            }
+          }
+        },
+        "Identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "RequestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
+        },
+        "Timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "contracts/json-schema/mcp-tools/system.echo.json": {
+      "$defs": {
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["message", "project_id"],
+          "properties": {
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "project_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "message",
+            "principal_kind",
+            "project_id",
+            "request_id",
+            "session_id"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "principal_kind": {
+              "type": "string",
+              "enum": ["agent", "cli"]
+            },
+            "project_id": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    }
+  },
+  "openapi": {
+    "core": {
+      "operations": {
+        "health.live": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/health/live",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "health.ready": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/health/ready",
+          "requestRequired": false,
+          "responses": ["200", "503"]
+        },
+        "system.openapi.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/openapi.yaml",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "example.check": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/example",
+          "requestRequired": false,
+          "responses": ["200", "503"]
+        },
+        "auth.login": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/auth/login",
+          "requestRequired": true,
+          "responses": ["200", "401"]
+        },
+        "auth.logout": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/auth/logout",
+          "requestRequired": false,
+          "responses": ["204", "401"]
+        },
+        "auth.me": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/auth/me",
+          "requestRequired": false,
+          "responses": ["200", "401"]
+        },
+        "auth.tokens.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/auth/tokens",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "auth.tokens.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/auth/tokens",
+          "requestRequired": true,
+          "responses": ["201"]
+        },
+        "auth.tokens.revoke": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/v1/auth/tokens/{tokenId}",
+          "requestRequired": false,
+          "responses": ["204", "404"]
+        },
+        "projects.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "include_archived",
+              "required": false
+            }
+          ],
+          "path": "/v1/projects",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "projects.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/projects",
+          "requestRequired": true,
+          "responses": ["201"]
+        },
+        "projects.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}",
+          "requestRequired": false,
+          "responses": ["200", "404"]
+        },
+        "projects.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "projects.members.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/members",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "projects.members.upsert": {
+          "method": "PUT",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/members/{userId}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "projects.members.remove": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/members/{userId}",
+          "requestRequired": false,
+          "responses": ["204", "409"]
+        },
+        "projects.permissions.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/permissions",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "settings.types.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "project_id",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "scope",
+              "required": true
+            }
+          ],
+          "path": "/v1/settings/types",
+          "requestRequired": false,
+          "responses": ["200", "403"]
+        },
+        "settings.system.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/settings/system/{typeKey}",
+          "requestRequired": false,
+          "responses": ["200", "404"]
+        },
+        "settings.system.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/v1/settings/system/{typeKey}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "settings.system.delete": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/v1/settings/system/{typeKey}",
+          "requestRequired": false,
+          "responses": ["204"]
+        },
+        "settings.system.test": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/settings/system/{typeKey}/test",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "settings.projects.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/settings/projects/{projectId}/{typeKey}",
+          "requestRequired": false,
+          "responses": ["200", "404"]
+        },
+        "settings.projects.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/v1/settings/projects/{projectId}/{typeKey}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "settings.projects.delete": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/v1/settings/projects/{projectId}/{typeKey}",
+          "requestRequired": false,
+          "responses": ["204"]
+        },
+        "settings.projects.test": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/settings/projects/{projectId}/{typeKey}/test",
+          "requestRequired": false,
+          "responses": ["200"]
+        }
+      },
+      "schemas": {
+        "AccessToken": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["created_at", "id", "kind", "name", "user_id"],
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["agent", "api", "box"]
+            },
+            "name": {
+              "type": "string"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "revoked_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "ConnectionCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "status"],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["failed", "passed"]
+            }
+          }
+        },
+        "ConnectionTestResult": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checked_at", "checks", "status"],
+          "properties": {
+            "checked_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ConnectionCheck"
+              }
+            },
+            "status": {
+              "type": "string",
+              "enum": ["failed", "passed", "unsupported"]
+            }
+          }
+        },
+        "CreateProjectRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "problem_summary": {
+              "type": "string"
+            },
+            "problem_title": {
+              "type": "string"
+            },
+            "project_constraints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "source_artifact_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "CreateTokenRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name"],
+          "properties": {
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["agent", "api", "box"]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "Error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "details": {},
+            "message": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            }
+          }
+        },
+        "ExampleCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checked_at", "status", "storage"],
+          "properties": {
+            "checked_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "status": {
+              "type": "string"
+            },
+            "storage": {
+              "type": "string"
+            }
+          }
+        },
+        "Identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "user"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["agent", "api", "box", "session"]
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "token_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "user": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        },
+        "IssuedToken": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["credential", "token"],
+          "properties": {
+            "credential": {
+              "$ref": "#/components/schemas/AccessToken"
+            },
+            "token": {
+              "type": "string"
+            }
+          }
+        },
+        "Liveness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["service", "status", "version"],
+          "properties": {
+            "service": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "LoginRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["email", "password"],
+          "properties": {
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "password": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "LoginResult": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["access_token", "expires_at", "session_id", "user"],
+          "properties": {
+            "access_token": {
+              "type": "string"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "session_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "user": {
+              "$ref": "#/components/schemas/User"
+            }
+          }
+        },
+        "MemberList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["items"],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ProjectMember"
+              }
+            }
+          }
+        },
+        "Project": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "created_at",
+            "created_by",
+            "id",
+            "name",
+            "problem_summary",
+            "problem_title",
+            "project_constraints",
+            "role",
+            "source_artifact_ids",
+            "updated_at"
+          ],
+          "properties": {
+            "archived_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "created_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "problem_summary": {
+              "type": "string"
+            },
+            "problem_title": {
+              "type": "string"
+            },
+            "project_constraints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "role": {
+              "$ref": "#/components/schemas/ProjectRole"
+            },
+            "source_artifact_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "ProjectList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["items"],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Project"
+              }
+            }
+          }
+        },
+        "ProjectMember": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["display_name", "email", "joined_at", "role", "user_id"],
+          "properties": {
+            "display_name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "joined_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "role": {
+              "$ref": "#/components/schemas/ProjectRole"
+            },
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "ProjectPermissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["permissions", "role"],
+          "properties": {
+            "permissions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "role": {
+              "$ref": "#/components/schemas/ProjectRole"
+            }
+          }
+        },
+        "ProjectRole": {
+          "type": "string",
+          "enum": ["agent", "box", "editor", "maintainer", "owner", "viewer"]
+        },
+        "Readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dependencies", "status"],
+          "properties": {
+            "dependencies": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "enum": ["ready", "unavailable"]
+              },
+              "required": ["object_storage", "postgres"]
+            },
+            "status": {
+              "type": "string",
+              "enum": ["not_ready", "ready"]
+            }
+          }
+        },
+        "Setting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "scope_id",
+            "type_key",
+            "updated_at",
+            "updated_by",
+            "values",
+            "version"
+          ],
+          "properties": {
+            "scope": {
+              "$ref": "#/components/schemas/SettingScope"
+            },
+            "scope_id": {
+              "type": "string"
+            },
+            "type_key": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "updated_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "values": {
+              "$ref": "#/components/schemas/SettingValues"
+            },
+            "version": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        },
+        "SettingFieldDefinition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["key", "kind", "label", "required"],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/components/schemas/SettingFieldKind"
+            },
+            "label": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "required": {
+              "type": "boolean"
+            }
+          }
+        },
+        "SettingFieldKind": {
+          "type": "string",
+          "enum": ["boolean", "number", "secret", "select", "string", "url"]
+        },
+        "SettingScope": {
+          "type": "string",
+          "enum": ["project", "system"]
+        },
+        "SettingType": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "description",
+            "fields",
+            "key",
+            "order",
+            "owner",
+            "scopes",
+            "test_supported",
+            "title"
+          ],
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SettingFieldDefinition"
+              }
+            },
+            "key": {
+              "type": "string"
+            },
+            "order": {
+              "type": "integer"
+            },
+            "owner": {
+              "type": "string"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SettingScope"
+              }
+            },
+            "test_supported": {
+              "type": "boolean"
+            },
+            "title": {
+              "type": "string"
+            }
+          }
+        },
+        "SettingTypeList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["items"],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/SettingType"
+              }
+            }
+          }
+        },
+        "SettingValues": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "UpdateProjectMemberRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role"],
+          "properties": {
+            "role": {
+              "$ref": "#/components/schemas/ProjectRole"
+            }
+          }
+        },
+        "UpdateProjectRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "problem_summary": {
+              "type": "string"
+            },
+            "problem_title": {
+              "type": "string"
+            },
+            "project_constraints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "source_artifact_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "UpdateSettingRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["values"],
+          "properties": {
+            "values": {
+              "$ref": "#/components/schemas/SettingValues"
+            }
+          }
+        },
+        "User": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "created_at",
+            "display_name",
+            "email",
+            "id",
+            "status",
+            "system_role"
+          ],
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["active", "disabled"]
+            },
+            "system_role": {
+              "type": "string",
+              "enum": ["admin", "member"]
+            }
+          }
+        }
+      }
+    },
+    "web-bff": {
+      "operations": {
+        "bff.health.live": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/health/live",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.health.ready": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/health/ready",
+          "requestRequired": false,
+          "responses": ["200", "503"]
+        },
+        "bff.example.check": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/example",
+          "requestRequired": false,
+          "responses": ["200", "502"]
+        },
+        "bff.auth.login": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/auth/login",
+          "requestRequired": true,
+          "responses": ["200", "401"]
+        },
+        "bff.auth.me": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/auth/me",
+          "requestRequired": false,
+          "responses": ["200", "401"]
+        },
+        "bff.auth.logout": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/auth/logout",
+          "requestRequired": false,
+          "responses": ["204"]
+        },
+        "bff.projects.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "include_archived",
+              "required": false
+            }
+          ],
+          "path": "/api/projects",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.projects.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/projects",
+          "requestRequired": true,
+          "responses": ["201"]
+        },
+        "bff.projects.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.projects.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/api/projects/{projectId}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "bff.projects.members.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/members",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.projects.members.upsert": {
+          "method": "PUT",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "userId",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/members/{userId}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "bff.projects.members.remove": {
+          "method": "DELETE",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "userId",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/members/{userId}",
+          "requestRequired": false,
+          "responses": ["204"]
+        },
+        "bff.projects.permissions.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/permissions",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.settings.system.types.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "scope",
+              "required": true
+            }
+          ],
+          "path": "/api/settings/types",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.settings.system.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/settings/system/{typeKey}",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.settings.system.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/api/settings/system/{typeKey}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "bff.settings.system.delete": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/api/settings/system/{typeKey}",
+          "requestRequired": false,
+          "responses": ["204"]
+        },
+        "bff.settings.system.test": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/settings/system/{typeKey}/test",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.settings.projects.types.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/settings/types",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.settings.projects.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/settings/{typeKey}",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.settings.projects.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/settings/{typeKey}",
+          "requestRequired": true,
+          "responses": ["200"]
+        },
+        "bff.settings.projects.delete": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/settings/{typeKey}",
+          "requestRequired": false,
+          "responses": ["204"]
+        },
+        "bff.settings.projects.test": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/settings/{typeKey}/test",
+          "requestRequired": false,
+          "responses": ["200"]
+        },
+        "bff.page.get": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "pageId",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/pages/{pageId}",
+          "requestRequired": false,
+          "responses": ["200", "400", "401", "404"]
+        },
+        "bff.events.stream": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "header",
+              "name": "Last-Event-ID",
+              "required": false
+            }
+          ],
+          "path": "/api/projects/{projectId}/events",
+          "requestRequired": false,
+          "responses": ["200", "401"]
+        },
+        "bff.socket.connect": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/socket",
+          "requestRequired": false,
+          "responses": ["101", "401"]
+        },
+        "bff.file.download": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "header",
+              "name": "Range",
+              "required": false
+            },
+            {
+              "in": "path",
+              "name": "filePath",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/files/{filePath}",
+          "requestRequired": false,
+          "responses": ["200", "206", "401"]
+        },
+        "bff.file.upload": {
+          "method": "PUT",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "filePath",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/files/{filePath}",
+          "requestRequired": true,
+          "responses": ["200", "201", "401"]
+        },
+        "bff.file.head": {
+          "method": "HEAD",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "filePath",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/files/{filePath}",
+          "requestRequired": false,
+          "responses": ["200", "401"]
+        }
+      },
+      "schemas": {
+        "Error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "request_id"],
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "details": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "message": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            }
+          }
+        },
+        "Liveness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["service", "status", "version"],
+          "properties": {
+            "service": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "PageAggregation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fragments", "page_id", "project_id", "request_id"],
+          "properties": {
+            "fragments": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "page_id": {
+              "type": "string"
+            },
+            "project_id": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            }
+          }
+        },
+        "Readiness": {
+          "type": "object",
+          "required": ["dependencies", "status"],
+          "properties": {
+            "dependencies": {
+              "type": "object",
+              "required": ["core"],
+              "properties": {
+                "core": {
+                  "type": "string",
+                  "enum": ["ready", "unavailable"]
+                }
+              }
+            },
+            "status": {
+              "type": "string",
+              "enum": ["not_ready", "ready"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "version": 1
+}
