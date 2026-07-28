@@ -62,3 +62,7 @@ The generator creates explicit Core, BFF, Web, and contract starting points.
 Read the generated `README.md`, add the endpoint to the OpenAPI contract and API
 catalog, then add tests at every process boundary. Domain modules may omit a
 layer only when their module documentation explains why.
+
+## More guides
+
+- [Web foundation](web.md)

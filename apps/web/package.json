@@ -2,6 +2,7 @@
   "name": "@mmdash/web",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
@@ -9,13 +10,29 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@tanstack/react-query": "^5.0.0",
+    "@tiptap/react": "^3.0.0",
+    "@tiptap/starter-kit": "^3.0.0",
+    "clsx": "^2.1.1",
+    "echarts": "^6.0.0",
+    "lucide-react": "^0.468.0",
     "next": "^16.1.4",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "react-markdown": "^10.0.0",
+    "sonner": "^2.0.0",
+    "tailwind-merge": "^3.0.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@testing-library/jest-dom": "^6.0.0",
+    "@testing-library/react": "^16.0.0",
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
+    "jsdom": "^26.0.0",
+    "tailwindcss": "^4.0.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }

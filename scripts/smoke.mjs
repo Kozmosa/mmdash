@@ -6,8 +6,8 @@ if (!response.ok) {
 }
 
 const html = await response.text();
-if (!html.includes("mmdash engineering baseline")) {
-  throw new Error("Web smoke check did not find the expected baseline marker.");
+if (!html.includes("选择数学建模或研究项目")) {
+  throw new Error("Web smoke check did not find the project-list shell.");
 }
 
 const apiResponse = await fetch(`${webUrl}/api/example`);

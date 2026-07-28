@@ -41,6 +41,10 @@ and use low-latency response flushing for streams.
 - New list endpoints use cursor pagination unless their result is explicitly
   bounded.
 
+The browser client lives at `apps/web/src/lib/api-client.ts`. It uses same-origin
+`/api`, sends browser credentials, serializes JSON bodies, and converts BFF
+errors into a stable `ApiError` containing `status`, `code`, and `requestId`.
+
 ## Related documents
 
 - [Endpoint catalog](endpoints.md)
