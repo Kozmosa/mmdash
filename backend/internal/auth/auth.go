@@ -27,6 +27,7 @@ type User struct {
 	Email       string    `json:"email"`
 	ID          string    `json:"id"`
 	Status      string    `json:"status"`
+	SystemRole  string    `json:"system_role"`
 }
 
 // Session is a persisted browser login.
@@ -138,6 +139,7 @@ func (service Service) EnsureBootstrapUser(
 		Email:       normalizeEmail(email),
 		ID:          userID,
 		Status:      "active",
+		SystemRole:  "admin",
 	}, string(hash))
 }
 

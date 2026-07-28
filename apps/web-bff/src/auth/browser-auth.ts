@@ -8,18 +8,24 @@ export const sessionCookieName = "mmdash_session";
 
 const sessionAssertionSchema = z.object({
   access_token: z.string().min(1),
+  created_at: z.string().datetime(),
   display_name: z.string().min(1).max(200),
   email: z.string().email(),
   expires_at: z.string().datetime(),
   session_id: z.string().min(1).max(200),
+  status: z.enum(["active", "disabled"]),
+  system_role: z.enum(["admin", "member"]),
   user_id: z.string().min(1).max(200),
 });
 
 export type BrowserIdentity = {
   accessToken: string;
+  createdAt: string;
   displayName: string;
   email: string;
   sessionId: string;
+  status: "active" | "disabled";
+  systemRole: "admin" | "member";
   userId: string;
 };
 
@@ -64,9 +70,12 @@ export function registerBrowserAuth(
 
     request.browserIdentity = {
       accessToken: parsed.data.access_token,
+      createdAt: parsed.data.created_at,
       displayName: parsed.data.display_name,
       email: parsed.data.email,
       sessionId: parsed.data.session_id,
+      status: parsed.data.status,
+      systemRole: parsed.data.system_role,
       userId: parsed.data.user_id,
     };
   });

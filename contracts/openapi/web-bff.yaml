@@ -15,6 +15,7 @@ tags:
   - name: Engineering
   - name: Auth
   - name: Projects
+  - name: Settings
   - name: Pages
   - name: Streams
 paths:
@@ -246,6 +247,145 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ProjectPermissions"
+  /api/settings/types:
+    get:
+      tags: [Settings]
+      summary: List registered system configuration types
+      operationId: bff.settings.system.types.list
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            const: system
+      responses:
+        "200":
+          description: System configuration type descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/SettingTypeList"
+  /api/settings/system/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted system setting
+      operationId: bff.settings.system.get
+      responses:
+        "200":
+          description: Redacted system setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    patch:
+      tags: [Settings]
+      summary: Update a system setting
+      operationId: bff.settings.system.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a system setting
+      operationId: bff.settings.system.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /api/settings/system/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved system configuration
+      operationId: bff.settings.system.test
+      responses:
+        "200":
+          description: Safe connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ConnectionTestResult"
+  /api/projects/{projectId}/settings/types:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Settings]
+      summary: List project configuration types
+      operationId: bff.settings.projects.types.list
+      responses:
+        "200":
+          description: Project configuration type descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/SettingTypeList"
+  /api/projects/{projectId}/settings/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted project setting
+      operationId: bff.settings.projects.get
+      responses:
+        "200":
+          description: Redacted project setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    patch:
+      tags: [Settings]
+      summary: Update a project setting
+      operationId: bff.settings.projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a project setting
+      operationId: bff.settings.projects.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /api/projects/{projectId}/settings/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved project configuration
+      operationId: bff.settings.projects.test
+      responses:
+        "200":
+          description: Safe connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ConnectionTestResult"
   /api/projects/{projectId}/pages/{pageId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -380,6 +520,13 @@ components:
       schema:
         type: string
         pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+    TypeKey:
+      name: typeKey
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9_.-]*$"
   responses:
     Error:
       description: Stable, browser-safe error envelope.

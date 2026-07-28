@@ -16,6 +16,7 @@ type Config struct {
 	Database        DatabaseConfig
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
+	Settings        SettingsConfig
 	ShutdownTimeout time.Duration
 	StartupTimeout  time.Duration
 }
@@ -46,6 +47,11 @@ type ObjectStorageConfig struct {
 	SecretKey string
 }
 
+// SettingsConfig configures encryption for persisted module secrets.
+type SettingsConfig struct {
+	EncryptionKey string
+}
+
 // LookupEnv matches os.LookupEnv and keeps configuration tests deterministic.
 type LookupEnv func(string) (string, bool)
 
@@ -73,7 +79,14 @@ func Load(lookup LookupEnv) (Config, error) {
 			Endpoint:  envOrDefault(lookup, "OBJECT_STORAGE_ENDPOINT", ""),
 			SecretKey: envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
 		},
-		OpenAPIPath:     envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
+		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
+		Settings: SettingsConfig{
+			EncryptionKey: envOrDefault(
+				lookup,
+				"SETTINGS_ENCRYPTION_KEY",
+				"development-settings-encryption-key-change-me",
+			),
+		},
 		ShutdownTimeout: durationOrDefault(lookup, "CORE_SHUTDOWN_TIMEOUT", 10*time.Second),
 		StartupTimeout:  durationOrDefault(lookup, "CORE_STARTUP_TIMEOUT", 15*time.Second),
 	}
@@ -128,6 +141,9 @@ func (config Config) Validate() error {
 	}
 	if strings.TrimSpace(config.OpenAPIPath) == "" {
 		return fmt.Errorf("CORE_OPENAPI_PATH must not be empty")
+	}
+	if len(config.Settings.EncryptionKey) < 32 {
+		return fmt.Errorf("SETTINGS_ENCRYPTION_KEY must contain at least 32 characters")
 	}
 	if config.StartupTimeout <= 0 || config.ShutdownTimeout <= 0 {
 		return fmt.Errorf("Core timeouts must be positive")

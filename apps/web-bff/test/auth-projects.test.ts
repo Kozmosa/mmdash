@@ -23,6 +23,7 @@ describe("auth and collaborative project routes", () => {
           email: "owner@example.com",
           id: "user-1",
           status: "active",
+          system_role: "admin",
         },
       }),
     );

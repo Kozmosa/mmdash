@@ -257,6 +257,105 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/settings/types": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List registered configuration types for a scope */
+    get: operations["settings.types.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/settings/system/{typeKey}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    /** Read a redacted system setting */
+    get: operations["settings.system.get"];
+    put?: never;
+    post?: never;
+    /** Delete a system setting */
+    delete: operations["settings.system.delete"];
+    options?: never;
+    head?: never;
+    /** Update a system setting */
+    patch: operations["settings.system.update"];
+    trace?: never;
+  };
+  "/v1/settings/system/{typeKey}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test a saved system configuration */
+    post: operations["settings.system.test"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/settings/projects/{projectId}/{typeKey}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    /** Read a redacted project setting */
+    get: operations["settings.projects.get"];
+    put?: never;
+    post?: never;
+    /** Delete a project setting */
+    delete: operations["settings.projects.delete"];
+    options?: never;
+    head?: never;
+    /** Update a project setting */
+    patch: operations["settings.projects.update"];
+    trace?: never;
+  };
+  "/v1/settings/projects/{projectId}/{typeKey}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test a saved project configuration */
+    post: operations["settings.projects.test"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -269,6 +368,8 @@ export interface components {
       display_name: string;
       /** @enum {string} */
       status: "active" | "disabled";
+      /** @enum {string} */
+      system_role: "admin" | "member";
       /** Format: date-time */
       created_at: string;
     };
@@ -381,6 +482,67 @@ export interface components {
       role: components["schemas"]["ProjectRole"];
       permissions: string[];
     };
+    /** @enum {string} */
+    SettingScope: "system" | "project";
+    /** @enum {string} */
+    SettingFieldKind:
+      "boolean" | "number" | "secret" | "select" | "string" | "url";
+    SettingFieldDefinition: {
+      key: string;
+      kind: components["schemas"]["SettingFieldKind"];
+      label: string;
+      description?: string;
+      required: boolean;
+      options?: string[];
+    };
+    SettingType: {
+      key: string;
+      owner: string;
+      title: string;
+      description: string;
+      scopes: components["schemas"]["SettingScope"][];
+      fields: components["schemas"]["SettingFieldDefinition"][];
+      order: number;
+      test_supported: boolean;
+    };
+    SettingTypeList: {
+      items: components["schemas"]["SettingType"][];
+    };
+    /**
+     * @description Type-validated values. Secret fields are returned as `********`;
+     *     sending that sentinel preserves the existing encrypted value.
+     */
+    SettingValues: {
+      [key: string]: unknown;
+    };
+    UpdateSettingRequest: {
+      values: components["schemas"]["SettingValues"];
+    };
+    Setting: {
+      scope: components["schemas"]["SettingScope"];
+      scope_id: string;
+      type_key: string;
+      values: components["schemas"]["SettingValues"];
+      /** Format: int64 */
+      version: number;
+      /** Format: uuid */
+      updated_by: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ConnectionCheck: {
+      name: string;
+      /** @enum {string} */
+      status: "passed" | "failed";
+      message?: string;
+    };
+    ConnectionTestResult: {
+      /** @enum {string} */
+      status: "passed" | "failed" | "unsupported";
+      /** Format: date-time */
+      checked_at: string;
+      checks: components["schemas"]["ConnectionCheck"][];
+    };
     Liveness: {
       /** @constant */
       service: "core";
@@ -426,6 +588,7 @@ export interface components {
     ProjectId: string;
     TokenId: string;
     UserId: string;
+    TypeKey: string;
   };
   requestBodies: never;
   headers: never;
@@ -849,6 +1012,216 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProjectPermissions"];
+        };
+      };
+    };
+  };
+  "settings.types.list": {
+    parameters: {
+      query: {
+        scope: components["schemas"]["SettingScope"];
+        project_id?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Module-owned configuration type descriptors. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SettingTypeList"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "settings.system.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redacted system setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "settings.system.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Setting deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "settings.system.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateSettingRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated redacted setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+    };
+  };
+  "settings.system.test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Safe per-check connection-test result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectionTestResult"];
+        };
+      };
+    };
+  };
+  "settings.projects.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redacted project setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "settings.projects.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Setting deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "settings.projects.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateSettingRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated redacted setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+    };
+  };
+  "settings.projects.test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Safe per-check connection-test result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectionTestResult"];
         };
       };
     };
