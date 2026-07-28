@@ -175,6 +175,7 @@ await poll(
   })).body,
   (state) =>
     state.record?.status === "published" &&
+    state.deliveries?.length > 0 &&
     state.deliveries?.every((delivery) => delivery.status === "succeeded"),
   "Outbox test event was not published and consumed.",
 );

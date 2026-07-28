@@ -35,8 +35,8 @@ func (store PostgresStore) ClaimEvent(
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE system_outbox
 			SET status = CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
-			    available_at = CASE WHEN attempts < max_attempts THEN $1 ELSE available_at END,
-			    failed_at = CASE WHEN attempts < max_attempts THEN failed_at ELSE $1 END,
+			    available_at = CASE WHEN attempts < max_attempts THEN $1::timestamptz ELSE available_at END,
+			    failed_at = CASE WHEN attempts < max_attempts THEN failed_at ELSE $1::timestamptz END,
 			    last_error = 'Publisher lease expired',
 			    locked_by = NULL,
 			    lease_expires_at = NULL
@@ -144,8 +144,8 @@ func (store PostgresStore) FailEvent(
 	result, err := store.DB.ExecContext(ctx, `
 		UPDATE system_outbox
 		SET status = CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
-		    available_at = CASE WHEN attempts < max_attempts THEN $4 ELSE available_at END,
-		    failed_at = CASE WHEN attempts < max_attempts THEN failed_at ELSE $3 END,
+		    available_at = CASE WHEN attempts < max_attempts THEN $4::timestamptz ELSE available_at END,
+		    failed_at = CASE WHEN attempts < max_attempts THEN failed_at ELSE $3::timestamptz END,
 		    last_error = $5,
 		    locked_by = NULL,
 		    lease_expires_at = NULL
@@ -176,8 +176,8 @@ func (store PostgresStore) ClaimDelivery(
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE system_event_deliveries
 			SET status = CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
-			    available_at = CASE WHEN attempts < max_attempts THEN $1 ELSE available_at END,
-			    completed_at = CASE WHEN attempts < max_attempts THEN completed_at ELSE $1 END,
+			    available_at = CASE WHEN attempts < max_attempts THEN $1::timestamptz ELSE available_at END,
+			    completed_at = CASE WHEN attempts < max_attempts THEN completed_at ELSE $1::timestamptz END,
 			    last_error = 'Consumer lease expired',
 			    locked_by = NULL,
 			    lease_expires_at = NULL,
@@ -294,8 +294,8 @@ func (store PostgresStore) FailDelivery(
 		result, err := tx.ExecContext(ctx, `
 			UPDATE system_event_deliveries
 			SET status = CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
-			    available_at = CASE WHEN attempts < max_attempts THEN $4 ELSE available_at END,
-			    completed_at = CASE WHEN attempts < max_attempts THEN NULL ELSE $3 END,
+			    available_at = CASE WHEN attempts < max_attempts THEN $4::timestamptz ELSE available_at END,
+			    completed_at = CASE WHEN attempts < max_attempts THEN NULL::timestamptz ELSE $3::timestamptz END,
 			    locked_by = NULL,
 			    lease_expires_at = NULL,
 			    last_error = $5,
