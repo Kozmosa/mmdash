@@ -356,6 +356,190 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create an idempotent project job */
+    post: operations["jobs.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atomically claim the next eligible job
+     * @description Requires an API token. Returns `job: null` when no job is available.
+     */
+    post: operations["jobs.claim"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/workers/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Worker process liveness and capabilities
+     * @description Requires an API token.
+     */
+    post: operations["jobs.workers.heartbeat"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    /** Read a project job */
+    get: operations["jobs.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel queued work or signal a running Worker */
+    post: operations["jobs.cancel"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Renew a Worker-owned job lease
+     * @description Requires an API token and returns any cancellation signal.
+     */
+    post: operations["jobs.lease.renew"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/logs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    /** Read append-only job logs */
+    get: operations["jobs.logs.list"];
+    put?: never;
+    /**
+     * Append a log under an active Worker lease
+     * @description Requires an API token.
+     */
+    post: operations["jobs.logs.append"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit a successful job result
+     * @description Requires an API token and an active Worker lease.
+     */
+    post: operations["jobs.complete"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/fail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit a handler failure
+     * @description Core applies retry, cancellation, timeout, and max-attempt policy.
+     */
+    post: operations["jobs.fail"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -546,6 +730,122 @@ export interface components {
       checked_at: string;
       checks: components["schemas"]["ConnectionCheck"][];
     };
+    /** @enum {string} */
+    JobStatus:
+      "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
+    Job: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      project_id: string;
+      job_type: string;
+      payload: {
+        [key: string]: unknown;
+      };
+      status: components["schemas"]["JobStatus"];
+      priority: number;
+      idempotency_key?: string;
+      attempts: number;
+      max_attempts: number;
+      /** Format: date-time */
+      available_at: string;
+      timeout_seconds: number;
+      /** Format: date-time */
+      timeout_at?: string;
+      locked_by?: string;
+      /** Format: date-time */
+      lease_expires_at?: string;
+      /** Format: date-time */
+      cancel_requested_at?: string;
+      /** Format: date-time */
+      started_at?: string;
+      /** Format: date-time */
+      finished_at?: string;
+      result?: {
+        [key: string]: unknown;
+      };
+      error_code?: string;
+      error_message?: string;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CreateJobRequest: {
+      /** Format: uuid */
+      project_id: string;
+      job_type: string;
+      payload: {
+        [key: string]: unknown;
+      };
+      priority?: number;
+      idempotency_key?: string;
+      max_attempts?: number;
+      /** Format: date-time */
+      available_at?: string;
+      timeout_seconds?: number;
+    };
+    ClaimJobRequest: {
+      worker_id: string;
+      job_types: string[];
+      lease_seconds?: number;
+    };
+    JobClaim: {
+      job: components["schemas"]["Job"] | null;
+    };
+    WorkerHeartbeatRequest: {
+      worker_id: string;
+      version: string;
+      capabilities: string[];
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    RenewJobLeaseRequest: {
+      worker_id: string;
+      lease_seconds: number;
+    };
+    AppendJobLogRequest: {
+      worker_id: string;
+      /** @enum {string} */
+      level: "debug" | "info" | "warning" | "error";
+      message: string;
+      fields?: {
+        [key: string]: unknown;
+      };
+    };
+    CompleteJobRequest: {
+      worker_id: string;
+      result: {
+        [key: string]: unknown;
+      };
+    };
+    FailJobRequest: {
+      worker_id: string;
+      code: string;
+      message: string;
+      retryable: boolean;
+      retry_delay_seconds?: number;
+    };
+    JobLog: {
+      /** Format: uuid */
+      id: string;
+      attempt: number;
+      /** @enum {string} */
+      level: "debug" | "info" | "warning" | "error";
+      message: string;
+      fields: {
+        [key: string]: unknown;
+      };
+      worker_id: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    JobLogList: {
+      items: components["schemas"]["JobLog"][];
+    };
     Liveness: {
       /** @constant */
       service: "core";
@@ -592,6 +892,7 @@ export interface components {
     TokenId: string;
     UserId: string;
     TypeKey: string;
+    JobId: string;
   };
   requestBodies: never;
   headers: never;
@@ -1223,6 +1524,257 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ConnectionTestResult"];
+        };
+      };
+    };
+  };
+  "jobs.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Existing job returned for the same idempotency key. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+      /** @description Job created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+    };
+  };
+  "jobs.claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ClaimJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Claimed job or an empty poll result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobClaim"];
+        };
+      };
+    };
+  };
+  "jobs.workers.heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["WorkerHeartbeatRequest"];
+      };
+    };
+    responses: {
+      /** @description Heartbeat recorded. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "jobs.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Authoritative job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "jobs.cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Updated job state or cancellation signal. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+    };
+  };
+  "jobs.lease.renew": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenewJobLeaseRequest"];
+      };
+    };
+    responses: {
+      /** @description Renewed lease and current job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "jobs.logs.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Ordered job log entries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobLogList"];
+        };
+      };
+    };
+  };
+  "jobs.logs.append": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AppendJobLogRequest"];
+      };
+    };
+    responses: {
+      /** @description Log appended. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobLog"];
+        };
+      };
+    };
+  };
+  "jobs.complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompleteJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Terminal job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+    };
+  };
+  "jobs.fail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FailJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Retried or terminal job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
         };
       };
     };

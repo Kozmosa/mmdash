@@ -9,6 +9,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/example"
+	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/config"
 	"github.com/mmdash/mmdash/backend/internal/platform/coreapp"
@@ -109,6 +110,18 @@ func run(logger *logging.Logger) error {
 			Transaction: transactionManager,
 		},
 	}
+	jobService := jobs.Service{
+		Auth:     authService,
+		Clock:    systemClock,
+		Projects: projectService,
+		Store: jobs.PostgresStore{
+			Clock:       systemClock,
+			DB:          db,
+			Generator:   idGenerator,
+			Outbox:      outboxWriter,
+			Transaction: transactionManager,
+		},
+	}
 	modules := module.NewRegistry()
 	authService.ProjectTokens = projectService
 	if err := modules.Register(auth.Module{Service: authService}); err != nil {
@@ -118,6 +131,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(project.Module{Service: *projectService}); err != nil {
+		return err
+	}
+	if err := modules.Register(jobs.Module{Service: jobService}); err != nil {
 		return err
 	}
 	if err := modules.Register(settings.Module{

@@ -57,6 +57,13 @@ function renderGoHandlerTypes(document) {
     "UpdateProjectRequest",
     "UpdateProjectMemberRequest",
     "UpdateSettingRequest",
+    "CreateJobRequest",
+    "ClaimJobRequest",
+    "WorkerHeartbeatRequest",
+    "RenewJobLeaseRequest",
+    "AppendJobLogRequest",
+    "CompleteJobRequest",
+    "FailJobRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {
@@ -189,6 +196,11 @@ function goValidation(field, schemas) {
       `if len(${prefix}) < ${schema.minLength} {\n\t\treturn fmt.Errorf("${field.jsonName} is too short")\n\t}`,
     );
   }
+  if (schema.type === "string" && Number.isInteger(schema.maxLength)) {
+    conditions.push(
+      `if len(${prefix}) > ${schema.maxLength} {\n\t\treturn fmt.Errorf("${field.jsonName} is too long")\n\t}`,
+    );
+  }
   if (schema.type === "string" && schema.format === "email") {
     conditions.push(
       `if parsed, err := mail.ParseAddress(${prefix}); err != nil || parsed.Address != ${prefix} {\n\t\treturn fmt.Errorf("${field.jsonName} must be an email address")\n\t}`,
@@ -201,6 +213,32 @@ function goValidation(field, schemas) {
       .join(" && ");
     conditions.push(
       `if ${allowed} {\n\t\treturn fmt.Errorf("${field.jsonName} has an unsupported value")\n\t}`,
+    );
+  }
+  if (
+    (schema.type === "integer" || schema.type === "number") &&
+    typeof schema.minimum === "number"
+  ) {
+    conditions.push(
+      `if ${prefix} < ${schema.minimum} {\n\t\treturn fmt.Errorf("${field.jsonName} is below its minimum")\n\t}`,
+    );
+  }
+  if (
+    (schema.type === "integer" || schema.type === "number") &&
+    typeof schema.maximum === "number"
+  ) {
+    conditions.push(
+      `if ${prefix} > ${schema.maximum} {\n\t\treturn fmt.Errorf("${field.jsonName} exceeds its maximum")\n\t}`,
+    );
+  }
+  if (schema.type === "array" && Number.isInteger(schema.maxItems)) {
+    conditions.push(
+      `if len(${prefix}) > ${schema.maxItems} {\n\t\treturn fmt.Errorf("${field.jsonName} has too many items")\n\t}`,
+    );
+  }
+  if (schema.type === "array" && Number.isInteger(schema.minItems)) {
+    conditions.push(
+      `if len(${prefix}) < ${schema.minItems} {\n\t\treturn fmt.Errorf("${field.jsonName} has too few items")\n\t}`,
     );
   }
   if (!field.isRequired && conditions.length > 0) {
