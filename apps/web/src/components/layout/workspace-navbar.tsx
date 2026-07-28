@@ -42,14 +42,16 @@ export function WorkspaceNavbar() {
       </nav>
       <div className="ml-auto flex items-center gap-2">
         <Button
-          aria-label={`当前用户：${user.displayName}`}
+          aria-label={`当前用户：${user?.displayName ?? "加载中"}`}
           className="gap-2"
           variant="ghost"
         >
           <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
-            {user.displayName.slice(0, 1).toUpperCase()}
+            {(user?.displayName ?? "·").slice(0, 1).toUpperCase()}
           </span>
-          <span className="hidden text-sm sm:inline">{user.displayName}</span>
+          <span className="hidden text-sm sm:inline">
+            {user?.displayName ?? "加载中"}
+          </span>
           <ChevronDown
             aria-hidden="true"
             className="hidden size-3.5 text-muted-foreground sm:block"

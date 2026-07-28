@@ -13,6 +13,9 @@ servers:
 tags:
   - name: Health
   - name: Engineering
+  - name: Auth
+  - name: Projects
+  - name: Settings
   - name: Pages
   - name: Streams
 paths:
@@ -63,6 +66,322 @@ paths:
                 $ref: "./core.yaml#/components/schemas/ExampleCheck"
         "502":
           $ref: "#/components/responses/Error"
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Create a signed browser session
+      operationId: bff.auth.login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Browser session cookie created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "./core.yaml#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Read the current browser user
+      operationId: bff.auth.me
+      responses:
+        "200":
+          description: Current browser user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "./core.yaml#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current session and clear its cookie
+      operationId: bff.auth.logout
+      responses:
+        "204":
+          description: Logged out.
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: List projects visible to the browser user
+      operationId: bff.projects.list
+      parameters:
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Visible projects.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectList"
+    post:
+      tags: [Projects]
+      summary: Create a collaborative project
+      operationId: bff.projects.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
+  /api/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Get project detail
+      operationId: bff.projects.get
+      responses:
+        "200":
+          description: Project detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
+    patch:
+      tags: [Projects]
+      summary: Update or archive a project
+      operationId: bff.projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Project updated.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
+  /api/projects/{projectId}/members:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: List project collaborators
+      operationId: bff.projects.members.list
+      responses:
+        "200":
+          description: Project team.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/MemberList"
+  /api/projects/{projectId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags: [Projects]
+      summary: Add a collaborator or change their role
+      operationId: bff.projects.members.upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateProjectMemberRequest"
+      responses:
+        "200":
+          description: Updated collaborator.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectMember"
+    delete:
+      tags: [Projects]
+      summary: Remove a collaborator
+      operationId: bff.projects.members.remove
+      responses:
+        "204":
+          description: Collaborator removed.
+  /api/projects/{projectId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Read effective project permissions
+      operationId: bff.projects.permissions.get
+      responses:
+        "200":
+          description: Effective role and permissions.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectPermissions"
+  /api/settings/types:
+    get:
+      tags: [Settings]
+      summary: List registered system configuration types
+      operationId: bff.settings.system.types.list
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            const: system
+      responses:
+        "200":
+          description: System configuration type descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/SettingTypeList"
+  /api/settings/system/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted system setting
+      operationId: bff.settings.system.get
+      responses:
+        "200":
+          description: Redacted system setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    patch:
+      tags: [Settings]
+      summary: Update a system setting
+      operationId: bff.settings.system.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a system setting
+      operationId: bff.settings.system.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /api/settings/system/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved system configuration
+      operationId: bff.settings.system.test
+      responses:
+        "200":
+          description: Safe connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ConnectionTestResult"
+  /api/projects/{projectId}/settings/types:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Settings]
+      summary: List project configuration types
+      operationId: bff.settings.projects.types.list
+      responses:
+        "200":
+          description: Project configuration type descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/SettingTypeList"
+  /api/projects/{projectId}/settings/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted project setting
+      operationId: bff.settings.projects.get
+      responses:
+        "200":
+          description: Redacted project setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    patch:
+      tags: [Settings]
+      summary: Update a project setting
+      operationId: bff.settings.projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a project setting
+      operationId: bff.settings.projects.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /api/projects/{projectId}/settings/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved project configuration
+      operationId: bff.settings.projects.test
+      responses:
+        "200":
+          description: Safe connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ConnectionTestResult"
   /api/projects/{projectId}/pages/{pageId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -197,6 +516,13 @@ components:
       schema:
         type: string
         pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+    TypeKey:
+      name: typeKey
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9_.-]*$"
   responses:
     Error:
       description: Stable, browser-safe error envelope.
