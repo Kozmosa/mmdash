@@ -31,8 +31,11 @@ tested before it appears in the sidebar.
 - `ApiClient` sends same-origin `/api` requests with browser credentials and
   converts safe BFF errors into `ApiError`.
 
-The bootstrap user and project label are shell-only values. Auth and Project
-stages replace them with BFF data.
+`UserProvider` resolves the signed browser session from `/api/auth/me`.
+`/login` creates the revocable Core session through BFF, and `/projects`
+loads, creates, archives, and enters collaborative projects through BFF.
+Workspace project-detail hydration remains a follow-up concern for richer
+domain pages.
 
 ## Shared UI
 

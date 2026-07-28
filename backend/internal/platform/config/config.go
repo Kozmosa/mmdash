@@ -12,11 +12,21 @@ import (
 // Config contains the complete Core Server process configuration.
 type Config struct {
 	Addr            string
+	Auth            AuthConfig
 	Database        DatabaseConfig
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	ShutdownTimeout time.Duration
 	StartupTimeout  time.Duration
+}
+
+// AuthConfig configures bootstrap login and session signing.
+type AuthConfig struct {
+	BootstrapDisplayName string
+	BootstrapEmail       string
+	BootstrapPassword    string
+	JWTSecret            string
+	SessionTTL           time.Duration
 }
 
 // DatabaseConfig configures the PostgreSQL connection pool.
@@ -43,6 +53,13 @@ type LookupEnv func(string) (string, bool)
 func Load(lookup LookupEnv) (Config, error) {
 	config := Config{
 		Addr: envOrDefault(lookup, "CORE_ADDR", ":8080"),
+		Auth: AuthConfig{
+			BootstrapDisplayName: envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
+			BootstrapEmail:       envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
+			BootstrapPassword:    envOrDefault(lookup, "AUTH_BOOTSTRAP_PASSWORD", "mmdash-local-admin"),
+			JWTSecret:            envOrDefault(lookup, "AUTH_JWT_SECRET", "development-auth-jwt-secret-change-me"),
+			SessionTTL:           durationOrDefault(lookup, "AUTH_SESSION_TTL", 24*time.Hour),
+		},
 		Database: DatabaseConfig{
 			ConnMaxIdleTime: durationOrDefault(lookup, "DATABASE_CONN_MAX_IDLE_TIME", 5*time.Minute),
 			ConnMaxLifetime: durationOrDefault(lookup, "DATABASE_CONN_MAX_LIFETIME", 30*time.Minute),
@@ -74,6 +91,18 @@ func (config Config) Validate() error {
 	}
 	if strings.TrimSpace(config.Database.URL) == "" {
 		return fmt.Errorf("DATABASE_URL is required")
+	}
+	if !strings.Contains(config.Auth.BootstrapEmail, "@") {
+		return fmt.Errorf("AUTH_BOOTSTRAP_EMAIL must be an email address")
+	}
+	if len(config.Auth.BootstrapPassword) < 12 {
+		return fmt.Errorf("AUTH_BOOTSTRAP_PASSWORD must contain at least 12 characters")
+	}
+	if len(config.Auth.JWTSecret) < 32 {
+		return fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 characters")
+	}
+	if config.Auth.SessionTTL <= 0 {
+		return fmt.Errorf("AUTH_SESSION_TTL must be positive")
 	}
 	if config.Database.MaxOpenConns < 1 {
 		return fmt.Errorf("DATABASE_MAX_OPEN_CONNS must be positive")

@@ -4,212 +4,853 @@
  */
 
 export interface paths {
-    "/health/live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Check whether the Core process is alive */
-        get: operations["health.live"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/health/live": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/health/ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Check Core dependency readiness */
-        get: operations["health.ready"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Check whether the Core process is alive */
+    get: operations["health.live"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/health/ready": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/openapi.yaml": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read the running Core OpenAPI contract */
-        get: operations["system.openapi.get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Check Core dependency readiness */
+    get: operations["health.ready"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/openapi.yaml": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/example": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Verify the example module and PostgreSQL path */
-        get: operations["example.check"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Read the running Core OpenAPI contract */
+    get: operations["system.openapi.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/example": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /** Verify the example module and PostgreSQL path */
+    get: operations["example.check"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Log in with email and password */
+    post: operations["auth.login"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke the current browser session */
+    post: operations["auth.logout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Resolve the current identity */
+    get: operations["auth.me"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List token metadata owned by the current user */
+    get: operations["auth.tokens.list"];
+    put?: never;
+    /** Issue an API, Agent, or Box token */
+    post: operations["auth.tokens.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/tokens/{tokenId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: components["parameters"]["TokenId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke an access token */
+    delete: operations["auth.tokens.revoke"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List projects visible to the current identity */
+    get: operations["projects.list"];
+    put?: never;
+    /** Create a collaborative project */
+    post: operations["projects.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Get a project */
+    get: operations["projects.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update or archive a project */
+    patch: operations["projects.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/members": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List project collaborators */
+    get: operations["projects.members.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/members/{userId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        userId: components["parameters"]["UserId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /** Add a collaborator or change their role */
+    put: operations["projects.members.upsert"];
+    post?: never;
+    /** Remove a collaborator */
+    delete: operations["projects.members.remove"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/permissions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Get the current identity's effective project permissions */
+    get: operations["projects.permissions.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        Liveness: {
-            /** @constant */
-            service: "core";
-            /** @constant */
-            status: "ok";
-            version: string;
-        };
-        Readiness: {
-            dependencies: {
-                [key: string]: "ready" | "unavailable";
-            };
-            /** @enum {string} */
-            status: "ready" | "not_ready";
-        };
-        ExampleCheck: {
-            /** @constant */
-            status: "ok";
-            /** @constant */
-            storage: "postgres";
-            /** Format: date-time */
-            checked_at: string;
-        };
-        Error: {
-            code: string;
-            message: string;
-            request_id?: string;
-            /** @description Optional operation-specific structured details. */
-            details?: unknown;
-        };
+  schemas: {
+    User: {
+      /** Format: uuid */
+      id: string;
+      /** Format: email */
+      email: string;
+      display_name: string;
+      /** @enum {string} */
+      status: "active" | "disabled";
+      /** Format: date-time */
+      created_at: string;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    LoginRequest: {
+      /** Format: email */
+      email: string;
+      password: string;
+    };
+    LoginResult: {
+      access_token: string;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: uuid */
+      session_id: string;
+      user: components["schemas"]["User"];
+    };
+    Identity: {
+      /** @enum {string} */
+      kind: "session" | "api" | "agent" | "box";
+      /** Format: uuid */
+      project_id?: string;
+      /** Format: uuid */
+      session_id?: string;
+      /** Format: uuid */
+      token_id?: string;
+      user: components["schemas"]["User"];
+    };
+    AccessToken: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      user_id: string;
+      /** Format: uuid */
+      project_id?: string;
+      /** @enum {string} */
+      kind: "api" | "agent" | "box";
+      name: string;
+      /** Format: date-time */
+      expires_at?: string;
+      /** Format: date-time */
+      revoked_at?: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    CreateTokenRequest: {
+      /** @enum {string} */
+      kind: "api" | "agent" | "box";
+      name: string;
+      /** Format: uuid */
+      project_id?: string;
+      /** Format: date-time */
+      expires_at?: string;
+    };
+    IssuedToken: {
+      token: string;
+      credential: components["schemas"]["AccessToken"];
+    };
+    /** @enum {string} */
+    ProjectRole: "owner" | "maintainer" | "editor" | "viewer" | "agent" | "box";
+    Project: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      problem_title: string;
+      problem_summary: string;
+      project_constraints: string[];
+      source_artifact_ids: string[];
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      archived_at?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      role: components["schemas"]["ProjectRole"];
+    };
+    ProjectList: {
+      items: components["schemas"]["Project"][];
+    };
+    CreateProjectRequest: {
+      name: string;
+      problem_title?: string;
+      problem_summary?: string;
+      project_constraints?: string[];
+      source_artifact_ids?: string[];
+    };
+    UpdateProjectRequest: {
+      name?: string;
+      problem_title?: string;
+      problem_summary?: string;
+      project_constraints?: string[];
+      source_artifact_ids?: string[];
+      archived?: boolean;
+    };
+    ProjectMember: {
+      /** Format: uuid */
+      user_id: string;
+      /** Format: email */
+      email: string;
+      display_name: string;
+      role: components["schemas"]["ProjectRole"];
+      /** Format: date-time */
+      joined_at: string;
+    };
+    MemberList: {
+      items: components["schemas"]["ProjectMember"][];
+    };
+    ProjectPermissions: {
+      role: components["schemas"]["ProjectRole"];
+      permissions: string[];
+    };
+    Liveness: {
+      /** @constant */
+      service: "core";
+      /** @constant */
+      status: "ok";
+      version: string;
+    };
+    Readiness: {
+      dependencies: {
+        [key: string]: "ready" | "unavailable";
+      };
+      /** @enum {string} */
+      status: "ready" | "not_ready";
+    };
+    ExampleCheck: {
+      /** @constant */
+      status: "ok";
+      /** @constant */
+      storage: "postgres";
+      /** Format: date-time */
+      checked_at: string;
+    };
+    Error: {
+      code: string;
+      message: string;
+      request_id?: string;
+      /** @description Optional operation-specific structured details. */
+      details?: unknown;
+    };
+  };
+  responses: {
+    /** @description Stable Core error envelope. */
+    Error: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+  };
+  parameters: {
+    ProjectId: string;
+    TokenId: string;
+    UserId: string;
+  };
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    "health.live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The Core process is alive. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Liveness"];
-                };
-            };
-        };
+  "health.live": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "health.ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description The Core process is alive. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description PostgreSQL and object storage are ready. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Readiness"];
-                };
-            };
-            /** @description One or more dependencies are unavailable. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Readiness"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["Liveness"];
         };
+      };
     };
-    "system.openapi.get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The canonical Core OpenAPI document. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/yaml": string;
-                };
-            };
-        };
+  };
+  "health.ready": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "example.check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description PostgreSQL and object storage are ready. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description PostgreSQL is reachable. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExampleCheck"];
-                };
-            };
-            /** @description PostgreSQL is unavailable. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["Readiness"];
         };
+      };
+      /** @description One or more dependencies are unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Readiness"];
+        };
+      };
     };
+  };
+  "system.openapi.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The canonical Core OpenAPI document. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/yaml": string;
+        };
+      };
+    };
+  };
+  "example.check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description PostgreSQL is reachable. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExampleCheck"];
+        };
+      };
+      /** @description PostgreSQL is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  "auth.login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LoginRequest"];
+      };
+    };
+    responses: {
+      /** @description A revocable browser session was created. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LoginResult"];
+        };
+      };
+      401: components["responses"]["Error"];
+    };
+  };
+  "auth.logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Session revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["Error"];
+    };
+  };
+  "auth.me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current authenticated identity. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Identity"];
+        };
+      };
+      401: components["responses"]["Error"];
+    };
+  };
+  "auth.tokens.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Token metadata without secrets. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            items: components["schemas"]["AccessToken"][];
+          };
+        };
+      };
+    };
+  };
+  "auth.tokens.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Token secret returned once. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IssuedToken"];
+        };
+      };
+    };
+  };
+  "auth.tokens.revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: components["parameters"]["TokenId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Token revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "projects.list": {
+    parameters: {
+      query?: {
+        include_archived?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Visible collaborative projects. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectList"];
+        };
+      };
+    };
+  };
+  "projects.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateProjectRequest"];
+      };
+    };
+    responses: {
+      /** @description Project created with the caller as owner. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Project"];
+        };
+      };
+    };
+  };
+  "projects.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Project"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "projects.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateProjectRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated project. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Project"];
+        };
+      };
+    };
+  };
+  "projects.members.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project team. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemberList"];
+        };
+      };
+    };
+  };
+  "projects.members.upsert": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        userId: components["parameters"]["UserId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          role: components["schemas"]["ProjectRole"];
+        };
+      };
+    };
+    responses: {
+      /** @description Updated collaborator. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectMember"];
+        };
+      };
+    };
+  };
+  "projects.members.remove": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        userId: components["parameters"]["UserId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Collaborator removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "projects.permissions.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Effective role and permission names. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectPermissions"];
+        };
+      };
+    };
+  };
 }

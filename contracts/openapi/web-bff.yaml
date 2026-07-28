@@ -13,6 +13,8 @@ servers:
 tags:
   - name: Health
   - name: Engineering
+  - name: Auth
+  - name: Projects
   - name: Pages
   - name: Streams
 paths:
@@ -63,6 +65,187 @@ paths:
                 $ref: "./core.yaml#/components/schemas/ExampleCheck"
         "502":
           $ref: "#/components/responses/Error"
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Create a signed browser session
+      operationId: bff.auth.login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Browser session cookie created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "./core.yaml#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Read the current browser user
+      operationId: bff.auth.me
+      responses:
+        "200":
+          description: Current browser user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "./core.yaml#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current session and clear its cookie
+      operationId: bff.auth.logout
+      responses:
+        "204":
+          description: Logged out.
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: List projects visible to the browser user
+      operationId: bff.projects.list
+      parameters:
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Visible projects.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectList"
+    post:
+      tags: [Projects]
+      summary: Create a collaborative project
+      operationId: bff.projects.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
+  /api/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Get project detail
+      operationId: bff.projects.get
+      responses:
+        "200":
+          description: Project detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
+    patch:
+      tags: [Projects]
+      summary: Update or archive a project
+      operationId: bff.projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Project updated.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
+  /api/projects/{projectId}/members:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: List project collaborators
+      operationId: bff.projects.members.list
+      responses:
+        "200":
+          description: Project team.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/MemberList"
+  /api/projects/{projectId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags: [Projects]
+      summary: Add a collaborator or change their role
+      operationId: bff.projects.members.upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: "./core.yaml#/components/schemas/ProjectRole"
+      responses:
+        "200":
+          description: Updated collaborator.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectMember"
+    delete:
+      tags: [Projects]
+      summary: Remove a collaborator
+      operationId: bff.projects.members.remove
+      responses:
+        "204":
+          description: Collaborator removed.
+  /api/projects/{projectId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Read effective project permissions
+      operationId: bff.projects.permissions.get
+      responses:
+        "200":
+          description: Effective role and permissions.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectPermissions"
   /api/projects/{projectId}/pages/{pageId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"

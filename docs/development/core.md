@@ -1,8 +1,8 @@
 # Go Core Server foundation
 
 `backend` is the modular monolith and the only owner of authoritative business
-state. Stage 3.7 establishes platform boundaries; product domain modules are
-introduced in later stages.
+state. Stage 3.7 establishes platform boundaries. Stage 3.8 adds the first
+product domains: Auth and collaborative Projects.
 
 ## Run and verify
 
@@ -20,21 +20,26 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 
 ## Configuration
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CORE_ADDR` | `:8080` | HTTP listen address |
-| `CORE_OPENAPI_PATH` | `contracts/openapi/core.yaml` | Contract served at `/openapi.yaml` |
-| `CORE_STARTUP_TIMEOUT` | `15s` | Dependency initialization deadline |
-| `CORE_SHUTDOWN_TIMEOUT` | `10s` | Graceful HTTP drain deadline |
-| `DATABASE_URL` | required | PostgreSQL DSN |
-| `DATABASE_MAX_OPEN_CONNS` | `20` | Pool upper bound |
-| `DATABASE_MAX_IDLE_CONNS` | `5` | Idle pool bound |
-| `DATABASE_CONN_MAX_IDLE_TIME` | `5m` | Idle connection lifetime |
-| `DATABASE_CONN_MAX_LIFETIME` | `30m` | Absolute connection lifetime |
-| `OBJECT_STORAGE_ENDPOINT` | required | MinIO/S3-compatible HTTP(S) origin |
-| `OBJECT_STORAGE_ACCESS_KEY` | required | Object storage access identity |
-| `OBJECT_STORAGE_SECRET_KEY` | required | Object storage secret |
-| `OBJECT_STORAGE_BUCKET` | `mmdash` | Authoritative Artifact bucket |
+| Variable                      | Default                       | Purpose                                                        |
+| ----------------------------- | ----------------------------- | -------------------------------------------------------------- |
+| `CORE_ADDR`                   | `:8080`                       | HTTP listen address                                            |
+| `CORE_OPENAPI_PATH`           | `contracts/openapi/core.yaml` | Contract served at `/openapi.yaml`                             |
+| `CORE_STARTUP_TIMEOUT`        | `15s`                         | Dependency initialization deadline                             |
+| `CORE_SHUTDOWN_TIMEOUT`       | `10s`                         | Graceful HTTP drain deadline                                   |
+| `DATABASE_URL`                | required                      | PostgreSQL DSN                                                 |
+| `DATABASE_MAX_OPEN_CONNS`     | `20`                          | Pool upper bound                                               |
+| `DATABASE_MAX_IDLE_CONNS`     | `5`                           | Idle pool bound                                                |
+| `DATABASE_CONN_MAX_IDLE_TIME` | `5m`                          | Idle connection lifetime                                       |
+| `DATABASE_CONN_MAX_LIFETIME`  | `30m`                         | Absolute connection lifetime                                   |
+| `OBJECT_STORAGE_ENDPOINT`     | required                      | MinIO/S3-compatible HTTP(S) origin                             |
+| `OBJECT_STORAGE_ACCESS_KEY`   | required                      | Object storage access identity                                 |
+| `OBJECT_STORAGE_SECRET_KEY`   | required                      | Object storage secret                                          |
+| `OBJECT_STORAGE_BUCKET`       | `mmdash`                      | Authoritative Artifact bucket                                  |
+| `AUTH_BOOTSTRAP_EMAIL`        | `admin@mmdash.local`          | First local account email                                      |
+| `AUTH_BOOTSTRAP_DISPLAY_NAME` | `Local Admin`                 | First local account display name                               |
+| `AUTH_BOOTSTRAP_PASSWORD`     | `mmdash-local-admin`          | First local account password; change outside local development |
+| `AUTH_JWT_SECRET`             | local-only fallback           | HMAC key for browser session JWTs                              |
+| `AUTH_SESSION_TTL`            | `24h`                         | Browser session lifetime                                       |
 
 Configuration validates all values before opening listeners. JSON logging
 redacts fields whose names contain token, secret, password, credential, or
@@ -78,6 +83,18 @@ index.
 transactionally, and records each version in `system_schema_migrations`.
 Domain migrations must only change their own table prefix and semantics.
 
+## Auth and collaborative projects
+
+Auth owns users, revocable browser sessions, and hashed API, Agent, and Box
+tokens. Project owns project records, team membership, roles, and project
+authorization. Project-scoped Agent and Box tokens pass through both token
+scope and role permission checks.
+
+Project creation inserts the project, first owner, and `project.created`
+outbox event atomically. Project updates and membership changes follow the same
+transactional outbox rule. See [Auth, Project, and RBAC](../api/auth-projects.md)
+for the route and permission lookup.
+
 ## Add a domain module
 
 Generate the reviewed cross-layer starter:
@@ -103,16 +120,16 @@ module plus its process boundary.
 
 ## Platform packages
 
-| Package | Boundary |
-| --- | --- |
-| `config` | Environment loading and validation |
-| `database` | PostgreSQL pool and readiness |
-| `transaction` | Commit/rollback orchestration |
-| `migration` | Advisory-locked schema changes |
-| `identity`, `clock`, `pagination` | Stable shared primitives |
-| `apperror`, `httpx`, `requestctx` | HTTP contract and request context |
-| `logging` | Redacted JSON events |
-| `objectstorage` | MinIO configuration, bucket identity, readiness |
-| `module` | Deterministic explicit registration |
-| `outbox` | Same-transaction event envelope writes |
-| `health`, `coreapp`, `server` | HTTP composition and process lifecycle |
+| Package                           | Boundary                                        |
+| --------------------------------- | ----------------------------------------------- |
+| `config`                          | Environment loading and validation              |
+| `database`                        | PostgreSQL pool and readiness                   |
+| `transaction`                     | Commit/rollback orchestration                   |
+| `migration`                       | Advisory-locked schema changes                  |
+| `identity`, `clock`, `pagination` | Stable shared primitives                        |
+| `apperror`, `httpx`, `requestctx` | HTTP contract and request context               |
+| `logging`                         | Redacted JSON events                            |
+| `objectstorage`                   | MinIO configuration, bucket identity, readiness |
+| `module`                          | Deterministic explicit registration             |
+| `outbox`                          | Same-transaction event envelope writes          |
+| `health`, `coreapp`, `server`     | HTTP composition and process lifecycle          |
