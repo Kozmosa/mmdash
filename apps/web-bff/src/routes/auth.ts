@@ -28,10 +28,13 @@ export function registerAuthRoutes(
       });
       const assertion = encodeSessionAssertion({
         access_token: result.access_token,
+        created_at: result.user.created_at,
         display_name: result.user.display_name,
         email: result.user.email,
         expires_at: result.expires_at,
         session_id: result.session_id,
+        status: result.user.status,
+        system_role: result.user.system_role,
         user_id: result.user.id,
       });
       reply.setCookie(sessionCookieName, assertion, {
@@ -50,9 +53,12 @@ export function registerAuthRoutes(
     { config: { auth: "required", project: "none" } },
     async (request) => ({
       user: {
+        created_at: request.browserIdentity!.createdAt,
         display_name: request.browserIdentity!.displayName,
         email: request.browserIdentity!.email,
         id: request.browserIdentity!.userId,
+        status: request.browserIdentity!.status,
+        system_role: request.browserIdentity!.systemRole,
       },
     }),
   );

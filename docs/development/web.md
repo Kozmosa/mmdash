@@ -57,8 +57,10 @@ bundles. Domain-specific components belong under `features/<module>`.
 
 `SettingsSlotRegistry` stores ordered descriptors and rejects duplicate IDs.
 Each future domain module owns its settings UI and explicitly registers one
-descriptor. The Settings shell displays unimplemented descriptors without
-inventing temporary business state.
+descriptor. The Settings shell also reads Core's project-scoped type registry
+through BFF, so registered field contracts, secret markers, and connection
+test support can be discovered without hard-coding provider configuration in
+the shell.
 
 ## Visual baseline
 

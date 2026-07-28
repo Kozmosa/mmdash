@@ -15,9 +15,10 @@ type PostgresStore struct {
 func (store PostgresStore) CreateUser(ctx context.Context, user User, passwordHash string) error {
 	_, err := store.DB.ExecContext(ctx, `
 		INSERT INTO auth_users (
-			user_id, email, display_name, password_hash, status, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $6)
-	`, user.ID, user.Email, user.DisplayName, passwordHash, user.Status, user.CreatedAt)
+			user_id, email, display_name, password_hash, status,
+			system_role, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+	`, user.ID, user.Email, user.DisplayName, passwordHash, user.Status, user.SystemRole, user.CreatedAt)
 	return err
 }
 
@@ -25,7 +26,8 @@ func (store PostgresStore) FindUserByEmail(ctx context.Context, email string) (U
 	var user User
 	var passwordHash string
 	err := store.DB.QueryRowContext(ctx, `
-		SELECT user_id, email, display_name, password_hash, status, created_at
+		SELECT user_id, email, display_name, password_hash, status,
+		       system_role, created_at
 		FROM auth_users
 		WHERE LOWER(email) = LOWER($1)
 	`, email).Scan(
@@ -34,6 +36,7 @@ func (store PostgresStore) FindUserByEmail(ctx context.Context, email string) (U
 		&user.DisplayName,
 		&passwordHash,
 		&user.Status,
+		&user.SystemRole,
 		&user.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -72,7 +75,7 @@ func (store PostgresStore) FindSession(
 		RETURNING session.session_id, session.user_id, session.token_hash,
 		          session.expires_at, session.created_at,
 		          users.user_id, users.email, users.display_name,
-		          users.status, users.created_at
+		          users.status, users.system_role, users.created_at
 	`, sessionID, tokenHash, now).Scan(
 		&session.ID,
 		&session.UserID,
@@ -83,6 +86,7 @@ func (store PostgresStore) FindSession(
 		&user.Email,
 		&user.DisplayName,
 		&user.Status,
+		&user.SystemRole,
 		&user.CreatedAt,
 	)
 	return session, user, err
@@ -112,7 +116,7 @@ func (store PostgresStore) FindToken(ctx context.Context, tokenHash string, now 
 		SELECT token_id, token.user_id, COALESCE(project_id::TEXT, ''), kind,
 		       name, token_hash, expires_at, token.created_at,
 		       users.user_id, users.email, users.display_name,
-		       users.status, users.created_at
+		       users.status, users.system_role, users.created_at
 		FROM auth_tokens AS token
 		JOIN auth_users AS users ON users.user_id = token.user_id
 		WHERE token_hash = $1
@@ -132,6 +136,7 @@ func (store PostgresStore) FindToken(ctx context.Context, tokenHash string, now 
 		&user.Email,
 		&user.DisplayName,
 		&user.Status,
+		&user.SystemRole,
 		&user.CreatedAt,
 	)
 	return token, user, err

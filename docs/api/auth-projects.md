@@ -35,14 +35,14 @@ Only a SHA-256 token hash is stored. The secret is returned once by
 
 ## Collaborative project roles
 
-| Role         | Effective project permissions                        |
-| ------------ | ---------------------------------------------------- |
-| `owner`      | read, update, archive, manage members, manage tokens |
-| `maintainer` | read, update, manage members, manage tokens          |
-| `editor`     | read, update                                         |
-| `viewer`     | read                                                 |
-| `agent`      | read                                                 |
-| `box`        | read                                                 |
+| Role         | Effective project permissions                         |
+| ------------ | ----------------------------------------------------- |
+| `owner`      | read, update, archive, manage members/tokens/settings |
+| `maintainer` | read, update, manage members/tokens/settings          |
+| `editor`     | read, update, read settings                           |
+| `viewer`     | read, read settings                                   |
+| `agent`      | read, read settings                                   |
+| `box`        | read, read settings                                   |
 
 The creator becomes the first owner in the same transaction as project
 creation. Removing the last owner is rejected. Agent and Box credentials are

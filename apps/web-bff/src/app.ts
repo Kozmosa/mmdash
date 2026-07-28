@@ -18,6 +18,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPageRoutes } from "./routes/pages.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerSettingsRoutes } from "./routes/settings.js";
 
 export type BuildAppOptions = {
   config?: BffConfig;
@@ -70,6 +71,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerAuthRoutes(app, coreClient, config);
   registerExampleRoutes(app, coreClient);
   registerProjectRoutes(app, coreClient);
+  registerSettingsRoutes(app, coreClient);
   registerPageRoutes(app, coreClient, pageRegistry);
   registerHttpStreamRoutes(app, coreClient);
   app.register(async function websocketRoutesScope(scopedApp) {
