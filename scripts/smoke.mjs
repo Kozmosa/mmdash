@@ -1,12 +1,13 @@
 const webUrl = process.env.MMDASH_SMOKE_URL ?? "http://localhost:3000";
-const response = await fetch(webUrl);
+const projectsUrl = new URL("/projects", webUrl);
+const response = await fetch(projectsUrl);
 
 if (!response.ok) {
   throw new Error(`Web smoke check failed with HTTP ${response.status}`);
 }
 
 const html = await response.text();
-if (!html.includes("选择数学建模或研究项目")) {
+if (!html.includes("选择数学建模或研究项目进入工作区")) {
   throw new Error("Web smoke check did not find the project-list shell.");
 }
 
