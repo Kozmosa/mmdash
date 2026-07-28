@@ -43,14 +43,16 @@ DATABASE_URL=postgres://mmdash:mmdash@localhost:5432/mmdash?sslmode=disable pnpm
 
 ## Quality commands
 
-| Command                                       | Purpose                                          |
-| --------------------------------------------- | ------------------------------------------------ |
-| `pnpm lint`                                   | TypeScript, Go formatting, and Python lint       |
-| `pnpm test`                                   | TypeScript, Go, and Python tests                 |
-| `pnpm build`                                  | All three language builds                        |
-| `pnpm format`                                 | Format supported source files                    |
-| `pnpm api:check`                              | Check OpenAPI operations against the API catalog |
-| `pnpm commit:check -- "feat(scope): summary"` | Validate a commit subject                        |
+| Command                                       | Purpose                                            |
+| --------------------------------------------- | -------------------------------------------------- |
+| `pnpm lint`                                   | TypeScript, Go formatting, and Python lint         |
+| `pnpm test`                                   | TypeScript, Go, and Python tests                   |
+| `pnpm build`                                  | All three language builds                          |
+| `pnpm format`                                 | Format supported source files                      |
+| `pnpm api:check`                              | Check OpenAPI operations against the API catalog   |
+| `pnpm contracts:generate`                     | Regenerate TypeScript and Go contract outputs      |
+| `pnpm contracts:check`                        | Validate schemas, mocks, generation, compatibility |
+| `pnpm commit:check -- "feat(scope): summary"` | Validate a commit subject                          |
 
 ## Create a module
 
@@ -70,3 +72,4 @@ layer only when their module documentation explains why.
 - [MCP Gateway foundation](mcp-gateway.md)
 - [CLI development and packaging](cli.md)
 - [Go Core Server foundation](core.md)
+- [Contract development](contracts.md)

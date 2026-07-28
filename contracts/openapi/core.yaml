@@ -273,11 +273,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [role]
-              properties:
-                role:
-                  $ref: "#/components/schemas/ProjectRole"
+              $ref: "#/components/schemas/UpdateProjectMemberRequest"
       responses:
         "200":
           description: Updated collaborator.
@@ -725,6 +721,13 @@ components:
         joined_at:
           type: string
           format: date-time
+    UpdateProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/ProjectRole"
     MemberList:
       type: object
       additionalProperties: false

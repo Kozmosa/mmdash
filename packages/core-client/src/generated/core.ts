@@ -475,6 +475,9 @@ export interface components {
       /** Format: date-time */
       joined_at: string;
     };
+    UpdateProjectMemberRequest: {
+      role: components["schemas"]["ProjectRole"];
+    };
     MemberList: {
       items: components["schemas"]["ProjectMember"][];
     };
@@ -955,9 +958,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": {
-          role: components["schemas"]["ProjectRole"];
-        };
+        "application/json": components["schemas"]["UpdateProjectMemberRequest"];
       };
     };
     responses: {

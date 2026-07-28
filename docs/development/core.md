@@ -134,7 +134,8 @@ module plus its process boundary.
 | `transaction`                     | Commit/rollback orchestration                              |
 | `migration`                       | Advisory-locked schema changes                             |
 | `identity`, `clock`, `pagination` | Stable shared primitives                                   |
-| `apperror`, `httpx`, `requestctx` | HTTP contract and request context                          |
+| `apperror`, `httpx`, `requestctx` | HTTP contract, generated validation, and request context   |
+| `contract/generated`              | Generated handler DTOs, validation, and Event Envelope     |
 | `logging`                         | Redacted JSON events                                       |
 | `objectstorage`                   | MinIO configuration, bucket identity, readiness            |
 | `module`                          | Deterministic explicit registration                        |

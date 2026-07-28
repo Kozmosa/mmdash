@@ -67,6 +67,7 @@ pnpm --filter @mmdash/core-client generate
 - [Endpoint catalog](endpoints.md)
 - [Auth, Project, and RBAC](auth-projects.md)
 - [Settings and secret management](settings.md)
+- [Contracts, code generation, and compatibility](contracts.md)
 - [MCP tool catalog](mcp-tools.md)
 - [Local development](../development/README.md)
 - [Web BFF development](../development/web-bff.md)
