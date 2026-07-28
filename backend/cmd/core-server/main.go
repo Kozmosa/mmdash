@@ -8,12 +8,15 @@ import (
 	"syscall"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
+	"github.com/mmdash/mmdash/backend/internal/events"
 	"github.com/mmdash/mmdash/backend/internal/example"
 	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/config"
 	"github.com/mmdash/mmdash/backend/internal/platform/coreapp"
 	"github.com/mmdash/mmdash/backend/internal/platform/database"
+	"github.com/mmdash/mmdash/backend/internal/platform/eventbus"
 	"github.com/mmdash/mmdash/backend/internal/platform/health"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/logging"
@@ -82,6 +85,22 @@ func run(logger *logging.Logger) error {
 	}
 	transactionManager := transaction.Manager{DB: transaction.SQLBeginner{DB: db}}
 	outboxWriter := outbox.Writer{Clock: systemClock, Generator: idGenerator}
+	eventStore := outbox.PostgresStore{
+		Clock:       systemClock,
+		DB:          db,
+		Generator:   idGenerator,
+		Transaction: transactionManager,
+	}
+	eventBus := eventbus.New()
+	if err := eventBus.Register(eventbus.Consumer{
+		Name:     "platform.system-test-receipt",
+		Patterns: []string{"system.test.emitted"},
+		Handler: func(context.Context, contract.EventEnvelope) error {
+			return nil
+		},
+	}); err != nil {
+		return err
+	}
 	projectService := &project.Service{
 		Auth: authService,
 		Store: project.PostgresStore{
@@ -122,6 +141,13 @@ func run(logger *logging.Logger) error {
 			Transaction: transactionManager,
 		},
 	}
+	eventService := events.Service{
+		Auth:        authService,
+		Bus:         eventBus,
+		Outbox:      outboxWriter,
+		Store:       eventStore,
+		Transaction: transactionManager,
+	}
 	modules := module.NewRegistry()
 	authService.ProjectTokens = projectService
 	if err := modules.Register(auth.Module{Service: authService}); err != nil {
@@ -134,6 +160,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(jobs.Module{Service: jobService}); err != nil {
+		return err
+	}
+	if err := modules.Register(events.Module{Service: eventService}); err != nil {
 		return err
 	}
 	if err := modules.Register(settings.Module{
@@ -153,6 +182,26 @@ func run(logger *logging.Logger) error {
 		Logger:      logger,
 		Modules:     modules,
 		OpenAPI:     openAPI,
+	})
+	processorID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Outbox processor identity: %w", err)
+	}
+	eventProcessor := outbox.Processor{
+		Bus:   eventBus,
+		Owner: "core-" + processorID,
+		Store: eventStore,
+		Options: outbox.ProcessorOptions{
+			DeliveryLease: processConfig.Outbox.DeliveryLease,
+			EventLease:    processConfig.Outbox.EventLease,
+			IdlePoll:      processConfig.Outbox.PollInterval,
+			RetryDelay:    processConfig.Outbox.RetryDelay,
+		},
+	}
+	go eventProcessor.Run(ctx, func(processorErr error) {
+		logger.Error("outbox.processor.failed", map[string]interface{}{
+			"error": processorErr.Error(),
+		})
 	})
 
 	return server.New(

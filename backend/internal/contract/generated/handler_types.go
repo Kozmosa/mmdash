@@ -379,3 +379,51 @@ func (request FailJobRequest) Validate() error {
 	}
 	return nil
 }
+
+// EmitTestEventRequest is generated from the Core request-body schema.
+type EmitTestEventRequest struct {
+	Message string                  `json:"message"`
+	Payload *map[string]interface{} `json:"payload,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request EmitTestEventRequest) Validate() error {
+	if request.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if len(request.Message) < 1 {
+		return fmt.Errorf("message is too short")
+	}
+	if len(request.Message) > 500 {
+		return fmt.Errorf("message is too long")
+	}
+	return nil
+}
+
+// ReplayEventRequest is generated from the Core request-body schema.
+type ReplayEventRequest struct {
+	ConsumerName *string `json:"consumer_name,omitempty"`
+	Reason       string  `json:"reason"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ReplayEventRequest) Validate() error {
+	if request.ConsumerName != nil {
+		if len(*request.ConsumerName) < 1 {
+			return fmt.Errorf("consumer_name is too short")
+		}
+		if len(*request.ConsumerName) > 200 {
+			return fmt.Errorf("consumer_name is too long")
+		}
+	}
+	if request.Reason == "" {
+		return fmt.Errorf("reason is required")
+	}
+	if len(request.Reason) < 1 {
+		return fmt.Errorf("reason is too short")
+	}
+	if len(request.Reason) > 500 {
+		return fmt.Errorf("reason is too long")
+	}
+	return nil
+}

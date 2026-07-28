@@ -41,6 +41,10 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `AUTH_JWT_SECRET`             | local-only fallback           | HMAC key for browser session JWTs                              |
 | `AUTH_SESSION_TTL`            | `24h`                         | Browser session lifetime                                       |
 | `SETTINGS_ENCRYPTION_KEY`     | local-only fallback           | Stable key material for AES-256-GCM setting secrets            |
+| `OUTBOX_POLL_INTERVAL`        | `500ms`                       | Idle event Processor delay                                     |
+| `OUTBOX_EVENT_LEASE`          | `30s`                         | Outbox publication lease                                       |
+| `OUTBOX_DELIVERY_LEASE`       | `30s`                         | Per-consumer processing lease                                  |
+| `OUTBOX_RETRY_DELAY`          | `2s`                          | Baseline publication and consumer retry delay                  |
 
 Configuration validates all values before opening listeners. JSON logging
 redacts fields whose names contain token, secret, password, credential, or
@@ -75,10 +79,16 @@ err := transactions.Within(ctx, nil, func(tx transaction.Tx) error {
 })
 ```
 
-`outbox.Writer` accepts that same `transaction.Tx` and fills the event ID,
-UTC occurrence time, and schema version. Migration
-`000002_system_outbox.up.sql` creates the delivery table and pending-event
-index.
+`outbox.Writer` accepts that same `transaction.Tx`, validates the stable
+envelope, and fills the event ID, UTC occurrence time, and schema version.
+Migration `000002_system_outbox.up.sql` creates the Outbox; migration
+`000006_event_delivery.up.sql` adds publication leases, per-consumer
+deliveries, append-only failures, consumption idempotency, and replay records.
+
+The background `outbox.Processor` publishes events through the in-process
+`eventbus.Bus`. Consumer names are stable idempotency boundaries. Use
+[`docs/api/events.md`](../api/events.md) before registering a consumer or
+adding operator replay support.
 
 `cmd/migrate` takes a PostgreSQL advisory lock, applies sorted `*.up.sql` files
 transactionally, and records each version in `system_schema_migrations`.
@@ -139,6 +149,7 @@ module plus its process boundary.
 | `logging`                         | Redacted JSON events                                       |
 | `objectstorage`                   | MinIO configuration, bucket identity, readiness            |
 | `module`                          | Deterministic explicit registration                        |
-| `outbox`                          | Same-transaction event envelope writes                     |
+| `eventbus`                        | Named in-process consumer registration and dispatch        |
+| `outbox`                          | Transactional writes, durable delivery, retries, replay    |
 | `settings`                        | Typed configuration, encrypted secrets, permissions, tests |
 | `health`, `coreapp`, `server`     | HTTP composition and process lifecycle                     |
