@@ -1,0 +1,150 @@
+name: mmdash
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mmdash}
+      POSTGRES_USER: ${POSTGRES_USER:-mmdash}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mmdash}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-mmdash} -d ${POSTGRES_DB:-mmdash}",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mmdash}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    command: migrate
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
+      MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  core:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    environment:
+      CORE_ADDR: :8080
+      CORE_OPENAPI_PATH: /app/contracts/openapi/core.yaml
+      DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
+      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
+      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-mmdash}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
+      OBJECT_STORAGE_BUCKET: mmdash
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "8080:8080"
+
+  web-bff:
+    build:
+      context: ../..
+      dockerfile: apps/web-bff/Dockerfile
+    environment:
+      BFF_COOKIE_SECRET: ${BFF_COOKIE_SECRET:-local-compose-cookie-secret-change-12345}
+      BFF_HOST: 0.0.0.0
+      BFF_PORT: 3001
+      CORE_BASE_URL: http://core:8080
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "3001:3001"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        BFF_INTERNAL_URL: http://web-bff:3001
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      web-bff:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "3000:3000"
+
+  mcp-gateway:
+    build:
+      context: ../..
+      dockerfile: apps/mcp-gateway/Dockerfile
+    environment:
+      CORE_BASE_URL: http://core:8080
+      MCP_AGENT_PROJECTS: ${MCP_AGENT_PROJECTS:-*}
+      MCP_AGENT_TOKEN: ${MCP_AGENT_TOKEN:-local-agent-token-change-before-production}
+      MCP_AGENT_TOOLS: ${MCP_AGENT_TOOLS:-*}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mmdash.com,localhost,127.0.0.1}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-https://mmdash.com,http://localhost:3002}
+      MCP_CLI_PROJECTS: ${MCP_CLI_PROJECTS:-*}
+      MCP_CLI_TOKEN: ${MCP_CLI_TOKEN:-local-cli-token-change-before-production}
+      MCP_CLI_TOOLS: ${MCP_CLI_TOOLS:-*}
+      MCP_GATEWAY_HOST: 0.0.0.0
+      MCP_GATEWAY_PORT: 3002
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "3002:3002"
+
+volumes:
+  postgres-data:
+  minio-data:

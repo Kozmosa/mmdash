@@ -1,0 +1,266 @@
+openapi: 3.1.0
+info:
+  title: mmdash Web BFF API
+  version: 0.1.0
+  description: |
+    Browser-facing API served by the Fastify Web BFF. Authenticated operations
+    require the signed, HTTP-only mmdash_session cookie.
+servers:
+  - url: https://mmdash.com
+    description: Public ingress
+  - url: http://localhost:3001
+    description: Local Web BFF
+tags:
+  - name: Health
+  - name: Engineering
+  - name: Pages
+  - name: Streams
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Check whether the BFF process is alive
+      operationId: bff.health.live
+      security: []
+      responses:
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Liveness"
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Check whether the BFF and Core dependency are ready
+      operationId: bff.health.ready
+      security: []
+      responses:
+        "200":
+          description: Core is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Core is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+  /api/example:
+    get:
+      tags: [Engineering]
+      summary: Proxy the Core engineering-baseline check
+      operationId: bff.example.check
+      security: []
+      responses:
+        "200":
+          description: The Core example path is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ExampleCheck"
+        "502":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/pages/{pageId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: pageId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,63}$"
+    get:
+      tags: [Pages]
+      summary: Load registered fragments for one browser page
+      operationId: bff.page.get
+      responses:
+        "200":
+          description: The aggregated browser-safe page projection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PageAggregation"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/events:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Streams]
+      summary: Stream project events from Core with SSE
+      operationId: bff.events.stream
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: An unbuffered server-sent event stream.
+          headers:
+            X-Accel-Buffering:
+              schema:
+                type: string
+                const: "no"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/socket:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Streams]
+      summary: Open a project WebSocket proxied to Core
+      operationId: bff.socket.connect
+      x-websocket: true
+      responses:
+        "101":
+          description: WebSocket upgrade accepted.
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/files/{filePath}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: filePath
+        in: path
+        required: true
+        description: Slash-delimited project-relative path. Empty and parent segments are rejected.
+        schema:
+          type: string
+          minLength: 1
+    get:
+      tags: [Streams]
+      summary: Stream a project file from Core
+      operationId: bff.file.download
+      parameters:
+        - name: Range
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full file body.
+        "206":
+          description: Requested file range.
+        "401":
+          $ref: "#/components/responses/Error"
+    head:
+      tags: [Streams]
+      summary: Read project file metadata from Core
+      operationId: bff.file.head
+      responses:
+        "200":
+          description: File metadata headers without a body.
+        "401":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Streams]
+      summary: Stream a project file upload to Core
+      operationId: bff.file.upload
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: File replaced.
+        "201":
+          description: File created.
+        "401":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    browserSession:
+      type: apiKey
+      in: cookie
+      name: mmdash_session
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+  responses:
+    Error:
+      description: Stable, browser-safe error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [service, status, version]
+      properties:
+        service:
+          type: string
+          const: web-bff
+        status:
+          type: string
+          const: ok
+        version:
+          type: string
+    Readiness:
+      type: object
+      required: [dependencies, status]
+      properties:
+        dependencies:
+          type: object
+          required: [core]
+          properties:
+            core:
+              type: string
+              enum: [ready, unavailable]
+        status:
+          type: string
+          enum: [ready, not_ready]
+    PageAggregation:
+      type: object
+      additionalProperties: false
+      required: [fragments, page_id, project_id, request_id]
+      properties:
+        fragments:
+          type: object
+          additionalProperties: true
+        page_id:
+          type: string
+        project_id:
+          type: string
+        request_id:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+security:
+  - browserSession: []

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: backend/go.sum
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: pnpm install --frozen-lockfile
+      - run: uv sync --all-packages --frozen
+      - run: pnpm check
+      - name: Validate commit messages
+        if: github.event_name == 'pull_request'
+        run: |
+          git log --format=%s "origin/${{ github.base_ref }}..HEAD" |
+            while IFS= read -r message; do pnpm commit:check -- "$message"; done

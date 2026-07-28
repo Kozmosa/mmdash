@@ -1,0 +1,32 @@
+{
+  "name": "@mmdash/cli",
+  "version": "0.1.0",
+  "description": "Local command-line entry point for mmdash",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "mmdash": "dist/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "pack:check": "pnpm build && pnpm pack --dry-run"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

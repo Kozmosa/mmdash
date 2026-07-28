@@ -1,0 +1,6 @@
+import type { FastifyPluginAsync } from "fastify";
+
+export const __MODULE__Routes: FastifyPluginAsync = async (app) => {
+  // Use the generated Core client. Do not access persistence from BFF.
+  app.get("/api/__MODULE__", async () => ({ status: "not_implemented" }));
+};
