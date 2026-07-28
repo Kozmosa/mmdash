@@ -1,12 +1,11 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
+	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
 	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
 )
@@ -30,11 +29,8 @@ func (module Module) handleLogin(response http.ResponseWriter, request *http.Req
 	if !httpx.RequireMethod(response, request, http.MethodPost) {
 		return
 	}
-	var body struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	if !decodeBody(response, request, &body) {
+	var body contract.LoginRequest
+	if !httpx.DecodeJSON(response, request, &body) {
 		return
 	}
 	result, err := module.Service.Login(request.Context(), body.Email, body.Password)
@@ -83,13 +79,8 @@ func (module Module) handleTokens(response http.ResponseWriter, request *http.Re
 		}
 		httpx.WriteJSON(response, http.StatusOK, map[string]interface{}{"items": tokens})
 	case http.MethodPost:
-		var body struct {
-			ExpiresAt *time.Time `json:"expires_at"`
-			Kind      string     `json:"kind"`
-			Name      string     `json:"name"`
-			ProjectID string     `json:"project_id"`
-		}
-		if !decodeBody(response, request, &body) {
+		var body contract.CreateTokenRequest
+		if !httpx.DecodeJSON(response, request, &body) {
 			return
 		}
 		issued, err := module.Service.IssueToken(
@@ -97,7 +88,7 @@ func (module Module) handleTokens(response http.ResponseWriter, request *http.Re
 			identity,
 			body.Kind,
 			body.Name,
-			body.ProjectID,
+			stringValue(body.ProjectID),
 			body.ExpiresAt,
 		)
 		if err != nil {
@@ -136,20 +127,6 @@ func (module Module) handleToken(response http.ResponseWriter, request *http.Req
 	response.WriteHeader(http.StatusNoContent)
 }
 
-func decodeBody(response http.ResponseWriter, request *http.Request, target interface{}) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 1024*1024))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		httpx.WriteError(response, request, apperror.New(
-			http.StatusBadRequest,
-			"INVALID_REQUEST",
-			"Request body is invalid",
-		))
-		return false
-	}
-	return true
-}
-
 func writeDomainError(response http.ResponseWriter, request *http.Request, err error) {
 	var applicationError *apperror.Error
 	if errors.As(err, &applicationError) {
@@ -184,4 +161,11 @@ func writeDomainError(response http.ResponseWriter, request *http.Request, err e
 	default:
 		httpx.WriteError(response, request, err)
 	}
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

@@ -1,12 +1,12 @@
 package project
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
 	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
 )
@@ -38,11 +38,17 @@ func (module Module) handleCollection(response http.ResponseWriter, request *htt
 		}
 		httpx.WriteJSON(response, http.StatusOK, map[string]interface{}{"items": projects})
 	case http.MethodPost:
-		var body CreateInput
-		if !decodeProjectBody(response, request, &body) {
+		var body contract.CreateProjectRequest
+		if !httpx.DecodeJSON(response, request, &body) {
 			return
 		}
-		project, err := module.Service.Create(request.Context(), identity, body)
+		project, err := module.Service.Create(request.Context(), identity, CreateInput{
+			Name:               body.Name,
+			ProblemSummary:     stringFrom(body.ProblemSummary),
+			ProblemTitle:       stringFrom(body.ProblemTitle),
+			ProjectConstraints: sliceFrom(body.ProjectConstraints),
+			SourceArtifactIDs:  sliceFrom(body.SourceArtifactIDs),
+		})
 		if err != nil {
 			writeProjectError(response, request, err)
 			return
@@ -106,11 +112,18 @@ func (module Module) handleProject(
 		}
 		httpx.WriteJSON(response, http.StatusOK, project)
 	case http.MethodPatch:
-		var body UpdateInput
-		if !decodeProjectBody(response, request, &body) {
+		var body contract.UpdateProjectRequest
+		if !httpx.DecodeJSON(response, request, &body) {
 			return
 		}
-		project, err := module.Service.Update(request.Context(), identity, projectID, body)
+		project, err := module.Service.Update(request.Context(), identity, projectID, UpdateInput{
+			Archived:           body.Archived,
+			Name:               body.Name,
+			ProblemSummary:     body.ProblemSummary,
+			ProblemTitle:       body.ProblemTitle,
+			ProjectConstraints: body.ProjectConstraints,
+			SourceArtifactIDs:  body.SourceArtifactIDs,
+		})
 		if err != nil {
 			writeProjectError(response, request, err)
 			return
@@ -151,10 +164,8 @@ func (module Module) handleMember(
 ) {
 	switch request.Method {
 	case http.MethodPut:
-		var body struct {
-			Role Role `json:"role"`
-		}
-		if !decodeProjectBody(response, request, &body) {
+		var body contract.UpdateProjectMemberRequest
+		if !httpx.DecodeJSON(response, request, &body) {
 			return
 		}
 		member, err := module.Service.UpsertMember(
@@ -162,7 +173,7 @@ func (module Module) handleMember(
 			identity,
 			projectID,
 			userID,
-			body.Role,
+			Role(body.Role),
 		)
 		if err != nil {
 			writeProjectError(response, request, err)
@@ -224,20 +235,6 @@ func (module Module) identity(
 	return identity, true
 }
 
-func decodeProjectBody(response http.ResponseWriter, request *http.Request, target interface{}) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 1024*1024))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		httpx.WriteError(response, request, apperror.New(
-			http.StatusBadRequest,
-			"INVALID_REQUEST",
-			"Request body is invalid",
-		))
-		return false
-	}
-	return true
-}
-
 func writeProjectError(response http.ResponseWriter, request *http.Request, err error) {
 	var applicationError *apperror.Error
 	if errors.As(err, &applicationError) {
@@ -278,4 +275,18 @@ func writeProjectError(response http.ResponseWriter, request *http.Request, err 
 	default:
 		httpx.WriteError(response, request, err)
 	}
+}
+
+func stringFrom(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func sliceFrom(value *[]string) []string {
+	if value == nil {
+		return nil
+	}
+	return *value
 }

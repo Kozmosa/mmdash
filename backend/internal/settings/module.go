@@ -2,13 +2,13 @@ package settings
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
 	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
 )
@@ -131,14 +131,8 @@ func (module Module) handleSetting(
 		}
 		httpx.WriteJSON(response, http.StatusOK, setting)
 	case http.MethodPatch:
-		var body struct {
-			Values map[string]interface{} `json:"values"`
-		}
-		if !decodeSettingsBody(response, request, &body) {
-			return
-		}
-		if body.Values == nil {
-			writeSettingsError(response, request, ErrInvalid)
+		var body contract.UpdateSettingRequest
+		if !httpx.DecodeJSON(response, request, &body) {
 			return
 		}
 		setting, err := module.Service.Update(
@@ -205,20 +199,6 @@ func settingsSegments(path string, prefix string) ([]string, bool) {
 		segments[index] = decoded
 	}
 	return segments, true
-}
-
-func decodeSettingsBody(
-	response http.ResponseWriter,
-	request *http.Request,
-	target interface{},
-) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 1024*1024))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		writeSettingsError(response, request, ErrInvalid)
-		return false
-	}
-	return true
 }
 
 func writeSettingsError(response http.ResponseWriter, request *http.Request, err error) {

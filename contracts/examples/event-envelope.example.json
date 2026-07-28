@@ -1,0 +1,16 @@
+{
+  "event_id": "d173b13f-6c45-4d31-b9f5-884422aa3ce8",
+  "event_type": "project.created",
+  "schema_version": 1,
+  "occurred_at": "2026-07-28T12:00:00Z",
+  "producer": "project",
+  "project_id": "fdbc63cd-33bf-422a-be7d-9706087384ee",
+  "actor": {
+    "user_id": "06353678-91db-4e22-9dfb-2d4218546e22"
+  },
+  "correlation_id": "request-12345678",
+  "causation_id": null,
+  "payload": {
+    "name": "Modeling Team"
+  }
+}

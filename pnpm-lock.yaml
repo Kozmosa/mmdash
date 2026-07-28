@@ -14,12 +14,21 @@ importers:
       '@types/node':
         specifier: ^24.1.0
         version: 24.13.3
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
       eslint:
         specifier: ^9.32.0
         version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
       globals:
         specifier: ^16.3.0
         version: 16.3.0
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.3.0
       prettier:
         specifier: ^3.6.2
         version: 3.9.6
@@ -183,11 +192,39 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@26.0.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.23.1)
 
+  packages/api-types:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@26.0.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.23.1)
+
   packages/core-client:
     devDependencies:
       openapi-typescript:
         specifier: ^7.0.0
         version: 7.13.0(typescript@5.8.3)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@26.0.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.23.1)
+
+  packages/validation:
+    dependencies:
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.1.0
+        version: 24.13.3
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
