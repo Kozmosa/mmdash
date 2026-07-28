@@ -1,0 +1,9 @@
+# Force LF for all text files on every platform.
+# gofmt, prettier, shell scripts and Docker builds all expect LF; without this
+# Windows checkouts (core.autocrlf=true) get CRLF and `gofmt -l` fails.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
