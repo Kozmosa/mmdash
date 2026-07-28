@@ -23,6 +23,8 @@ tags:
     description: Typed system/project configuration, redacted secrets, and connection tests.
   - name: Jobs
     description: Durable asynchronous jobs and the authenticated Worker protocol.
+  - name: Events
+    description: Outbox inspection, registered consumers, and explicit replay.
 paths:
   /health/live:
     get:
@@ -626,6 +628,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+  /v1/events/test:
+    post:
+      tags: [Events]
+      summary: Enqueue an engineering test event
+      description: System administrator endpoint used by foundation smoke checks.
+      operationId: events.test.emit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmitTestEventRequest"
+      responses:
+        "201":
+          description: Test event committed to system_outbox.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventEnqueued"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/events/consumers:
+    get:
+      tags: [Events]
+      summary: List registered in-process event consumers
+      operationId: events.consumers.list
+      responses:
+        "200":
+          description: Deterministic consumer registry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventConsumerList"
+  /v1/events/{eventId}:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      tags: [Events]
+      summary: Inspect Outbox publication and consumer delivery state
+      operationId: events.get
+      responses:
+        "200":
+          description: Event envelope and all live/replay deliveries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutboxEventState"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/events/{eventId}/replay:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    post:
+      tags: [Events]
+      summary: Explicitly replay an event to one or all matching consumers
+      operationId: events.replay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayEventRequest"
+      responses:
+        "202":
+          description: Replay deliveries created with a fresh idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventReplay"
+        "404":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -663,6 +736,13 @@ components:
         pattern: "^[a-z][a-z0-9_.-]*$"
     JobId:
       name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EventId:
+      name: eventId
       in: path
       required: true
       schema:
@@ -1334,6 +1414,257 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/JobLog"
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - event_type
+        - schema_version
+        - occurred_at
+        - producer
+        - project_id
+        - actor
+        - correlation_id
+        - causation_id
+        - payload
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        schema_version:
+          type: integer
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+        producer:
+          type: string
+        project_id:
+          type: [string, "null"]
+        actor:
+          oneOf:
+            - type: object
+              additionalProperties:
+                type: string
+            - type: "null"
+        correlation_id:
+          type: [string, "null"]
+        causation_id:
+          type: [string, "null"]
+        payload:
+          type: object
+          additionalProperties: true
+    EmitTestEventRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 500
+        payload:
+          type: object
+          additionalProperties: true
+    EventEnqueued:
+      type: object
+      additionalProperties: false
+      required: [event_id, status]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: pending
+    ReplayEventRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        consumer_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    EventReplay:
+      type: object
+      additionalProperties: false
+      required: [id, event_id, requested_by, reason, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        consumer_name:
+          type: string
+        requested_by:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    EventConsumer:
+      type: object
+      additionalProperties: false
+      required: [name, patterns]
+      properties:
+        name:
+          type: string
+        patterns:
+          type: array
+          items:
+            type: string
+    EventConsumerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventConsumer"
+    OutboxRecord:
+      type: object
+      additionalProperties: false
+      required: [event, status, attempts, max_attempts, available_at]
+      properties:
+        event:
+          $ref: "#/components/schemas/EventEnvelope"
+        status:
+          type: string
+          enum: [pending, publishing, published, failed]
+        attempts:
+          type: integer
+        max_attempts:
+          type: integer
+        available_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+        failed_at:
+          type: string
+          format: date-time
+        locked_by:
+          type: string
+        lease_expires_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+    EventDelivery:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - consumer_name
+        - delivery_key
+        - status
+        - attempts
+        - max_attempts
+        - available_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        consumer_name:
+          type: string
+        delivery_key:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, succeeded, failed]
+        attempts:
+          type: integer
+        max_attempts:
+          type: integer
+        available_at:
+          type: string
+          format: date-time
+        locked_by:
+          type: string
+        lease_expires_at:
+          type: string
+          format: date-time
+        last_error:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OutboxEventState:
+      type: object
+      additionalProperties: false
+      required: [record, deliveries, failures, replays]
+      properties:
+        record:
+          $ref: "#/components/schemas/OutboxRecord"
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventDelivery"
+        failures:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventFailure"
+        replays:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventReplay"
+    EventFailure:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - delivery_id
+        - event_id
+        - consumer_name
+        - delivery_key
+        - attempt
+        - error_message
+        - failed_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        delivery_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        consumer_name:
+          type: string
+        delivery_key:
+          type: string
+        attempt:
+          type: integer
+          minimum: 1
+        error_message:
+          type: string
+        failed_at:
+          type: string
+          format: date-time
     Liveness:
       type: object
       additionalProperties: false

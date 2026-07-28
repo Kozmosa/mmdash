@@ -49,7 +49,7 @@ func TestWriterUsesCallerTransactionAndFillsEnvelope(t *testing.T) {
 
 	event, err := writer.Write(context.Background(), tx, Event{
 		EventType: "example.checked",
-		Payload:   map[string]string{"status": "ok"},
+		Payload:   map[string]interface{}{"status": "ok"},
 		Producer:  "example",
 	})
 	if err != nil {
@@ -60,5 +60,21 @@ func TestWriterUsesCallerTransactionAndFillsEnvelope(t *testing.T) {
 	}
 	if !strings.Contains(tx.query, "INSERT INTO system_outbox") || len(tx.args) != 10 {
 		t.Fatalf("unexpected transaction call: %s %#v", tx.query, tx.args)
+	}
+}
+
+func TestWriterRejectsEnvelopeThatViolatesStableContract(t *testing.T) {
+	tx := &txStub{}
+	writer := Writer{
+		Clock:     clock.Fixed{Time: time.Now()},
+		Generator: identity.Generator{Reader: bytes.NewReader(make([]byte, 16))},
+	}
+	_, err := writer.Write(context.Background(), tx, Event{
+		EventType: "Not_A_Stable_Type",
+		Payload:   map[string]interface{}{},
+		Producer:  "test",
+	})
+	if err == nil || !strings.Contains(err.Error(), "event_type is invalid") {
+		t.Fatalf("expected stable envelope validation, got %v", err)
 	}
 }

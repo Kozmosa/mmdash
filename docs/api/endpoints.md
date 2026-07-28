@@ -43,6 +43,10 @@ machine-readable source of truth.
 | Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/logs`                             | `jobs.logs.append`                 | jobs                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/complete`                         | `jobs.complete`                    | jobs                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/jobs/{jobId}/fail`                             | `jobs.fail`                        | jobs                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/events/test`                                   | `events.test.emit`                 | events/outbox        | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/events/consumers`                              | `events.consumers.list`            | events/event bus     | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/events/{eventId}`                              | `events.get`                       | events/outbox        | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/events/{eventId}/replay`                       | `events.replay`                    | events/outbox        | `core.yaml`        |
 | Web BFF     | HTTP          | `GET`         | `/health/live`                                      | `bff.health.live`                  | health               | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/health/ready`                                     | `bff.health.ready`                 | health               | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/example`                                      | `bff.example.check`                | example proxy        | `web-bff.yaml`     |

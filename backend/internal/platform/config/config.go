@@ -16,6 +16,7 @@ type Config struct {
 	Database        DatabaseConfig
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
+	Outbox          OutboxConfig
 	Settings        SettingsConfig
 	ShutdownTimeout time.Duration
 	StartupTimeout  time.Duration
@@ -45,6 +46,14 @@ type ObjectStorageConfig struct {
 	Bucket    string
 	Endpoint  string
 	SecretKey string
+}
+
+// OutboxConfig configures durable event publication and delivery.
+type OutboxConfig struct {
+	DeliveryLease time.Duration
+	EventLease    time.Duration
+	PollInterval  time.Duration
+	RetryDelay    time.Duration
 }
 
 // SettingsConfig configures encryption for persisted module secrets.
@@ -80,6 +89,12 @@ func Load(lookup LookupEnv) (Config, error) {
 			SecretKey: envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
 		},
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
+		Outbox: OutboxConfig{
+			DeliveryLease: durationOrDefault(lookup, "OUTBOX_DELIVERY_LEASE", 30*time.Second),
+			EventLease:    durationOrDefault(lookup, "OUTBOX_EVENT_LEASE", 30*time.Second),
+			PollInterval:  durationOrDefault(lookup, "OUTBOX_POLL_INTERVAL", 500*time.Millisecond),
+			RetryDelay:    durationOrDefault(lookup, "OUTBOX_RETRY_DELAY", 2*time.Second),
+		},
 		Settings: SettingsConfig{
 			EncryptionKey: envOrDefault(
 				lookup,
@@ -141,6 +156,12 @@ func (config Config) Validate() error {
 	}
 	if strings.TrimSpace(config.OpenAPIPath) == "" {
 		return fmt.Errorf("CORE_OPENAPI_PATH must not be empty")
+	}
+	if config.Outbox.DeliveryLease <= 0 ||
+		config.Outbox.EventLease <= 0 ||
+		config.Outbox.PollInterval <= 0 ||
+		config.Outbox.RetryDelay <= 0 {
+		return fmt.Errorf("Outbox durations must be positive")
 	}
 	if len(config.Settings.EncryptionKey) < 32 {
 		return fmt.Errorf("SETTINGS_ENCRYPTION_KEY must contain at least 32 characters")

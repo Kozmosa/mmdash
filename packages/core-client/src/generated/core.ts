@@ -540,6 +540,81 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/events/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Enqueue an engineering test event
+     * @description System administrator endpoint used by foundation smoke checks.
+     */
+    post: operations["events.test.emit"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/consumers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List registered in-process event consumers */
+    get: operations["events.consumers.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/{eventId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    /** Inspect Outbox publication and consumer delivery state */
+    get: operations["events.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/{eventId}/replay": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Explicitly replay an event to one or all matching consumers */
+    post: operations["events.replay"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -846,6 +921,118 @@ export interface components {
     JobLogList: {
       items: components["schemas"]["JobLog"][];
     };
+    EventEnvelope: {
+      /** Format: uuid */
+      event_id: string;
+      event_type: string;
+      schema_version: number;
+      /** Format: date-time */
+      occurred_at: string;
+      producer: string;
+      project_id: string | null;
+      actor: {
+        [key: string]: string;
+      } | null;
+      correlation_id: string | null;
+      causation_id: string | null;
+      payload: {
+        [key: string]: unknown;
+      };
+    };
+    EmitTestEventRequest: {
+      message: string;
+      payload?: {
+        [key: string]: unknown;
+      };
+    };
+    EventEnqueued: {
+      /** Format: uuid */
+      event_id: string;
+      /** @constant */
+      status: "pending";
+    };
+    ReplayEventRequest: {
+      consumer_name?: string;
+      reason: string;
+    };
+    EventReplay: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      event_id: string;
+      consumer_name?: string;
+      /** Format: uuid */
+      requested_by: string;
+      reason: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    EventConsumer: {
+      name: string;
+      patterns: string[];
+    };
+    EventConsumerList: {
+      items: components["schemas"]["EventConsumer"][];
+    };
+    OutboxRecord: {
+      event: components["schemas"]["EventEnvelope"];
+      /** @enum {string} */
+      status: "pending" | "publishing" | "published" | "failed";
+      attempts: number;
+      max_attempts: number;
+      /** Format: date-time */
+      available_at: string;
+      /** Format: date-time */
+      published_at?: string;
+      /** Format: date-time */
+      failed_at?: string;
+      locked_by?: string;
+      /** Format: date-time */
+      lease_expires_at?: string;
+      last_error?: string;
+    };
+    EventDelivery: {
+      /** Format: uuid */
+      id: string;
+      consumer_name: string;
+      delivery_key: string;
+      /** @enum {string} */
+      status: "pending" | "processing" | "succeeded" | "failed";
+      attempts: number;
+      max_attempts: number;
+      /** Format: date-time */
+      available_at: string;
+      locked_by?: string;
+      /** Format: date-time */
+      lease_expires_at?: string;
+      last_error?: string;
+      /** Format: date-time */
+      completed_at?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    OutboxEventState: {
+      record: components["schemas"]["OutboxRecord"];
+      deliveries: components["schemas"]["EventDelivery"][];
+      failures: components["schemas"]["EventFailure"][];
+      replays: components["schemas"]["EventReplay"][];
+    };
+    EventFailure: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      delivery_id: string;
+      /** Format: uuid */
+      event_id: string;
+      consumer_name: string;
+      delivery_key: string;
+      attempt: number;
+      error_message: string;
+      /** Format: date-time */
+      failed_at: string;
+    };
     Liveness: {
       /** @constant */
       service: "core";
@@ -893,6 +1080,7 @@ export interface components {
     UserId: string;
     TypeKey: string;
     JobId: string;
+    EventId: string;
   };
   requestBodies: never;
   headers: never;
@@ -1777,6 +1965,101 @@ export interface operations {
           "application/json": components["schemas"]["Job"];
         };
       };
+    };
+  };
+  "events.test.emit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EmitTestEventRequest"];
+      };
+    };
+    responses: {
+      /** @description Test event committed to system_outbox. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventEnqueued"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "events.consumers.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deterministic consumer registry. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventConsumerList"];
+        };
+      };
+    };
+  };
+  "events.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Event envelope and all live/replay deliveries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OutboxEventState"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "events.replay": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplayEventRequest"];
+      };
+    };
+    responses: {
+      /** @description Replay deliveries created with a fresh idempotency key. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventReplay"];
+        };
+      };
+      404: components["responses"]["Error"];
     };
   };
 }
