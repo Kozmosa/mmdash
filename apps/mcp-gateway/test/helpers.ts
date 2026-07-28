@@ -17,4 +17,5 @@ export const testConfig: McpGatewayConfig = {
   nodeEnv: "test",
   port: 3002,
   sessionTtlMs: 60_000,
+  version: "0.1.0-test",
 };

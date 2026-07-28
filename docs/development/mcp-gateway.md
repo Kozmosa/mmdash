@@ -23,9 +23,9 @@ authenticated `DELETE /mcp` with that header explicitly terminates it.
 `Authorization: Bearer <token>` accepts two independently configured static
 foundation tokens:
 
-| Variable | Principal | Default permissions variable |
-| --- | --- | --- |
-| `MCP_CLI_TOKEN` | Local CLI | `MCP_CLI_PROJECTS`, `MCP_CLI_TOOLS` |
+| Variable          | Principal     | Default permissions variable            |
+| ----------------- | ------------- | --------------------------------------- |
+| `MCP_CLI_TOKEN`   | Local CLI     | `MCP_CLI_PROJECTS`, `MCP_CLI_TOOLS`     |
 | `MCP_AGENT_TOKEN` | Agent runtime | `MCP_AGENT_PROJECTS`, `MCP_AGENT_TOOLS` |
 
 Permission lists are comma-separated exact names or prefix patterns ending in
@@ -35,6 +35,11 @@ SHA-256-derived principal ID, and never returned by tools.
 
 The gateway also validates Host and Origin using `MCP_ALLOWED_HOSTS` and
 `MCP_ALLOWED_ORIGINS` to prevent DNS rebinding.
+
+Set `MCP_CORE_AUDIT_TOKEN` to a Core-issued API token to persist tool audit
+events in Core's queryable Audit ledger. Without it, JSON audit logging remains
+enabled. The token is used only for Core audit ingestion and is never written
+to logs or tool output.
 
 ## Register a tool
 

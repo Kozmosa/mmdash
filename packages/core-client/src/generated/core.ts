@@ -4,212 +4,2710 @@
  */
 
 export interface paths {
-    "/health/live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Check whether the Core process is alive */
-        get: operations["health.live"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/health/live": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/health/ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Check Core dependency readiness */
-        get: operations["health.ready"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Check whether the Core process is alive */
+    get: operations["health.live"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/health/ready": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/openapi.yaml": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read the running Core OpenAPI contract */
-        get: operations["system.openapi.get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Check Core dependency readiness */
+    get: operations["health.ready"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/openapi.yaml": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/v1/example": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Verify the example module and PostgreSQL path */
-        get: operations["example.check"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Read the running Core OpenAPI contract */
+    get: operations["system.openapi.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /** Read bounded-label Prometheus metrics */
+    get: operations["observability.metrics.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/example": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Verify the example module and PostgreSQL path */
+    get: operations["example.check"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Log in with email and password */
+    post: operations["auth.login"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke the current browser session */
+    post: operations["auth.logout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Resolve the current identity */
+    get: operations["auth.me"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/tokens": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List token metadata owned by the current user */
+    get: operations["auth.tokens.list"];
+    put?: never;
+    /** Issue an API, Agent, or Box token */
+    post: operations["auth.tokens.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/tokens/{tokenId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: components["parameters"]["TokenId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke an access token */
+    delete: operations["auth.tokens.revoke"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List projects visible to the current identity */
+    get: operations["projects.list"];
+    put?: never;
+    /** Create a collaborative project */
+    post: operations["projects.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Get a project */
+    get: operations["projects.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update or archive a project */
+    patch: operations["projects.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/members": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List project collaborators */
+    get: operations["projects.members.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/members/{userId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        userId: components["parameters"]["UserId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /** Add a collaborator or change their role */
+    put: operations["projects.members.upsert"];
+    post?: never;
+    /** Remove a collaborator */
+    delete: operations["projects.members.remove"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/permissions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Get the current identity's effective project permissions */
+    get: operations["projects.permissions.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/settings/types": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List registered configuration types for a scope */
+    get: operations["settings.types.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/settings/system/{typeKey}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    /** Read a redacted system setting */
+    get: operations["settings.system.get"];
+    put?: never;
+    post?: never;
+    /** Delete a system setting */
+    delete: operations["settings.system.delete"];
+    options?: never;
+    head?: never;
+    /** Update a system setting */
+    patch: operations["settings.system.update"];
+    trace?: never;
+  };
+  "/v1/settings/system/{typeKey}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test a saved system configuration */
+    post: operations["settings.system.test"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/settings/projects/{projectId}/{typeKey}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    /** Read a redacted project setting */
+    get: operations["settings.projects.get"];
+    put?: never;
+    post?: never;
+    /** Delete a project setting */
+    delete: operations["settings.projects.delete"];
+    options?: never;
+    head?: never;
+    /** Update a project setting */
+    patch: operations["settings.projects.update"];
+    trace?: never;
+  };
+  "/v1/settings/projects/{projectId}/{typeKey}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test a saved project configuration */
+    post: operations["settings.projects.test"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create an idempotent project job */
+    post: operations["jobs.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Atomically claim the next eligible job
+     * @description Requires an API token. Returns `job: null` when no job is available.
+     */
+    post: operations["jobs.claim"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/workers/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record Worker process liveness and capabilities
+     * @description Requires an API token.
+     */
+    post: operations["jobs.workers.heartbeat"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    /** Read a project job */
+    get: operations["jobs.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel queued work or signal a running Worker */
+    post: operations["jobs.cancel"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Renew a Worker-owned job lease
+     * @description Requires an API token and returns any cancellation signal.
+     */
+    post: operations["jobs.lease.renew"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/logs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    /** Read append-only job logs */
+    get: operations["jobs.logs.list"];
+    put?: never;
+    /**
+     * Append a log under an active Worker lease
+     * @description Requires an API token.
+     */
+    post: operations["jobs.logs.append"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit a successful job result
+     * @description Requires an API token and an active Worker lease.
+     */
+    post: operations["jobs.complete"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/jobs/{jobId}/fail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit a handler failure
+     * @description Core applies retry, cancellation, timeout, and max-attempt policy.
+     */
+    post: operations["jobs.fail"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Enqueue an engineering test event
+     * @description System administrator endpoint used by foundation smoke checks.
+     */
+    post: operations["events.test.emit"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/consumers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List registered in-process event consumers */
+    get: operations["events.consumers.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/{eventId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    /** Inspect Outbox publication and consumer delivery state */
+    get: operations["events.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/{eventId}/replay": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Explicitly replay an event to one or all matching consumers */
+    post: operations["events.replay"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/objects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /**
+     * List project objects
+     * @description Stable `data.list` routing entry point for users and Agents.
+     */
+    get: operations["data.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/objects/{objectId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        objectId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * Read one project object through its domain adapter
+     * @description Stable `data.read` routing entry point; full content remains domain-owned.
+     */
+    get: operations["data.read"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/activity": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List the project activity timeline */
+    get: operations["data.activity.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/context": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List human-confirmed project context */
+    get: operations["data.context.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/context/proposals": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List context proposals */
+    get: operations["data.context.proposals.list"];
+    put?: never;
+    /**
+     * Propose information for formal project context
+     * @description Agents may create proposals but cannot confirm them.
+     */
+    post: operations["data.context.proposals.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/context/proposals/{proposalId}/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        proposalId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept or reject a context proposal
+     * @description Requires a human browser session and context-review permission.
+     */
+    post: operations["data.context.proposals.review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/home": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the project-home aggregate DTO shell */
+    get: operations["data.home.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/audit/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Search the append-only audit trail */
+    get: operations["audit.events.list"];
+    put?: never;
+    /**
+     * Record an event from a trusted mmdash service
+     * @description Requires an API or Box token; caller identity is derived by Core.
+     */
+    post: operations["audit.events.record"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        Liveness: {
-            /** @constant */
-            service: "core";
-            /** @constant */
-            status: "ok";
-            version: string;
-        };
-        Readiness: {
-            dependencies: {
-                [key: string]: "ready" | "unavailable";
-            };
-            /** @enum {string} */
-            status: "ready" | "not_ready";
-        };
-        ExampleCheck: {
-            /** @constant */
-            status: "ok";
-            /** @constant */
-            storage: "postgres";
-            /** Format: date-time */
-            checked_at: string;
-        };
-        Error: {
-            code: string;
-            message: string;
-            request_id?: string;
-            /** @description Optional operation-specific structured details. */
-            details?: unknown;
-        };
+  schemas: {
+    User: {
+      /** Format: uuid */
+      id: string;
+      /** Format: email */
+      email: string;
+      display_name: string;
+      /** @enum {string} */
+      status: "active" | "disabled";
+      /** @enum {string} */
+      system_role: "admin" | "member";
+      /** Format: date-time */
+      created_at: string;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    LoginRequest: {
+      /** Format: email */
+      email: string;
+      password: string;
+    };
+    LoginResult: {
+      access_token: string;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: uuid */
+      session_id: string;
+      user: components["schemas"]["User"];
+    };
+    Identity: {
+      /** @enum {string} */
+      kind: "session" | "api" | "agent" | "box";
+      /** Format: uuid */
+      project_id?: string;
+      /** Format: uuid */
+      session_id?: string;
+      /** Format: uuid */
+      token_id?: string;
+      user: components["schemas"]["User"];
+    };
+    AccessToken: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      user_id: string;
+      /** Format: uuid */
+      project_id?: string;
+      /** @enum {string} */
+      kind: "api" | "agent" | "box";
+      name: string;
+      /** Format: date-time */
+      expires_at?: string;
+      /** Format: date-time */
+      revoked_at?: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    CreateTokenRequest: {
+      /** @enum {string} */
+      kind: "api" | "agent" | "box";
+      name: string;
+      /** Format: uuid */
+      project_id?: string;
+      /** Format: date-time */
+      expires_at?: string;
+    };
+    IssuedToken: {
+      token: string;
+      credential: components["schemas"]["AccessToken"];
+    };
+    /** @enum {string} */
+    ProjectRole: "owner" | "maintainer" | "editor" | "viewer" | "agent" | "box";
+    Project: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      problem_title: string;
+      problem_summary: string;
+      project_constraints: string[];
+      source_artifact_ids: string[];
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      archived_at?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      role: components["schemas"]["ProjectRole"];
+    };
+    ProjectList: {
+      items: components["schemas"]["Project"][];
+    };
+    CreateProjectRequest: {
+      name: string;
+      problem_title?: string;
+      problem_summary?: string;
+      project_constraints?: string[];
+      source_artifact_ids?: string[];
+    };
+    UpdateProjectRequest: {
+      name?: string;
+      problem_title?: string;
+      problem_summary?: string;
+      project_constraints?: string[];
+      source_artifact_ids?: string[];
+      archived?: boolean;
+    };
+    ProjectMember: {
+      /** Format: uuid */
+      user_id: string;
+      /** Format: email */
+      email: string;
+      display_name: string;
+      role: components["schemas"]["ProjectRole"];
+      /** Format: date-time */
+      joined_at: string;
+    };
+    UpdateProjectMemberRequest: {
+      role: components["schemas"]["ProjectRole"];
+    };
+    MemberList: {
+      items: components["schemas"]["ProjectMember"][];
+    };
+    ProjectPermissions: {
+      role: components["schemas"]["ProjectRole"];
+      permissions: string[];
+    };
+    /** @enum {string} */
+    SettingScope: "system" | "project";
+    /** @enum {string} */
+    SettingFieldKind:
+      "boolean" | "number" | "secret" | "select" | "string" | "url";
+    SettingFieldDefinition: {
+      key: string;
+      kind: components["schemas"]["SettingFieldKind"];
+      label: string;
+      description?: string;
+      required: boolean;
+      options?: string[];
+    };
+    SettingType: {
+      key: string;
+      owner: string;
+      title: string;
+      description: string;
+      scopes: components["schemas"]["SettingScope"][];
+      fields: components["schemas"]["SettingFieldDefinition"][];
+      order: number;
+      test_supported: boolean;
+    };
+    SettingTypeList: {
+      items: components["schemas"]["SettingType"][];
+    };
+    /**
+     * @description Type-validated values. Secret fields are returned as `********`;
+     *     sending that sentinel preserves the existing encrypted value.
+     */
+    SettingValues: {
+      [key: string]: unknown;
+    };
+    UpdateSettingRequest: {
+      values: components["schemas"]["SettingValues"];
+    };
+    Setting: {
+      scope: components["schemas"]["SettingScope"];
+      scope_id: string;
+      type_key: string;
+      values: components["schemas"]["SettingValues"];
+      /** Format: int64 */
+      version: number;
+      /** Format: uuid */
+      updated_by: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ConnectionCheck: {
+      name: string;
+      /** @enum {string} */
+      status: "passed" | "failed";
+      message?: string;
+    };
+    ConnectionTestResult: {
+      /** @enum {string} */
+      status: "passed" | "failed" | "unsupported";
+      /** Format: date-time */
+      checked_at: string;
+      checks: components["schemas"]["ConnectionCheck"][];
+    };
+    /** @enum {string} */
+    JobStatus:
+      "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
+    Job: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      project_id: string;
+      job_type: string;
+      payload: {
+        [key: string]: unknown;
+      };
+      status: components["schemas"]["JobStatus"];
+      priority: number;
+      idempotency_key?: string;
+      attempts: number;
+      max_attempts: number;
+      /** Format: date-time */
+      available_at: string;
+      timeout_seconds: number;
+      /** Format: date-time */
+      timeout_at?: string;
+      locked_by?: string;
+      /** Format: date-time */
+      lease_expires_at?: string;
+      /** Format: date-time */
+      cancel_requested_at?: string;
+      /** Format: date-time */
+      started_at?: string;
+      /** Format: date-time */
+      finished_at?: string;
+      result?: {
+        [key: string]: unknown;
+      };
+      error_code?: string;
+      error_message?: string;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CreateJobRequest: {
+      /** Format: uuid */
+      project_id: string;
+      job_type: string;
+      payload: {
+        [key: string]: unknown;
+      };
+      priority?: number;
+      idempotency_key?: string;
+      max_attempts?: number;
+      /** Format: date-time */
+      available_at?: string;
+      timeout_seconds?: number;
+    };
+    ClaimJobRequest: {
+      worker_id: string;
+      job_types: string[];
+      lease_seconds?: number;
+    };
+    JobClaim: {
+      job: components["schemas"]["Job"] | null;
+    };
+    WorkerHeartbeatRequest: {
+      worker_id: string;
+      version: string;
+      capabilities: string[];
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    RenewJobLeaseRequest: {
+      worker_id: string;
+      lease_seconds: number;
+    };
+    AppendJobLogRequest: {
+      worker_id: string;
+      /** @enum {string} */
+      level: "debug" | "info" | "warning" | "error";
+      message: string;
+      fields?: {
+        [key: string]: unknown;
+      };
+    };
+    CompleteJobRequest: {
+      worker_id: string;
+      result: {
+        [key: string]: unknown;
+      };
+    };
+    FailJobRequest: {
+      worker_id: string;
+      code: string;
+      message: string;
+      retryable: boolean;
+      retry_delay_seconds?: number;
+    };
+    JobLog: {
+      /** Format: uuid */
+      id: string;
+      attempt: number;
+      /** @enum {string} */
+      level: "debug" | "info" | "warning" | "error";
+      message: string;
+      fields: {
+        [key: string]: unknown;
+      };
+      worker_id: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    JobLogList: {
+      items: components["schemas"]["JobLog"][];
+    };
+    EventEnvelope: {
+      /** Format: uuid */
+      event_id: string;
+      event_type: string;
+      schema_version: number;
+      /** Format: date-time */
+      occurred_at: string;
+      producer: string;
+      project_id: string | null;
+      actor: {
+        [key: string]: string;
+      } | null;
+      correlation_id: string | null;
+      causation_id: string | null;
+      payload: {
+        [key: string]: unknown;
+      };
+    };
+    EmitTestEventRequest: {
+      message: string;
+      payload?: {
+        [key: string]: unknown;
+      };
+    };
+    EventEnqueued: {
+      /** Format: uuid */
+      event_id: string;
+      /** @constant */
+      status: "pending";
+    };
+    ReplayEventRequest: {
+      consumer_name?: string;
+      reason: string;
+    };
+    EventReplay: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      event_id: string;
+      consumer_name?: string;
+      /** Format: uuid */
+      requested_by: string;
+      reason: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    EventConsumer: {
+      name: string;
+      patterns: string[];
+    };
+    EventConsumerList: {
+      items: components["schemas"]["EventConsumer"][];
+    };
+    OutboxRecord: {
+      event: components["schemas"]["EventEnvelope"];
+      /** @enum {string} */
+      status: "pending" | "publishing" | "published" | "failed";
+      attempts: number;
+      max_attempts: number;
+      /** Format: date-time */
+      available_at: string;
+      /** Format: date-time */
+      published_at?: string;
+      /** Format: date-time */
+      failed_at?: string;
+      locked_by?: string;
+      /** Format: date-time */
+      lease_expires_at?: string;
+      last_error?: string;
+    };
+    EventDelivery: {
+      /** Format: uuid */
+      id: string;
+      consumer_name: string;
+      delivery_key: string;
+      /** @enum {string} */
+      status: "pending" | "processing" | "succeeded" | "failed";
+      attempts: number;
+      max_attempts: number;
+      /** Format: date-time */
+      available_at: string;
+      locked_by?: string;
+      /** Format: date-time */
+      lease_expires_at?: string;
+      last_error?: string;
+      /** Format: date-time */
+      completed_at?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    OutboxEventState: {
+      record: components["schemas"]["OutboxRecord"];
+      deliveries: components["schemas"]["EventDelivery"][];
+      failures: components["schemas"]["EventFailure"][];
+      replays: components["schemas"]["EventReplay"][];
+    };
+    EventFailure: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      delivery_id: string;
+      /** Format: uuid */
+      event_id: string;
+      consumer_name: string;
+      delivery_key: string;
+      attempt: number;
+      error_message: string;
+      /** Format: date-time */
+      failed_at: string;
+    };
+    RecordAuditEventRequest: {
+      category: string;
+      action: string;
+      /** @enum {string} */
+      outcome: "success" | "denied" | "error";
+      source: string;
+      /** Format: uuid */
+      project_id?: string;
+      resource_type?: string;
+      resource_id?: string;
+      /** Format: date-time */
+      occurred_at?: string;
+      duration_ms?: number;
+      error_code?: string;
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    AuditEvent: {
+      /** Format: uuid */
+      audit_id: string;
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: date-time */
+      recorded_at: string;
+      request_id: string;
+      /** Format: uuid */
+      actor_id?: string;
+      actor_kind: string;
+      /** Format: uuid */
+      project_id?: string;
+      category: string;
+      action: string;
+      /** @enum {string} */
+      outcome: "success" | "denied" | "error";
+      source: string;
+      resource_type: string;
+      resource_id: string;
+      duration_ms?: number;
+      error_code: string;
+      metadata: {
+        [key: string]: unknown;
+      };
+    };
+    AuditEventPage: {
+      items: components["schemas"]["AuditEvent"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    DataObject: {
+      /** Format: uuid */
+      object_id: string;
+      /** Format: uuid */
+      project_id: string;
+      object_type: string;
+      source_module: string;
+      source_id: string;
+      title: string;
+      summary: string;
+      status: string;
+      version: number;
+      metadata: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    DataObjectPage: {
+      items: components["schemas"]["DataObject"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    DataObjectRead: {
+      object: components["schemas"]["DataObject"];
+      /** @description Authoritative content returned by the registered domain adapter. */
+      content: unknown;
+    };
+    DataActivity: {
+      /** Format: uuid */
+      activity_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      object_id?: string;
+      activity_type: string;
+      title: string;
+      summary: string;
+      actor: {
+        [key: string]: string;
+      };
+      metadata: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    DataActivityPage: {
+      items: components["schemas"]["DataActivity"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    CreateContextProposalRequest: {
+      title: string;
+      content: string;
+      context_type: string;
+      source_object_ids?: string[];
+      rationale?: string;
+    };
+    ReviewContextProposalRequest: {
+      /** @enum {string} */
+      decision: "accepted" | "rejected";
+      review_note?: string;
+    };
+    ContextProposal: {
+      /** Format: uuid */
+      proposal_id: string;
+      /** Format: uuid */
+      project_id: string;
+      title: string;
+      content: string;
+      context_type: string;
+      source_object_ids: string[];
+      rationale: string;
+      /** Format: uuid */
+      proposed_by: string;
+      /** @enum {string} */
+      status: "pending" | "accepted" | "rejected";
+      /** Format: uuid */
+      reviewed_by?: string;
+      /** Format: date-time */
+      reviewed_at?: string;
+      review_note: string;
+      /** Format: uuid */
+      promoted_context_id?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ContextProposalList: {
+      items: components["schemas"]["ContextProposal"][];
+    };
+    ProjectContext: {
+      /** Format: uuid */
+      context_id: string;
+      /** Format: uuid */
+      project_id: string;
+      title: string;
+      content: string;
+      context_type: string;
+      source_object_ids: string[];
+      /** Format: uuid */
+      proposed_by: string;
+      /** Format: uuid */
+      confirmed_by: string;
+      /** Format: date-time */
+      confirmed_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ProjectContextList: {
+      items: components["schemas"]["ProjectContext"][];
+    };
+    HomeSection: {
+      available: boolean;
+      total: number;
+      items: unknown[];
+    };
+    HomeAggregate: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: date-time */
+      generated_at: string;
+      problem: components["schemas"]["HomeSection"];
+      milestones: components["schemas"]["HomeSection"];
+      todos: components["schemas"]["HomeSection"];
+      models: components["schemas"]["HomeSection"];
+      experiments: components["schemas"]["HomeSection"];
+      article: components["schemas"]["HomeSection"];
+      agent: components["schemas"]["HomeSection"];
+    };
+    Liveness: {
+      /** @constant */
+      service: "core";
+      /** @constant */
+      status: "ok";
+      version: string;
+    };
+    Readiness: {
+      dependencies: {
+        [key: string]: "ready" | "unavailable";
+      };
+      /** @enum {string} */
+      status: "ready" | "not_ready";
+    };
+    ExampleCheck: {
+      /** @constant */
+      status: "ok";
+      /** @constant */
+      storage: "postgres";
+      /** Format: date-time */
+      checked_at: string;
+    };
+    Error: {
+      code: string;
+      message: string;
+      request_id?: string;
+      /** @description Optional operation-specific structured details. */
+      details?: unknown;
+    };
+  };
+  responses: {
+    /** @description Stable Core error envelope. */
+    Error: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["Error"];
+      };
+    };
+  };
+  parameters: {
+    ProjectId: string;
+    TokenId: string;
+    UserId: string;
+    TypeKey: string;
+    JobId: string;
+    EventId: string;
+  };
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    "health.live": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The Core process is alive. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Liveness"];
-                };
-            };
-        };
+  "health.live": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "health.ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description The Core process is alive. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description PostgreSQL and object storage are ready. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Readiness"];
-                };
-            };
-            /** @description One or more dependencies are unavailable. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Readiness"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["Liveness"];
         };
+      };
     };
-    "system.openapi.get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The canonical Core OpenAPI document. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/yaml": string;
-                };
-            };
-        };
+  };
+  "health.ready": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "example.check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description PostgreSQL and object storage are ready. */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description PostgreSQL is reachable. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExampleCheck"];
-                };
-            };
-            /** @description PostgreSQL is unavailable. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["Readiness"];
         };
+      };
+      /** @description One or more dependencies are unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Readiness"];
+        };
+      };
     };
+  };
+  "system.openapi.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The canonical Core OpenAPI document. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/yaml": string;
+        };
+      };
+    };
+  };
+  "observability.metrics.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Prometheus text exposition for Core. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/plain": string;
+        };
+      };
+    };
+  };
+  "example.check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description PostgreSQL is reachable. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExampleCheck"];
+        };
+      };
+      /** @description PostgreSQL is unavailable. */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  "auth.login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LoginRequest"];
+      };
+    };
+    responses: {
+      /** @description A revocable browser session was created. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LoginResult"];
+        };
+      };
+      401: components["responses"]["Error"];
+    };
+  };
+  "auth.logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Session revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["Error"];
+    };
+  };
+  "auth.me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current authenticated identity. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Identity"];
+        };
+      };
+      401: components["responses"]["Error"];
+    };
+  };
+  "auth.tokens.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Token metadata without secrets. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            items: components["schemas"]["AccessToken"][];
+          };
+        };
+      };
+    };
+  };
+  "auth.tokens.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Token secret returned once. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IssuedToken"];
+        };
+      };
+    };
+  };
+  "auth.tokens.revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: components["parameters"]["TokenId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Token revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "projects.list": {
+    parameters: {
+      query?: {
+        include_archived?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Visible collaborative projects. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectList"];
+        };
+      };
+    };
+  };
+  "projects.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateProjectRequest"];
+      };
+    };
+    responses: {
+      /** @description Project created with the caller as owner. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Project"];
+        };
+      };
+    };
+  };
+  "projects.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Project"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "projects.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateProjectRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated project. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Project"];
+        };
+      };
+    };
+  };
+  "projects.members.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project team. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemberList"];
+        };
+      };
+    };
+  };
+  "projects.members.upsert": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        userId: components["parameters"]["UserId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateProjectMemberRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated collaborator. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectMember"];
+        };
+      };
+    };
+  };
+  "projects.members.remove": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        userId: components["parameters"]["UserId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Collaborator removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "projects.permissions.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Effective role and permission names. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectPermissions"];
+        };
+      };
+    };
+  };
+  "settings.types.list": {
+    parameters: {
+      query: {
+        scope: components["schemas"]["SettingScope"];
+        project_id?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Module-owned configuration type descriptors. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SettingTypeList"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "settings.system.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redacted system setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "settings.system.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Setting deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "settings.system.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateSettingRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated redacted setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+    };
+  };
+  "settings.system.test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Safe per-check connection-test result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectionTestResult"];
+        };
+      };
+    };
+  };
+  "settings.projects.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redacted project setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "settings.projects.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Setting deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "settings.projects.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateSettingRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated redacted setting. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Setting"];
+        };
+      };
+    };
+  };
+  "settings.projects.test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["TypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Safe per-check connection-test result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectionTestResult"];
+        };
+      };
+    };
+  };
+  "jobs.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Existing job returned for the same idempotency key. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+      /** @description Job created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+    };
+  };
+  "jobs.claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ClaimJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Claimed job or an empty poll result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobClaim"];
+        };
+      };
+    };
+  };
+  "jobs.workers.heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["WorkerHeartbeatRequest"];
+      };
+    };
+    responses: {
+      /** @description Heartbeat recorded. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "jobs.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Authoritative job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "jobs.cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Updated job state or cancellation signal. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+    };
+  };
+  "jobs.lease.renew": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenewJobLeaseRequest"];
+      };
+    };
+    responses: {
+      /** @description Renewed lease and current job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "jobs.logs.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Ordered job log entries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobLogList"];
+        };
+      };
+    };
+  };
+  "jobs.logs.append": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AppendJobLogRequest"];
+      };
+    };
+    responses: {
+      /** @description Log appended. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JobLog"];
+        };
+      };
+    };
+  };
+  "jobs.complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompleteJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Terminal job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+    };
+  };
+  "jobs.fail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FailJobRequest"];
+      };
+    };
+    responses: {
+      /** @description Retried or terminal job state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Job"];
+        };
+      };
+    };
+  };
+  "events.test.emit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EmitTestEventRequest"];
+      };
+    };
+    responses: {
+      /** @description Test event committed to system_outbox. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventEnqueued"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "events.consumers.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deterministic consumer registry. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventConsumerList"];
+        };
+      };
+    };
+  };
+  "events.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Event envelope and all live/replay deliveries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OutboxEventState"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "events.replay": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        eventId: components["parameters"]["EventId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplayEventRequest"];
+      };
+    };
+    responses: {
+      /** @description Replay deliveries created with a fresh idempotency key. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventReplay"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "data.list": {
+    parameters: {
+      query?: {
+        type?: string;
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor-paginated object projections. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DataObjectPage"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "data.read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        objectId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Registry projection plus authoritative module content. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DataObjectRead"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "data.activity.list": {
+    parameters: {
+      query?: {
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor-paginated activity projections. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DataActivityPage"];
+        };
+      };
+    };
+  };
+  "data.context.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Formal project context only; pending proposals are excluded. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectContextList"];
+        };
+      };
+    };
+  };
+  "data.context.proposals.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Context proposals visible to collaborators who may propose. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextProposalList"];
+        };
+      };
+    };
+  };
+  "data.context.proposals.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateContextProposalRequest"];
+      };
+    };
+    responses: {
+      /** @description Pending context proposal. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextProposal"];
+        };
+      };
+    };
+  };
+  "data.context.proposals.review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        proposalId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReviewContextProposalRequest"];
+      };
+    };
+    responses: {
+      /** @description Reviewed proposal; acceptance also creates formal context. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextProposal"];
+        };
+      };
+      403: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "data.home.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Typed empty sections ready for future domain contributors. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HomeAggregate"];
+        };
+      };
+    };
+  };
+  "audit.events.list": {
+    parameters: {
+      query?: {
+        project_id?: string;
+        actor_id?: string;
+        category?: string;
+        action?: string;
+        outcome?: "success" | "denied" | "error";
+        source?: string;
+        request_id?: string;
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor-paginated audit events. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditEventPage"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "audit.events.record": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RecordAuditEventRequest"];
+      };
+    };
+    responses: {
+      /** @description Immutable audit event. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditEvent"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
 }

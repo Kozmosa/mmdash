@@ -28,3 +28,19 @@ state directly.
 Shared platform primitives remain under `backend/internal/platform`. Public
 `backend/pkg` is reserved for types proven stable enough for external Go
 components; stage 3.7 exports none prematurely.
+
+Durable module events follow a second explicit path:
+
+```text
+module transaction
+  -> system_outbox
+  -> leased Outbox publication
+  -> one durable delivery per matching Event Bus consumer
+  -> consumer handler
+  -> consumption idempotency or retry/failure record
+```
+
+Publication and delivery use independent PostgreSQL leases with
+`FOR UPDATE SKIP LOCKED`, allowing multiple Core processes without duplicate
+claims. Explicit replay preserves the original envelope and creates a new
+delivery key.

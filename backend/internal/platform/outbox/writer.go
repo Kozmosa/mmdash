@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
@@ -14,13 +16,13 @@ import (
 
 // Event is the stable system_outbox envelope.
 type Event struct {
-	Actor         interface{}
+	Actor         map[string]string
 	CausationID   string
 	CorrelationID string
 	EventID       string
 	EventType     string
 	OccurredAt    time.Time
-	Payload       interface{}
+	Payload       map[string]interface{}
 	Producer      string
 	ProjectID     string
 	SchemaVersion int
@@ -52,6 +54,30 @@ func (writer Writer) Write(ctx context.Context, tx transaction.Tx, event Event) 
 	}
 	if event.OccurredAt.IsZero() {
 		event.OccurredAt = writer.Clock.Now().UTC()
+	}
+	if len(strings.TrimSpace(event.Producer)) > 100 {
+		return Event{}, fmt.Errorf("outbox producer is too long")
+	}
+	envelope := contract.EventEnvelope{
+		Actor:         event.Actor,
+		EventID:       event.EventID,
+		EventType:     event.EventType,
+		OccurredAt:    event.OccurredAt,
+		Payload:       event.Payload,
+		Producer:      event.Producer,
+		SchemaVersion: int64(event.SchemaVersion),
+	}
+	if event.ProjectID != "" {
+		envelope.ProjectID = &event.ProjectID
+	}
+	if event.CorrelationID != "" {
+		envelope.CorrelationID = &event.CorrelationID
+	}
+	if event.CausationID != "" {
+		envelope.CausationID = &event.CausationID
+	}
+	if err := envelope.Validate(); err != nil {
+		return Event{}, fmt.Errorf("validate outbox event envelope: %w", err)
 	}
 	actor, err := marshalOptional(event.Actor)
 	if err != nil {

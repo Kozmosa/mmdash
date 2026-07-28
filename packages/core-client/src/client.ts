@@ -1,6 +1,7 @@
 import type { components } from "./generated/core.js";
 
 export type CoreRequestContext = {
+  accessToken?: string;
   projectId?: string;
   requestId: string;
   userId?: string;
@@ -49,6 +50,381 @@ export class CoreClient {
     );
   }
 
+  async login(
+    credentials: components["schemas"]["LoginRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["LoginResult"]> {
+    return this.request(
+      "/v1/auth/login",
+      {
+        body: credentials,
+        method: "POST",
+      },
+      context,
+    );
+  }
+
+  async logout(context: CoreRequestContext): Promise<void> {
+    return this.request("/v1/auth/logout", { method: "POST" }, context);
+  }
+
+  async currentIdentity(
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Identity"]> {
+    return this.request("/v1/auth/me", { method: "GET" }, context);
+  }
+
+  async listProjects(
+    context: CoreRequestContext,
+    includeArchived = false,
+  ): Promise<components["schemas"]["ProjectList"]> {
+    return this.request(
+      `/v1/projects?include_archived=${includeArchived}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createProject(
+    input: components["schemas"]["CreateProjectRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Project"]> {
+    return this.request(
+      "/v1/projects",
+      {
+        body: input,
+        method: "POST",
+      },
+      context,
+    );
+  }
+
+  async getProject(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Project"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateProject(
+    projectId: string,
+    input: components["schemas"]["UpdateProjectRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Project"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async listProjectMembers(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["MemberList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/members`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async upsertProjectMember(
+    projectId: string,
+    userId: string,
+    role: components["schemas"]["ProjectRole"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectMember"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+      { body: { role }, method: "PUT" },
+      context,
+    );
+  }
+
+  async removeProjectMember(
+    projectId: string,
+    userId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async getProjectPermissions(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectPermissions"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/permissions`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listSettingTypes(
+    scope: components["schemas"]["SettingScope"],
+    context: CoreRequestContext,
+    projectId?: string,
+  ): Promise<components["schemas"]["SettingTypeList"]> {
+    const query = new URLSearchParams({ scope });
+    if (projectId) {
+      query.set("project_id", projectId);
+    }
+    return this.request(
+      `/v1/settings/types?${query.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getSystemSetting(
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateSystemSetting(
+    typeKey: string,
+    input: components["schemas"]["UpdateSettingRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async deleteSystemSetting(
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async testSystemSetting(
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ConnectionTestResult"]> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}/test`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async getProjectSetting(
+    projectId: string,
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateProjectSetting(
+    projectId: string,
+    typeKey: string,
+    input: components["schemas"]["UpdateSettingRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async deleteProjectSetting(
+    projectId: string,
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async testProjectSetting(
+    projectId: string,
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ConnectionTestResult"]> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}/test`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async listDataObjects(
+    projectId: string,
+    context: CoreRequestContext,
+    options: { cursor?: string; limit?: number; type?: string } = {},
+  ): Promise<components["schemas"]["DataObjectPage"]> {
+    const query = new URLSearchParams();
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    if (options.type) query.set("type", options.type);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/objects${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async readDataObject(
+    projectId: string,
+    objectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["DataObjectRead"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/objects/${encodeURIComponent(objectId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listDataActivity(
+    projectId: string,
+    context: CoreRequestContext,
+    options: { cursor?: string; limit?: number } = {},
+  ): Promise<components["schemas"]["DataActivityPage"]> {
+    const query = new URLSearchParams();
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/activity${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listProjectContext(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectContextList"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listContextProposals(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ContextProposalList"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context/proposals`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createContextProposal(
+    projectId: string,
+    input: components["schemas"]["CreateContextProposalRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ContextProposal"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context/proposals`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async reviewContextProposal(
+    projectId: string,
+    proposalId: string,
+    input: components["schemas"]["ReviewContextProposalRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ContextProposal"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/context/proposals/${encodeURIComponent(proposalId)}/review`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async getProjectHome(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["HomeAggregate"]> {
+    return this.request(
+      `/v1/data/projects/${encodeURIComponent(projectId)}/home`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async recordAuditEvent(
+    input: components["schemas"]["RecordAuditEventRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["AuditEvent"]> {
+    return this.request(
+      "/v1/audit/events",
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async listAuditEvents(
+    context: CoreRequestContext,
+    options: {
+      action?: string;
+      actorId?: string;
+      category?: string;
+      cursor?: string;
+      limit?: number;
+      outcome?: "denied" | "error" | "success";
+      projectId?: string;
+      requestId?: string;
+      source?: string;
+    } = {},
+  ): Promise<components["schemas"]["AuditEventPage"]> {
+    const query = new URLSearchParams();
+    if (options.action) query.set("action", options.action);
+    if (options.actorId) query.set("actor_id", options.actorId);
+    if (options.category) query.set("category", options.category);
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    if (options.outcome) query.set("outcome", options.outcome);
+    if (options.projectId) query.set("project_id", options.projectId);
+    if (options.requestId) query.set("request_id", options.requestId);
+    if (options.source) query.set("source", options.source);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/audit/events${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
   async request<T>(
     path: string,
     options: CoreRequestOptions,
@@ -73,6 +449,9 @@ export class CoreClient {
     const headers = new Headers(options.headers);
     headers.set("accept", headers.get("accept") ?? "application/json");
     headers.set("x-request-id", context.requestId);
+    if (context.accessToken) {
+      headers.set("authorization", `Bearer ${context.accessToken}`);
+    }
     if (context.projectId) {
       headers.set("x-mmdash-project-id", context.projectId);
     }
