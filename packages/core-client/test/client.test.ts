@@ -54,10 +54,12 @@ describe("CoreClient", () => {
   });
 
   it("uses stable Data Hub list, read, and home routes", async () => {
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ items: [], has_more: false }), {
-        headers: { "content-type": "application/json" },
-      }),
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], has_more: false }), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
     );
     const client = new CoreClient("http://core.test", fetchImplementation);
     const context = { requestId: "request-1" };
@@ -78,10 +80,12 @@ describe("CoreClient", () => {
   });
 
   it("uses stable audit ingestion and search routes", async () => {
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ items: [], has_more: false }), {
-        headers: { "content-type": "application/json" },
-      }),
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], has_more: false }), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
     );
     const client = new CoreClient("http://core.test", fetchImplementation);
     const context = { requestId: "request-1" };
