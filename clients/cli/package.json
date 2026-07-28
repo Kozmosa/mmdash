@@ -22,7 +22,7 @@
     "provenance": true
   },
   "engines": {
-    "node": ">=20.9"
+    "node": ">=24"
   },
   "devDependencies": {
     "tsx": "^4.20.3",

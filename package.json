@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@11.9.0",
   "engines": {
-    "node": ">=20.9"
+    "node": ">=24"
   },
   "scripts": {
     "build": "pnpm build:ts && pnpm build:go && pnpm build:python",

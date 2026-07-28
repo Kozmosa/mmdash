@@ -46,7 +46,7 @@ pnpm --filter @mmdash/cli build
 pnpm --filter @mmdash/cli pack:check
 ```
 
-TypeScript emits portable ESM for Node.js 20.9 or newer. `package.json`
+TypeScript emits portable ESM for Node.js 24 or newer. `package.json`
 declares the `mmdash` bin entry and limits the npm tarball to `dist`, the
 package manifest, and README. `pack:check` builds and runs `pnpm pack --dry-run`
 without publishing.

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js 20.9 or newer and pnpm 11
+- Node.js 24 or newer and pnpm 11
 - Go 1.18 or newer (the modules remain buildable with Go 1.17 during bootstrap)
 - Python 3.11 or newer and uv
 - Docker Compose

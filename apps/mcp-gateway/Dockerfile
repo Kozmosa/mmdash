@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 RUN corepack enable
 WORKDIR /workspace
 
@@ -16,7 +16,7 @@ RUN pnpm --filter @mmdash/core-client build
 RUN pnpm --filter @mmdash/mcp-gateway build
 RUN pnpm --filter @mmdash/mcp-gateway deploy --prod /out
 
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /workspace/apps/mcp-gateway/dist ./dist
