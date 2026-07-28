@@ -1,0 +1,283 @@
+# mmdash v0.1 foundation handoff
+
+更新时间：2026-07-28  
+当前分支：`main`
+
+## 当前结论
+
+阶段 0 的 3.8–3.15 已实现，并且每个 3.x 节点都有独立提交。设计文档、
+Dockerfile 修复、可检索 API 文档和 3.15 验收脚本均已纳入版本控制。
+
+| 节点 | 提交 | 主要交付 |
+| --- | --- | --- |
+| 3.8 | `5e55cb2` | Auth、团队项目、成员、RBAC、Token 与 Web 项目流程 |
+| 3.9 | `af315e0` | 类型化设置、AES-GCM Secret、连接测试与设置页插槽 |
+| 3.10 | `9bea2f6` | OpenAPI/Schema 生成、兼容性基线、Mock 与模块脚手架 |
+| 3.11 | `e548462` | PostgreSQL Job、租约、心跳、重试、取消与 Python Worker |
+| 3.12 | `81cbb00` | Transactional Outbox、消费者投递、幂等与显式重放 |
+| 3.13 | `940ddcd` | Data Hub 对象注册、时间线、上下文提案与 Home 聚合 |
+| 3.14 | `4d0199e` | 追加式 Audit、脱敏日志、Prometheus 指标与版本信息 |
+| 3.15 | `7b7d52f` | 全链路 smoke、Worker 容器、Compose 集成与静态验收 |
+
+`docs/design/v0.1/README.md` 是当前设计文档索引。旧
+`mmdash设计文档v0_1.md` 已由作者提供的新版本替代/重命名。
+
+## 已完成的开发环境验收
+
+- `node scripts/check-stage-3.15.mjs`
+- Node 语法检查
+- OpenAPI 与 JSON Schema 契约检查
+- 契约兼容性基线检查
+- API 目录覆盖检查：3 份契约、83 个 operation
+- Caddyfile 入口不变量检查
+- `go test ./...`
+- `go vet ./...`
+- Python Worker：10 个测试通过
+- Ruff lint 与 format check
+
+本机 `node_modules` 曾因中断的 pnpm 安装出现 workspace link/二进制缺失。
+如需执行完整 TypeScript 测试，请先重新运行
+`pnpm install --frozen-lockfile`，不要继续复用损坏的安装目录。
+
+## API 文档入口
+
+从 `docs/api/README.md` 开始检索：
+
+- `docs/api/endpoints.md`：全部 HTTP operation 的可搜索目录；
+- `docs/api/auth-projects.md`：Auth、Project、RBAC 与 Token；
+- `docs/api/settings.md`：类型化配置、Secret 和连接测试；
+- `docs/api/jobs.md`：Job/Worker 协议；
+- `docs/api/events.md`：Outbox、消费者和重放；
+- `docs/api/datahub.md`：Object Registry、Timeline、Context 与聚合；
+- `docs/api/audit-observability.md`：Audit、request ID、日志和指标；
+- `docs/api/mcp-tools.md`：MCP Tool；
+- `docs/api/contracts.md`：契约生成和兼容性规则。
+
+修改 API 后执行：
+
+```powershell
+pnpm.cmd contracts:generate
+pnpm.cmd contracts:check
+pnpm.cmd api:check
+```
+
+## Docker 验收状态与阻塞证据
+
+3.15 提交之后才开始 Docker 测试，符合阶段约束。测试中：
+
+1. 修复了本机卡死的 Docker Desktop/WSL2 engine，`docker version` 已能返回
+   Docker Desktop 4.12.0 / Engine 20.10.17；
+2. Go Core/Migrate 镜像成功构建；
+3. 本机 daemon 配置的 `https://docker.1ms.run` 在读取
+   `node:24-alpine` blob 时返回 `403 Forbidden`；
+4. 显式尝试 DaoCloud 镜像超过 60 秒无输出，已按要求停止，不再消耗时间轮询；
+5. 因基础镜像未就绪，完整 Compose 启动和 `pnpm smoke` 尚未完成。
+
+当前 Compose 仅显示已退出的 `mmdash-postgres-1` 与 `mmdash-minio-1`，
+没有运行中的本项目容器。停止的镜像拉取没有创建仓库临时文件。
+
+## 由用户执行的 Docker 测试流程
+
+### 1. 修复基础镜像下载
+
+在 Docker Desktop → Settings → Docker Engine 中移除当前返回 403 的
+`https://docker.1ms.run`（以及已知失败的 `docker.1panel.live`），或者替换为
+你已经验证可用的 registry mirror，然后 Apply & Restart。
+
+优先使用可用镜像。没有可用镜像时，再在 Docker Desktop → Settings →
+Resources → Proxies 中配置：
+
+```text
+HTTP proxy:  http://127.0.0.1:22334
+HTTPS proxy: http://127.0.0.1:22334
+```
+
+若使用代理回退，Docker Engine JSON 中不要保留一个始终返回 403 的 mirror，
+否则请求仍会先被该 mirror 阻断。
+
+验证基础镜像：
+
+```powershell
+docker version
+docker pull node:24-alpine
+docker pull python:3.12-slim
+docker pull alpine:3.20
+docker pull postgres:16-alpine
+docker pull minio/minio:latest
+```
+
+### 2. 构建并启动整栈
+
+从 `I:\Project\mmdash` 执行：
+
+```powershell
+docker compose -f deploy/compose/compose.yaml build core migrate web-bff web mcp-gateway
+docker compose -f deploy/compose/compose.yaml build worker
+docker compose -f deploy/compose/compose.yaml up -d
+docker compose -f deploy/compose/compose.yaml ps
+```
+
+所有长期服务应为 `running`/`healthy`，`migrate` 应为成功退出。
+
+### 3. 执行 3.15 全链路 smoke
+
+```powershell
+$env:MMDASH_SMOKE_WORKER_MODE = "docker"
+pnpm.cmd smoke
+```
+
+如果本机 pnpm 安装仍损坏，但 `clients/cli/dist/main.js` 已存在，可直接执行：
+
+```powershell
+$env:MMDASH_SMOKE_WORKER_MODE = "docker"
+node scripts/smoke.mjs
+```
+
+成功结果会输出 JSON，包含 `status: "passed"`、`project_id`、`job_id`、
+`event_id` 和 `audit_events`。该 smoke 覆盖：
+
+- Web → BFF → Core → PostgreSQL；
+- 浏览器登录、团队项目创建和 Home 聚合；
+- Core 签发 Worker Token，Worker 领取并完成 `system.test` Job；
+- Outbox 发布和消费者成功投递；
+- Data Hub Project 对象与权威内容读取；
+- 跨服务 `request_id` 及可查询 Audit；
+- Core metrics、MCP health 和 CLI shell。
+
+失败时收集：
+
+```powershell
+docker compose -f deploy/compose/compose.yaml ps
+docker compose -f deploy/compose/compose.yaml logs --tail 200 core web-bff web mcp-gateway migrate
+```
+
+测试后保留数据卷、只停止容器：
+
+```powershell
+docker compose -f deploy/compose/compose.yaml down
+Remove-Item Env:MMDASH_SMOKE_WORKER_MODE -ErrorAction SilentlyContinue
+```
+
+不要执行 `down -v`，除非明确决定删除本地 PostgreSQL/MinIO 测试数据。
+
+## 拉起开发环境
+
+### 工具和依赖
+
+- Node.js 24（仓库 `.node-version`）；
+- pnpm 11.9.0（根 `package.json#packageManager`）；
+- Go 1.18+（当前模块仍兼容 Go 1.17）；
+- Python 3.11+、uv；
+- Docker Compose。
+
+```powershell
+Set-Location I:\Project\mmdash
+corepack enable
+pnpm.cmd install --frozen-lockfile
+$env:UV_CACHE_DIR = "I:\Project\mmdash\.uv-cache"
+uv sync --all-packages
+```
+
+只拉起开发依赖：
+
+```powershell
+docker compose -f deploy/compose/compose.yaml up -d postgres minio
+docker compose -f deploy/compose/compose.yaml run --rm migrate
+```
+
+然后按以下文档在独立终端启动进程：
+
+- Core：`docs/development/core.md`
+- Web BFF：`docs/development/web-bff.md`
+- Web：`docs/development/web.md`
+- MCP Gateway：`docs/development/mcp-gateway.md`
+- Worker：`docs/development/worker.md`
+- CLI：`docs/development/cli.md`
+
+常用入口：
+
+```powershell
+pnpm.cmd --filter @mmdash/web-bff dev
+pnpm.cmd --filter @mmdash/web dev
+pnpm.cmd --filter @mmdash/mcp-gateway dev
+pnpm.cmd --filter @mmdash/cli dev -- --version
+uv run --offline --package mmdash-worker mmdash-worker --status
+```
+
+本地进程使用 `localhost` 地址；`.env.example` 中的 `postgres`、`minio`、
+`core` 主机名是 Compose 网络内地址，直接本地运行时应分别改成
+`localhost:5432`、`localhost:9000`、`localhost:8080`。
+
+## 后续开发注意事项
+
+- 不要在下载等待上浪费token降低轮询频次，优先使用镜像而非代理
+- 在commit前再进行docker测试，其他时候进行开发环境测试，数据库和redis的容器可提前拉起用于测试
+- 当前阶段没有 Redis 服务；Job 使用 PostgreSQL
+  `FOR UPDATE SKIP LOCKED`。在后续模块正式声明 Redis 前，不要增加隐式依赖。
+- mmdash 是团队协作平台。项目成员、角色、权限和审计必须保持项目边界，
+  不要退化为单用户本地工具模型。
+- Core 是权威业务状态唯一所有者；BFF、MCP、Worker 不得直连业务表。
+- 业务写入与 Outbox 必须在同一事务内；Worker 结果通过 Core Job API 回传。
+- 新增/修改 HTTP API 时同步 OpenAPI、生成客户端、`docs/api/endpoints.md`
+  和专题 API 文档。
+
+## PR 文案（3.1–3.7）
+
+推荐修正标题中的拼写为：
+
+```text
+refactor(v0.1): Establish monorepo baseline and complete platform foundation
+```
+
+### 中文
+
+目标 3.1–3.7 已完成，包括：
+
+- 建立与架构设计一致的 pnpm、Go 和 uv Monorepo 工程基座；
+- 配置统一构建、测试、Lint、格式化、Commit 校验和 Node 24 CI；
+- 完成以 `mmdash.com` 为暂定域名的根目录 Caddyfile，覆盖 HTTPS、
+  Web/BFF/MCP/Box 路由、SSE、WebSocket、安全 Header 和访问日志；
+- 建立 Web 应用壳，包括登录、项目列表、项目工作区、七项一级导航、
+  用户/项目上下文、通用状态与共享 UI 组件；
+- 建立 Fastify Web BFF，包括浏览器认证、Core OpenAPI Client、
+  项目上下文、request ID、错误转换、流代理和页面聚合框架；
+- 建立 MCP Gateway，包括 Streamable HTTP、Session、CLI/Agent Token、
+  Tool 注册与校验、项目/Tool 权限、审计和测试 Tool；
+- 建立跨平台 CLI 工程壳和发布机制，提供 version、help、doctor、
+  配置、日志和结构化错误输出；
+- 建立 Go Core Server 基座，包括配置、模块化 HTTP Server、PostgreSQL、
+  事务、Migration、请求上下文、统一错误、JSON 日志、MinIO、健康检查、
+  优雅退出和领域模块模板；
+- 提供 Docker Compose、本地开发脚本、示例模块脚手架、开发文档和
+  Web → BFF → Core → PostgreSQL 的基础 smoke 验收。
+
+本 PR 只建立共享技术基座，不实现 Git、附件、Agent、模型、实验或论文等
+具体领域功能。
+
+### English
+
+Targets 3.1–3.7 have been completed, including:
+
+- established the pnpm, Go, and uv monorepo baseline defined by the architecture;
+- added unified build, test, lint, formatting, commit-message, and Node 24 CI gates;
+- added the root Caddyfile for the temporary `mmdash.com` domain, covering HTTPS,
+  Web/BFF/MCP/Box routing, SSE, WebSocket, security headers, and access logs;
+- created the Web shell with login, project list/workspace, seven primary
+  navigation items, user/project context, shared states, and reusable UI components;
+- created the Fastify Web BFF with browser authentication, the generated Core
+  client, project context, request IDs, error mapping, streaming proxies, and
+  page-aggregation foundations;
+- created the MCP Gateway with Streamable HTTP, sessions, CLI/Agent tokens,
+  tool registration and validation, project/tool authorization, audit hooks,
+  and a test tool;
+- created the cross-platform CLI shell and packaging flow with version, help,
+  doctor, configuration, logging, and structured error output;
+- created the Go Core Server foundation with configuration, modular HTTP
+  registration, PostgreSQL, transactions, migrations, request context,
+  standardized errors, JSON logging, MinIO initialization, health checks,
+  graceful shutdown, and domain-module templates;
+- added Docker Compose, local development scripts, module scaffolding,
+  developer documentation, and the baseline Web → BFF → Core → PostgreSQL smoke path.
+
+This PR establishes shared platform mechanisms only; it intentionally does not
+implement Git, attachments, Agent, model, experiment, or article domain features.
