@@ -3,6 +3,10 @@
 更新时间：2026-07-28  
 当前分支：`main`
 
+## 下一个待开发模块
+3.16 登录、注册与成员邀请闭环
+
+
 ## 当前结论
 
 阶段 0 的 3.8–3.15 已实现，并且每个 3.x 节点都有独立提交。设计文档、
@@ -212,64 +216,7 @@ uv run --offline --package mmdash-worker mmdash-worker --status
 - 业务写入与 Outbox 必须在同一事务内；Worker 结果通过 Core Job API 回传。
 - 新增/修改 HTTP API 时同步 OpenAPI、生成客户端、`docs/api/endpoints.md`
   和专题 API 文档。
+- 务必告知开发者测试账号和密码
+  - 账号：admin@mmdash.local
+  - 密码：mmdash-local-admin
 
-## PR 文案（3.1–3.7）
-
-推荐修正标题中的拼写为：
-
-```text
-refactor(v0.1): Establish monorepo baseline and complete platform foundation
-```
-
-### 中文
-
-目标 3.1–3.7 已完成，包括：
-
-- 建立与架构设计一致的 pnpm、Go 和 uv Monorepo 工程基座；
-- 配置统一构建、测试、Lint、格式化、Commit 校验和 Node 24 CI；
-- 完成以 `mmdash.com` 为暂定域名的根目录 Caddyfile，覆盖 HTTPS、
-  Web/BFF/MCP/Box 路由、SSE、WebSocket、安全 Header 和访问日志；
-- 建立 Web 应用壳，包括登录、项目列表、项目工作区、七项一级导航、
-  用户/项目上下文、通用状态与共享 UI 组件；
-- 建立 Fastify Web BFF，包括浏览器认证、Core OpenAPI Client、
-  项目上下文、request ID、错误转换、流代理和页面聚合框架；
-- 建立 MCP Gateway，包括 Streamable HTTP、Session、CLI/Agent Token、
-  Tool 注册与校验、项目/Tool 权限、审计和测试 Tool；
-- 建立跨平台 CLI 工程壳和发布机制，提供 version、help、doctor、
-  配置、日志和结构化错误输出；
-- 建立 Go Core Server 基座，包括配置、模块化 HTTP Server、PostgreSQL、
-  事务、Migration、请求上下文、统一错误、JSON 日志、MinIO、健康检查、
-  优雅退出和领域模块模板；
-- 提供 Docker Compose、本地开发脚本、示例模块脚手架、开发文档和
-  Web → BFF → Core → PostgreSQL 的基础 smoke 验收。
-
-本 PR 只建立共享技术基座，不实现 Git、附件、Agent、模型、实验或论文等
-具体领域功能。
-
-### English
-
-Targets 3.1–3.7 have been completed, including:
-
-- established the pnpm, Go, and uv monorepo baseline defined by the architecture;
-- added unified build, test, lint, formatting, commit-message, and Node 24 CI gates;
-- added the root Caddyfile for the temporary `mmdash.com` domain, covering HTTPS,
-  Web/BFF/MCP/Box routing, SSE, WebSocket, security headers, and access logs;
-- created the Web shell with login, project list/workspace, seven primary
-  navigation items, user/project context, shared states, and reusable UI components;
-- created the Fastify Web BFF with browser authentication, the generated Core
-  client, project context, request IDs, error mapping, streaming proxies, and
-  page-aggregation foundations;
-- created the MCP Gateway with Streamable HTTP, sessions, CLI/Agent tokens,
-  tool registration and validation, project/tool authorization, audit hooks,
-  and a test tool;
-- created the cross-platform CLI shell and packaging flow with version, help,
-  doctor, configuration, logging, and structured error output;
-- created the Go Core Server foundation with configuration, modular HTTP
-  registration, PostgreSQL, transactions, migrations, request context,
-  standardized errors, JSON logging, MinIO initialization, health checks,
-  graceful shutdown, and domain-module templates;
-- added Docker Compose, local development scripts, module scaffolding,
-  developer documentation, and the baseline Web → BFF → Core → PostgreSQL smoke path.
-
-This PR establishes shared platform mechanisms only; it intentionally does not
-implement Git, attachments, Agent, model, experiment, or article domain features.
