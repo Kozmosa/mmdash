@@ -155,6 +155,21 @@ services:
     ports:
       - "3002:3002"
 
+  worker:
+    profiles: ["worker"]
+    build:
+      context: ../..
+      dockerfile: workers/mmdash-worker/Dockerfile
+    environment:
+      MMDASH_CORE_URL: http://core:8080
+      MMDASH_WORKER_API_TOKEN: ${MMDASH_WORKER_API_TOKEN:-}
+      MMDASH_WORKER_ID: ${MMDASH_WORKER_ID:-mmdash-worker-1}
+      MMDASH_WORKER_LEASE_SECONDS: ${MMDASH_WORKER_LEASE_SECONDS:-60}
+      MMDASH_WORKER_POLL_SECONDS: ${MMDASH_WORKER_POLL_SECONDS:-2}
+    depends_on:
+      core:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   minio-data:

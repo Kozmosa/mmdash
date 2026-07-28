@@ -70,9 +70,7 @@ class FakeClient:
 
 
 def test_run_once_heartbeats_claims_dispatches_and_completes() -> None:
-    client = FakeClient(
-        {"id": "job-1", "job_type": "system.test", "payload": {"value": 42}}
-    )
+    client = FakeClient({"id": "job-1", "job_type": "system.test", "payload": {"value": 42}})
     runtime = WorkerRuntime(
         client,
         baseline_registry(),
@@ -113,9 +111,7 @@ def test_safe_handler_failure_is_submitted_with_retry_policy() -> None:
         )
 
     registry.register("system.retry", fail_handler)
-    client = FakeClient(
-        {"id": "job-2", "job_type": "system.retry", "payload": {}}
-    )
+    client = FakeClient({"id": "job-2", "job_type": "system.retry", "payload": {}})
     runtime = WorkerRuntime(
         client,
         registry,
