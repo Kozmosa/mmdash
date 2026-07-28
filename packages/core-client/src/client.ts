@@ -169,6 +169,116 @@ export class CoreClient {
     );
   }
 
+  async listSettingTypes(
+    scope: components["schemas"]["SettingScope"],
+    context: CoreRequestContext,
+    projectId?: string,
+  ): Promise<components["schemas"]["SettingTypeList"]> {
+    const query = new URLSearchParams({ scope });
+    if (projectId) {
+      query.set("project_id", projectId);
+    }
+    return this.request(
+      `/v1/settings/types?${query.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getSystemSetting(
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateSystemSetting(
+    typeKey: string,
+    input: components["schemas"]["UpdateSettingRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async deleteSystemSetting(
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async testSystemSetting(
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ConnectionTestResult"]> {
+    return this.request(
+      `/v1/settings/system/${encodeURIComponent(typeKey)}/test`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async getProjectSetting(
+    projectId: string,
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateProjectSetting(
+    projectId: string,
+    typeKey: string,
+    input: components["schemas"]["UpdateSettingRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Setting"]> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async deleteProjectSetting(
+    projectId: string,
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async testProjectSetting(
+    projectId: string,
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ConnectionTestResult"]> {
+    return this.request(
+      `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}/test`,
+      { method: "POST" },
+      context,
+    );
+  }
+
   async request<T>(
     path: string,
     options: CoreRequestOptions,

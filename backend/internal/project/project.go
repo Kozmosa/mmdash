@@ -27,11 +27,13 @@ const (
 type Permission string
 
 const (
-	PermissionRead          Permission = "project.read"
-	PermissionUpdate        Permission = "project.update"
-	PermissionArchive       Permission = "project.archive"
-	PermissionMembersManage Permission = "project.members.manage"
-	PermissionTokensManage  Permission = "project.tokens.manage"
+	PermissionRead           Permission = "project.read"
+	PermissionUpdate         Permission = "project.update"
+	PermissionArchive        Permission = "project.archive"
+	PermissionMembersManage  Permission = "project.members.manage"
+	PermissionSettingsManage Permission = "project.settings.manage"
+	PermissionSettingsRead   Permission = "project.settings.read"
+	PermissionTokensManage   Permission = "project.tokens.manage"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -40,18 +42,22 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionUpdate,
 		PermissionArchive,
 		PermissionMembersManage,
+		PermissionSettingsManage,
+		PermissionSettingsRead,
 		PermissionTokensManage,
 	},
 	RoleMaintainer: {
 		PermissionRead,
 		PermissionUpdate,
 		PermissionMembersManage,
+		PermissionSettingsManage,
+		PermissionSettingsRead,
 		PermissionTokensManage,
 	},
-	RoleEditor: {PermissionRead, PermissionUpdate},
-	RoleViewer: {PermissionRead},
-	RoleAgent:  {PermissionRead},
-	RoleBox:    {PermissionRead},
+	RoleEditor: {PermissionRead, PermissionUpdate, PermissionSettingsRead},
+	RoleViewer: {PermissionRead, PermissionSettingsRead},
+	RoleAgent:  {PermissionRead, PermissionSettingsRead},
+	RoleBox:    {PermissionRead, PermissionSettingsRead},
 }
 
 // Project is the authoritative project record.
@@ -273,6 +279,20 @@ func (service Service) AuthorizeTokenManagement(
 	projectID string,
 ) error {
 	return service.Authorize(ctx, identity, projectID, PermissionTokensManage)
+}
+
+// AuthorizeSettings lets Settings enforce project scope without owning RBAC.
+func (service Service) AuthorizeSettings(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	manage bool,
+) error {
+	permission := PermissionSettingsRead
+	if manage {
+		permission = PermissionSettingsManage
+	}
+	return service.Authorize(ctx, identity, projectID, permission)
 }
 
 var (

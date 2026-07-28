@@ -19,6 +19,8 @@ tags:
     description: Users, sessions, and revocable access credentials.
   - name: Projects
     description: Collaborative projects, membership, roles, and permissions.
+  - name: Settings
+    description: Typed system/project configuration, redacted secrets, and connection tests.
 paths:
   /health/live:
     get:
@@ -306,6 +308,141 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectPermissions"
+  /v1/settings/types:
+    get:
+      tags: [Settings]
+      summary: List registered configuration types for a scope
+      operationId: settings.types.list
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/SettingScope"
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Module-owned configuration type descriptors.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingTypeList"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/settings/system/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted system setting
+      operationId: settings.system.get
+      responses:
+        "200":
+          description: Redacted system setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Settings]
+      summary: Update a system setting
+      operationId: settings.system.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a system setting
+      operationId: settings.system.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /v1/settings/system/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved system configuration
+      operationId: settings.system.test
+      responses:
+        "200":
+          description: Safe per-check connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTestResult"
+  /v1/settings/projects/{projectId}/{typeKey}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    get:
+      tags: [Settings]
+      summary: Read a redacted project setting
+      operationId: settings.projects.get
+      responses:
+        "200":
+          description: Redacted project setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Settings]
+      summary: Update a project setting
+      operationId: settings.projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingRequest"
+      responses:
+        "200":
+          description: Updated redacted setting.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Setting"
+    delete:
+      tags: [Settings]
+      summary: Delete a project setting
+      operationId: settings.projects.delete
+      responses:
+        "204":
+          description: Setting deleted.
+  /v1/settings/projects/{projectId}/{typeKey}/test:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/TypeKey"
+    post:
+      tags: [Settings]
+      summary: Test a saved project configuration
+      operationId: settings.projects.test
+      responses:
+        "200":
+          description: Safe per-check connection-test result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionTestResult"
 components:
   securitySchemes:
     bearerAuth:
@@ -334,6 +471,13 @@ components:
       schema:
         type: string
         format: uuid
+    TypeKey:
+      name: typeKey
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9_.-]*$"
   responses:
     Error:
       description: Stable Core error envelope.
@@ -345,7 +489,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [id, email, display_name, status, created_at]
+      required: [id, email, display_name, status, system_role, created_at]
       properties:
         id:
           type: string
@@ -358,6 +502,9 @@ components:
         status:
           type: string
           enum: [active, disabled]
+        system_role:
+          type: string
+          enum: [admin, member]
         created_at:
           type: string
           format: date-time
@@ -598,6 +745,136 @@ components:
           type: array
           items:
             type: string
+    SettingScope:
+      type: string
+      enum: [system, project]
+    SettingFieldKind:
+      type: string
+      enum: [boolean, number, secret, select, string, url]
+    SettingFieldDefinition:
+      type: object
+      additionalProperties: false
+      required: [key, kind, label, required]
+      properties:
+        key:
+          type: string
+        kind:
+          $ref: "#/components/schemas/SettingFieldKind"
+        label:
+          type: string
+        description:
+          type: string
+        required:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+    SettingType:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - owner
+        - title
+        - description
+        - scopes
+        - fields
+        - order
+        - test_supported
+      properties:
+        key:
+          type: string
+        owner:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettingScope"
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettingFieldDefinition"
+        order:
+          type: integer
+        test_supported:
+          type: boolean
+    SettingTypeList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SettingType"
+    SettingValues:
+      type: object
+      additionalProperties: true
+      description: |
+        Type-validated values. Secret fields are returned as `********`;
+        sending that sentinel preserves the existing encrypted value.
+    UpdateSettingRequest:
+      type: object
+      additionalProperties: false
+      required: [values]
+      properties:
+        values:
+          $ref: "#/components/schemas/SettingValues"
+    Setting:
+      type: object
+      additionalProperties: false
+      required:
+        [scope, scope_id, type_key, values, version, updated_by, updated_at]
+      properties:
+        scope:
+          $ref: "#/components/schemas/SettingScope"
+        scope_id:
+          type: string
+        type_key:
+          type: string
+        values:
+          $ref: "#/components/schemas/SettingValues"
+        version:
+          type: integer
+          format: int64
+        updated_by:
+          type: string
+          format: uuid
+        updated_at:
+          type: string
+          format: date-time
+    ConnectionCheck:
+      type: object
+      additionalProperties: false
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [passed, failed]
+        message:
+          type: string
+    ConnectionTestResult:
+      type: object
+      additionalProperties: false
+      required: [status, checked_at, checks]
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, unsupported]
+        checked_at:
+          type: string
+          format: date-time
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectionCheck"
     Liveness:
       type: object
       additionalProperties: false

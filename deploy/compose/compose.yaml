@@ -63,6 +63,7 @@ services:
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@mmdash.local}
       AUTH_BOOTSTRAP_DISPLAY_NAME: ${AUTH_BOOTSTRAP_DISPLAY_NAME:-mmdash Admin}
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-mmdash-local-admin}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-development-settings-encryption-key-change-me}
       DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
       DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
       DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}

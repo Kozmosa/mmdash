@@ -40,6 +40,7 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `AUTH_BOOTSTRAP_PASSWORD`     | `mmdash-local-admin`          | First local account password; change outside local development |
 | `AUTH_JWT_SECRET`             | local-only fallback           | HMAC key for browser session JWTs                              |
 | `AUTH_SESSION_TTL`            | `24h`                         | Browser session lifetime                                       |
+| `SETTINGS_ENCRYPTION_KEY`     | local-only fallback           | Stable key material for AES-256-GCM setting secrets            |
 
 Configuration validates all values before opening listeners. JSON logging
 redacts fields whose names contain token, secret, password, credential, or
@@ -95,6 +96,12 @@ outbox event atomically. Project updates and membership changes follow the same
 transactional outbox rule. See [Auth, Project, and RBAC](../api/auth-projects.md)
 for the route and permission lookup.
 
+Settings types are registered in code by their owning module. Settings stores
+public values separately from AES-GCM envelopes, exposes only redacted
+projections, and decrypts only for trusted in-process adapters. See
+[Settings and secret management](../api/settings.md) before adding a module
+configuration or connection test.
+
 ## Add a domain module
 
 Generate the reviewed cross-layer starter:
@@ -120,16 +127,17 @@ module plus its process boundary.
 
 ## Platform packages
 
-| Package                           | Boundary                                        |
-| --------------------------------- | ----------------------------------------------- |
-| `config`                          | Environment loading and validation              |
-| `database`                        | PostgreSQL pool and readiness                   |
-| `transaction`                     | Commit/rollback orchestration                   |
-| `migration`                       | Advisory-locked schema changes                  |
-| `identity`, `clock`, `pagination` | Stable shared primitives                        |
-| `apperror`, `httpx`, `requestctx` | HTTP contract and request context               |
-| `logging`                         | Redacted JSON events                            |
-| `objectstorage`                   | MinIO configuration, bucket identity, readiness |
-| `module`                          | Deterministic explicit registration             |
-| `outbox`                          | Same-transaction event envelope writes          |
-| `health`, `coreapp`, `server`     | HTTP composition and process lifecycle          |
+| Package                           | Boundary                                                   |
+| --------------------------------- | ---------------------------------------------------------- |
+| `config`                          | Environment loading and validation                         |
+| `database`                        | PostgreSQL pool and readiness                              |
+| `transaction`                     | Commit/rollback orchestration                              |
+| `migration`                       | Advisory-locked schema changes                             |
+| `identity`, `clock`, `pagination` | Stable shared primitives                                   |
+| `apperror`, `httpx`, `requestctx` | HTTP contract and request context                          |
+| `logging`                         | Redacted JSON events                                       |
+| `objectstorage`                   | MinIO configuration, bucket identity, readiness            |
+| `module`                          | Deterministic explicit registration                        |
+| `outbox`                          | Same-transaction event envelope writes                     |
+| `settings`                        | Typed configuration, encrypted secrets, permissions, tests |
+| `health`, `coreapp`, `server`     | HTTP composition and process lifecycle                     |

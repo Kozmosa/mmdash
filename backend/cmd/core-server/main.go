@@ -22,6 +22,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
+	"github.com/mmdash/mmdash/backend/internal/settings"
 )
 
 func main() {
@@ -90,6 +91,24 @@ func run(logger *logging.Logger) error {
 			Transaction: transactionManager,
 		},
 	}
+	settingsCodec, err := settings.NewSecretCodec(processConfig.Settings.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("initialize settings encryption: %w", err)
+	}
+	settingsRegistry := settings.NewRegistry()
+	settingsService := settings.Service{
+		Access:   settings.AccessPolicy{Projects: projectService},
+		Clock:    systemClock,
+		Codec:    settingsCodec,
+		Registry: settingsRegistry,
+		Store: settings.PostgresStore{
+			Clock:       systemClock,
+			DB:          db,
+			Generator:   idGenerator,
+			Outbox:      outboxWriter,
+			Transaction: transactionManager,
+		},
+	}
 	modules := module.NewRegistry()
 	authService.ProjectTokens = projectService
 	if err := modules.Register(auth.Module{Service: authService}); err != nil {
@@ -99,6 +118,12 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(project.Module{Service: *projectService}); err != nil {
+		return err
+	}
+	if err := modules.Register(settings.Module{
+		Auth:    authService,
+		Service: settingsService,
+	}); err != nil {
 		return err
 	}
 	handler := coreapp.NewHandler(coreapp.Options{

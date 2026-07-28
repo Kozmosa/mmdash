@@ -44,6 +44,17 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid object storage endpoint to fail")
 	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+		"SETTINGS_ENCRYPTION_KEY":   "too-short",
+	}))
+	if err == nil {
+		t.Fatal("expected short settings encryption key to fail")
+	}
 }
 
 func mapLookup(values map[string]string) LookupEnv {

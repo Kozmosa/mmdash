@@ -71,6 +71,37 @@ func TestOwnerCanManageTeamAndViewerCannot(t *testing.T) {
 	}
 }
 
+func TestSettingsPermissionsFollowCollaborationRoles(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}}
+	store := &storeStub{role: RoleMaintainer}
+	service := Service{Auth: authStub{identity: identity}, Store: store}
+	if err := service.AuthorizeSettings(
+		context.Background(),
+		identity,
+		"project-1",
+		true,
+	); err != nil {
+		t.Fatalf("maintainer should manage settings: %v", err)
+	}
+	store.role = RoleViewer
+	if err := service.AuthorizeSettings(
+		context.Background(),
+		identity,
+		"project-1",
+		false,
+	); err != nil {
+		t.Fatalf("viewer should read settings: %v", err)
+	}
+	if err := service.AuthorizeSettings(
+		context.Background(),
+		identity,
+		"project-1",
+		true,
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("viewer should not manage settings, got %v", err)
+	}
+}
+
 func TestProjectScopedTokenCannotCrossProjects(t *testing.T) {
 	identity := auth.Identity{
 		Kind:      "agent",
