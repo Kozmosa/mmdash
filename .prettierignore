@@ -1,4 +1,5 @@
 archive/
+Caddyfile
 docs/design/
 .next/
 dist/

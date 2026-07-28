@@ -13,6 +13,21 @@ machine-readable Core contract is
 3. Use `pnpm api:check` after editing the contract. CI rejects operations that
    are absent from the endpoint catalog.
 
+## Public ingress
+
+The repository-root `Caddyfile` is the authoritative public route map for
+`https://mmdash.com`:
+
+| Public path         | Upstream            | Traffic                                |
+| ------------------- | ------------------- | -------------------------------------- |
+| `/`                 | Web `:3000`         | Browser pages and static assets        |
+| `/api/*`            | Web BFF `:3001`     | Browser API, files, SSE, and WebSocket |
+| `/mcp` and `/mcp/*` | MCP Gateway `:3002` | Streamable HTTP MCP                    |
+| `/box` and `/box/*` | Core `:8080`        | Box control-plane traffic              |
+
+Caddy preserves these path prefixes. Reverse proxies support WebSocket upgrade
+and use low-latency response flushing for streams.
+
 ## Contract rules
 
 - Every operation has a stable, searchable `operationId`.

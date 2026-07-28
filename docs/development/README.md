@@ -27,6 +27,14 @@ The smoke test verifies Web → Web BFF → Core → PostgreSQL. Local ports are
 Web `3000`, BFF `3001`, Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and
 MinIO Console `9001`.
 
+The production-shaped public entry is defined only in the repository-root
+`Caddyfile`, using `mmdash.com`. If Caddy 2.10 or newer is installed, validate
+it without starting services:
+
+```bash
+caddy validate --config Caddyfile --adapter caddyfile
+```
+
 Run migrations independently with:
 
 ```bash
