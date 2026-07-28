@@ -33,7 +33,8 @@ export type ApiRequestOptions = Omit<RequestInit, "body"> & {
 export class ApiClient {
   constructor(
     private readonly baseUrl = "/api",
-    private readonly fetchImplementation: typeof fetch = fetch,
+    private readonly fetchImplementation: typeof fetch = (input, init) =>
+      globalThis.fetch(input, init),
   ) {}
 
   async request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
