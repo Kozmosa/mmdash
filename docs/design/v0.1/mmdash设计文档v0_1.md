@@ -1,0 +1,841 @@
+# 设计文档v0.1
+
+> 基于 2026-07-21 会议纪要、讨论笔记与 Excalidraw 架构图整理
+> 
+
+> **版本：** v0.1
+> 
+
+> **整理日期：** 2026-07-21
+> 
+
+mmdash Team
+
+2026-07-21
+
+
+# 文档说明
+
+| 项目 | 内容 |
+| --- | --- |
+| 文档版本 | Draft 0.1 |
+| 适用方案 | 2026-07-21 讨论版本 |
+| 文档目的 | 将会议中的零散需求、页面方案、数据流、论文与求解工作流整理为可开发、可评审的统一设计基线 |
+| 决策标记 | 已确定：会议已形成一致结论；首版暂定：可用于 MVP，但仍需实现验证；待确认：存在两个以上方案或尚未定义清楚 |
+
+# 1. 产品概述
+
+## 1.1 产品定位
+
+mmdash 是面向数学建模与类似研究型项目的协作工作台。它不试图重新实现 Codex、Claude Code、Hermes、Notion、Zotero 或完整 IDE，而是将这些外部工具接入同一个项目数据与版本体系，提供以下核心能力：
+
+1. 统一展示题目、模型、代码、论文、附件、上下文与实验结果。
+2. 通过接入ru外部agent，如 Hermes为mmdash提供agent能力，并借由驱动项目进度跟踪和其他辅助功能。
+3. 对 Notion 中的模型文档做可追溯的版本快照。
+4. 以 Markdown 为论文主编辑格式，自动生成符合规范的 LaTeX 初稿。
+5. 通过 mmdash MCP/CLI 让外部 coding agent 申请、执行并归档实验。
+6. 通过 Box Gateway 和无状态 sandbox 提供标准化运行环境。
+
+## 1.2 MVP 的核心闭环
+
+MVP 需要跑通以下闭环：
+
+**人为设定关键时间节点 → Agent 根据项目数据拆解与调整 TODO → 模型从 Notion 同步并形成版本 → coding agent 通过 MCP 申请 Exp ID 并运行实验 → 结果归档并展示 → 论文编辑器引用模型与结果 → Markdown commit 触发 LaTeX 生成 → 人工审阅后生成论文 Release。**
+
+## 1.3 设计原则
+
+| 原则 | 说明 |
+| --- | --- |
+| 外接优先 | Agent、文档编辑器、文献库和执行基础设施优先复用成熟工具，不在首版重复造轮子。 |
+| 数据中心化 | 页面和 Agent 都围绕统一的 Project Data Hub 工作，避免每个模块维护互不相通的数据副本。 |
+| 版本可追溯 | 模型、论文、代码和实验结果必须能定位到时间、作者、commit 与 Exp ID。 |
+| 执行无状态 | Gateway 与 sandbox 只执行预先准备好的代码，不在执行环境中修改项目代码或实验配置。 |
+| 人机边界明确 | 人负责关键时间节点、最终审阅和发布；Agent 负责拆解、建议、状态更新和重复性工作。 |
+| 先拼装后自研 | 第一版以可运行闭环为目标，基础设施优先集成 Hermes、Notion、Zotero、Git、E2B/本地 sandbox。 |
+
+# 2. 范围与非目标
+
+## 2.1 首版范围
+
+- 首页与项目仪表盘。
+- mmdash Agent chat页面。
+- 进度跟踪：关键节点、TODO、看板、日历/甘特式视图和提醒。
+- 模型版本管理：从 Notion 抓取、快照、diff 与版本查看。
+- 论文写作助手：块级 Markdown 编辑、Tag、附件库、Zotero 引用、LaTeX 生成和 Release。
+- 求解记录面板：实验列表、状态、日志、结果预览、每个结果对应的代码和结果文件可通过文件树和代码/结果查看。
+- mmdash MCP/CLI：数据读取与实验执行相关工具。
+- Box Gateway 与 local sandbox/E2B 的最小执行链路。
+
+## 2.2 首版明确不做
+
+- 不在 mmdash 内重新实现完整 coding agent。
+- 不把 Box 设计成长期保存旧状态、主动修改代码的开发机。
+- 不在求解面板内实现完整 VS Code 编辑能力；首版以实现文件数查看代码、日志和结果以及简单编辑为主。
+- 模型文档不替代 Notion 成为复杂模型文档编辑器。
+- 不自动将所有 Agent 对话写入项目全局上下文。
+- 不允许 MCP 直接执行任意 shell 字符串。
+
+# 3. 总体架构
+
+> **架构图：mmdash 总体逻辑架构**
+> 
+
+> 原始可编辑草图：[Excalidraw 架构图](https://excalidraw.com/#room=3045c62aef7f0eb1f8ee,IxBbmiKP_5kuXvjxt28JtA)
+> 
+
+*mmdash 总体逻辑架构*
+
+## 3.1 架构分层
+
+### 外部工具层
+
+**• Codex / Claude Code**：编写代码、调用mmdash stdiomcp设计实验。
+
+**• Hermes**：提供通用 Agent Runtime；
+
+**• Notion**：模型文档的主编辑环境。
+
+**• Zotero**：论文文献库和引用元数据来源。
+
+### mmdash 核心层
+
+**• Project Data Hub**：统一聚合项目数据。
+
+**• mmdash Agent Adapter**
+
+**• mmdash MCP Server/CLI**：为外部 AI 工具提供受控数据与实验接口。
+
+**• Experiment Service**：管理 Exp ID、状态机、代码版本和结果索引。
+
+**• 产品页面**：首页、进度、模型版本、论文和求解页面。
+
+### 执行层
+
+**• Box Gateway**：接收任务、调度执行环境、传输文件、回收日志和产物。
+
+**• Local Sandbox / E2B**：拉取干净代码并运行固定入口，不保留旧工作区状态。
+
+## 3.2 数据来源
+
+Project Data Hub 至少包含：
+
+| 数据类型 | 来源 | 主要消费者 |
+| --- | --- | --- |
+| 题目与附件 | 项目上传 | Agent、首页、论文、求解 |
+| 代码仓库 | Git repo | coding agent、求解面板、实验服务 |
+| 论文仓库/工作区 | article branch | 论文编辑器、LaTeX 生成器 |
+| 模型文档 | Notion | 模型版本页、论文参考区、Agent |
+| 文献 | Zotero | 论文编辑器、LaTeX 生成器 |
+| 附件注册表 | mmdash 生成 | 论文编辑器、Agent |
+| Agent 上下文 | Agent 私有上下文与显式写入的项目上下文 | Hermes、外部 AI |
+| 实验结果 | result branch 或对象存储 | 求解面板、论文参考区、Agent |
+
+## 3.3 使用Git管理数据
+
+- 使用git管理的数据包括：
+    - code 代码
+    - result 求解结果
+    - article 论文md初稿和对应版本的latex文件目录
+
+一个项目一个repo，拆开三个分支，在服务器上可通过worktree同时读写
+
+## 3.4 数据与上下文边界
+
+Agent 自己的完整会话历史不应自动进入 Project Data Hub。建议分为两层：
+
+**1. Agent 私有上下文**：由 Hermes 自行维护，允许包含临时推理、尝试和无效信息。
+
+**2. 项目显式上下文**：用户或 Agent 主动“提升”为项目结论的信息，带来源、作者和时间，可被其他 Agent 读取。
+
+首版 MCP 的“写入上下文”能力应只写入显式项目上下文，不接受无筛选的整段会话同步。
+
+# 4. 信息架构与页面设计
+
+## 4.1 全局导航
+
+建议一级导航固定为：
+
+1. 首页
+2. mmdash Agent
+3. 进度跟踪
+4. 模型版本
+5. 论文写作
+6. 求解记录
+7. 设置
+
+## 4.2 首页
+
+### 目标
+
+让团队在进入项目后立即看到题目、当前阶段、阻塞项和最新产物。
+
+### 页面内容
+
+- 题目卡片：题目标题、原始文件、关键约束。
+- 当前阶段：Agent 判断的项目阶段与人工可修正状态。
+- 关键节点：最近截止时间、是否延期。
+- TODO 摘要：今日、逾期、阻塞。
+- 模型摘要：最新 Notion 快照和最近变更。
+- 实验摘要：运行中、成功、失败、最新结果。
+- 论文摘要：章节完成度、未审阅段落、最近 Release。
+- Agent 状态：Hermes 连接状态、最近一次进度更新时间。
+
+### 首版验收
+
+- 能读取同一项目的关键数据，不依赖手工重复录入。
+- 点击任一摘要能跳转到对应页面和对象。
+
+## 4.3 mmdash Agent
+
+### 定位
+
+mmdash Agent 页面是用户在 mmdash 项目内与外部 Agent 进行持续会话、查看 Agent 执行过程并管理自动化任务的统一入口。
+
+mmdash 不实现独立的 Agent Runtime，而是通过 **mmdash Agent Adapter** 接入 Hermes 等外部 Agent。首版实现 **Hermes Adapter**，通过 Hermes API Server 创建和管理 Session、发送消息、接收流式回复，并触发后台 Agent Run。
+
+### 系统组成
+
+mmdash Agent 模块包含以下部分：
+
+- **mmdash Agent 页面**
+    - 面向用户的聊天页面。
+    - 展示会话历史、流式回复、工具调用过程和任务运行状态。
+    - 支持创建、切换、重命名、分叉和结束项目会话。
+    - 展示定时任务、进度追踪任务及最近执行结果。
+- **mmdash Agent Adapter**
+    - 定义 mmdash 与不同 Agent Runtime 之间的统一适配接口。
+    - 负责连接验证、会话管理、消息收发、流式事件转换、后台任务触发、定时任务管理和错误处理。
+    - 不同 Agent 通过不同 Adapter 接入，例如 `HermesAdapter`。
+    - mmdash 前端和其他业务模块不直接依赖 Hermes 的具体接口。
+- **Hermes Adapter**
+    - 通过 Hermes API Server 与 Hermes 通信。
+    - 将 mmdash 项目与 Hermes Session 建立映射。
+    - 将 Hermes 返回的 SSE 事件转换为 mmdash 内部统一事件。
+    - 通过 Hermes Jobs API 创建和管理定时进度追踪任务。
+    - 在收到 Commit 事件后触发 Hermes 执行一次进度评估。
+    - 负责 Hermes 连接状态、能力探测和版本兼容处理。
+
+### 首版功能
+
+#### 1. Hermes 连接配置
+
+若当前项目尚未配置 Hermes，mmdash Agent 页面显示“配置 Hermes 连接”按钮，并跳转到设置中的 Hermes 配置项。
+
+配置项至少包括：
+
+- Hermes API Server 地址。
+- Hermes API Server Key。
+- Hermes Profile 或模型名称。
+- Hermes 管理面板地址，可选。
+- 连接超时和请求超时。
+- 是否允许创建和管理 Hermes 定时任务。
+- mmdash MCP Server 地址及 Hermes 访问凭证。
+- 项目默认 Session 策略。
+- mmdash 专用提示词和项目约束。
+
+mmdash 专用提示词默认根据项目结构自动生成，用户可以手工修改，也可以恢复默认版本。
+
+保存设置前，Hermes Adapter 应执行：
+
+1. Hermes 健康检查。
+2. Bearer Token 鉴权检查。
+3. Hermes API 能力探测。
+4. Session API 可用性检查。
+5. Jobs API 可用性检查。
+6. mmdash MCP Server 可访问性检查。
+
+#### 2. 会话管理
+
+Hermes Adapter 为每个 mmdash 项目维护 Hermes Session 映射。
+
+首版支持：
+
+- 创建项目会话。
+- 获取项目已有会话列表。
+- 读取会话消息历史。
+- 在已有 Session 中继续对话。
+- 重命名会话。
+- 删除或结束会话。
+- 从现有会话分叉新的讨论方向。
+- 保存项目默认会话。
+- 为进度追踪创建独立的系统会话。
+
+建议一个项目至少包含以下会话类型：
+
+- `main`：用户在chat页面直接聊天产生的会话
+- `progress`：项目进度追踪。
+- `experiment`：实验结果分析。
+
+mmdash 数据库只保存 Session 的索引和项目映射，Hermes 负责保存完整消息历史。由于hermes可使用mmdash mcp，固用户可让其将某些重要上下文写入项目的agent上下文当中
+
+#### 3. mmdash Agent 页面
+
+页面至少包含：
+
+- 会话列表。
+- 消息历史。
+- 消息输入框。
+- 流式回复区域。
+- 工具调用和执行过程展示。
+- 当前运行状态。
+- 停止当前 Run。
+- 新建会话。
+- 分叉会话。
+- 重新生成或重新执行。
+- Hermes 连接状态。
+- 当前项目自动化任务入口。
+
+页面中的消息请求必须先发送至 mmdash 后端，再由 Hermes Adapter 调用 Hermes API。浏览器不得直接持有 Hermes API Server Key。
+
+#### 4. 项目数据访问
+
+Hermes 不直接访问 mmdash 数据库，也不依赖在每次 Prompt 中注入完整项目内容，而是通过mmdash mcp读取项目数据。
+
+### 连接方式
+
+首版采用 **Hermes API Server + mmdash MCP Server** 的双向连接方式。
+
+```
+mmdash Agent 页面
+        │
+        │ HTTPS / SSE
+        ▼
+mmdash 后端
+        │
+        ▼
+Hermes Adapter
+        │
+        ├── Sessions API：会话创建、历史读取和持续对话
+        ├── Runs API：后台执行、状态查询、事件流和停止
+        └── Jobs API：定时任务创建和管理
+        │
+        ▼
+Hermes API Server
+        │
+        │ MCP
+        ▼
+mmdash MCP
+        │
+        ▼
+Project Data Hub
+```
+
+## 4.4 进度跟踪
+
+### 核心规则
+
+进度分为两层：
+
+| 层级 | 创建者 | 是否允许 Agent 自动修改 | 示例 |
+| --- | --- | --- | --- |
+| 关键时间节点 | 人 | 否，除非人工确认 | 模型一版完成、论文初稿完成、最终提交 |
+| 详细 TODO 与建议时间 | Agent 或人 | 是 | 补充敏感性分析、重跑参数组、审阅第三节 |
+
+### 展示方式
+
+- 看板：按待办、进行中、阻塞、完成组织。
+- TODO 列表：支持负责人、来源、关联对象和截止时间。
+- 日历/甘特结合视图：在日历上以条带表示任务持续时间，显示对应todo。
+- 今日视图：突出当天应完成事项和阻塞项。
+- 提醒：首版可接飞书等外部通知渠道（设置项放设置页）。
+
+### Agent 更新逻辑
+
+触发逻辑：cron和commit
+
+Agent 根据以下信息判断进度：
+
+- 代码与实验状态。
+- 模型版本变更。
+- 论文章节和审阅状态。
+- 人工设定的关键节点。
+- 项目剩余时间与实际完成速度。
+
+当 Agent 判断与真实情况不一致时，用户可以直接发出“重新评估进度”请求。Agent 必须保留关键节点，仅调整其下的子任务和建议时间。
+
+## 4.5 模型版本管理
+
+### 定位
+
+Notion 继续承担模型文档编辑，mmdash 负责同步、快照和版本比较。
+
+### 数据模型
+
+每个模型快照至少包含：
+
+- snapshot_id
+- Notion page ID 与源链接
+- 标题与章节结构
+- 抓取时间
+- 创建者/触发者
+- 内容摘要
+- 内容 hash
+- 与上一版本的 diff
+- 可选标签，如 baseline、candidate、final
+
+### 页面结构
+
+- 左侧：版本时间线。
+- 中间：当前版本渲染。
+- 右侧：元数据与版本说明。
+- 对比模式：选择两个版本查看增加、删除和修改。
+
+### 首版行为
+
+- 支持手动“同步并生成版本”。
+- 可选定时同步，但只有内容 hash 变化时生成新版本。
+- mmdash 内不直接编辑复杂模型正文。
+
+## 4.6 论文写作助手
+
+### 页面布局
+
+- 左侧参考区：题目、模型版本、实验结果、附件库、引用。
+- 右侧编辑区：Markdown 块级编辑器，编辑器内通过类似vscode的git状态颜色标注的方式标注tag，行tag（块tag）标注在行左侧，章节tag标注在章节标题旁（以最小的标题为单位）。
+- 右上角： LaTeX 生成情况（一个简单的标记，点击它显示详情）、markdown初稿版本（点击它弹出弹窗显示完整历史记录）。
+
+> **流程图：论文写作工作流**
+> 
+
+> 左侧参考区与附件/引用进入 Markdown 块级编辑器，提交后触发 LaTeX 生成，经检查和人工审阅后形成论文 Release。
+> 
+
+*论文写作工作流*
+
+### 块级编辑
+
+- 每个标题、段落、图片、表格和公式作为独立块。
+- 支持拖拽排序与组合。
+- 支持 / 快捷命令插入标题、引用、图片、表格、公式和附件。
+- AI 修改以 Git commit-like patch 提交，用户可查看和接受变更。
+
+### Tag 体系
+
+#### 章节 Tag
+
+- 未编辑
+- 未审阅
+- 已审阅
+
+#### 块 Tag
+
+- AI 初稿
+- 人工初稿
+- AI 修订
+- 人工修订
+- 已审阅
+
+#### 推断规则
+
+- 仅在一个 commit 中出现，且作者为 AI：AI 初稿。
+- 仅在一个 commit 中出现，且作者为 human：人工初稿。
+- 在多个 commit 中被修改，最后一次作者为 AI：AI 修订。
+- 在多个 commit 中被修改，最后一次作者为 human：人工修订。
+- 用户显式锁定审阅状态：已审阅。
+- UI 必须显示最近一次状态更新时间。
+
+**实现建议**：用户界面可以保留“行 Tag”表现，但内部应给每个块分配稳定 block_id。纯行号会因换行和段落移动导致 Git blame 结果不稳定。
+
+### Zotero 引用
+
+- 编辑器连接项目指定 Zotero 文献库。
+- 通过引用快捷命令搜索作者、标题或关键词。
+- Markdown 中存储稳定 citation key。
+- LaTeX 生成器负责输出 BibTeX/BibLaTeX 引用和参考文献格式。
+
+### 附件库
+
+上传附件后自动生成描述，并写入附件注册表。建议注册表结构：
+
+```
+{
+  "attachment_id": "att_01J...",
+  "filename": "sensitivity_plot.png",
+  "sha256": "...",
+  "mime_type": "image/png",
+  "description": "不同参数组合下目标函数的敏感性分析图",
+  "source": "exp_01J...",
+  "created_at": "2026-07-21T10:30:00+08:00",
+  "recommended_usage": ["结果分析", "敏感性分析"],
+  "status": "available"
+}
+```
+
+### Markdown 到 LaTeX
+
+每次 Markdown commit 后触发生成任务（用户commit时指定是否生成，也可在版本历史页面点击对应的版本生成latex）：
+
+1. 读取预先配置的 LaTeX 模板与规范。
+2. 解析 Markdown 块、引用、图片、表格和公式。
+3. 按目录、文件命名、引用格式和图表格式生成 LaTeX 初稿。
+4. 输出生成报告和错误定位。
+5. 可选执行编译检查。
+
+LaTeX 生成器需要显式配置：
+
+- 文档类和模板。
+- 文件目录结构。
+- 引用格式。
+- 图片与表格格式。
+- 公式、编号和交叉引用规则。
+
+### 版本与 Release
+
+- Markdown 初稿和生成的 LaTeX 文件由 article branch管理。
+- 每次 commit 均可生成对应的 LaTeX 初稿。
+- 可人工在commit时或在版本历史面板设置release, release是可供选择的提交版本
+
+## 4.7 求解记录面板
+
+### 定位
+
+求解面板用于管理实验运行记录和结果，不承担主要代码编辑工作。
+
+### 页面结构
+
+- 实验列表：Exp ID、名称、状态、创建者、开始/结束时间、代码 commit。
+- 详情页：参数、运行日志、失败原因、资源消耗和结果摘要。
+    - 左侧文件树：浏览代码快照或结果包内容。
+    - 右侧预览：文本、图片、表格、JSON、CSV 和日志。
+    - 结果分析区：由 AI 或用户生成摘要、比较表和描述。
+    - 外部编辑入口：跳转到 Codex、Claude Code、Git 或 VS Code 环境。
+
+### 首版边界
+
+首版“类似 VS Code”的含义是文件树与内容查看体验，不是重新实现完整 IDE。
+
+# 5. mmdash MCP 设计
+
+## 5.1 定位
+
+mmdash MCP 用于向 Codex、Claude Code、Hermes 等外部 Agent 提供受控的项目能力，包括读取项目数据、发起实验和获取实验结果。
+
+mmdash MCP 不提供任意数据库访问或远程 Shell。所有操作均由 mmdash 服务端进行身份认证、项目鉴权和审计。
+
+## 5.2 三类能力
+
+### 1. 外部调用求解功能
+
+首版最高优先级。
+
+外部 Agent 可以：
+
+1. 申请一次性 `Exp ID`；
+2. 提交实验代码并指定对应的代码版本；
+3. 请求 mmdash 在 Sandbox 中运行实验；
+4. 查询实验状态和日志；
+5. 获取实验结果。
+
+实验必须关联 `project_id`、`exp_id` 和代码 Commit，以保证结果可追溯和可复现。
+
+### 2. 外部读取项目数据
+
+首版需要实现。
+
+外部 Agent 可以读取：
+
+- 题目与附件；
+- 模型及其版本；
+- 代码和 Commit；
+- 论文内容与状态；
+- 实验记录和结果；
+- 项目进度及已确认的上下文。
+
+数据读取采用“先列出对象，再按对象读取”的方式，避免一次返回整个项目内容。
+
+### 3. 外部写入显式项目上下文
+
+保留该能力，首版暂缓完整开放。
+
+外部 Agent 可以将建模结论、实验结论或方案决策提交为项目上下文提议，但不能直接将其标记为已确认。正式上下文需要经过人工审阅。
+
+## 5.3 建议工具集合
+
+| 工具 | 作用 | 首版 |
+| --- | --- | --- |
+| `project.list` | 列出当前账号可访问的项目 | 是 |
+| `project.get` | 获取项目元数据与数据源概览 | 是 |
+| `data.list` | 列出题目、模型、代码、论文、附件和结果对象 | 是 |
+| `data.read` | 按对象 ID 读取内容或元数据 | 是 |
+| `experiment.create` | 申请一次性 Exp ID | 是 |
+| `experiment.run` | 校验 Exp ID 和代码版本并触发运行 | 是 |
+| `experiment.status` | 查询实验状态与日志摘要 | 是 |
+| `result.get` | 获取结果 Manifest 或下载地址 | 是 |
+| `context.promote` | 将明确结论提交为项目上下文提议 | 暂缓 |
+| `progress.recalculate` | 请求 mmdash Agent 重新评估进度 | 可选 |
+
+## 5.4 系统组成
+
+mmdash MCP 由 **mmdash MCP Server** 和 **mmdash CLI** 组成。
+
+### mmdash MCP Server
+
+部署在 mmdash 服务端，负责：
+
+- 实现 MCP 工具；
+- 验证用户身份和项目权限；
+- 读取项目数据；
+- 创建和管理实验任务；
+- 提供实验状态和结果；
+- 记录操作日志。
+
+MCP Server 是所有项目能力的权威实现。
+
+### mmdash CLI
+
+安装在用户本地，负责：
+
+- 登录 mmdash 账号；
+- 安全保存和刷新登录凭据；
+- 列出和选择项目；
+- 绑定当前本地仓库与 mmdash 项目；
+- 向本地 Agent 提供 stdio MCP 接口。
+
+当执行：
+
+```bash
+mmdash mcp
+```
+
+时，CLI 作为本地 stdio MCP Server 运行，将 Agent 的 MCP 调用转发给远端 mmdash MCP Server。
+
+```
+Codex / Claude Code
+        │
+        │ stdio MCP
+        ▼
+    mmdash CLI
+        │
+        │ HTTPS
+        ▼
+mmdash MCP Server
+        │
+        ▼
+mmdash 项目数据与求解服务
+```
+
+CLI 只负责认证、项目选择和协议转发，不直接实现实验调度或项目数据管理。
+
+## 5.5 身份与项目选择
+
+- 用户首先通过 CLI 登录 mmdash 账号。
+- 登录后可以列出当前账号可访问的项目。
+- CLI 可以保存默认项目或通过本地配置绑定当前仓库。
+- 除 `project.list` 外，每次业务调用都应明确携带 `project_id`。
+- 当项目存在歧义时，CLI 应拒绝调用，不得自动猜测目标项目。
+
+# 6. 实验执行与结果管理
+
+> **流程图：实验执行工作流**
+> 
+
+> Exp ID 申请 → 固定入口准备 → MCP 执行 → Box Gateway 调度 → Sandbox 运行 → 产物回传 → 结果归档 → Agent 获取结果。
+> 
+
+*实验执行工作流*
+
+## 6.1 标准流程
+
+1. coding agent 调用 experiment.create 申请新的 Exp ID。
+2. agent 按项目规范编写实验脚本，并更新固定一键启动入口。
+3. agent 提交代码，实验记录绑定 source_commit。
+4. 调用 experiment.run(exp_id, source_commit, entrypoint)。
+5. Experiment Service 校验 `project_id`、`exp_id`、代码 Commit 和实验入口
+6. Experiment Service 选择项目已绑定且支持 Sandbox 的 Box，下达求解任务
+7. Box Gateway 拉取干净代码并创建 sandbox。
+8. sandbox 运行固定入口，不修改代码和配置。
+9. 成功时生成指定名称的 artifact.zip并将文件返送到box gateway，或将路径告知gateway；失败时返回 logs。
+10. Gateway 将产物和日志送回 Experiment Service。
+11.  Experiment Service 归档结果，commit到result分支并更新 Exp 状态，并通过mcp告知agent。
+12. 求解面板实时刷新；agent 可 fetch 结果继续分析。
+
+## 6.2 一次实验的约束
+
+- 一个 Exp ID 只允许成功启动一次。
+- 一个 Exp 对应零或一个结果包：失败时结果指针为空，但必须保留日志。
+- 每次实验必须绑定唯一代码 commit。
+- 实验参数在运行前冻结并写入 manifest。
+- artifact 必须是 standalone 压缩包，避免结果散落。
+
+## 6.3 运行描述与结果包
+
+### run_spec.json
+
+`run_spec.json` 由 Experiment Service 在实验开始前生成，并随任务发送给 Box Gateway。
+
+其内容包括：
+
+- `project_id`
+- `exp_id`
+- `source_commit`
+- `entrypoint`
+- 实验参数
+- 输入文件
+- 输出目录
+- 超时和资源限制
+
+运行开始后，`run_spec.json` 不允许被实验程序修改。
+
+### result_manifest.json
+
+实验结束后，由 Sandbox 执行包装器根据实际运行状态和输出文件生成 `result_manifest.json`。
+
+其内容包括：
+
+- `exp_id`
+- 运行状态与退出码
+- 开始和结束时间
+- 日志路径
+- 指标摘要
+- 结果文件列表
+- 文件大小与 Hash
+- 运行环境信息
+- 错误信息
+
+实验程序只需要将结果写入指定输出目录，不负责生成最终 Artifact，也不负责决定实验状态。
+
+### artifact.zip
+
+Box Gateway 校验 `result_manifest.json` 后，将其中声明的结果文件、日志和结果清单打包为：
+
+```
+artifact.zip
+├── result_manifest.json
+├── summary.md
+├── logs/
+│   ├── stdout.log
+│   └── stderr.log
+├── figures/
+├── tables/
+├── data/
+└── models/
+```
+
+Box Gateway 将 `artifact.zip` 和任务状态返回给 Experiment Service，由 Experiment Service 完成归档、索引和状态更新。
+
+## 6.4 实验状态机
+
+建议状态：
+
+created → queued → preparing → running → succeeded/failed/canceled → archived
+
+其中：
+
+- created：已申请 Exp ID，尚未运行。
+- preparing：拉取代码、准备镜像和输入。
+- succeeded：执行成功但产物可能仍在上传。
+- archived：结果已完成索引，可被页面和 Agent 读取。
+
+## 6.5 result branch 与存储
+
+会议确定结果应与代码版本解耦，并可通过 Exp ID 追踪。MVP 可先使用 result branch 管理 manifest 与小型结果包。
+
+# 7. mmdash Box 与 Sandbox
+
+## 7.1 定位
+
+**mmdash Box，简称 Box**，是接入 mmdash 的外部能力服务，由 **Box Gateway** 和其内部实现的一个或多个功能组成。
+
+```
+mmdash Box
+├── Box Gateway
+└── 内部功能
+    ├── Sandbox
+    └── 其他未来功能
+```
+
+Box Gateway 是 Box 面向 mmdash 的统一 API 层，负责注册 Box、声明能力、接收任务、查询状态并返回结果。
+
+Sandbox 是 Box 首版实现的第一个内部功能，用于在隔离环境中运行指定版本的项目代码。未来 Box 还可以加入浏览器自动化、文档转换、GPU 计算等其他功能。
+
+## 7.2 Box Gateway
+
+Box Gateway 负责：
+
+- 将 Box 注册到 mmdash，并定期上报状态；
+- 声明 Box 当前提供的功能及其能力；
+- 接收 mmdash 发出的标准化任务；
+- 将任务分发给对应的内部功能；
+- 汇报任务状态、日志和结果；
+
+mmdash 的业务模块只与 Box Gateway 通信，不直接调用 Sandbox 或 E2B。
+
+## 7.3 Box 管理
+
+求解面板显示当前项目已绑定且处于活跃状态的 Box。
+
+点击某个 Box 后，可以查看：
+
+- Box 在线状态和当前负载；
+- Box Gateway 版本；
+- 已注册的内部功能；
+- 各项功能支持的能力；
+- 运行环境和资源限制。
+
+用户可以从求解面板跳转到项目设置，为项目绑定、解除或更换 Box。
+
+## 7.4 Sandbox
+
+Sandbox 是 Box 首版实现的能力节点，负责：
+
+- 创建隔离执行环境；
+- 获取指定的代码 Commit；
+- 注入实验配置和只读输入；
+- 运行固定实验入口；
+- 收集标准输出、错误输出和退出状态；
+- 生成结果；
+- 在任务结束后销毁执行环境。
+
+Sandbox 不负责：
+
+- 编写或修改实验代码；
+- 提交 Git；
+- 管理 Exp ID；
+- 决定实验是否可以运行；
+- 长期保存项目工作区；
+- 直接更新 mmdash 项目数据。
+
+首版可以使用 E2B 作为 Sandbox 的底层运行环境，并通过 Sandbox Adapter 封装其创建环境、执行命令、文件读写和销毁等接口。E2B 支持隔离环境、自定义 Template、文件上传下载以及 Sandbox 生命周期管理，能够满足首版实验执行需求。
+
+```
+Sandbox
+└── Sandbox Runtime Adapter
+    ├── E2B Adapter（首版）
+    ├── Local Adapter（本地开发）
+    └── 其他运行环境（未来）
+```
+
+# 8. 非功能要求
+
+## 8.1 可追溯性
+
+任何重要页面对象都应能回答：
+
+- 谁创建或修改？
+- 在什么时间？
+- 基于哪个代码、模型或论文版本？
+- 与哪个 Exp ID、commit 或 Release 关联？
+
+## 8.2 可恢复性
+
+- Agent 连接中断不应破坏项目数据。
+- 实验运行中断后状态标记为 failed 或 interrupted。
+- LaTeX 生成失败必须保留上一次成功产物和本次错误报告。
+
+## 8.3 可扩展性
+
+- Agent、Notion、Zotero、runtime 和通知渠道均采用 adapter 接口。
+- Data Hub 的对象 ID 稳定，页面不直接依赖外部服务的数据结构。
+
+# 9. 实施优先级与里程碑
+
+当前讨论形成的功能顺序为：
+
+1. 首页
+2. mmdash Agent：直接外接 Hermes，并链接管理面板
+3. 进度跟踪
+4. 模型版本：连接 Notion
+5. 论文：块级 Markdown、LaTeX 生成、附件库、注册表与版本管理
+6. 求解面板：mmdash CLI、MCP、Box Gateway 与 E2B/local sandbox
+
+建议按以下里程碑验收：

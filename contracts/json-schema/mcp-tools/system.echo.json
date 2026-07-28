@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.com/schemas/mcp-tools/system.echo.json",
+  "title": "system.echo MCP tool",
+  "description": "Stage 3.5 test tool for the MCP Gateway request boundary.",
+  "x-operation-id": "system.echo",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message", "project_id"],
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "message",
+        "principal_kind",
+        "project_id",
+        "request_id",
+        "session_id"
+      ],
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "principal_kind": {
+          "type": "string",
+          "enum": ["agent", "cli"]
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  }
+}
