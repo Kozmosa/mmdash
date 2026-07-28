@@ -25,6 +25,8 @@ tags:
     description: Durable asynchronous jobs and the authenticated Worker protocol.
   - name: Events
     description: Outbox inspection, registered consumers, and explicit replay.
+  - name: Data Hub
+    description: Cross-module object discovery, activity, and human-confirmed project context.
 paths:
   /health/live:
     get:
@@ -699,6 +701,177 @@ paths:
                 $ref: "#/components/schemas/EventReplay"
         "404":
           $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/objects:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List project objects
+      description: Stable `data.list` routing entry point for users and Agents.
+      operationId: data.list
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Cursor-paginated object projections.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataObjectPage"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/objects/{objectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: objectId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Data Hub]
+      summary: Read one project object through its domain adapter
+      description: Stable `data.read` routing entry point; full content remains domain-owned.
+      operationId: data.read
+      responses:
+        "200":
+          description: Registry projection plus authoritative module content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataObjectRead"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/activity:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List the project activity timeline
+      operationId: data.activity.list
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Cursor-paginated activity projections.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataActivityPage"
+  /v1/data/projects/{projectId}/context:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List human-confirmed project context
+      operationId: data.context.list
+      responses:
+        "200":
+          description: Formal project context only; pending proposals are excluded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectContextList"
+  /v1/data/projects/{projectId}/context/proposals:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: List context proposals
+      operationId: data.context.proposals.list
+      responses:
+        "200":
+          description: Context proposals visible to collaborators who may propose.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextProposalList"
+    post:
+      tags: [Data Hub]
+      summary: Propose information for formal project context
+      description: Agents may create proposals but cannot confirm them.
+      operationId: data.context.proposals.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContextProposalRequest"
+      responses:
+        "201":
+          description: Pending context proposal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextProposal"
+  /v1/data/projects/{projectId}/context/proposals/{proposalId}/review:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: proposalId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [Data Hub]
+      summary: Accept or reject a context proposal
+      description: Requires a human browser session and context-review permission.
+      operationId: data.context.proposals.review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewContextProposalRequest"
+      responses:
+        "200":
+          description: Reviewed proposal; acceptance also creates formal context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextProposal"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/data/projects/{projectId}/home:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data Hub]
+      summary: Read the project-home aggregate DTO shell
+      operationId: data.home.get
+      responses:
+        "200":
+          description: Typed empty sections ready for future domain contributors.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeAggregate"
 components:
   securitySchemes:
     bearerAuth:
@@ -1665,6 +1838,343 @@ components:
         failed_at:
           type: string
           format: date-time
+    DataObject:
+      type: object
+      additionalProperties: false
+      required:
+        - object_id
+        - project_id
+        - object_type
+        - source_module
+        - source_id
+        - title
+        - summary
+        - status
+        - version
+        - metadata
+        - occurred_at
+        - created_at
+        - updated_at
+      properties:
+        object_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        object_type:
+          type: string
+        source_module:
+          type: string
+        source_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DataObjectPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataObject"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
+    DataObjectRead:
+      type: object
+      additionalProperties: false
+      required: [object, content]
+      properties:
+        object:
+          $ref: "#/components/schemas/DataObject"
+        content:
+          description: Authoritative content returned by the registered domain adapter.
+    DataActivity:
+      type: object
+      additionalProperties: false
+      required:
+        - activity_id
+        - project_id
+        - activity_type
+        - title
+        - summary
+        - actor
+        - metadata
+        - occurred_at
+        - created_at
+      properties:
+        activity_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        object_id:
+          type: string
+          format: uuid
+        activity_type:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        actor:
+          type: object
+          additionalProperties:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    DataActivityPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataActivity"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: string
+    CreateContextProposalRequest:
+      type: object
+      additionalProperties: false
+      required: [title, content, context_type]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        context_type:
+          type: string
+          minLength: 1
+          maxLength: 100
+        source_object_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+        rationale:
+          type: string
+          maxLength: 2000
+    ReviewContextProposalRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [accepted, rejected]
+        review_note:
+          type: string
+          maxLength: 2000
+    ContextProposal:
+      type: object
+      additionalProperties: false
+      required:
+        - proposal_id
+        - project_id
+        - title
+        - content
+        - context_type
+        - source_object_ids
+        - rationale
+        - proposed_by
+        - status
+        - review_note
+        - created_at
+        - updated_at
+      properties:
+        proposal_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        context_type:
+          type: string
+        source_object_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        rationale:
+          type: string
+        proposed_by:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, accepted, rejected]
+        reviewed_by:
+          type: string
+          format: uuid
+        reviewed_at:
+          type: string
+          format: date-time
+        review_note:
+          type: string
+        promoted_context_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ContextProposalList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContextProposal"
+    ProjectContext:
+      type: object
+      additionalProperties: false
+      required:
+        - context_id
+        - project_id
+        - title
+        - content
+        - context_type
+        - source_object_ids
+        - proposed_by
+        - confirmed_by
+        - confirmed_at
+        - created_at
+        - updated_at
+      properties:
+        context_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: string
+        context_type:
+          type: string
+        source_object_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        proposed_by:
+          type: string
+          format: uuid
+        confirmed_by:
+          type: string
+          format: uuid
+        confirmed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectContextList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectContext"
+    HomeSection:
+      type: object
+      additionalProperties: false
+      required: [available, total, items]
+      properties:
+        available:
+          type: boolean
+        total:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items: {}
+    HomeAggregate:
+      type: object
+      additionalProperties: false
+      required:
+        - project_id
+        - generated_at
+        - problem
+        - milestones
+        - todos
+        - models
+        - experiments
+        - article
+        - agent
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        generated_at:
+          type: string
+          format: date-time
+        problem:
+          $ref: "#/components/schemas/HomeSection"
+        milestones:
+          $ref: "#/components/schemas/HomeSection"
+        todos:
+          $ref: "#/components/schemas/HomeSection"
+        models:
+          $ref: "#/components/schemas/HomeSection"
+        experiments:
+          $ref: "#/components/schemas/HomeSection"
+        article:
+          $ref: "#/components/schemas/HomeSection"
+        agent:
+          $ref: "#/components/schemas/HomeSection"
     Liveness:
       type: object
       additionalProperties: false

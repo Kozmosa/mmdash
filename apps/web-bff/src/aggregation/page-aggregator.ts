@@ -81,5 +81,17 @@ export function createDefaultPageRegistry(): PageAggregatorRegistry {
       }),
     },
   ]);
+  registry.register("home", [
+    {
+      id: "home",
+      load: async ({ coreClient, identity, projectId, requestId }) =>
+        coreClient.getProjectHome(projectId, {
+          accessToken: identity.accessToken,
+          projectId,
+          requestId,
+          userId: identity.userId,
+        }),
+    },
+  ]);
   return registry;
 }

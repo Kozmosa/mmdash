@@ -615,6 +615,154 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/data/projects/{projectId}/objects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /**
+     * List project objects
+     * @description Stable `data.list` routing entry point for users and Agents.
+     */
+    get: operations["data.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/objects/{objectId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        objectId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * Read one project object through its domain adapter
+     * @description Stable `data.read` routing entry point; full content remains domain-owned.
+     */
+    get: operations["data.read"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/activity": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List the project activity timeline */
+    get: operations["data.activity.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/context": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List human-confirmed project context */
+    get: operations["data.context.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/context/proposals": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List context proposals */
+    get: operations["data.context.proposals.list"];
+    put?: never;
+    /**
+     * Propose information for formal project context
+     * @description Agents may create proposals but cannot confirm them.
+     */
+    post: operations["data.context.proposals.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/context/proposals/{proposalId}/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        proposalId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept or reject a context proposal
+     * @description Requires a human browser session and context-review permission.
+     */
+    post: operations["data.context.proposals.review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/data/projects/{projectId}/home": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the project-home aggregate DTO shell */
+    get: operations["data.home.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1032,6 +1180,146 @@ export interface components {
       error_message: string;
       /** Format: date-time */
       failed_at: string;
+    };
+    DataObject: {
+      /** Format: uuid */
+      object_id: string;
+      /** Format: uuid */
+      project_id: string;
+      object_type: string;
+      source_module: string;
+      source_id: string;
+      title: string;
+      summary: string;
+      status: string;
+      version: number;
+      metadata: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    DataObjectPage: {
+      items: components["schemas"]["DataObject"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    DataObjectRead: {
+      object: components["schemas"]["DataObject"];
+      /** @description Authoritative content returned by the registered domain adapter. */
+      content: unknown;
+    };
+    DataActivity: {
+      /** Format: uuid */
+      activity_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      object_id?: string;
+      activity_type: string;
+      title: string;
+      summary: string;
+      actor: {
+        [key: string]: string;
+      };
+      metadata: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    DataActivityPage: {
+      items: components["schemas"]["DataActivity"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    CreateContextProposalRequest: {
+      title: string;
+      content: string;
+      context_type: string;
+      source_object_ids?: string[];
+      rationale?: string;
+    };
+    ReviewContextProposalRequest: {
+      /** @enum {string} */
+      decision: "accepted" | "rejected";
+      review_note?: string;
+    };
+    ContextProposal: {
+      /** Format: uuid */
+      proposal_id: string;
+      /** Format: uuid */
+      project_id: string;
+      title: string;
+      content: string;
+      context_type: string;
+      source_object_ids: string[];
+      rationale: string;
+      /** Format: uuid */
+      proposed_by: string;
+      /** @enum {string} */
+      status: "pending" | "accepted" | "rejected";
+      /** Format: uuid */
+      reviewed_by?: string;
+      /** Format: date-time */
+      reviewed_at?: string;
+      review_note: string;
+      /** Format: uuid */
+      promoted_context_id?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ContextProposalList: {
+      items: components["schemas"]["ContextProposal"][];
+    };
+    ProjectContext: {
+      /** Format: uuid */
+      context_id: string;
+      /** Format: uuid */
+      project_id: string;
+      title: string;
+      content: string;
+      context_type: string;
+      source_object_ids: string[];
+      /** Format: uuid */
+      proposed_by: string;
+      /** Format: uuid */
+      confirmed_by: string;
+      /** Format: date-time */
+      confirmed_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ProjectContextList: {
+      items: components["schemas"]["ProjectContext"][];
+    };
+    HomeSection: {
+      available: boolean;
+      total: number;
+      items: unknown[];
+    };
+    HomeAggregate: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: date-time */
+      generated_at: string;
+      problem: components["schemas"]["HomeSection"];
+      milestones: components["schemas"]["HomeSection"];
+      todos: components["schemas"]["HomeSection"];
+      models: components["schemas"]["HomeSection"];
+      experiments: components["schemas"]["HomeSection"];
+      article: components["schemas"]["HomeSection"];
+      agent: components["schemas"]["HomeSection"];
     };
     Liveness: {
       /** @constant */
@@ -2060,6 +2348,203 @@ export interface operations {
         };
       };
       404: components["responses"]["Error"];
+    };
+  };
+  "data.list": {
+    parameters: {
+      query?: {
+        type?: string;
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor-paginated object projections. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DataObjectPage"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "data.read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        objectId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Registry projection plus authoritative module content. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DataObjectRead"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "data.activity.list": {
+    parameters: {
+      query?: {
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor-paginated activity projections. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DataActivityPage"];
+        };
+      };
+    };
+  };
+  "data.context.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Formal project context only; pending proposals are excluded. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectContextList"];
+        };
+      };
+    };
+  };
+  "data.context.proposals.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Context proposals visible to collaborators who may propose. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextProposalList"];
+        };
+      };
+    };
+  };
+  "data.context.proposals.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateContextProposalRequest"];
+      };
+    };
+    responses: {
+      /** @description Pending context proposal. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextProposal"];
+        };
+      };
+    };
+  };
+  "data.context.proposals.review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        proposalId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReviewContextProposalRequest"];
+      };
+    };
+    responses: {
+      /** @description Reviewed proposal; acceptance also creates formal context. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ContextProposal"];
+        };
+      };
+      403: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "data.home.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Typed empty sections ready for future domain contributors. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HomeAggregate"];
+        };
+      };
     };
   };
 }
