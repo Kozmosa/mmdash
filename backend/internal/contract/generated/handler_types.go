@@ -128,3 +128,254 @@ func (request UpdateSettingRequest) Validate() error {
 	}
 	return nil
 }
+
+// CreateJobRequest is generated from the Core request-body schema.
+type CreateJobRequest struct {
+	ProjectID      string                 `json:"project_id"`
+	JobType        string                 `json:"job_type"`
+	Payload        map[string]interface{} `json:"payload"`
+	Priority       *int64                 `json:"priority,omitempty"`
+	IdempotencyKey *string                `json:"idempotency_key,omitempty"`
+	MaxAttempts    *int64                 `json:"max_attempts,omitempty"`
+	AvailableAt    *time.Time             `json:"available_at,omitempty"`
+	TimeoutSeconds *int64                 `json:"timeout_seconds,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateJobRequest) Validate() error {
+	if request.ProjectID == "" {
+		return fmt.Errorf("project_id is required")
+	}
+	if request.JobType == "" {
+		return fmt.Errorf("job_type is required")
+	}
+	if request.Payload == nil {
+		return fmt.Errorf("payload is required")
+	}
+	if request.IdempotencyKey != nil {
+		if len(*request.IdempotencyKey) < 1 {
+			return fmt.Errorf("idempotency_key is too short")
+		}
+		if len(*request.IdempotencyKey) > 500 {
+			return fmt.Errorf("idempotency_key is too long")
+		}
+	}
+	if request.MaxAttempts != nil {
+		if *request.MaxAttempts < 1 {
+			return fmt.Errorf("max_attempts is below its minimum")
+		}
+		if *request.MaxAttempts > 100 {
+			return fmt.Errorf("max_attempts exceeds its maximum")
+		}
+	}
+	if request.TimeoutSeconds != nil {
+		if *request.TimeoutSeconds < 1 {
+			return fmt.Errorf("timeout_seconds is below its minimum")
+		}
+		if *request.TimeoutSeconds > 86400 {
+			return fmt.Errorf("timeout_seconds exceeds its maximum")
+		}
+	}
+	return nil
+}
+
+// ClaimJobRequest is generated from the Core request-body schema.
+type ClaimJobRequest struct {
+	WorkerID     string   `json:"worker_id"`
+	JobTypes     []string `json:"job_types"`
+	LeaseSeconds *int64   `json:"lease_seconds,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ClaimJobRequest) Validate() error {
+	if request.WorkerID == "" {
+		return fmt.Errorf("worker_id is required")
+	}
+	if len(request.WorkerID) < 1 {
+		return fmt.Errorf("worker_id is too short")
+	}
+	if len(request.WorkerID) > 200 {
+		return fmt.Errorf("worker_id is too long")
+	}
+	if request.JobTypes == nil {
+		return fmt.Errorf("job_types is required")
+	}
+	if len(request.JobTypes) > 100 {
+		return fmt.Errorf("job_types has too many items")
+	}
+	if len(request.JobTypes) < 1 {
+		return fmt.Errorf("job_types has too few items")
+	}
+	if request.LeaseSeconds != nil {
+		if *request.LeaseSeconds < 10 {
+			return fmt.Errorf("lease_seconds is below its minimum")
+		}
+		if *request.LeaseSeconds > 900 {
+			return fmt.Errorf("lease_seconds exceeds its maximum")
+		}
+	}
+	return nil
+}
+
+// WorkerHeartbeatRequest is generated from the Core request-body schema.
+type WorkerHeartbeatRequest struct {
+	WorkerID     string                  `json:"worker_id"`
+	Version      string                  `json:"version"`
+	Capabilities []string                `json:"capabilities"`
+	Metadata     *map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request WorkerHeartbeatRequest) Validate() error {
+	if request.WorkerID == "" {
+		return fmt.Errorf("worker_id is required")
+	}
+	if len(request.WorkerID) < 1 {
+		return fmt.Errorf("worker_id is too short")
+	}
+	if len(request.WorkerID) > 200 {
+		return fmt.Errorf("worker_id is too long")
+	}
+	if request.Version == "" {
+		return fmt.Errorf("version is required")
+	}
+	if len(request.Version) < 1 {
+		return fmt.Errorf("version is too short")
+	}
+	if request.Capabilities == nil {
+		return fmt.Errorf("capabilities is required")
+	}
+	if len(request.Capabilities) > 100 {
+		return fmt.Errorf("capabilities has too many items")
+	}
+	if len(request.Capabilities) < 1 {
+		return fmt.Errorf("capabilities has too few items")
+	}
+	return nil
+}
+
+// RenewJobLeaseRequest is generated from the Core request-body schema.
+type RenewJobLeaseRequest struct {
+	WorkerID     string `json:"worker_id"`
+	LeaseSeconds int64  `json:"lease_seconds"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RenewJobLeaseRequest) Validate() error {
+	if request.WorkerID == "" {
+		return fmt.Errorf("worker_id is required")
+	}
+	if len(request.WorkerID) < 1 {
+		return fmt.Errorf("worker_id is too short")
+	}
+	if len(request.WorkerID) > 200 {
+		return fmt.Errorf("worker_id is too long")
+	}
+	if request.LeaseSeconds < 10 {
+		return fmt.Errorf("lease_seconds is below its minimum")
+	}
+	if request.LeaseSeconds > 900 {
+		return fmt.Errorf("lease_seconds exceeds its maximum")
+	}
+	return nil
+}
+
+// AppendJobLogRequest is generated from the Core request-body schema.
+type AppendJobLogRequest struct {
+	WorkerID string                  `json:"worker_id"`
+	Level    string                  `json:"level"`
+	Message  string                  `json:"message"`
+	Fields   *map[string]interface{} `json:"fields,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request AppendJobLogRequest) Validate() error {
+	if request.WorkerID == "" {
+		return fmt.Errorf("worker_id is required")
+	}
+	if len(request.WorkerID) < 1 {
+		return fmt.Errorf("worker_id is too short")
+	}
+	if len(request.WorkerID) > 200 {
+		return fmt.Errorf("worker_id is too long")
+	}
+	if request.Level == "" {
+		return fmt.Errorf("level is required")
+	}
+	if request.Level != "debug" && request.Level != "info" && request.Level != "warning" && request.Level != "error" {
+		return fmt.Errorf("level has an unsupported value")
+	}
+	if request.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if len(request.Message) < 1 {
+		return fmt.Errorf("message is too short")
+	}
+	return nil
+}
+
+// CompleteJobRequest is generated from the Core request-body schema.
+type CompleteJobRequest struct {
+	WorkerID string                 `json:"worker_id"`
+	Result   map[string]interface{} `json:"result"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CompleteJobRequest) Validate() error {
+	if request.WorkerID == "" {
+		return fmt.Errorf("worker_id is required")
+	}
+	if len(request.WorkerID) < 1 {
+		return fmt.Errorf("worker_id is too short")
+	}
+	if len(request.WorkerID) > 200 {
+		return fmt.Errorf("worker_id is too long")
+	}
+	if request.Result == nil {
+		return fmt.Errorf("result is required")
+	}
+	return nil
+}
+
+// FailJobRequest is generated from the Core request-body schema.
+type FailJobRequest struct {
+	WorkerID          string `json:"worker_id"`
+	Code              string `json:"code"`
+	Message           string `json:"message"`
+	Retryable         bool   `json:"retryable"`
+	RetryDelaySeconds *int64 `json:"retry_delay_seconds,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request FailJobRequest) Validate() error {
+	if request.WorkerID == "" {
+		return fmt.Errorf("worker_id is required")
+	}
+	if len(request.WorkerID) < 1 {
+		return fmt.Errorf("worker_id is too short")
+	}
+	if len(request.WorkerID) > 200 {
+		return fmt.Errorf("worker_id is too long")
+	}
+	if request.Code == "" {
+		return fmt.Errorf("code is required")
+	}
+	if len(request.Code) < 1 {
+		return fmt.Errorf("code is too short")
+	}
+	if request.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if len(request.Message) < 1 {
+		return fmt.Errorf("message is too short")
+	}
+	if request.RetryDelaySeconds != nil {
+		if *request.RetryDelaySeconds < 0 {
+			return fmt.Errorf("retry_delay_seconds is below its minimum")
+		}
+		if *request.RetryDelaySeconds > 86400 {
+			return fmt.Errorf("retry_delay_seconds exceeds its maximum")
+		}
+	}
+	return nil
+}

@@ -34,6 +34,9 @@ const (
 	PermissionSettingsManage Permission = "project.settings.manage"
 	PermissionSettingsRead   Permission = "project.settings.read"
 	PermissionTokensManage   Permission = "project.tokens.manage"
+	PermissionJobsCreate     Permission = "project.jobs.create"
+	PermissionJobsRead       Permission = "project.jobs.read"
+	PermissionJobsCancel     Permission = "project.jobs.cancel"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -45,6 +48,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionSettingsManage,
 		PermissionSettingsRead,
 		PermissionTokensManage,
+		PermissionJobsCreate,
+		PermissionJobsRead,
+		PermissionJobsCancel,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -53,11 +59,27 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionSettingsManage,
 		PermissionSettingsRead,
 		PermissionTokensManage,
+		PermissionJobsCreate,
+		PermissionJobsRead,
+		PermissionJobsCancel,
 	},
-	RoleEditor: {PermissionRead, PermissionUpdate, PermissionSettingsRead},
-	RoleViewer: {PermissionRead, PermissionSettingsRead},
-	RoleAgent:  {PermissionRead, PermissionSettingsRead},
-	RoleBox:    {PermissionRead, PermissionSettingsRead},
+	RoleEditor: {
+		PermissionRead,
+		PermissionUpdate,
+		PermissionSettingsRead,
+		PermissionJobsCreate,
+		PermissionJobsRead,
+		PermissionJobsCancel,
+	},
+	RoleViewer: {PermissionRead, PermissionSettingsRead, PermissionJobsRead},
+	RoleAgent: {
+		PermissionRead,
+		PermissionSettingsRead,
+		PermissionJobsCreate,
+		PermissionJobsRead,
+		PermissionJobsCancel,
+	},
+	RoleBox: {PermissionRead, PermissionSettingsRead, PermissionJobsRead},
 }
 
 // Project is the authoritative project record.
