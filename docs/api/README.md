@@ -70,6 +70,7 @@ pnpm --filter @mmdash/core-client generate
 - [Jobs and Worker protocol](jobs.md)
 - [Events, Outbox, and replay](events.md)
 - [Data Hub, object routing, and Project Context](datahub.md)
+- [Audit and observability](audit-observability.md)
 - [Contracts, code generation, and compatibility](contracts.md)
 - [MCP tool catalog](mcp-tools.md)
 - [Local development](../development/README.md)

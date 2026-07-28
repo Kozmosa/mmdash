@@ -382,6 +382,49 @@ export class CoreClient {
     );
   }
 
+  async recordAuditEvent(
+    input: components["schemas"]["RecordAuditEventRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["AuditEvent"]> {
+    return this.request(
+      "/v1/audit/events",
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async listAuditEvents(
+    context: CoreRequestContext,
+    options: {
+      action?: string;
+      actorId?: string;
+      category?: string;
+      cursor?: string;
+      limit?: number;
+      outcome?: "denied" | "error" | "success";
+      projectId?: string;
+      requestId?: string;
+      source?: string;
+    } = {},
+  ): Promise<components["schemas"]["AuditEventPage"]> {
+    const query = new URLSearchParams();
+    if (options.action) query.set("action", options.action);
+    if (options.actorId) query.set("actor_id", options.actorId);
+    if (options.category) query.set("category", options.category);
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    if (options.outcome) query.set("outcome", options.outcome);
+    if (options.projectId) query.set("project_id", options.projectId);
+    if (options.requestId) query.set("request_id", options.requestId);
+    if (options.source) query.set("source", options.source);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/audit/events${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
   async request<T>(
     path: string,
     options: CoreRequestOptions,

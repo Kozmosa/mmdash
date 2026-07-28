@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 export function registerHealthRoutes(
   app: FastifyInstance,
   coreClient: CoreClient,
+  version: string,
 ): void {
   app.get(
     "/health/live",
@@ -11,7 +12,7 @@ export function registerHealthRoutes(
     async () => ({
       service: "web-bff",
       status: "ok",
-      version: "0.1.0",
+      version,
     }),
   );
 

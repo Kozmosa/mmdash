@@ -68,6 +68,7 @@ function renderGoHandlerTypes(document) {
     "ReplayEventRequest",
     "CreateContextProposalRequest",
     "ReviewContextProposalRequest",
+    "RecordAuditEventRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {

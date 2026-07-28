@@ -55,6 +55,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read bounded-label Prometheus metrics */
+    get: operations["observability.metrics.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/example": {
     parameters: {
       query?: never;
@@ -763,6 +780,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/audit/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Search the append-only audit trail */
+    get: operations["audit.events.list"];
+    put?: never;
+    /**
+     * Record an event from a trusted mmdash service
+     * @description Requires an API or Box token; caller identity is derived by Core.
+     */
+    post: operations["audit.events.record"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1181,6 +1219,55 @@ export interface components {
       /** Format: date-time */
       failed_at: string;
     };
+    RecordAuditEventRequest: {
+      category: string;
+      action: string;
+      /** @enum {string} */
+      outcome: "success" | "denied" | "error";
+      source: string;
+      /** Format: uuid */
+      project_id?: string;
+      resource_type?: string;
+      resource_id?: string;
+      /** Format: date-time */
+      occurred_at?: string;
+      duration_ms?: number;
+      error_code?: string;
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    AuditEvent: {
+      /** Format: uuid */
+      audit_id: string;
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: date-time */
+      recorded_at: string;
+      request_id: string;
+      /** Format: uuid */
+      actor_id?: string;
+      actor_kind: string;
+      /** Format: uuid */
+      project_id?: string;
+      category: string;
+      action: string;
+      /** @enum {string} */
+      outcome: "success" | "denied" | "error";
+      source: string;
+      resource_type: string;
+      resource_id: string;
+      duration_ms?: number;
+      error_code: string;
+      metadata: {
+        [key: string]: unknown;
+      };
+    };
+    AuditEventPage: {
+      items: components["schemas"]["AuditEvent"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
     DataObject: {
       /** Format: uuid */
       object_id: string;
@@ -1441,6 +1528,26 @@ export interface operations {
         };
         content: {
           "application/yaml": string;
+        };
+      };
+    };
+  };
+  "observability.metrics.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Prometheus text exposition for Core. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/plain": string;
         };
       };
     };
@@ -2545,6 +2652,62 @@ export interface operations {
           "application/json": components["schemas"]["HomeAggregate"];
         };
       };
+    };
+  };
+  "audit.events.list": {
+    parameters: {
+      query?: {
+        project_id?: string;
+        actor_id?: string;
+        category?: string;
+        action?: string;
+        outcome?: "success" | "denied" | "error";
+        source?: string;
+        request_id?: string;
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor-paginated audit events. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditEventPage"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "audit.events.record": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RecordAuditEventRequest"];
+      };
+    };
+    responses: {
+      /** @description Immutable audit event. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditEvent"];
+        };
+      };
+      403: components["responses"]["Error"];
     };
   };
 }

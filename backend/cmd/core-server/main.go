@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/datahub"
@@ -21,6 +22,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/health"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/logging"
+	"github.com/mmdash/mmdash/backend/internal/platform/metrics"
 	"github.com/mmdash/mmdash/backend/internal/platform/module"
 	"github.com/mmdash/mmdash/backend/internal/platform/objectstorage"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
@@ -93,6 +95,14 @@ func run(logger *logging.Logger) error {
 		Transaction: transactionManager,
 	}
 	eventBus := eventbus.New()
+	metricRegistry := metrics.New("core", processConfig.Version)
+	auditStore := audit.PostgresStore{
+		Clock: systemClock, DB: db, Generator: idGenerator,
+	}
+	auditRecorder := audit.Recorder{
+		Clock: systemClock, Logger: logger,
+		Metrics: metricRegistry, Store: auditStore,
+	}
 	if err := eventBus.Register(eventbus.Consumer{
 		Name:     "platform.system-test-receipt",
 		Patterns: []string{"system.test.emitted"},
@@ -170,6 +180,9 @@ func run(logger *logging.Logger) error {
 		Access: projectService, Adapters: dataAdapters,
 		Clock: systemClock, Store: dataStore,
 	}
+	auditService := audit.Service{
+		Access: projectService, Clock: systemClock, Store: auditStore,
+	}
 	settingsCodec, err := settings.NewSecretCodec(processConfig.Settings.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("initialize settings encryption: %w", err)
@@ -227,6 +240,9 @@ func run(logger *logging.Logger) error {
 	if err := modules.Register(datahub.Module{Service: dataService}); err != nil {
 		return err
 	}
+	if err := modules.Register(audit.Module{Service: auditService}); err != nil {
+		return err
+	}
 	if err := modules.Register(settings.Module{
 		Auth:    authService,
 		Service: settingsService,
@@ -234,15 +250,36 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	handler := coreapp.NewHandler(coreapp.Options{
+		Audit: func(ctx context.Context, observation coreapp.HTTPObservation) error {
+			outcome := "success"
+			if observation.Status == 401 || observation.Status == 403 {
+				outcome = "denied"
+			} else if observation.Status >= 400 {
+				outcome = "error"
+			}
+			duration := observation.DurationMS
+			return auditRecorder.Record(ctx, audit.Event{
+				Action: "http.request.completed", Category: "http",
+				DurationMS: &duration, Outcome: outcome,
+				Source: "core", ResourceType: "http-route",
+				ResourceID: observation.Path,
+				Metadata: map[string]interface{}{
+					"method": observation.Method,
+					"status": observation.Status,
+				},
+			})
+		},
 		Health: health.Handler{
 			Checkers: []health.Checker{
 				database.Checker{DB: db},
 				storage,
 			},
+			Version: processConfig.Version,
 		},
 		IDGenerator: idGenerator,
 		Logger:      logger,
 		Modules:     modules,
+		Metrics:     metricRegistry,
 		OpenAPI:     openAPI,
 	})
 	processorID, err := idGenerator.New()

@@ -13,6 +13,7 @@ export type ToolRegistrationContext = {
   principal: Principal;
   requestId: string;
   sessionId: string;
+  version: string;
 };
 
 export type ToolModule = {
@@ -32,7 +33,7 @@ export class ToolRegistry {
 
   createServer(context: ToolRegistrationContext): McpServer {
     const server = new McpServer(
-      { name: "mmdash-mcp-gateway", version: "0.1.0" },
+      { name: "mmdash-mcp-gateway", version: context.version },
       {
         capabilities: { tools: {} },
         instructions:

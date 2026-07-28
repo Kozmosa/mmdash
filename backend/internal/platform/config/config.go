@@ -18,6 +18,7 @@ type Config struct {
 	OpenAPIPath     string
 	Outbox          OutboxConfig
 	Settings        SettingsConfig
+	Version         string
 	ShutdownTimeout time.Duration
 	StartupTimeout  time.Duration
 }
@@ -102,6 +103,7 @@ func Load(lookup LookupEnv) (Config, error) {
 				"development-settings-encryption-key-change-me",
 			),
 		},
+		Version:         envOrDefault(lookup, "MMDASH_VERSION", "0.1.0"),
 		ShutdownTimeout: durationOrDefault(lookup, "CORE_SHUTDOWN_TIMEOUT", 10*time.Second),
 		StartupTimeout:  durationOrDefault(lookup, "CORE_STARTUP_TIMEOUT", 15*time.Second),
 	}
@@ -165,6 +167,9 @@ func (config Config) Validate() error {
 	}
 	if len(config.Settings.EncryptionKey) < 32 {
 		return fmt.Errorf("SETTINGS_ENCRYPTION_KEY must contain at least 32 characters")
+	}
+	if strings.TrimSpace(config.Version) == "" || len(config.Version) > 100 {
+		return fmt.Errorf("MMDASH_VERSION must contain 1 to 100 characters")
 	}
 	if config.StartupTimeout <= 0 || config.ShutdownTimeout <= 0 {
 		return fmt.Errorf("Core timeouts must be positive")
