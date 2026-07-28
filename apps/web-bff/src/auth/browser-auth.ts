@@ -7,6 +7,7 @@ import { BffError } from "../errors/bff-error.js";
 export const sessionCookieName = "mmdash_session";
 
 const sessionAssertionSchema = z.object({
+  access_token: z.string().min(1),
   display_name: z.string().min(1).max(200),
   email: z.string().email(),
   expires_at: z.string().datetime(),
@@ -15,6 +16,7 @@ const sessionAssertionSchema = z.object({
 });
 
 export type BrowserIdentity = {
+  accessToken: string;
   displayName: string;
   email: string;
   sessionId: string;
@@ -56,14 +58,12 @@ export function registerBrowserAuth(
       throw unauthorized();
     }
     const parsed = sessionAssertionSchema.safeParse(assertion);
-    if (
-      !parsed.success ||
-      Date.parse(parsed.data.expires_at) <= Date.now()
-    ) {
+    if (!parsed.success || Date.parse(parsed.data.expires_at) <= Date.now()) {
       throw unauthorized();
     }
 
     request.browserIdentity = {
+      accessToken: parsed.data.access_token,
       displayName: parsed.data.display_name,
       email: parsed.data.email,
       sessionId: parsed.data.session_id,

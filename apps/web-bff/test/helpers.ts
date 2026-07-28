@@ -21,6 +21,7 @@ export async function signedSessionCookie(
 ): Promise<string> {
   await app.ready();
   const assertion = encodeSessionAssertion({
+    access_token: "test-access-token",
     display_name: "Test User",
     email: "test@example.com",
     expires_at: new Date(Date.now() + 60_000).toISOString(),

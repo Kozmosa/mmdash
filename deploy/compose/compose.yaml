@@ -58,6 +58,11 @@ services:
     environment:
       CORE_ADDR: :8080
       CORE_OPENAPI_PATH: /app/contracts/openapi/core.yaml
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-24h}
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@mmdash.local}
+      AUTH_BOOTSTRAP_DISPLAY_NAME: ${AUTH_BOOTSTRAP_DISPLAY_NAME:-mmdash Admin}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-mmdash-local-admin}
       DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
       DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
       DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}

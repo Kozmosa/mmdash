@@ -1,6 +1,7 @@
 import type { components } from "./generated/core.js";
 
 export type CoreRequestContext = {
+  accessToken?: string;
   projectId?: string;
   requestId: string;
   userId?: string;
@@ -49,6 +50,125 @@ export class CoreClient {
     );
   }
 
+  async login(
+    credentials: components["schemas"]["LoginRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["LoginResult"]> {
+    return this.request(
+      "/v1/auth/login",
+      {
+        body: credentials,
+        method: "POST",
+      },
+      context,
+    );
+  }
+
+  async logout(context: CoreRequestContext): Promise<void> {
+    return this.request("/v1/auth/logout", { method: "POST" }, context);
+  }
+
+  async currentIdentity(
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Identity"]> {
+    return this.request("/v1/auth/me", { method: "GET" }, context);
+  }
+
+  async listProjects(
+    context: CoreRequestContext,
+    includeArchived = false,
+  ): Promise<components["schemas"]["ProjectList"]> {
+    return this.request(
+      `/v1/projects?include_archived=${includeArchived}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createProject(
+    input: components["schemas"]["CreateProjectRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Project"]> {
+    return this.request(
+      "/v1/projects",
+      {
+        body: input,
+        method: "POST",
+      },
+      context,
+    );
+  }
+
+  async getProject(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Project"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateProject(
+    projectId: string,
+    input: components["schemas"]["UpdateProjectRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Project"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async listProjectMembers(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["MemberList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/members`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async upsertProjectMember(
+    projectId: string,
+    userId: string,
+    role: components["schemas"]["ProjectRole"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectMember"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+      { body: { role }, method: "PUT" },
+      context,
+    );
+  }
+
+  async removeProjectMember(
+    projectId: string,
+    userId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async getProjectPermissions(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectPermissions"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/permissions`,
+      { method: "GET" },
+      context,
+    );
+  }
+
   async request<T>(
     path: string,
     options: CoreRequestOptions,
@@ -73,6 +193,9 @@ export class CoreClient {
     const headers = new Headers(options.headers);
     headers.set("accept", headers.get("accept") ?? "application/json");
     headers.set("x-request-id", context.requestId);
+    if (context.accessToken) {
+      headers.set("authorization", `Bearer ${context.accessToken}`);
+    }
     if (context.projectId) {
       headers.set("x-mmdash-project-id", context.projectId);
     }
