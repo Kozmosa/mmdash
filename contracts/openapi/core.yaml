@@ -15,12 +15,17 @@ tags:
     description: Core platform metadata.
   - name: Engineering
     description: Non-domain endpoints used to verify the technical baseline.
+  - name: Auth
+    description: Users, sessions, and revocable access credentials.
+  - name: Projects
+    description: Collaborative projects, membership, roles, and permissions.
 paths:
   /health/live:
     get:
       tags: [Health]
       summary: Check whether the Core process is alive
       operationId: health.live
+      security: []
       responses:
         "200":
           description: The Core process is alive.
@@ -33,6 +38,7 @@ paths:
       tags: [Health]
       summary: Check Core dependency readiness
       operationId: health.ready
+      security: []
       responses:
         "200":
           description: PostgreSQL and object storage are ready.
@@ -51,6 +57,7 @@ paths:
       tags: [System]
       summary: Read the running Core OpenAPI contract
       operationId: system.openapi.get
+      security: []
       responses:
         "200":
           description: The canonical Core OpenAPI document.
@@ -63,6 +70,7 @@ paths:
       tags: [Engineering]
       summary: Verify the example module and PostgreSQL path
       operationId: example.check
+      security: []
       responses:
         "200":
           description: PostgreSQL is reachable.
@@ -76,8 +84,520 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      operationId: auth.login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: A revocable browser session was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current browser session
+      operationId: auth.logout
+      responses:
+        "204":
+          description: Session revoked.
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Resolve the current identity
+      operationId: auth.me
+      responses:
+        "200":
+          description: Current authenticated identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Identity"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/tokens:
+    get:
+      tags: [Auth]
+      summary: List token metadata owned by the current user
+      operationId: auth.tokens.list
+      responses:
+        "200":
+          description: Token metadata without secrets.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AccessToken"
+    post:
+      tags: [Auth]
+      summary: Issue an API, Agent, or Box token
+      operationId: auth.tokens.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: Token secret returned once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedToken"
+  /v1/auth/tokens/{tokenId}:
+    parameters:
+      - $ref: "#/components/parameters/TokenId"
+    delete:
+      tags: [Auth]
+      summary: Revoke an access token
+      operationId: auth.tokens.revoke
+      responses:
+        "204":
+          description: Token revoked.
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects:
+    get:
+      tags: [Projects]
+      summary: List projects visible to the current identity
+      operationId: projects.list
+      parameters:
+        - name: include_archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Visible collaborative projects.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+    post:
+      tags: [Projects]
+      summary: Create a collaborative project
+      operationId: projects.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created with the caller as owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /v1/projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Get a project
+      operationId: projects.get
+      responses:
+        "200":
+          description: Project detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Projects]
+      summary: Update or archive a project
+      operationId: projects.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Updated project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /v1/projects/{projectId}/members:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: List project collaborators
+      operationId: projects.members.list
+      responses:
+        "200":
+          description: Project team.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberList"
+  /v1/projects/{projectId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [Projects]
+      summary: Add a collaborator or change their role
+      operationId: projects.members.upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: "#/components/schemas/ProjectRole"
+      responses:
+        "200":
+          description: Updated collaborator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMember"
+    delete:
+      tags: [Projects]
+      summary: Remove a collaborator
+      operationId: projects.members.remove
+      responses:
+        "204":
+          description: Collaborator removed.
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: Get the current identity's effective project permissions
+      operationId: projects.permissions.get
+      responses:
+        "200":
+          description: Effective role and permission names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPermissions"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT or opaque token
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TokenId:
+      name: tokenId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Error:
+      description: Stable Core error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+    LoginResult:
+      type: object
+      additionalProperties: false
+      required: [access_token, expires_at, session_id, user]
+      properties:
+        access_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+          format: uuid
+        user:
+          $ref: "#/components/schemas/User"
+    Identity:
+      type: object
+      additionalProperties: false
+      required: [kind, user]
+      properties:
+        kind:
+          type: string
+          enum: [session, api, agent, box]
+        project_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        token_id:
+          type: string
+          format: uuid
+        user:
+          $ref: "#/components/schemas/User"
+    AccessToken:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, kind, name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [api, agent, box]
+        name:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    CreateTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, name]
+      properties:
+        kind:
+          type: string
+          enum: [api, agent, box]
+        name:
+          type: string
+          minLength: 1
+        project_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+    IssuedToken:
+      type: object
+      additionalProperties: false
+      required: [token, credential]
+      properties:
+        token:
+          type: string
+        credential:
+          $ref: "#/components/schemas/AccessToken"
+    ProjectRole:
+      type: string
+      enum: [owner, maintainer, editor, viewer, agent, box]
+    Project:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - problem_title
+        - problem_summary
+        - project_constraints
+        - source_artifact_ids
+        - created_by
+        - created_at
+        - updated_at
+        - role
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        problem_title:
+          type: string
+        problem_summary:
+          type: string
+        project_constraints:
+          type: array
+          items:
+            type: string
+        source_artifact_ids:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+          format: uuid
+        archived_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+    ProjectList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        problem_title:
+          type: string
+        problem_summary:
+          type: string
+        project_constraints:
+          type: array
+          items:
+            type: string
+        source_artifact_ids:
+          type: array
+          items:
+            type: string
+    UpdateProjectRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+        problem_title:
+          type: string
+        problem_summary:
+          type: string
+        project_constraints:
+          type: array
+          items:
+            type: string
+        source_artifact_ids:
+          type: array
+          items:
+            type: string
+        archived:
+          type: boolean
+    ProjectMember:
+      type: object
+      additionalProperties: false
+      required: [user_id, email, display_name, role, joined_at]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+        joined_at:
+          type: string
+          format: date-time
+    MemberList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectMember"
+    ProjectPermissions:
+      type: object
+      additionalProperties: false
+      required: [role, permissions]
+      properties:
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+        permissions:
+          type: array
+          items:
+            type: string
     Liveness:
       type: object
       additionalProperties: false
@@ -132,3 +652,5 @@ components:
           type: string
         details:
           description: Optional operation-specific structured details.
+security:
+  - bearerAuth: []

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/example"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/config"
@@ -17,7 +18,10 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/logging"
 	"github.com/mmdash/mmdash/backend/internal/platform/module"
 	"github.com/mmdash/mmdash/backend/internal/platform/objectstorage"
+	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
+	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
 func main() {
@@ -57,8 +61,44 @@ func run(logger *logging.Logger) error {
 		return fmt.Errorf("read Core OpenAPI contract: %w", err)
 	}
 
+	systemClock := clock.System{}
+	idGenerator := identity.Generator{}
+	authService := &auth.Service{
+		Clock:      systemClock,
+		Generator:  idGenerator,
+		JWTSecret:  []byte(processConfig.Auth.JWTSecret),
+		SessionTTL: processConfig.Auth.SessionTTL,
+		Store:      auth.PostgresStore{DB: db},
+	}
+	if err := authService.EnsureBootstrapUser(
+		startupContext,
+		processConfig.Auth.BootstrapEmail,
+		processConfig.Auth.BootstrapDisplayName,
+		processConfig.Auth.BootstrapPassword,
+	); err != nil {
+		return fmt.Errorf("ensure bootstrap user: %w", err)
+	}
+	transactionManager := transaction.Manager{DB: transaction.SQLBeginner{DB: db}}
+	outboxWriter := outbox.Writer{Clock: systemClock, Generator: idGenerator}
+	projectService := &project.Service{
+		Auth: authService,
+		Store: project.PostgresStore{
+			Clock:       systemClock,
+			DB:          db,
+			Generator:   idGenerator,
+			Outbox:      outboxWriter,
+			Transaction: transactionManager,
+		},
+	}
 	modules := module.NewRegistry()
+	authService.ProjectTokens = projectService
+	if err := modules.Register(auth.Module{Service: authService}); err != nil {
+		return err
+	}
 	if err := modules.Register(example.New(example.PostgresChecker{DB: db})); err != nil {
+		return err
+	}
+	if err := modules.Register(project.Module{Service: *projectService}); err != nil {
 		return err
 	}
 	handler := coreapp.NewHandler(coreapp.Options{
@@ -68,7 +108,7 @@ func run(logger *logging.Logger) error {
 				storage,
 			},
 		},
-		IDGenerator: identity.Generator{},
+		IDGenerator: idGenerator,
 		Logger:      logger,
 		Modules:     modules,
 		OpenAPI:     openAPI,
