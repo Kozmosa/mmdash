@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - clients/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+  sharp: true

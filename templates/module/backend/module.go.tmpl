@@ -1,0 +1,12 @@
+// Package __MODULE__ owns the __MODULE__ domain boundary.
+package __MODULE__
+
+import "net/http"
+
+// Module registers the module's application services and transports.
+type Module struct{}
+
+// RegisterRoutes mounts the module's HTTP handlers.
+func (Module) RegisterRoutes(mux *http.ServeMux) {
+	// Register only contract-backed routes here.
+}

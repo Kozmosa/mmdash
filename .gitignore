@@ -14,15 +14,19 @@ env/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.uv-cache/
+.go-cache/
 .coverage
 htmlcov/
 
 # Node.js
 node_modules/
+.pnpm-store/
 .next/
 dist/
 build/
 *.tsbuildinfo
+.generated/
 
 # Runtime data and logs
 data/

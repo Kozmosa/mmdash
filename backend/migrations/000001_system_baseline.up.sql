@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS system_runtime_checks (
+    check_name TEXT PRIMARY KEY,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
