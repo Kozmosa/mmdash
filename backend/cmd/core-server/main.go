@@ -285,9 +285,21 @@ func run(logger *logging.Logger) error {
 		Clock: systemClock, DB: db, Generator: idGenerator,
 		Outbox: outboxWriter, Transaction: transactionManager,
 	}
+	repoRuntime := repo.Runtime{
+		Clock: systemClock, CloneTimeout: processConfig.Repo.CloneTimeout,
+		Git: gitClient, Storage: repoStorage,
+	}
+	repoWriter := &repo.WorkspaceWriter{
+		Clock: systemClock, Git: gitClient,
+		Runtime: repoRuntime, Storage: repoStorage,
+	}
 	repoService := repo.Service{
-		Access: projectService, Audit: auditRecorder, Clock: systemClock,
+		Access: projectService, Audit: auditRecorder,
+		Checkouts: repoStore, CheckoutTTL: processConfig.Repo.CheckoutTTL,
+		Clock: systemClock, Commits: repoStore,
 		DisconnectGrace: processConfig.Repo.DisconnectGrace,
+		Generator:       idGenerator,
+		MaxWriteBytes:   processConfig.Repo.MaxTextBytes,
 		Providers:       repoProviders,
 		PublicURL:       processConfig.PublicURL,
 		Reads: &repo.Reader{
@@ -296,7 +308,8 @@ func run(logger *logging.Logger) error {
 			Storage:      repoStorage,
 		},
 		Settings: settingsService,
-		Store:    repoStore,
+		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
+		Writer: repoWriter,
 	}
 	repoModule := repo.Module{Service: repoService}
 	jobService := jobs.Service{
@@ -413,6 +426,12 @@ func run(logger *logging.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create Repo sync owner identity: %w", err)
 	}
+	if err := (repo.Reconciler{
+		Checkouts: repoStore, Clock: systemClock,
+		Repositories: repoStore, Runtime: repoRuntime,
+	}).Run(ctx); err != nil {
+		return fmt.Errorf("reconcile Repo worktrees: %w", err)
+	}
 	repoCoordinator := repo.Coordinator{
 		BatchSize: processConfig.Repo.MaxConcurrentGit,
 		Clock:     systemClock,
@@ -425,14 +444,20 @@ func run(logger *logging.Logger) error {
 		Owner:     "core-" + syncOwnerID,
 		Poll:      processConfig.Repo.SyncPollInterval,
 		Providers: repoProviders,
-		Runtime: repo.Runtime{
-			Clock: systemClock, CloneTimeout: processConfig.Repo.CloneTimeout,
-			Git: gitClient, Storage: repoStorage,
-		},
-		Settings: settingsService,
-		Store:    repoStore,
+		Runtime:   repoRuntime,
+		Settings:  settingsService,
+		Store:     repoStore,
 	}
 	go repoCoordinator.Run(ctx)
+	go (repo.CheckoutReaper{
+		Clock: systemClock, Interval: time.Minute, Limit: 50,
+		OnError: func(checkoutErr error) {
+			logger.Error("repo.checkout.cleanup.failed", map[string]interface{}{
+				"error": checkoutErr.Error(),
+			})
+		},
+		Repositories: repoStore, Runtime: repoRuntime, Store: repoStore,
+	}).Run(ctx)
 
 	return server.New(
 		processConfig.Addr,
