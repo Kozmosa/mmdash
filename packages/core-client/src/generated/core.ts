@@ -209,6 +209,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/auth/invitations/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject and permanently invalidate an invitation */
+    post: operations["auth.invitations.reject"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/auth/tokens": {
     parameters: {
       query?: never;
@@ -314,10 +331,16 @@ export interface paths {
       cookie?: never;
     };
     get?: never;
-    /** Change an existing collaborator's role */
+    /**
+     * Change a collaborator's role or transfer ownership
+     * @description An owner role cannot be changed directly. Setting another existing collaborator's role to owner atomically transfers ownership from the caller and changes the caller to maintainer.
+     */
     put: operations["projects.members.upsert"];
     post?: never;
-    /** Remove a collaborator */
+    /**
+     * Remove a collaborator
+     * @description Owners must transfer ownership before they can be removed.
+     */
     delete: operations["projects.members.remove"];
     options?: never;
     head?: never;
@@ -1050,7 +1073,8 @@ export interface components {
       joined_at: string;
     };
     /** @enum {string} */
-    InvitationStatus: "pending" | "accepted" | "revoked" | "expired";
+    InvitationStatus:
+      "pending" | "accepted" | "revoked" | "declined" | "expired";
     ProjectInvitation: {
       /** Format: uuid */
       id: string;
@@ -1071,6 +1095,7 @@ export interface components {
     CreateInvitationRequest: {
       /** Format: email */
       email: string;
+      /** @description Human invitations accept maintainer, editor, or viewer. */
       role: components["schemas"]["ProjectRole"];
     };
     IssuedInvitation: {
@@ -1081,6 +1106,7 @@ export interface components {
       items: components["schemas"]["ProjectInvitation"][];
     };
     UpdateProjectMemberRequest: {
+      /** @description Human member updates accept owner, maintainer, editor, or viewer. */
       role: components["schemas"]["ProjectRole"];
     };
     MemberList: {
@@ -1922,6 +1948,28 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["ProjectMember"];
         };
+      };
+    };
+  };
+  "auth.invitations.reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InvitationTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Invitation rejected. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

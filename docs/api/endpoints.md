@@ -8,11 +8,13 @@ Stage 3.16 adds the following account and collaboration operations:
 
 - Core: `auth.register`, `auth.me.update`, `auth.me.password.update`,
   `auth.invitations.preview`, `auth.invitations.accept`,
+  `auth.invitations.reject`,
   `projects.members.upsert`, `projects.invitations.list`,
   `projects.invitations.create`, and `projects.invitations.revoke`.
 - Web BFF: `bff.auth.register`, `bff.auth.me.update`,
   `bff.auth.me.password.update`, `bff.auth.invitations.preview`,
-  `bff.auth.invitations.accept`, `bff.projects.members.upsert`,
+  `bff.auth.invitations.accept`, `bff.auth.invitations.reject`,
+  `bff.projects.members.upsert`,
   `bff.projects.invitations.list`, `bff.projects.invitations.create`, and
   `bff.projects.invitations.revoke`.
 

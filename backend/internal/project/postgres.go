@@ -96,6 +96,30 @@ func (store PostgresStore) PreviewInvitation(ctx context.Context, tokenHash stri
 	return i, err
 }
 
+func (store PostgresStore) DeclineInvitation(ctx context.Context, tokenHash string, now time.Time) error {
+	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var invitationID, projectID string
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE project_invitations
+			SET status = 'declined', declined_at = $2, updated_at = $2
+			WHERE token_hash = $1 AND status = 'pending' AND expires_at > $2
+			RETURNING invitation_id, project_id
+		`, tokenHash, now).Scan(&invitationID, &projectID); err != nil {
+			return err
+		}
+		_, err := store.Outbox.Write(ctx, tx, outbox.Event{
+			EventType: "project.invitation.declined",
+			Payload: map[string]interface{}{
+				"invitation_id": invitationID,
+				"project_id":    projectID,
+			},
+			Producer:  "project",
+			ProjectID: projectID,
+		})
+		return err
+	})
+}
+
 func (store PostgresStore) AcceptInvitation(ctx context.Context, tokenHash string, userID string, email string, now time.Time) (Member, error) {
 	var member Member
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
@@ -116,6 +140,9 @@ func (store PostgresStore) AcceptInvitationInTransaction(ctx context.Context, tx
 	var invitationRole Role
 	if err := tx.QueryRowContext(ctx, `SELECT invitation_id,project_id,role FROM project_invitations WHERE token_hash=$1 AND LOWER(email)=LOWER($2) AND status='pending' AND expires_at>$3 FOR UPDATE`, tokenHash, email, now).Scan(&invitationID, &projectID, &invitationRole); err != nil {
 		return Member{}, err
+	}
+	if !isInvitableHumanRole(invitationRole) {
+		return Member{}, ErrInvalid
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role,created_at,updated_at) VALUES($1,$2,$3,$4,$4) ON CONFLICT(project_id,user_id) DO NOTHING`, projectID, userID, invitationRole, now); err != nil {
 		return Member{}, err
@@ -408,6 +435,7 @@ func (store PostgresStore) UpsertMember(
 			) VALUES ($1, $2, $3, $4, $4)
 			ON CONFLICT (project_id, user_id)
 			DO UPDATE SET role = EXCLUDED.role, updated_at = EXCLUDED.updated_at
+			WHERE project_members.role <> 'owner'
 		`, projectID, userID, role, now); err != nil {
 			return err
 		}
@@ -426,6 +454,105 @@ func (store PostgresStore) UpsertMember(
 	})
 	if err != nil {
 		return Member{}, wrap("upsert project member", err)
+	}
+	var member Member
+	err = store.DB.QueryRowContext(ctx, `
+		SELECT users.user_id, users.email, users.display_name,
+		       member.role, member.created_at
+		FROM project_members AS member
+		JOIN auth_users AS users USING (user_id)
+		WHERE member.project_id = $1 AND member.user_id = $2
+	`, projectID, userID).Scan(
+		&member.UserID,
+		&member.Email,
+		&member.DisplayName,
+		&member.Role,
+		&member.JoinedAt,
+	)
+	return member, err
+}
+
+// TransferOwnership atomically promotes an existing member and demotes the
+// current owner to maintainer. Regular role updates cannot perform either half
+// of this transition independently.
+func (store PostgresStore) TransferOwnership(
+	ctx context.Context,
+	actorID string,
+	projectID string,
+	userID string,
+) (Member, error) {
+	now := store.Clock.Now().UTC()
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var actorRole Role
+		if err := tx.QueryRowContext(ctx, `
+			SELECT role
+			FROM project_members
+			WHERE project_id = $1 AND user_id = $2
+			FOR UPDATE
+		`, projectID, actorID).Scan(&actorRole); err != nil {
+			return err
+		}
+		if actorRole != RoleOwner {
+			return ErrForbidden
+		}
+		rows, err := tx.QueryContext(ctx, `
+			UPDATE project_members
+			SET role = 'maintainer', updated_at = $3
+			WHERE project_id = $1 AND role = 'owner' AND user_id <> $2
+			RETURNING user_id
+		`, projectID, userID, now)
+		if err != nil {
+			return err
+		}
+		demotedOwnerIDs := []string{}
+		for rows.Next() {
+			var ownerID string
+			if err := rows.Scan(&ownerID); err != nil {
+				rows.Close()
+				return err
+			}
+			demotedOwnerIDs = append(demotedOwnerIDs, ownerID)
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if len(demotedOwnerIDs) == 0 {
+			return ErrForbidden
+		}
+		targetResult, err := tx.ExecContext(ctx, `
+			UPDATE project_members
+			SET role = 'owner', updated_at = $3
+			WHERE project_id = $1 AND user_id = $2 AND role <> 'owner'
+		`, projectID, userID, now)
+		if err := requireProjectAffected(targetResult, err); err != nil {
+			return err
+		}
+		for _, changedUserID := range append(demotedOwnerIDs, userID) {
+			role := RoleMaintainer
+			if changedUserID == userID {
+				role = RoleOwner
+			}
+			if _, err := store.Outbox.Write(ctx, tx, outbox.Event{
+				Actor:     map[string]string{"user_id": actorID},
+				EventType: "project.member.role_changed",
+				Payload: map[string]interface{}{
+					"project_id": projectID,
+					"role":       role,
+					"user_id":    changedUserID,
+				},
+				Producer:  "project",
+				ProjectID: projectID,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return Member{}, wrap("transfer project ownership", err)
 	}
 	var member Member
 	err = store.DB.QueryRowContext(ctx, `

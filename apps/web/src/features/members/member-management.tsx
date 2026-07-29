@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 
 import { useCurrentProject } from "@/components/providers/project-provider";
+import { useCurrentUser } from "@/components/providers/user-provider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,18 +33,20 @@ type Invitation = {
   status: string;
   expires_at: string;
 };
-const roles: Role[] = [
-  "owner",
+type HumanRole = Exclude<Role, "agent" | "box">;
+type InvitableHumanRole = Exclude<HumanRole, "owner">;
+
+const assignableRoles: InvitableHumanRole[] = [
   "maintainer",
   "editor",
   "viewer",
-  "agent",
-  "box",
 ];
 
 export function MemberManagement() {
   const project = useCurrentProject();
+  const currentUser = useCurrentUser();
   const client = useQueryClient();
+  const [issuedInvitationLink, setIssuedInvitationLink] = useState("");
   const base = `/projects/${encodeURIComponent(project.id)}`;
   const members = useQuery({
     queryKey: ["members", project.id],
@@ -58,19 +61,24 @@ export function MemberManagement() {
     await Promise.all([
       client.invalidateQueries({ queryKey: ["members", project.id] }),
       client.invalidateQueries({ queryKey: ["invitations", project.id] }),
+      client.invalidateQueries({ queryKey: ["project", project.id] }),
     ]);
   };
   const invite = useMutation({
-    mutationFn: (input: { email: string; role: Role }) =>
+    mutationFn: (input: { email: string; role: InvitableHumanRole }) =>
       apiClient.request<{ token: string }>(`${base}/invitations`, {
         method: "POST",
         body: input,
       }),
     onSuccess: async (result) => {
-      await refresh();
-      toast.success(
-        `邀请已创建：${location.origin}/invite?token=${encodeURIComponent(result.token)}`,
+      setIssuedInvitationLink(
+        `${location.origin}/invite?token=${encodeURIComponent(result.token)}`,
       );
+      await refresh();
+      toast.success("邀请已创建");
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, "发送邀请失败"));
     },
   });
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -78,8 +86,20 @@ export function MemberManagement() {
     const f = new FormData(event.currentTarget);
     invite.mutate({
       email: String(f.get("email") ?? ""),
-      role: String(f.get("role") ?? "viewer") as Role,
+      role: String(f.get("role") ?? "viewer") as InvitableHumanRole,
     });
+  }
+  async function copyInvitationLink() {
+    if (!issuedInvitationLink || !navigator.clipboard) {
+      toast.error("当前浏览器无法复制邀请链接");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(issuedInvitationLink);
+      toast.success("邀请链接已复制");
+    } catch (error) {
+      toast.error(errorMessage(error, "复制邀请链接失败"));
+    }
   }
   return (
     <section className="space-y-4">
@@ -109,13 +129,34 @@ export function MemberManagement() {
               name="role"
               defaultValue="viewer"
             >
-              {roles.map((r) => (
+              {assignableRoles.map((r) => (
                 <option key={r}>{r}</option>
               ))}
             </select>
           </CardContent>
           <CardFooter>
-            <Button disabled={invite.isPending}>发送邀请</Button>
+            <div className="w-full space-y-3">
+              <Button disabled={invite.isPending} type="submit">
+                {invite.isPending ? "发送中…" : "发送邀请"}
+              </Button>
+              {issuedInvitationLink ? (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    aria-label="邀请链接"
+                    className="min-w-0 flex-1"
+                    readOnly
+                    value={issuedInvitationLink}
+                  />
+                  <Button
+                    onClick={copyInvitationLink}
+                    type="button"
+                    variant="outline"
+                  >
+                    复制邀请链接
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           </CardFooter>
         </form>
       </Card>
@@ -133,34 +174,94 @@ export function MemberManagement() {
                 <p className="font-medium">{member.display_name}</p>
                 <p className="text-xs text-muted-foreground">{member.email}</p>
               </div>
-              <select
-                className="h-8 rounded-md border bg-background px-2 text-sm"
-                value={member.role}
-                onChange={async (e) => {
-                  await apiClient.request(`${base}/members/${member.user_id}`, {
-                    method: "PUT",
-                    body: { role: e.target.value },
-                  });
-                  await refresh();
-                  toast.success("角色已更新");
-                }}
-              >
-                {roles.map((r) => (
-                  <option key={r}>{r}</option>
-                ))}
-              </select>
-              <Button
-                variant="ghost"
-                onClick={async () => {
-                  await apiClient.request(`${base}/members/${member.user_id}`, {
-                    method: "DELETE",
-                  });
-                  await refresh();
-                  toast.success("成员已移除");
-                }}
-              >
-                移除
-              </Button>
+              {member.role === "owner" ||
+              member.role === "agent" ||
+              member.role === "box" ? (
+                <span className="rounded-md border bg-muted px-2 py-1 text-sm">
+                  {member.role}
+                </span>
+              ) : (
+                <select
+                  aria-label={`修改 ${member.display_name} 的角色`}
+                  className="h-8 rounded-md border bg-background px-2 text-sm"
+                  value={member.role}
+                  onChange={async (event) => {
+                    try {
+                      await apiClient.request(
+                        `${base}/members/${member.user_id}`,
+                        {
+                          method: "PUT",
+                          body: { role: event.target.value },
+                        },
+                      );
+                      await refresh();
+                      toast.success("角色已更新");
+                    } catch (error) {
+                      toast.error(errorMessage(error, "更新角色失败"));
+                    }
+                  }}
+                >
+                  {assignableRoles.map((role) => (
+                    <option key={role}>{role}</option>
+                  ))}
+                </select>
+              )}
+              {project.role === "owner" &&
+              isTransferTarget(member.role) &&
+              member.user_id !== currentUser?.id ? (
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        `确认将项目所有权转让给 ${member.display_name}？转让后你的角色将变为 maintainer。`,
+                      )
+                    ) {
+                      return;
+                    }
+                    try {
+                      await apiClient.request(
+                        `${base}/members/${member.user_id}`,
+                        {
+                          method: "PUT",
+                          body: { role: "owner" },
+                        },
+                      );
+                      await refresh();
+                      toast.success("项目所有权已转让");
+                    } catch (error) {
+                      toast.error(errorMessage(error, "转让所有权失败"));
+                    }
+                  }}
+                >
+                  转让所有权
+                </Button>
+              ) : null}
+              {member.role !== "owner" ? (
+                <Button
+                  variant="ghost"
+                  onClick={async () => {
+                    try {
+                      await apiClient.request(
+                        `${base}/members/${member.user_id}`,
+                        {
+                          method: "DELETE",
+                        },
+                      );
+                      await refresh();
+                      toast.success("成员已移除");
+                    } catch (error) {
+                      toast.error(errorMessage(error, "移除成员失败"));
+                    }
+                  }}
+                >
+                  移除
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Owner 需先转让所有权
+                </span>
+              )}
             </div>
           ))}
         </CardContent>
@@ -195,4 +296,12 @@ export function MemberManagement() {
       </Card>
     </section>
   );
+}
+
+function isTransferTarget(role: Role): role is InvitableHumanRole {
+  return role === "maintainer" || role === "editor" || role === "viewer";
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
