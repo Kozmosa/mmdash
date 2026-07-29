@@ -25,6 +25,7 @@ import {
   gatewaySessionHeader,
   SessionRegistry,
 } from "./sessions/session-registry.js";
+import { dataListTool, dataReadTool } from "./tools/data.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { systemEchoTool } from "./tools/system-echo.js";
 import {
@@ -108,6 +109,8 @@ export function buildGateway(
 
 function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
+  registry.register(dataListTool);
+  registry.register(dataReadTool);
   registry.register(systemEchoTool);
   registry.register(projectMemberListTool);
   registry.register(projectMemberGetTool);

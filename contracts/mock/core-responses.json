@@ -42,5 +42,59 @@
     "body": {
       "items": []
     }
+  },
+  "repo.get": {
+    "method": "GET",
+    "path": "/v1/projects/{projectId}/repository",
+    "status": 200,
+    "body": {
+      "repository_id": "1727d920-012e-47a8-8103-11b1794879a4",
+      "project_id": "71818682-08ca-4a6f-8d28-2ca2fd05f39f",
+      "provider": "github",
+      "display_name": "Kozmosa/mmdash",
+      "remote_url": "https://github.com/Kozmosa/mmdash",
+      "default_branch": "main",
+      "status": "ready",
+      "settings_version": 1,
+      "last_synced_at": "2026-07-29T12:00:00Z",
+      "last_error_code": null,
+      "last_error_message": null,
+      "workspaces": [
+        {
+          "workspace": "code",
+          "remote_branch": "main",
+          "local_branch": "mmdash/code",
+          "head_commit_sha": "1111111111111111111111111111111111111111",
+          "tree_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "status": "ready",
+          "updated_at": "2026-07-29T12:00:00Z"
+        },
+        {
+          "workspace": "article",
+          "remote_branch": "article",
+          "local_branch": "mmdash/article",
+          "head_commit_sha": "2222222222222222222222222222222222222222",
+          "tree_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "status": "ready",
+          "updated_at": "2026-07-29T12:00:00Z"
+        },
+        {
+          "workspace": "result",
+          "remote_branch": "result",
+          "local_branch": "mmdash/result",
+          "head_commit_sha": "3333333333333333333333333333333333333333",
+          "tree_sha": "cccccccccccccccccccccccccccccccccccccccc",
+          "status": "ready",
+          "updated_at": "2026-07-29T12:00:00Z"
+        }
+      ],
+      "webhook": {
+        "hook_id": "1b8fa84f-df8a-4d2b-9659-da3fe402e5cc",
+        "public_url": "https://mmdash.com/api/webhooks/github/1b8fa84f-df8a-4d2b-9659-da3fe402e5cc",
+        "secret_configured": true
+      },
+      "created_at": "2026-07-29T11:00:00Z",
+      "updated_at": "2026-07-29T12:00:00Z"
+    }
   }
 }

@@ -44,6 +44,9 @@ const (
 	PermissionContextReview  Permission = "project.context.review"
 	PermissionAuditRead      Permission = "project.audit.read"
 	PermissionAuditWrite     Permission = "project.audit.write"
+	PermissionRepoRead       Permission = "project.repo.read"
+	PermissionRepoManage     Permission = "project.repo.manage"
+	PermissionRepoWrite      Permission = "project.repo.write"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -63,6 +66,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionContextReview,
 		PermissionAuditRead,
 		PermissionAuditWrite,
+		PermissionRepoRead,
+		PermissionRepoManage,
+		PermissionRepoWrite,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -79,6 +85,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionContextReview,
 		PermissionAuditRead,
 		PermissionAuditWrite,
+		PermissionRepoRead,
+		PermissionRepoManage,
+		PermissionRepoWrite,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -91,6 +100,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionContextPropose,
 		PermissionContextReview,
 		PermissionAuditWrite,
+		PermissionRepoRead,
+		PermissionRepoWrite,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -98,6 +109,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionJobsRead,
 		PermissionDataRead,
 		PermissionAuditWrite,
+		PermissionRepoRead,
 	},
 	RoleAgent: {
 		PermissionRead,
@@ -108,6 +120,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionContextPropose,
 		PermissionAuditWrite,
+		PermissionRepoRead,
 	},
 	RoleBox: {
 		PermissionRead,
@@ -115,6 +128,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionJobsRead,
 		PermissionDataRead,
 		PermissionAuditWrite,
+		PermissionRepoRead,
 	},
 }
 

@@ -70,6 +70,18 @@ function mapError(error: unknown): {
       status: 400,
     };
   }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "statusCode" in error &&
+    error.statusCode === 413
+  ) {
+    return {
+      code: "PAYLOAD_TOO_LARGE",
+      message: "Request payload is too large",
+      status: 413,
+    };
+  }
   return {
     code: "INTERNAL_ERROR",
     message: "An unexpected error occurred",

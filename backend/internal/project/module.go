@@ -13,7 +13,8 @@ import (
 
 // Module exposes project collaboration routes.
 type Module struct {
-	Service Service
+	Repository http.Handler
+	Service    Service
 }
 
 func (Module) Name() string { return "project" }
@@ -80,6 +81,11 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 		return
 	}
 	switch segments[1] {
+	case "repository":
+		if module.Repository != nil {
+			module.Repository.ServeHTTP(response, request)
+			return
+		}
 	case "restore":
 		if len(segments) == 2 {
 			module.handleRestore(response, request, identity, projectID)

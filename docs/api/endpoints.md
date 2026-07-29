@@ -108,6 +108,36 @@ Stage 3.16 adds the following account and collaboration operations:
 | Web BFF     | File stream   | `GET`         | `/api/projects/{projectId}/files/{filePath}`                          | `bff.file.download`                | file proxy           | `web-bff.yaml`     |
 | Web BFF     | File metadata | `HEAD`        | `/api/projects/{projectId}/files/{filePath}`                          | `bff.file.head`                    | file proxy           | `web-bff.yaml`     |
 | Web BFF     | File stream   | `PUT`         | `/api/projects/{projectId}/files/{filePath}`                          | `bff.file.upload`                  | file proxy           | `web-bff.yaml`     |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository`                                 | `repo.get`                         | repo                 | `core.yaml`        |
+| Core        | HTTP          | `PUT`         | `/v1/projects/{projectId}/repository`                                 | `repo.connect`                     | repo                 | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/repository`                                 | `repo.disconnect`                  | repo                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/test`                            | `repo.connection.test`             | repo                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/sync`                            | `repo.sync.request`                | repo                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/webhook-secret`                  | `repo.webhook-secret.rotate`       | repo                 | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/repository/workspaces`                      | `repo.workspaces.update`           | repo                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/branches`                        | `repo.branches.list`               | repo                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/commits`                         | `repo.commits.list`                | repo                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/commits`                         | `repo.commits.create`              | repo                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/commits/{commitSha}`             | `repo.commits.get`                 | repo                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/tree`                            | `repo.tree.list`                   | repo                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/content`                         | `repo.content.get`                 | repo                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/checkouts`                       | `repo.checkouts.create`            | repo                 | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/checkouts/{checkoutId}`          | `repo.checkouts.get`               | repo                 | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/repository/checkouts/{checkoutId}`          | `repo.checkouts.release`           | repo                 | `core.yaml`        |
+| Core        | Webhook       | `POST`        | `/v1/repo/webhooks/github/{hookId}`                                   | `repo.webhooks.github`             | repo                 | `core.yaml`        |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository`                                | `bff.repo.get`                     | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PUT`         | `/api/projects/{projectId}/repository`                                | `bff.repo.connect`                 | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/repository`                                | `bff.repo.disconnect`              | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/test`                           | `bff.repo.connection.test`         | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/sync`                           | `bff.repo.sync.request`            | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/webhook-secret`                 | `bff.repo.webhook-secret.rotate`   | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/repository/workspaces`                     | `bff.repo.workspaces.update`       | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/branches`                       | `bff.repo.branches.list`           | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/commits`                        | `bff.repo.commits.list`            | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/commits/{commitSha}`            | `bff.repo.commits.get`             | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/tree`                           | `bff.repo.tree.list`               | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/content`                        | `bff.repo.content.get`             | repo                 | `web-bff.yaml`     |
+| Web BFF     | Webhook       | `POST`        | `/api/webhooks/github/{hookId}`                                       | `bff.repo.webhooks.github`         | repo                 | `web-bff.yaml`     |
 | MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                | `system.echo`                      | engineering baseline | `system.echo.json` |
 
 ## Browser BFF conventions

@@ -15,6 +15,11 @@ import (
 type Registry struct {
 	http          map[httpKey]*httpMetric
 	mu            sync.RWMutex
+	repo          map[repoKey]*httpMetric
+	repoDurations map[repoDurationKey]*httpMetric
+	repoCheckouts int64
+	repoQueue     int64
+	repoStorage   int64
 	service       string
 	version       string
 	auditFailures uint64
@@ -30,11 +35,24 @@ type httpMetric struct {
 	DurationSec float64
 }
 
+type repoKey struct {
+	Operation string
+	Outcome   string
+	Provider  string
+}
+
+type repoDurationKey struct {
+	Operation string
+	Provider  string
+}
+
 func New(service, version string) *Registry {
 	return &Registry{
-		http:    map[httpKey]*httpMetric{},
-		service: strings.TrimSpace(service),
-		version: strings.TrimSpace(version),
+		http:          map[httpKey]*httpMetric{},
+		repo:          map[repoKey]*httpMetric{},
+		repoDurations: map[repoDurationKey]*httpMetric{},
+		service:       strings.TrimSpace(service),
+		version:       strings.TrimSpace(version),
 	}
 }
 
@@ -62,6 +80,75 @@ func (registry *Registry) IncrementAuditFailure() {
 	}
 	registry.mu.Lock()
 	registry.auditFailures++
+	registry.mu.Unlock()
+}
+
+// ObserveRepoOperation records one bounded Repo operation. Callers supply only
+// module constants; unexpected labels collapse to a fixed fallback.
+func (registry *Registry) ObserveRepoOperation(
+	operation string,
+	outcome string,
+	provider string,
+	duration time.Duration,
+) {
+	if registry == nil {
+		return
+	}
+	key := repoKey{
+		Operation: boundedLabel(
+			operation,
+			map[string]bool{
+				"cleanup": true, "clone": true, "commit": true,
+				"connect": true, "read": true, "sync": true,
+				"webhook": true, "checkout": true,
+			},
+			"other",
+		),
+		Outcome: boundedLabel(
+			outcome,
+			map[string]bool{"success": true, "error": true},
+			"error",
+		),
+		Provider: boundedLabel(
+			provider,
+			map[string]bool{"github": true, "local": true},
+			"unknown",
+		),
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	metric := registry.repo[key]
+	if metric == nil {
+		metric = &httpMetric{}
+		registry.repo[key] = metric
+	}
+	metric.Count++
+	durationKey := repoDurationKey{
+		Operation: key.Operation,
+		Provider:  key.Provider,
+	}
+	durationMetric := registry.repoDurations[durationKey]
+	if durationMetric == nil {
+		durationMetric = &httpMetric{}
+		registry.repoDurations[durationKey] = durationMetric
+	}
+	durationMetric.Count++
+	durationMetric.DurationSec += duration.Seconds()
+}
+
+// SetRepoGauges replaces the current low-cardinality Repo gauges.
+func (registry *Registry) SetRepoGauges(
+	syncQueueDepth int64,
+	checkoutsActive int64,
+	storageBytes int64,
+) {
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.repoQueue = nonNegative(syncQueueDepth)
+	registry.repoCheckouts = nonNegative(checkoutsActive)
+	registry.repoStorage = nonNegative(storageBytes)
 	registry.mu.Unlock()
 }
 
@@ -131,9 +218,86 @@ func (registry *Registry) snapshot() string {
 	fmt.Fprintf(
 		&output, "mmdash_audit_write_failures_total %d\n", registry.auditFailures,
 	)
+	output.WriteString("# HELP mmdash_repo_operations_total Completed Repo operations.\n")
+	output.WriteString("# TYPE mmdash_repo_operations_total counter\n")
+	output.WriteString(
+		"# HELP mmdash_repo_operation_duration_seconds Total Repo operation duration.\n",
+	)
+	output.WriteString("# TYPE mmdash_repo_operation_duration_seconds counter\n")
+	repoKeys := make([]repoKey, 0, len(registry.repo))
+	for key := range registry.repo {
+		repoKeys = append(repoKeys, key)
+	}
+	sort.Slice(repoKeys, func(left, right int) bool {
+		leftValue := repoKeys[left].Operation + repoKeys[left].Outcome + repoKeys[left].Provider
+		rightValue := repoKeys[right].Operation + repoKeys[right].Outcome + repoKeys[right].Provider
+		return leftValue < rightValue
+	})
+	for _, key := range repoKeys {
+		metric := registry.repo[key]
+		countLabels := fmt.Sprintf(
+			"operation=%s,outcome=%s,provider=%s",
+			quote(key.Operation),
+			quote(key.Outcome),
+			quote(key.Provider),
+		)
+		fmt.Fprintf(
+			&output,
+			"mmdash_repo_operations_total{%s} %d\n",
+			countLabels,
+			metric.Count,
+		)
+	}
+	durationKeys := make([]repoDurationKey, 0, len(registry.repoDurations))
+	for key := range registry.repoDurations {
+		durationKeys = append(durationKeys, key)
+	}
+	sort.Slice(durationKeys, func(left, right int) bool {
+		leftValue := durationKeys[left].Operation + durationKeys[left].Provider
+		rightValue := durationKeys[right].Operation + durationKeys[right].Provider
+		return leftValue < rightValue
+	})
+	for _, key := range durationKeys {
+		metric := registry.repoDurations[key]
+		labels := fmt.Sprintf(
+			"operation=%s,provider=%s",
+			quote(key.Operation),
+			quote(key.Provider),
+		)
+		fmt.Fprintf(
+			&output,
+			"mmdash_repo_operation_duration_seconds{%s} %s\n",
+			labels,
+			strconv.FormatFloat(metric.DurationSec, 'f', 6, 64),
+		)
+	}
+	output.WriteString("# HELP mmdash_repo_sync_queue_depth Repositories awaiting synchronization.\n")
+	output.WriteString("# TYPE mmdash_repo_sync_queue_depth gauge\n")
+	fmt.Fprintf(&output, "mmdash_repo_sync_queue_depth %d\n", registry.repoQueue)
+	output.WriteString("# HELP mmdash_repo_checkouts_active Active detached Repo checkouts.\n")
+	output.WriteString("# TYPE mmdash_repo_checkouts_active gauge\n")
+	fmt.Fprintf(&output, "mmdash_repo_checkouts_active %d\n", registry.repoCheckouts)
+	output.WriteString("# HELP mmdash_repo_storage_bytes Managed Repo storage bytes.\n")
+	output.WriteString("# TYPE mmdash_repo_storage_bytes gauge\n")
+	fmt.Fprintf(&output, "mmdash_repo_storage_bytes %d\n", registry.repoStorage)
 	return output.String()
 }
 
 func quote(value string) string {
 	return strconv.Quote(value)
+}
+
+func boundedLabel(value string, allowed map[string]bool, fallback string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if allowed[value] {
+		return value
+	}
+	return fallback
+}
+
+func nonNegative(value int64) int64 {
+	if value < 0 {
+		return 0
+	}
+	return value
 }

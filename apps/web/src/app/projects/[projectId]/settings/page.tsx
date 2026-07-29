@@ -4,6 +4,7 @@ import { SettingsSlotGrid } from "@/features/settings/settings-slot-grid";
 import { RegisteredSettingsPanel } from "@/features/settings/registered-settings-panel";
 import { settingsSlots } from "@/features/settings/registry";
 import { MemberManagement } from "@/features/members/member-management";
+import { RepoSettingsPanel } from "@/features/repo/repo-settings-panel";
 
 export default function SettingsPage() {
   return (
@@ -22,7 +23,10 @@ export default function SettingsPage() {
           各领域模块通过稳定插槽注册自己的项目设置
         </p>
       </header>
-      <SettingsSlotGrid slots={settingsSlots.list()} />
+      <RepoSettingsPanel />
+      <SettingsSlotGrid
+        slots={settingsSlots.list().filter((slot) => slot.id !== "repo")}
+      />
       <MemberManagement />
       <section
         className="space-y-3"

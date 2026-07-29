@@ -443,6 +443,262 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/repository": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Get the managed repository bound to a project */
+    get: operations["repo.get"];
+    /** Apply a tested repository setting and request initial synchronization */
+    put: operations["repo.connect"];
+    post?: never;
+    /** Disconnect the managed repository without deleting remote Git data */
+    delete: operations["repo.disconnect"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test the saved repo.connection setting and mapped branches */
+    post: operations["repo.connection.test"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Coalesce a manual synchronization request */
+    post: operations["repo.sync.request"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/webhook-secret": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rotate the GitHub webhook secret and return it once */
+    post: operations["repo.webhook-secret.rotate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/workspaces": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Apply three distinct existing remote branch mappings */
+    patch: operations["repo.workspaces.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/branches": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List fetched remote branches */
+    get: operations["repo.branches.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/commits": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List immutable commits for one logical workspace */
+    get: operations["repo.commits.list"];
+    put?: never;
+    /**
+     * Apply controlled file changes and push a commit
+     * @description Internal Core capability. Stage 1 Web BFF and MCP do not expose this operation.
+     */
+    post: operations["repo.commits.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/commits/{commitSha}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        commitSha: components["parameters"]["CommitSha"];
+      };
+      cookie?: never;
+    };
+    /** Get immutable commit metadata and changes */
+    get: operations["repo.commits.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/tree": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List one directory from a fixed commit */
+    get: operations["repo.tree.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read one path from a fixed commit */
+    get: operations["repo.content.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/checkouts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a leased detached checkout for a fixed commit */
+    post: operations["repo.checkouts.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/repository/checkouts/{checkoutId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        checkoutId: components["parameters"]["CheckoutId"];
+      };
+      cookie?: never;
+    };
+    /** Get checkout lease metadata */
+    get: operations["repo.checkouts.get"];
+    put?: never;
+    post?: never;
+    /** Release a detached checkout idempotently */
+    delete: operations["repo.checkouts.release"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/repo/webhooks/github/{hookId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        hookId: components["parameters"]["HookId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept a signed GitHub webhook without trusting payload commit data */
+    post: operations["repo.webhooks.github"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/settings/types": {
     parameters: {
       query?: never;
@@ -1168,6 +1424,218 @@ export interface components {
       permissions: string[];
     };
     /** @enum {string} */
+    RepoProvider: "github" | "local";
+    /** @enum {string} */
+    RepoWorkspaceKind: "code" | "article" | "result";
+    /** @enum {string} */
+    RepositoryStatus:
+      | "pending"
+      | "cloning"
+      | "configuring"
+      | "ready"
+      | "syncing"
+      | "error"
+      | "disconnected";
+    /** @enum {string} */
+    RepoWorkspaceStatus: "pending" | "ready" | "missing" | "dirty" | "error";
+    RepoWorkspace: {
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+      remote_branch: string;
+      /** @enum {string} */
+      local_branch: "mmdash/code" | "mmdash/article" | "mmdash/result";
+      head_commit_sha: string | null;
+      tree_sha: string | null;
+      status: components["schemas"]["RepoWorkspaceStatus"];
+      /** Format: date-time */
+      updated_at: string;
+    };
+    RepoWebhook: {
+      /** Format: uuid */
+      hook_id: string;
+      public_url: string;
+      secret_configured: boolean;
+      /** @description Returned only when a secret is generated or rotated. */
+      secret?: string;
+    };
+    Repository: {
+      /** Format: uuid */
+      repository_id: string;
+      /** Format: uuid */
+      project_id: string;
+      provider: components["schemas"]["RepoProvider"];
+      display_name: string;
+      /** @description Canonical GitHub URL. Local provider paths are always returned as null. */
+      remote_url: string | null;
+      default_branch: string;
+      status: components["schemas"]["RepositoryStatus"];
+      settings_version: number;
+      /** Format: date-time */
+      last_synced_at: string | null;
+      last_error_code: string | null;
+      last_error_message: string | null;
+      workspaces: components["schemas"]["RepoWorkspace"][];
+      webhook: components["schemas"]["RepoWebhook"];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    RepoConnectRequest: {
+      settings_version: number;
+    };
+    RepoUpdateWorkspacesRequest: {
+      code_branch: string;
+      article_branch: string;
+      result_branch: string;
+    };
+    RepoConnectionTestResult: {
+      /** Format: date-time */
+      checked_at: string;
+      /** @enum {string} */
+      status: "passed" | "failed";
+      checks: components["schemas"]["ConnectionCheck"][];
+      default_branch: string;
+      branches: string[];
+    };
+    RepoBranch: {
+      name: string;
+      commit_sha: string;
+      default: boolean;
+      workspace: components["schemas"]["RepoWorkspaceKind"] | null;
+    };
+    RepoBranchList: {
+      items: components["schemas"]["RepoBranch"][];
+    };
+    RepoGitIdentity: {
+      name: string;
+      email: string;
+      /** Format: date-time */
+      time: string;
+    };
+    RepoChangedPath: {
+      /** @enum {string} */
+      status:
+        | "added"
+        | "modified"
+        | "deleted"
+        | "renamed"
+        | "copied"
+        | "type_changed"
+        | "unmerged"
+        | "unknown";
+      path: string;
+      previous_path?: string;
+    };
+    RepoCommit: {
+      /** Format: uuid */
+      repository_id: string;
+      commit_sha: string;
+      tree_sha: string;
+      parent_shas: string[];
+      author: components["schemas"]["RepoGitIdentity"];
+      committer: components["schemas"]["RepoGitIdentity"];
+      message: string;
+      /** @enum {string} */
+      source: "connect" | "webhook" | "sync" | "mmdash" | "reference";
+      /** Format: date-time */
+      first_seen_at: string;
+      changes: components["schemas"]["RepoChangedPath"][];
+    };
+    RepoCommitPage: {
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+      branch: string;
+      resolved_revision: string;
+      items: components["schemas"]["RepoCommit"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    RepoTreeEntry: {
+      name: string;
+      path: string;
+      /** @enum {string} */
+      kind: "file" | "directory" | "symlink" | "submodule";
+      object_id: string;
+      mode: string;
+      size: number | null;
+    };
+    RepoTreePage: {
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+      branch: string;
+      resolved_revision: string;
+      path: string;
+      items: components["schemas"]["RepoTreeEntry"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    RepoFileContent: {
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+      branch: string;
+      resolved_revision: string;
+      path: string;
+      object_id: string;
+      /** @enum {string} */
+      kind: "file" | "symlink" | "submodule";
+      mode: string;
+      size: number;
+      /** @enum {string} */
+      preview_status:
+        | "text"
+        | "binary"
+        | "too_large"
+        | "lfs_not_materialized"
+        | "symlink"
+        | "submodule";
+      content: string | null;
+      /** @enum {string|null} */
+      encoding: "utf-8" | null;
+    };
+    RepoCreateCheckoutRequest: {
+      commit_sha: string;
+      purpose: string;
+      ttl_seconds?: number;
+    };
+    RepoCheckout: {
+      /** Format: uuid */
+      checkout_id: string;
+      /** Format: uuid */
+      repository_id: string;
+      commit_sha: string;
+      purpose: string;
+      /** @enum {string} */
+      status: "active" | "released" | "expired" | "error";
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: date-time */
+      released_at: string | null;
+    };
+    RepoCreateCommitRequest: {
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+      expected_head_sha: string;
+      message: string;
+      idempotency_key: string;
+      changes: {
+        /** @enum {string} */
+        operation: "put" | "delete";
+        path: string;
+        content_base64?: string;
+      }[];
+    };
+    RepoCommitResult: {
+      /** Format: uuid */
+      repository_id: string;
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+      branch: string;
+      previous_commit_sha: string;
+      commit_sha: string;
+    };
+    RepoWebhookAcceptance: {
+      accepted: boolean;
+      duplicate: boolean;
+      event: string;
+    };
+    /** @enum {string} */
     SettingScope: "system" | "project";
     /** @enum {string} */
     SettingFieldKind:
@@ -1688,6 +2156,17 @@ export interface components {
   };
   parameters: {
     ProjectId: string;
+    CommitSha: string;
+    CheckoutId: string;
+    HookId: string;
+    RepoWorkspace: components["schemas"]["RepoWorkspaceKind"];
+    /** @description A full commit SHA after the initial workspace resolution. */
+    RepoRevision: string;
+    RepoPath: string;
+    RequiredRepoPath: string;
+    Cursor: string;
+    RepoLimit: number;
+    RepoCommitLimit: number;
     TokenId: string;
     UserId: string;
     TypeKey: string;
@@ -2412,6 +2891,429 @@ export interface operations {
           "application/json": components["schemas"]["ProjectPermissions"];
         };
       };
+    };
+  };
+  "repo.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Managed repository and workspace status. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Repository"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "repo.connect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RepoConnectRequest"];
+      };
+    };
+    responses: {
+      /** @description Repository connection accepted for asynchronous synchronization. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Repository"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "repo.disconnect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Repository disconnected and scheduled for managed cleanup. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "repo.connection.test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Safe provider and branch checks. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoConnectionTestResult"];
+        };
+      };
+    };
+  };
+  "repo.sync.request": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Synchronization request accepted. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Repository"];
+        };
+      };
+    };
+  };
+  "repo.webhook-secret.rotate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Repository status with the newly generated secret included once. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Repository"];
+        };
+      };
+      400: components["responses"]["Error"];
+    };
+  };
+  "repo.workspaces.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RepoUpdateWorkspacesRequest"];
+      };
+    };
+    responses: {
+      /** @description Workspace mapping update accepted for synchronization. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Repository"];
+        };
+      };
+    };
+  };
+  "repo.branches.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Remote branches and current workspace mappings. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoBranchList"];
+        };
+      };
+    };
+  };
+  "repo.commits.list": {
+    parameters: {
+      query: {
+        workspace: components["parameters"]["RepoWorkspace"];
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["RepoCommitLimit"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Commit page pinned to the resolved workspace history. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoCommitPage"];
+        };
+      };
+    };
+  };
+  "repo.commits.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RepoCreateCommitRequest"];
+      };
+    };
+    responses: {
+      /** @description Commit pushed successfully. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoCommitResult"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "repo.commits.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        commitSha: components["parameters"]["CommitSha"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Commit detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoCommit"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "repo.tree.list": {
+    parameters: {
+      query: {
+        workspace: components["parameters"]["RepoWorkspace"];
+        /** @description A full commit SHA after the initial workspace resolution. */
+        revision: components["parameters"]["RepoRevision"];
+        path?: components["parameters"]["RepoPath"];
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["RepoLimit"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One directory page and the full resolved commit SHA. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoTreePage"];
+        };
+      };
+    };
+  };
+  "repo.content.get": {
+    parameters: {
+      query: {
+        workspace: components["parameters"]["RepoWorkspace"];
+        /** @description A full commit SHA after the initial workspace resolution. */
+        revision: components["parameters"]["RepoRevision"];
+        path: components["parameters"]["RequiredRepoPath"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Text content or safe metadata describing a non-previewable object. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoFileContent"];
+        };
+      };
+    };
+  };
+  "repo.checkouts.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RepoCreateCheckoutRequest"];
+      };
+    };
+    responses: {
+      /** @description Checkout lease created. Server paths are intentionally omitted. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoCheckout"];
+        };
+      };
+    };
+  };
+  "repo.checkouts.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        checkoutId: components["parameters"]["CheckoutId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Checkout lease metadata. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoCheckout"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "repo.checkouts.release": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        checkoutId: components["parameters"]["CheckoutId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Checkout released or already absent. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "repo.webhooks.github": {
+    parameters: {
+      query?: never;
+      header: {
+        "X-Hub-Signature-256": string;
+        "X-GitHub-Delivery": string;
+        "X-GitHub-Event": string;
+      };
+      path: {
+        hookId: components["parameters"]["HookId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Delivery accepted, ignored, or identified as a duplicate. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoWebhookAcceptance"];
+        };
+      };
+      401: components["responses"]["Error"];
     };
   };
   "settings.types.list": {
