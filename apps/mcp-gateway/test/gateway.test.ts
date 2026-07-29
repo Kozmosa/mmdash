@@ -2,7 +2,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MemoryAuditSink } from "../src/audit/audit.js";
 import { buildGateway, type GatewayFetchHandler } from "../src/gateway.js";
@@ -69,6 +69,8 @@ describe("MCP Gateway", () => {
     await client.close();
 
     expect(listed.tools.map((tool) => tool.name)).toEqual([
+      "data.list",
+      "data.read",
       "project.member.get",
       "project.member.list",
       "system.echo",
@@ -85,6 +87,111 @@ describe("MCP Gateway", () => {
       outcome: "success",
       projectId: "project-1",
       toolName: "system.echo",
+    });
+  });
+
+  it("reads Data Hub objects through Core with project scope and audit", async () => {
+    const audit = new MemoryAuditSink();
+    const listDataObjects = vi.fn().mockResolvedValue({
+      has_more: false,
+      items: [{ object_id: "00000000-0000-4000-8000-000000000091" }],
+    });
+    const readDataObject = vi.fn().mockResolvedValue({
+      content: { resolved_revision: "a".repeat(40) },
+      object: { object_id: "00000000-0000-4000-8000-000000000091" },
+    });
+    const gateway = buildGateway({
+      audit,
+      config: testConfig,
+      coreClient: { listDataObjects, readDataObject } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
+    const client = new Client(
+      { name: "mmdash-data-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const listed = await client.callTool({
+      arguments: {
+        limit: 25,
+        project_id: "project-1",
+        type: "repo_file",
+      },
+      name: "data.list",
+    });
+    const read = await client.callTool({
+      arguments: {
+        object_id: "00000000-0000-4000-8000-000000000091",
+        project_id: "project-1",
+      },
+      name: "data.read",
+    });
+    await client.close();
+
+    expect(listed.isError).not.toBe(true);
+    expect(read.isError).not.toBe(true);
+    expect(listDataObjects).toHaveBeenCalledWith(
+      "project-1",
+      expect.objectContaining({
+        accessToken: "test-core-access-token-that-is-at-least-32-characters",
+        projectId: "project-1",
+      }),
+      { cursor: undefined, limit: 25, type: "repo_file" },
+    );
+    expect(readDataObject).toHaveBeenCalledWith(
+      "project-1",
+      "00000000-0000-4000-8000-000000000091",
+      expect.objectContaining({
+        accessToken: "test-core-access-token-that-is-at-least-32-characters",
+      }),
+    );
+    expect(audit.events).toHaveLength(2);
+    expect(audit.events.map((event) => event.toolName)).toEqual([
+      "data.list",
+      "data.read",
+    ]);
+  });
+
+  it("denies out-of-scope Data Hub reads before Core and audits the denial", async () => {
+    const audit = new MemoryAuditSink();
+    const listDataObjects = vi.fn();
+    const gateway = buildGateway({
+      audit,
+      config: { ...testConfig, cliProjects: ["allowed-project"] },
+      coreClient: { listDataObjects } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
+    const client = new Client(
+      { name: "mmdash-data-denial-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const result = await client.callTool({
+      arguments: { project_id: "blocked-project", type: "repository" },
+      name: "data.list",
+    });
+    await client.close();
+
+    expect(result.isError).toBe(true);
+    expect(listDataObjects).not.toHaveBeenCalled();
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]).toMatchObject({
+      errorCode: "PROJECT_ACCESS_DENIED",
+      outcome: "denied",
+      projectId: "blocked-project",
+      toolName: "data.list",
     });
   });
 
@@ -142,9 +249,7 @@ function createSessionFetch(
       if (sessionId) {
         headers.set(gatewaySessionHeader, sessionId);
       }
-      const response = await gateway.fetch(
-        new Request(original, { headers }),
-      );
+      const response = await gateway.fetch(new Request(original, { headers }));
       sessionId = response.headers.get(gatewaySessionHeader) ?? undefined;
       return response;
     },
