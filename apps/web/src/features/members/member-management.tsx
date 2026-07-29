@@ -84,8 +84,25 @@ export function MemberManagement() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const f = new FormData(event.currentTarget);
+    const email = String(f.get("email") ?? "").trim();
+    if (
+      currentUser &&
+      email.toLowerCase() === currentUser.email.trim().toLowerCase()
+    ) {
+      toast.error("不能邀请自己");
+      return;
+    }
+    if (
+      members.data?.items.some(
+        (member) =>
+          member.email.trim().toLowerCase() === email.toLowerCase(),
+      )
+    ) {
+      toast.error("该用户已是项目成员");
+      return;
+    }
     invite.mutate({
-      email: String(f.get("email") ?? ""),
+      email,
       role: String(f.get("role") ?? "viewer") as InvitableHumanRole,
     });
   }

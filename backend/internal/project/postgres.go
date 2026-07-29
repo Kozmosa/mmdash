@@ -40,18 +40,30 @@ func (store PostgresStore) CreateInvitation(ctx context.Context, actorID string,
 		`, projectID, email, now); err != nil {
 			return err
 		}
-		var active bool
+		var memberExists bool
 		if err := tx.QueryRowContext(ctx, `
 			SELECT EXISTS(
-				SELECT 1 FROM project_invitations
-				WHERE project_id = $1 AND LOWER(email) = LOWER($2)
-				  AND status = 'pending' AND expires_at > $3
+				SELECT 1
+				FROM project_members AS member
+				JOIN auth_users AS app_user USING (user_id)
+				WHERE member.project_id = $1
+				  AND LOWER(app_user.email) = LOWER($2)
 			)
-		`, projectID, email, now).Scan(&active); err != nil {
+		`, projectID, email).Scan(&memberExists); err != nil {
 			return err
 		}
-		if active {
-			return ErrConflict
+		if memberExists {
+			return ErrMemberExists
+		}
+		var replacedInvitationID string
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE project_invitations
+			SET status = 'revoked', revoked_at = $3, updated_at = $3
+			WHERE project_id = $1 AND LOWER(email) = LOWER($2)
+			  AND status = 'pending' AND expires_at > $3
+			RETURNING invitation_id
+		`, projectID, email, now).Scan(&replacedInvitationID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
 		}
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO project_invitations (invitation_id, project_id, email, role, token_hash, status, invited_by, expires_at, created_at, updated_at)
@@ -59,6 +71,21 @@ func (store PostgresStore) CreateInvitation(ctx context.Context, actorID string,
 			RETURNING invitation_id, project_id, (SELECT name FROM projects WHERE project_id=$2), email, role, status, invited_by, expires_at, created_at
 		`, invitationID, projectID, email, role, hashInvitationToken(token), actorID, expiresAt, now).Scan(&invitation.ID, &invitation.ProjectID, &invitation.ProjectName, &invitation.Email, &invitation.Role, &invitation.Status, &invitation.InvitedBy, &invitation.ExpiresAt, &invitation.CreatedAt); err != nil {
 			return err
+		}
+		if replacedInvitationID != "" {
+			if _, err := store.Outbox.Write(ctx, tx, outbox.Event{
+				Actor:     map[string]string{"user_id": actorID},
+				EventType: "project.invitation.revoked",
+				Payload: map[string]interface{}{
+					"invitation_id": replacedInvitationID,
+					"project_id":    projectID,
+					"reason":        "reissued",
+				},
+				Producer:  "project",
+				ProjectID: projectID,
+			}); err != nil {
+				return err
+			}
 		}
 		_, err := store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": actorID}, EventType: "project.member.invited", Payload: map[string]interface{}{"email": email, "invitation_id": invitationID, "project_id": projectID, "role": role}, Producer: "project", ProjectID: projectID})
 		return err

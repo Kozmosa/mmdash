@@ -123,6 +123,51 @@ describe("invitation page actions", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("blocks acceptance when the signed-in email does not match the invitation", async () => {
+    mocks.currentUser = {
+      displayName: "Different Member",
+      email: "different@example.com",
+      id: "user-different",
+    };
+    mocks.search = "token=invitation-token&autoAccept=1";
+    render(<InvitePage />, { wrapper: Providers });
+
+    const mismatch = await screen.findByText(
+      /请使用受邀邮箱对应的账号登录后再接受邀请/,
+    );
+    expect(mismatch).toHaveTextContent("different@example.com");
+    expect(mismatch).toHaveTextContent("member@example.com");
+    expect(
+      screen.queryByRole("button", { name: "接收邀请" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "拒绝" })).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith(
+        "/auth/invitations/preview",
+        expect.anything(),
+      ),
+    );
+    expect(mocks.request).not.toHaveBeenCalledWith(
+      "/auth/invitations/accept",
+      expect.anything(),
+    );
+  });
+
+  it("matches invitation emails without case sensitivity", async () => {
+    mocks.currentUser = {
+      displayName: "Invited Member",
+      email: "MEMBER@EXAMPLE.COM",
+      id: "user-member",
+    };
+    render(<InvitePage />, { wrapper: Providers });
+
+    expect(
+      await screen.findByRole("button", { name: "接收邀请" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/与受邀邮箱.*不一致/)).not.toBeInTheDocument();
+  });
+
   it("permanently rejects an invitation", async () => {
     render(<InvitePage />, { wrapper: Providers });
     fireEvent.click(await screen.findByRole("button", { name: "拒绝" }));

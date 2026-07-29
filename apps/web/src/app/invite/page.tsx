@@ -67,18 +67,24 @@ function InviteContent() {
       toast.error(error instanceof Error ? error.message : "拒绝邀请失败");
     },
   });
+  const currentUserEmail = currentUser?.email.trim() ?? "";
+  const invitedEmail = preview.data?.email.trim() ?? "";
+  const emailMatches =
+    currentUser && preview.data
+      ? currentUserEmail.toLowerCase() === invitedEmail.toLowerCase()
+      : false;
+  const emailMismatch = Boolean(currentUser && preview.data && !emailMatches);
   const autoAccept = search.get("autoAccept") === "1";
   useEffect(() => {
     if (
       autoAccept &&
-      currentUser &&
-      preview.data &&
+      emailMatches &&
       !autoAcceptAttempted.current
     ) {
       autoAcceptAttempted.current = true;
       accept.mutate();
     }
-  }, [accept, autoAccept, currentUser, preview.data]);
+  }, [accept, autoAccept, emailMatches]);
 
   const returnTo = `/invite?token=${encodeURIComponent(token)}&autoAccept=1`;
   return (
@@ -97,18 +103,25 @@ function InviteContent() {
             <p className="text-sm">你已拒绝该项目邀请。</p>
           ) : preview.error ? (
             <p className="text-sm text-destructive">{preview.error.message}</p>
+          ) : emailMismatch ? (
+            <p className="text-sm text-destructive">
+              当前登录邮箱（{currentUserEmail}）与受邀邮箱（{invitedEmail}
+              ）不一致，请使用受邀邮箱对应的账号登录后再接受邀请。
+            </p>
           ) : null}
         </CardContent>
         <CardFooter className="gap-2">
           {!currentUserLoading && preview.data && !declined ? (
             <>
               {currentUser ? (
-                <Button
-                  disabled={accept.isPending || reject.isPending}
-                  onClick={() => accept.mutate()}
-                >
-                  接收邀请
-                </Button>
+                emailMatches ? (
+                  <Button
+                    disabled={accept.isPending || reject.isPending}
+                    onClick={() => accept.mutate()}
+                  >
+                    接收邀请
+                  </Button>
+                ) : null
               ) : (
                 <>
                   <Link

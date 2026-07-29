@@ -370,6 +370,9 @@ func (service Service) CreateInvitation(ctx context.Context, identity auth.Ident
 	if email == "" {
 		return IssuedInvitation{}, ErrInvalid
 	}
+	if strings.EqualFold(email, strings.TrimSpace(identity.User.Email)) {
+		return IssuedInvitation{}, ErrSelfInvitation
+	}
 	if !isInvitableHumanRole(role) {
 		return IssuedInvitation{}, ErrInvalid
 	}
@@ -535,10 +538,12 @@ func (service Service) AuthorizeSettings(
 }
 
 var (
-	ErrConflict  = errors.New("project conflict")
-	ErrForbidden = errors.New("project permission denied")
-	ErrInvalid   = errors.New("invalid project input")
-	ErrNotFound  = errors.New("project not found")
+	ErrConflict       = errors.New("project conflict")
+	ErrForbidden      = errors.New("project permission denied")
+	ErrInvalid        = errors.New("invalid project input")
+	ErrMemberExists   = errors.New("project member already exists")
+	ErrNotFound       = errors.New("project not found")
+	ErrSelfInvitation = errors.New("users cannot invite themselves")
 )
 
 func wrap(operation string, err error) error {

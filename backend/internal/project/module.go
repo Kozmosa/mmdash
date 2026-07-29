@@ -305,6 +305,18 @@ func writeProjectError(response http.ResponseWriter, request *http.Request, err 
 			"INVALID_REQUEST",
 			"Project input is invalid",
 		))
+	case errors.Is(err, ErrSelfInvitation):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusBadRequest,
+			"SELF_INVITATION_NOT_ALLOWED",
+			"You cannot invite yourself to a project",
+		))
+	case errors.Is(err, ErrMemberExists):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict,
+			"PROJECT_MEMBER_EXISTS",
+			"This user is already a project member",
+		))
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusConflict,

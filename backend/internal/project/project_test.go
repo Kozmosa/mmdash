@@ -21,6 +21,7 @@ func (stub authStub) Authenticate(context.Context, string) (auth.Identity, error
 }
 
 type storeStub struct {
+	invitationCreated  bool
 	invitationDeclined bool
 	memberRemoved      bool
 	memberUpdated      bool
@@ -33,6 +34,7 @@ func (stub *storeStub) AcceptInvitation(context.Context, string, string, string,
 	return Member{UserID: "user-2", Role: RoleViewer}, nil
 }
 func (stub *storeStub) CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error) {
+	stub.invitationCreated = true
 	return IssuedInvitation{}, nil
 }
 func (stub *storeStub) DeclineInvitation(context.Context, string, time.Time) error {
@@ -214,6 +216,19 @@ func TestOwnerCannotBeInvitedWithoutTransfer(t *testing.T) {
 
 	if _, err := service.CreateInvitation(context.Background(), identity, "project-1", "new-owner@example.com", RoleOwner); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("owner invitation should be rejected, got %v", err)
+	}
+}
+
+func TestUserCannotInviteSelf(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "creator", Email: "Owner@Example.com"}}
+	store := &roleStoreStub{roles: map[string]Role{"creator": RoleOwner}}
+	service := Service{Auth: authStub{identity: identity}, Store: store}
+
+	if _, err := service.CreateInvitation(context.Background(), identity, "project-1", " owner@example.com ", RoleViewer); !errors.Is(err, ErrSelfInvitation) {
+		t.Fatalf("self invitation returned %v", err)
+	}
+	if store.invitationCreated {
+		t.Fatal("self invitation reached persistence")
 	}
 }
 
