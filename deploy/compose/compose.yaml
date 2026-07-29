@@ -95,6 +95,19 @@ services:
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
       # 权威 Artifact Bucket；生产应设置为环境专用 Bucket。
       OBJECT_STORAGE_BUCKET: mmdash
+      # Core 管理的 Git bare repo、长期 worktree 和临时 checkout 根目录。
+      REPO_STORAGE_ROOT: /var/lib/mmdash/repos
+      # Local Git Provider allowlist；空值默认禁用。容器路径用冒号分隔。
+      REPO_LOCAL_ALLOWED_ROOTS: ${REPO_LOCAL_ALLOWED_ROOTS:-}
+      REPO_MAX_CONCURRENT_GIT: ${REPO_MAX_CONCURRENT_GIT:-4}
+      REPO_COMMAND_TIMEOUT: ${REPO_COMMAND_TIMEOUT:-2m}
+      REPO_CLONE_TIMEOUT: ${REPO_CLONE_TIMEOUT:-15m}
+      REPO_SYNC_POLL_INTERVAL: ${REPO_SYNC_POLL_INTERVAL:-2s}
+      REPO_SYNC_LEASE: ${REPO_SYNC_LEASE:-20m}
+      REPO_CHECKOUT_TTL: ${REPO_CHECKOUT_TTL:-1h}
+      REPO_MAX_TEXT_BYTES: ${REPO_MAX_TEXT_BYTES:-1048576}
+      REPO_DISCONNECT_GRACE: ${REPO_DISCONNECT_GRACE:-24h}
+      REPO_ASKPASS_PATH: /usr/local/bin/mmdash-git-askpass
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -107,6 +120,8 @@ services:
       retries: 20
     ports:
       - "8080:8080"
+    volumes:
+      - repo-data:/var/lib/mmdash/repos
 
   web-bff:
     build:
@@ -222,3 +237,4 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  repo-data:
