@@ -25,6 +25,27 @@ export class ApiError extends Error {
 
 type QueryValue = boolean | number | string | null | undefined;
 
+const publicPagePrefixes = ["/login", "/register", "/invite"];
+const unauthenticatedRequestPrefixes = [
+  "/auth/login",
+  "/auth/register",
+  "/auth/invitations/preview",
+];
+
+export function shouldRedirectToLogin(
+  status: number,
+  requestPath: string,
+  currentPathname: string,
+): boolean {
+  return (
+    status === 401 &&
+    !unauthenticatedRequestPrefixes.some((prefix) =>
+      requestPath.startsWith(prefix),
+    ) &&
+    !publicPagePrefixes.some((prefix) => currentPathname.startsWith(prefix))
+  );
+}
+
 export type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | Record<string, unknown> | null;
   query?: Record<string, QueryValue>;
@@ -65,11 +86,8 @@ export class ApiClient {
     if (!response.ok) {
       const error = await parseErrorBody(response);
       if (
-        response.status === 401 &&
         typeof window !== "undefined" &&
-        !path.startsWith("/auth/login") &&
-        !path.startsWith("/auth/register") &&
-        !path.startsWith("/auth/invitations/preview")
+        shouldRedirectToLogin(response.status, path, window.location.pathname)
       ) {
         const returnTo = `${window.location.pathname}${window.location.search}`;
         window.location.assign(
