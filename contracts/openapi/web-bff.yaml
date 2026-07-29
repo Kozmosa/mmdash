@@ -571,6 +571,20 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/Repository"
+  /api/projects/{projectId}/repository/webhook-secret:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Repo]
+      summary: Rotate the GitHub webhook secret and return it once
+      operationId: bff.repo.webhook-secret.rotate
+      responses:
+        "200":
+          description: Repository status with the newly generated secret included once.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Repository"
   /api/projects/{projectId}/repository/workspaces:
     parameters:
       - $ref: "#/components/parameters/ProjectId"

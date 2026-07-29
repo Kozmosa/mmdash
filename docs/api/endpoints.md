@@ -105,6 +105,7 @@ Stage 3.16 adds the following account and collaboration operations:
 | Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/repository`                                 | `repo.disconnect`                  | repo                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/test`                            | `repo.connection.test`             | repo                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/sync`                            | `repo.sync.request`                | repo                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/webhook-secret`                  | `repo.webhook-secret.rotate`       | repo                 | `core.yaml`        |
 | Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/repository/workspaces`                      | `repo.workspaces.update`           | repo                 | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/branches`                        | `repo.branches.list`               | repo                 | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/commits`                         | `repo.commits.list`                | repo                 | `core.yaml`        |
@@ -121,6 +122,7 @@ Stage 3.16 adds the following account and collaboration operations:
 | Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/repository`                                | `bff.repo.disconnect`              | repo                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/test`                           | `bff.repo.connection.test`         | repo                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/sync`                           | `bff.repo.sync.request`            | repo                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/webhook-secret`                 | `bff.repo.webhook-secret.rotate`   | repo                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/repository/workspaces`                     | `bff.repo.workspaces.update`       | repo                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/branches`                       | `bff.repo.branches.list`           | repo                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/commits`                        | `bff.repo.commits.list`            | repo                 | `web-bff.yaml`     |

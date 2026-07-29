@@ -136,6 +136,61 @@ func TestRuntimeSynchronizesThreeWorktreesAndRejectsDirtyState(t *testing.T) {
 	}
 }
 
+func TestRuntimeDetectsForcePushWithoutDiscardingOldObjects(t *testing.T) {
+	reader, repository, head := readerFixture(t)
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("Git is not installed")
+	}
+	layout, err := reader.Storage.Layout(repository.StorageKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := runTestGit(
+		t, gitPath, layout.Repository,
+		"--git-dir="+layout.Bare, "remote", "get-url", "origin",
+	)
+	rewrittenHead := runTestGit(
+		t, gitPath, source, "rev-parse", head+"~2",
+	)
+	runTestGit(t, gitPath, source, "reset", "--hard", rewrittenHead)
+	runtime := Runtime{
+		Clock: reader.Clock, CloneTimeout: 30 * time.Second,
+		Git: reader.Git, Storage: reader.Storage,
+	}
+	result, err := runtime.Synchronize(
+		context.Background(), repository,
+		provider.Connection{
+			CanonicalRemoteURL: source, DefaultBranch: "main",
+			DisplayName: "local", FetchURL: source, Provider: "local",
+		},
+		"webhook",
+	)
+	if err != nil {
+		t.Fatalf("synchronize rewritten history: %v", err)
+	}
+	var code SyncedWorkspace
+	for _, workspace := range result.Workspaces {
+		if workspace.Workspace == WorkspaceCode {
+			code = workspace
+		}
+	}
+	if !code.HistoryRewritten || code.HeadCommitSHA != rewrittenHead {
+		t.Fatalf("force push was not detected: %#v", code)
+	}
+	if observed := runTestGit(
+		t, gitPath, layout.Worktrees["code"], "rev-parse", "HEAD",
+	); observed != rewrittenHead {
+		t.Fatalf("code worktree did not follow rewritten head: %s", observed)
+	}
+	if observed := runTestGit(
+		t, gitPath, layout.Repository,
+		"--git-dir="+layout.Bare, "cat-file", "-t", head,
+	); observed != "commit" {
+		t.Fatalf("old commit object was discarded: %s", observed)
+	}
+}
+
 func runTestGit(t *testing.T, gitPath, directory string, args ...string) string {
 	t.Helper()
 	command := exec.Command(gitPath, args...)

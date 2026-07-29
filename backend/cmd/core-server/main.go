@@ -195,13 +195,6 @@ func run(logger *logging.Logger) error {
 			return err
 		}
 	}
-	if err := eventBus.Register(eventbus.Consumer{
-		Name:     "datahub.projections",
-		Patterns: projections.Patterns(),
-		Handler:  projections.Handle,
-	}); err != nil {
-		return err
-	}
 	dataService := datahub.Service{
 		Access: projectService, Adapters: dataAdapters,
 		Clock: systemClock, Store: dataStore,
@@ -309,9 +302,71 @@ func run(logger *logging.Logger) error {
 		},
 		Settings: settingsService,
 		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
-		Writer: repoWriter,
+		Webhooks: repoStore, Writer: repoWriter,
 	}
 	repoModule := repo.Module{Service: repoService}
+	repoDataReader := repo.DataHubReaderAdapter{Service: &repoService}
+	if err := dataAdapters.Register("repository", datahub.ReaderFunc(
+		func(
+			ctx context.Context,
+			caller auth.Identity,
+			object datahub.Object,
+		) (interface{}, error) {
+			return repoDataReader.Repository(
+				ctx, caller, object.ProjectID,
+			)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("repo_commit", datahub.ReaderFunc(
+		func(
+			ctx context.Context,
+			caller auth.Identity,
+			object datahub.Object,
+		) (interface{}, error) {
+			return repoDataReader.Commit(
+				ctx, caller, object.ProjectID, object.Metadata,
+			)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("repo_file", datahub.ReaderFunc(
+		func(
+			ctx context.Context,
+			caller auth.Identity,
+			object datahub.Object,
+		) (interface{}, error) {
+			return repoDataReader.File(
+				ctx, caller, object.ProjectID, object.Metadata,
+			)
+		},
+	)); err != nil {
+		return err
+	}
+	repoProjector := repo.DataHubProjector{
+		BatchSize:    200,
+		Reader:       repoService.Reads,
+		Repositories: repoStore,
+		Sink:         dataStore,
+	}
+	for _, eventType := range []string{
+		"repo.connected", "repo.commit.created", "repo.commit.detected",
+	} {
+		if err := projections.Register(
+			eventType, datahub.ProjectorFunc(repoProjector.Project),
+		); err != nil {
+			return err
+		}
+	}
+	if err := eventBus.Register(eventbus.Consumer{
+		Name:     "datahub.projections",
+		Patterns: projections.Patterns(),
+		Handler:  projections.Handle,
+	}); err != nil {
+		return err
+	}
 	jobService := jobs.Service{
 		Auth:     authService,
 		Clock:    systemClock,

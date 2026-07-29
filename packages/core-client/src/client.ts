@@ -571,6 +571,7 @@ function isJsonBody(
     body !== null &&
     typeof body === "object" &&
     !(body instanceof ArrayBuffer) &&
+    !ArrayBuffer.isView(body) &&
     !(body instanceof Blob) &&
     !(body instanceof FormData) &&
     !(body instanceof URLSearchParams)
