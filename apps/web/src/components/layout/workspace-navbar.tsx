@@ -1,17 +1,15 @@
 "use client";
 
-import { ChevronDown, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import Link from "next/link";
 
 import { useCurrentProject } from "@/components/providers/project-provider";
-import { useCurrentUser } from "@/components/providers/user-provider";
 import { Button } from "@/components/ui/button";
+import { UserMenu } from "@/components/user-menu";
 import { useWorkspaceStore } from "@/stores/workspace";
-import { UserAvatar } from "@/components/user-avatar";
 
 export function WorkspaceNavbar() {
   const project = useCurrentProject();
-  const user = useCurrentUser();
   const setSidebarOpen = useWorkspaceStore((state) => state.setSidebarOpen);
 
   return (
@@ -41,24 +39,8 @@ export function WorkspaceNavbar() {
           <li className="truncate font-medium">{project.name}</li>
         </ol>
       </nav>
-      <div className="ml-auto flex items-center gap-2">
-        <Button
-          aria-label={`当前用户：${user?.displayName ?? "加载中"}`}
-          className="gap-2"
-          variant="ghost"
-          onClick={() => {
-            window.location.href = "/account";
-          }}
-        >
-          <UserAvatar displayName={user?.displayName} email={user?.email} />
-          <span className="hidden text-sm sm:inline">
-            {user?.displayName ?? "加载中"}
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className="hidden size-3.5 text-muted-foreground sm:block"
-          />
-        </Button>
+      <div className="ml-auto flex items-center gap-4">
+        <UserMenu showIdentity />
       </div>
     </header>
   );

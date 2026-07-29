@@ -56,5 +56,13 @@ uploads/
 .DS_Store
 Thumbs.db
 
+# Go
+.tmp/
+
+
 # Local drafts
 drafts/
+/.localscripts/
+
+# AGENT.md
+AGENT.md

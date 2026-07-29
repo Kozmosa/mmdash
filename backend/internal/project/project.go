@@ -123,11 +123,13 @@ type Project struct {
 	ArchivedAt         *time.Time `json:"archived_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	CreatedBy          string     `json:"created_by"`
+	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
 	ID                 string     `json:"id"`
 	Name               string     `json:"name"`
 	ProblemSummary     string     `json:"problem_summary"`
 	ProblemTitle       string     `json:"problem_title"`
 	ProjectConstraints []string   `json:"project_constraints"`
+	PurgeAt            *time.Time `json:"purge_at,omitempty"`
 	Role               Role       `json:"role"`
 	SourceArtifactIDs  []string   `json:"source_artifact_ids"`
 	UpdatedAt          time.Time  `json:"updated_at"`
@@ -185,14 +187,20 @@ type Store interface {
 	AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error)
 	CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error)
 	Create(context.Context, string, CreateInput) (Project, error)
+	DeclineInvitation(context.Context, string, time.Time) error
 	FindRole(context.Context, string, string) (Role, error)
 	Get(context.Context, string, string) (Project, error)
 	List(context.Context, string, bool) ([]Project, error)
+	ListTrash(context.Context, string, time.Time) ([]Project, error)
 	ListMembers(context.Context, string) ([]Member, error)
 	ListInvitations(context.Context, string, time.Time) ([]Invitation, error)
 	PreviewInvitation(context.Context, string, time.Time) (Invitation, error)
+	PurgeExpired(context.Context, time.Time) error
 	RemoveMember(context.Context, string, string, string) error
+	Restore(context.Context, string, string, time.Time) (Project, error)
 	RevokeInvitation(context.Context, string, string, string, time.Time) error
+	Trash(context.Context, string, string, time.Time, time.Time) (Project, error)
+	TransferOwnership(context.Context, string, string, string) (Member, error)
 	Update(context.Context, string, string, UpdateInput) (Project, error)
 	UpsertMember(context.Context, string, string, string, Role) (Member, error)
 }
@@ -208,10 +216,11 @@ type Authenticator interface {
 
 // Service applies collaboration and RBAC policy.
 type Service struct {
-	Auth          Authenticator
-	Clock         interface{ Now() time.Time }
-	Store         Store
-	InvitationTTL time.Duration
+	Auth           Authenticator
+	Clock          interface{ Now() time.Time }
+	Store          Store
+	InvitationTTL  time.Duration
+	TrashRetention time.Duration
 }
 
 // Authenticate resolves an identity through the Auth module.
@@ -247,7 +256,22 @@ func (service Service) List(
 	identity auth.Identity,
 	includeArchived bool,
 ) ([]Project, error) {
+	if err := service.Store.PurgeExpired(ctx, service.now()); err != nil {
+		return nil, err
+	}
 	return service.Store.List(ctx, identity.User.ID, includeArchived)
+}
+
+// ListTrash returns recoverable projects owned by the caller.
+func (service Service) ListTrash(
+	ctx context.Context,
+	identity auth.Identity,
+) ([]Project, error) {
+	now := service.now()
+	if err := service.Store.PurgeExpired(ctx, now); err != nil {
+		return nil, err
+	}
+	return service.Store.ListTrash(ctx, identity.User.ID, now)
 }
 
 // Get returns one project after permission checks.
@@ -269,11 +293,20 @@ func (service Service) Update(
 	projectID string,
 	input UpdateInput,
 ) (Project, error) {
-	permission := PermissionUpdate
 	if input.Archived != nil {
-		permission = PermissionArchive
+		if *input.Archived {
+			return service.Trash(ctx, identity, projectID)
+		}
+		restored, err := service.Restore(ctx, identity, projectID)
+		if err == nil {
+			return restored, nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return Project{}, err
+		}
+		input.Archived = nil
 	}
-	if err := service.Authorize(ctx, identity, projectID, permission); err != nil {
+	if err := service.Authorize(ctx, identity, projectID, PermissionUpdate); err != nil {
 		return Project{}, err
 	}
 	if input.Name != nil {
@@ -284,6 +317,38 @@ func (service Service) Update(
 		input.Name = &trimmed
 	}
 	return service.Store.Update(ctx, identity.User.ID, projectID, input)
+}
+
+// Trash moves an active project into the owner's recoverable recycle bin.
+func (service Service) Trash(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (Project, error) {
+	if err := service.Authorize(ctx, identity, projectID, PermissionArchive); err != nil {
+		return Project{}, err
+	}
+	now := service.now()
+	retention := service.TrashRetention
+	if retention <= 0 {
+		retention = 30 * 24 * time.Hour
+	}
+	return service.Store.Trash(
+		ctx,
+		identity.User.ID,
+		projectID,
+		now,
+		now.Add(retention),
+	)
+}
+
+// Restore recovers a trashed project while its retention window is active.
+func (service Service) Restore(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (Project, error) {
+	return service.Store.Restore(ctx, identity.User.ID, projectID, service.now())
 }
 
 // ListMembers returns the project team.
@@ -309,7 +374,7 @@ func (service Service) UpsertMember(
 	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
 		return Member{}, err
 	}
-	if _, ok := permissionsByRole[role]; !ok {
+	if !isHumanRole(role) {
 		return Member{}, ErrInvalid
 	}
 	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
@@ -320,13 +385,23 @@ func (service Service) UpsertMember(
 	if err != nil {
 		return Member{}, ErrNotFound
 	}
-	if actorRole != RoleOwner && (role == RoleOwner || targetRole == RoleOwner) {
-		return Member{}, ErrForbidden
+	if targetRole == RoleOwner {
+		if role != RoleOwner {
+			return Member{}, ErrForbidden
+		}
+		return service.Store.UpsertMember(ctx, identity.User.ID, projectID, userID, role)
+	}
+	if role == RoleOwner {
+		if actorRole != RoleOwner || identity.User.ID == userID || !isHumanRole(targetRole) {
+			return Member{}, ErrForbidden
+		}
+		return service.Store.TransferOwnership(ctx, identity.User.ID, projectID, userID)
 	}
 	return service.Store.UpsertMember(ctx, identity.User.ID, projectID, userID, role)
 }
 
-// RemoveMember removes a collaborator while preserving at least one owner.
+// RemoveMember removes a collaborator. An owner must transfer ownership first
+// and can never remove their own active ownership through this operation.
 func (service Service) RemoveMember(
 	ctx context.Context,
 	identity auth.Identity,
@@ -336,15 +411,14 @@ func (service Service) RemoveMember(
 	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
 		return err
 	}
-	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
-	if err != nil {
+	if _, err := service.Store.FindRole(ctx, identity.User.ID, projectID); err != nil {
 		return ErrForbidden
 	}
 	targetRole, err := service.Store.FindRole(ctx, userID, projectID)
 	if err != nil {
 		return ErrNotFound
 	}
-	if actorRole != RoleOwner && targetRole == RoleOwner {
+	if targetRole == RoleOwner {
 		return ErrForbidden
 	}
 	return service.Store.RemoveMember(ctx, identity.User.ID, projectID, userID)
@@ -359,11 +433,13 @@ func (service Service) CreateInvitation(ctx context.Context, identity auth.Ident
 	if email == "" {
 		return IssuedInvitation{}, ErrInvalid
 	}
-	if _, ok := permissionsByRole[role]; !ok {
+	if strings.EqualFold(email, strings.TrimSpace(identity.User.Email)) {
+		return IssuedInvitation{}, ErrSelfInvitation
+	}
+	if !isInvitableHumanRole(role) {
 		return IssuedInvitation{}, ErrInvalid
 	}
-	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
-	if err != nil || (actorRole != RoleOwner && role == RoleOwner) {
+	if _, err := service.Store.FindRole(ctx, identity.User.ID, projectID); err != nil {
 		return IssuedInvitation{}, ErrForbidden
 	}
 	ttl := service.InvitationTTL
@@ -393,6 +469,19 @@ func (service Service) PreviewInvitation(ctx context.Context, token string) (aut
 		return auth.Invitation{}, auth.ErrInvalidInvitation
 	}
 	return authInvitation(invitation), nil
+}
+
+// DeclineInvitation permanently invalidates a pending invitation using its
+// unguessable invitation token. Authentication is intentionally not required.
+func (service Service) DeclineInvitation(ctx context.Context, token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return auth.ErrInvalidInvitation
+	}
+	if err := service.Store.DeclineInvitation(ctx, hashInvitationToken(token), service.now()); err != nil {
+		return auth.ErrInvalidInvitation
+	}
+	return nil
 }
 
 func (service Service) AcceptInvitation(ctx context.Context, identity auth.Identity, token string) (auth.AcceptedMember, error) {
@@ -438,6 +527,17 @@ func authInvitation(invitation Invitation) auth.Invitation {
 
 func acceptedMember(member Member) auth.AcceptedMember {
 	return auth.AcceptedMember{DisplayName: member.DisplayName, Email: member.Email, JoinedAt: member.JoinedAt, Role: string(member.Role), UserID: member.UserID}
+}
+
+func isHumanRole(role Role) bool {
+	return role == RoleOwner ||
+		role == RoleMaintainer ||
+		role == RoleEditor ||
+		role == RoleViewer
+}
+
+func isInvitableHumanRole(role Role) bool {
+	return role == RoleMaintainer || role == RoleEditor || role == RoleViewer
 }
 
 // Permissions returns the current role and effective permissions.
@@ -501,10 +601,12 @@ func (service Service) AuthorizeSettings(
 }
 
 var (
-	ErrConflict  = errors.New("project conflict")
-	ErrForbidden = errors.New("project permission denied")
-	ErrInvalid   = errors.New("invalid project input")
-	ErrNotFound  = errors.New("project not found")
+	ErrConflict       = errors.New("project conflict")
+	ErrForbidden      = errors.New("project permission denied")
+	ErrInvalid        = errors.New("invalid project input")
+	ErrMemberExists   = errors.New("project member already exists")
+	ErrNotFound       = errors.New("project not found")
+	ErrSelfInvitation = errors.New("users cannot invite themselves")
 )
 
 func wrap(operation string, err error) error {

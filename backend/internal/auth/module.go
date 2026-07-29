@@ -25,6 +25,7 @@ func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/auth/me/password", module.handlePassword)
 	mux.HandleFunc("/v1/auth/invitations/preview", module.handleInvitationPreview)
 	mux.HandleFunc("/v1/auth/invitations/accept", module.handleInvitationAccept)
+	mux.HandleFunc("/v1/auth/invitations/reject", module.handleInvitationReject)
 	mux.HandleFunc("/v1/auth/tokens", module.handleTokens)
 	mux.HandleFunc("/v1/auth/tokens/", module.handleToken)
 }
@@ -153,6 +154,21 @@ func (module Module) handleInvitationAccept(response http.ResponseWriter, reques
 		return
 	}
 	httpx.WriteJSON(response, http.StatusOK, member)
+}
+
+func (module Module) handleInvitationReject(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body invitationTokenRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	if err := module.Service.DeclineInvitation(request.Context(), body.Token); err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
 }
 
 func (module Module) handleTokens(response http.ResponseWriter, request *http.Request) {

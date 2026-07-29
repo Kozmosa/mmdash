@@ -45,8 +45,28 @@ Only a SHA-256 token hash is stored. The secret is returned once by
 | `box`        | read, read settings                                   |
 
 The creator becomes the first owner in the same transaction as project
-creation. Removing the last owner is rejected. Agent and Box credentials are
-restricted to their configured `project_id`.
+creation. An owner cannot change their role or remove themselves through the
+ordinary member operations. Assigning `owner` to another existing member is an
+atomic ownership transfer: the target becomes owner and the caller becomes
+maintainer. Owner invitations are rejected, so this explicit transfer is the
+only supported ownership transition. Human invitations and member role changes
+accept only `owner`, `maintainer`, `editor`, and `viewer` as applicable;
+`agent` and `box` remain machine credential roles and cannot be assigned to a
+human collaborator. Agent and Box credentials are restricted to their
+configured `project_id`.
+
+A recipient may reject a pending invitation with its one-time token without
+signing in. Rejection changes the invitation status to `declined` and
+permanently prevents later acceptance.
+
+## Project recycle bin
+
+Only the current project owner may move a project to the recycle bin. Trashed
+projects disappear from every member's normal project list and cannot be used
+through project-scoped APIs. The owner can list and restore them for 30 days.
+After `purge_at`, Core permanently removes the project and its cascading
+project-owned records. Projects that used the earlier archive action are
+migrated into the recycle bin with the same 30-day recovery window.
 
 ## Project data boundary
 
