@@ -148,6 +148,7 @@ func (policy StaticRegistrationPolicy) AllowOpenRegistration(context.Context) (b
 type InvitationService interface {
 	AcceptInvitation(context.Context, Identity, string) (AcceptedMember, error)
 	AcceptRegistration(context.Context, string, User) (AcceptedMember, error)
+	DeclineInvitation(context.Context, string) error
 	PreviewInvitation(context.Context, string) (Invitation, error)
 }
 
@@ -299,6 +300,13 @@ func (service Service) AcceptInvitation(ctx context.Context, identity Identity, 
 		return AcceptedMember{}, ErrInvalidInvitation
 	}
 	return service.Invitations.AcceptInvitation(ctx, identity, token)
+}
+
+func (service Service) DeclineInvitation(ctx context.Context, token string) error {
+	if service.Invitations == nil || strings.TrimSpace(token) == "" {
+		return ErrInvalidInvitation
+	}
+	return service.Invitations.DeclineInvitation(ctx, token)
 }
 
 type jwtClaims struct {

@@ -243,6 +243,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectMember"
+  /v1/auth/invitations/reject:
+    post:
+      tags: [Auth]
+      summary: Reject and permanently invalidate an invitation
+      operationId: auth.invitations.reject
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationTokenRequest"
+      responses:
+        "204":
+          description: Invitation rejected.
   /v1/auth/tokens:
     get:
       tags: [Auth]
@@ -325,6 +340,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Project"
+  /v1/projects/trash:
+    get:
+      tags: [Projects]
+      summary: List recoverable projects owned by the current user
+      operationId: projects.trash.list
+      responses:
+        "200":
+          description: Owner projects that remain inside their recovery window.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
   /v1/projects/{projectId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -358,6 +385,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Project"
+    delete:
+      tags: [Projects]
+      summary: Move a project to the owner's recycle bin
+      operationId: projects.trash
+      responses:
+        "204":
+          description: Project moved to the recycle bin for 30 days.
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      summary: Restore an owned project from the recycle bin
+      operationId: projects.restore
+      responses:
+        "200":
+          description: Restored project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          $ref: "#/components/responses/Error"
   /v1/projects/{projectId}/members:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -378,7 +432,11 @@ paths:
       - $ref: "#/components/parameters/UserId"
     put:
       tags: [Projects]
-      summary: Change an existing collaborator's role
+      summary: Change a collaborator's role or transfer ownership
+      description: >
+        An owner role cannot be changed directly. Setting another existing
+        collaborator's role to owner atomically transfers ownership from the
+        caller and changes the caller to maintainer.
       operationId: projects.members.upsert
       requestBody:
         required: true
@@ -396,6 +454,7 @@ paths:
     delete:
       tags: [Projects]
       summary: Remove a collaborator
+      description: Owners must transfer ownership before they can be removed.
       operationId: projects.members.remove
       responses:
         "204":
@@ -1370,6 +1429,14 @@ components:
         archived_at:
           type: string
           format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          description: Time the owner moved the project to the recycle bin.
+        purge_at:
+          type: string
+          format: date-time
+          description: Time after which the project can no longer be restored.
         created_at:
           type: string
           format: date-time
@@ -1429,6 +1496,10 @@ components:
             type: string
         archived:
           type: boolean
+          deprecated: true
+          description: >
+            Compatibility alias. true moves the project to the recycle bin;
+            false restores it when still recoverable.
     ProjectMember:
       type: object
       additionalProperties: false
@@ -1449,7 +1520,7 @@ components:
           format: date-time
     InvitationStatus:
       type: string
-      enum: [pending, accepted, revoked, expired]
+      enum: [pending, accepted, revoked, declined, expired]
     ProjectInvitation:
       type: object
       additionalProperties: false
@@ -1500,6 +1571,7 @@ components:
           format: email
         role:
           $ref: "#/components/schemas/ProjectRole"
+          description: Human invitations accept maintainer, editor, or viewer.
     IssuedInvitation:
       type: object
       additionalProperties: false
@@ -1525,6 +1597,7 @@ components:
       properties:
         role:
           $ref: "#/components/schemas/ProjectRole"
+          description: Human member updates accept owner, maintainer, editor, or viewer.
     MemberList:
       type: object
       additionalProperties: false

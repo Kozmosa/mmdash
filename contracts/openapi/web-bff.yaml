@@ -188,6 +188,21 @@ paths:
       responses:
         "200":
           description: Membership created.
+  /api/auth/invitations/reject:
+    post:
+      tags: [Auth]
+      summary: Reject a project invitation
+      operationId: bff.auth.invitations.reject
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/InvitationTokenRequest"
+      responses:
+        "204":
+          description: Invitation rejected.
   /api/auth/logout:
     post:
       tags: [Auth]
@@ -230,6 +245,18 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/Project"
+  /api/projects/trash:
+    get:
+      tags: [Projects]
+      summary: List recoverable projects owned by the browser user
+      operationId: bff.projects.trash.list
+      responses:
+        "200":
+          description: Projects in the owner's recycle bin.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectList"
   /api/projects/{projectId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -261,6 +288,27 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/Project"
+    delete:
+      tags: [Projects]
+      summary: Move an owned project to the recycle bin
+      operationId: bff.projects.trash
+      responses:
+        "204":
+          description: Project moved to the recycle bin.
+  /api/projects/{projectId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      summary: Restore an owned project from the recycle bin
+      operationId: bff.projects.restore
+      responses:
+        "200":
+          description: Restored project.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
   /api/projects/{projectId}/members:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -286,7 +334,7 @@ paths:
           format: uuid
     put:
       tags: [Projects]
-      summary: Change an existing collaborator's role
+      summary: Change a collaborator's role or transfer ownership
       operationId: bff.projects.members.upsert
       requestBody:
         required: true
@@ -303,7 +351,7 @@ paths:
                 $ref: "./core.yaml#/components/schemas/ProjectMember"
     delete:
       tags: [Projects]
-      summary: Remove a collaborator
+      summary: Remove a non-owner collaborator
       operationId: bff.projects.members.remove
       responses:
         "204":

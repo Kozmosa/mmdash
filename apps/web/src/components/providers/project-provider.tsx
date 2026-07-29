@@ -6,8 +6,10 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { apiClient } from "@/lib/api-client";
 
 export type CurrentProject = {
+  createdBy?: string;
   id: string;
   name: string;
+  role?: "agent" | "box" | "editor" | "maintainer" | "owner" | "viewer";
 };
 
 const ProjectContext = createContext<CurrentProject | null>(null);
@@ -18,15 +20,32 @@ export function ProjectProvider({
 }: Readonly<{ children: ReactNode; project: CurrentProject }>) {
   const query = useQuery({
     initialData: project,
-    queryFn: () =>
-      apiClient.request<CurrentProject>(
-        `/projects/${encodeURIComponent(project.id)}`,
-      ),
+    initialDataUpdatedAt: 0,
+    queryFn: async () => {
+      const result = await apiClient.request<{
+        created_by: string;
+        id: string;
+        name: string;
+        role: CurrentProject["role"];
+      }>(`/projects/${encodeURIComponent(project.id)}`);
+      return {
+        createdBy: result.created_by,
+        id: result.id,
+        name: result.name,
+        role: result.role,
+      };
+    },
     queryKey: ["project", project.id],
+    refetchOnMount: "always",
   });
   const value = useMemo(
-    () => ({ id: query.data.id, name: query.data.name }),
-    [query.data.id, query.data.name],
+    () => ({
+      createdBy: query.data.createdBy,
+      id: query.data.id,
+      name: query.data.name,
+      role: query.data.role,
+    }),
+    [query.data.createdBy, query.data.id, query.data.name, query.data.role],
   );
 
   return (

@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { FlaskConical } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -21,6 +22,7 @@ import { apiClient } from "@/lib/api-client";
 
 export default function LoginPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const search = useSearchParams();
   const [submitting, setSubmitting] = useState(false);
 
@@ -29,12 +31,23 @@ export default function LoginPage() {
     const form = new FormData(event.currentTarget);
     setSubmitting(true);
     try {
-      await apiClient.request("/auth/login", {
+      const result = await apiClient.request<{
+        user: {
+          display_name: string;
+          email: string;
+          id: string;
+        };
+      }>("/auth/login", {
         body: {
           email: String(form.get("email") ?? ""),
           password: String(form.get("password") ?? ""),
         },
         method: "POST",
+      });
+      queryClient.setQueryData(["current-user"], {
+        displayName: result.user.display_name,
+        email: result.user.email,
+        id: result.user.id,
       });
       toast.success("登录成功");
       const returnTo = search.get("returnTo");

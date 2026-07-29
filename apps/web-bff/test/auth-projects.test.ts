@@ -11,6 +11,56 @@ afterEach(async () => {
 });
 
 describe("auth and collaborative project routes", () => {
+  it("registers a browser account and creates a signed session", async () => {
+    const registerResult = {
+      access_token: "new-core-session-token",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      session_id: "session-new",
+      user: {
+        created_at: "2026-07-29T08:00:00Z",
+        display_name: "New Member",
+        email: "member@example.com",
+        id: "user-new",
+        status: "active",
+        system_role: "member",
+      },
+    };
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(registerResult, { status: 201 }));
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        display_name: "New Member",
+        email: "member@example.com",
+        password: "password-123",
+      },
+      url: "/api/auth/register",
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.headers["set-cookie"]).toContain(`${sessionCookieName}=`);
+    expect(response.json().user).toMatchObject({
+      display_name: "New Member",
+      email: "member@example.com",
+    });
+    const [url, options] = fetchImplementation.mock.calls[0]!;
+    expect(url).toBe("http://core.test/v1/auth/register");
+    expect(options?.method).toBe("POST");
+    expect(JSON.parse(String(options?.body))).toEqual({
+      display_name: "New Member",
+      email: "member@example.com",
+      password: "password-123",
+    });
+  });
+
   it("creates an HTTP-only signed browser session from Core timestamps with offsets", async () => {
     const loginResult = {
       access_token: "core-session-token",
@@ -161,5 +211,37 @@ describe("auth and collaborative project routes", () => {
     const [projectUrl, projectOptions] = fetchImplementation.mock.calls[1]!;
     expect(projectUrl).toBe(`http://core.test/v1/projects/${projectId}`);
     expect(projectOptions?.method).toBe("PATCH");
+
+    const trashListResponse = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/projects/trash",
+    });
+    expect(trashListResponse.statusCode).toBe(200);
+    const [trashListUrl, trashListOptions] = fetchImplementation.mock.calls[2]!;
+    expect(trashListUrl).toBe("http://core.test/v1/projects/trash");
+    expect(trashListOptions?.method).toBe("GET");
+
+    const trashResponse = await app.inject({
+      headers: { cookie },
+      method: "DELETE",
+      url: `/api/projects/${projectId}`,
+    });
+    expect(trashResponse.statusCode).toBe(204);
+    const [trashUrl, trashOptions] = fetchImplementation.mock.calls[3]!;
+    expect(trashUrl).toBe(`http://core.test/v1/projects/${projectId}`);
+    expect(trashOptions?.method).toBe("DELETE");
+
+    const restoreResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      url: `/api/projects/${projectId}/restore`,
+    });
+    expect(restoreResponse.statusCode).toBe(200);
+    const [restoreUrl, restoreOptions] = fetchImplementation.mock.calls[4]!;
+    expect(restoreUrl).toBe(
+      `http://core.test/v1/projects/${projectId}/restore`,
+    );
+    expect(restoreOptions?.method).toBe("POST");
   });
 });

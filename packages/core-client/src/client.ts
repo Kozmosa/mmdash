@@ -119,6 +119,17 @@ export class CoreClient {
     );
   }
 
+  async rejectInvitation(
+    token: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      "/v1/auth/invitations/reject",
+      { body: { token }, method: "POST" },
+      context,
+    );
+  }
+
   async logout(context: CoreRequestContext): Promise<void> {
     return this.request("/v1/auth/logout", { method: "POST" }, context);
   }
@@ -154,6 +165,12 @@ export class CoreClient {
     );
   }
 
+  async listProjectTrash(
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectList"]> {
+    return this.request("/v1/projects/trash", { method: "GET" }, context);
+  }
+
   async getProject(
     projectId: string,
     context: CoreRequestContext,
@@ -173,6 +190,28 @@ export class CoreClient {
     return this.request(
       `/v1/projects/${encodeURIComponent(projectId)}`,
       { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async trashProject(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async restoreProject(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Project"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/restore`,
+      { method: "POST" },
       context,
     );
   }

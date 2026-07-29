@@ -68,6 +68,18 @@ export function registerAuthRoutes(
       ),
   );
 
+  app.post(
+    "/api/auth/invitations/reject",
+    { config: { auth: "public", project: "none" } },
+    async (request, reply) => {
+      await coreClient.rejectInvitation(
+        z.object({ token: z.string().min(1) }).parse(request.body).token,
+        { requestId: request.id },
+      );
+      return reply.code(204).send();
+    },
+  );
+
   app.get(
     "/api/auth/me",
     { config: { auth: "required", project: "none" } },
