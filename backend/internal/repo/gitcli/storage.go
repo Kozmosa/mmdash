@@ -2,6 +2,7 @@ package gitcli
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -126,6 +127,31 @@ func (storage *Storage) Discard(staging, storageKey string) error {
 	return os.RemoveAll(canonicalStaging)
 }
 
+// RemoveRepository removes exactly one Core-generated managed repository.
+// Missing directories are already clean; symlinks and malformed keys are
+// rejected before any recursive deletion is attempted.
+func (storage *Storage) RemoveRepository(storageKey string) error {
+	repository, err := storage.repositoryPath(storageKey)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(repository)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return ErrStorageEscape
+	}
+	resolved, err := filepath.EvalSymlinks(repository)
+	if err != nil || resolved != repository || !contained(storage.root, resolved) {
+		return ErrStorageEscape
+	}
+	return os.RemoveAll(repository)
+}
+
 // ManagedPath joins a reviewed relative path and refuses symlink escapes.
 func (storage *Storage) ManagedPath(storageKey, relative string) (string, error) {
 	repository, err := storage.repositoryPath(storageKey)
@@ -173,6 +199,30 @@ func (storage *Storage) Check() error {
 		return fmt.Errorf("atomically rename repository readiness file: %w", err)
 	}
 	return nil
+}
+
+// Size reports bytes stored below the managed root without following symlinks.
+func (storage *Storage) Size() (int64, error) {
+	var total int64
+	err := filepath.WalkDir(storage.root, func(
+		path string,
+		entry fs.DirEntry,
+		walkErr error,
+	) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err
 }
 
 func (storage *Storage) repositoryPath(storageKey string) (string, error) {

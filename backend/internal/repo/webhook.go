@@ -146,8 +146,11 @@ func (service Service) AcceptGitHubWebhook(
 		if err := json.Unmarshal(request.Body, &push); err != nil {
 			return WebhookAcceptance{}, ErrInvalid
 		}
-		branch, ok := strings.CutPrefix(push.Ref, "refs/heads/")
-		if !ok || gitcli.ValidateBranch(branch) != nil {
+		if !strings.HasPrefix(push.Ref, "refs/heads/") {
+			return WebhookAcceptance{}, ErrInvalid
+		}
+		branch := strings.TrimPrefix(push.Ref, "refs/heads/")
+		if gitcli.ValidateBranch(branch) != nil {
 			return WebhookAcceptance{}, ErrInvalid
 		}
 		delivery.Ref = stringPointer(push.Ref)

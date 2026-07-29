@@ -69,4 +69,55 @@ func TestStorageRejectsKeysTraversalAndSymlinkEscape(t *testing.T) {
 	if _, err := storage.Layout(testStorageKey); !errors.Is(err, ErrStorageEscape) {
 		t.Fatalf("repository symlink escape should be rejected: %v", err)
 	}
+	if err := storage.RemoveRepository(testStorageKey); !errors.Is(err, ErrStorageEscape) {
+		t.Fatalf("repository symlink cleanup should be rejected: %v", err)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Fatalf("unsafe cleanup changed the outside directory: %v", err)
+	}
+}
+
+func TestStorageRemovesOnlyTheSelectedRepository(t *testing.T) {
+	storage, err := NewStorage(filepath.Join(t.TempDir(), "repos"))
+	if err != nil {
+		t.Fatalf("create storage: %v", err)
+	}
+	staging, err := storage.Prepare(testStorageKey)
+	if err != nil {
+		t.Fatalf("prepare storage: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "managed"), []byte("data"), 0o600); err != nil {
+		t.Fatalf("write managed fixture: %v", err)
+	}
+	if err := storage.Promote(staging, testStorageKey); err != nil {
+		t.Fatalf("promote storage: %v", err)
+	}
+	neighbor := filepath.Join(storage.Root(), "neighbor")
+	if err := os.Mkdir(neighbor, 0o700); err != nil {
+		t.Fatalf("create neighbor: %v", err)
+	}
+
+	if err := storage.RemoveRepository(testStorageKey); err != nil {
+		t.Fatalf("remove managed repository: %v", err)
+	}
+	layout, err := storage.Layout(testStorageKey)
+	if err != nil {
+		t.Fatalf("resolve removed layout: %v", err)
+	}
+	if _, err := os.Stat(layout.Repository); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("managed repository survived removal: %v", err)
+	}
+	if _, err := os.Stat(neighbor); err != nil {
+		t.Fatalf("neighbor was removed: %v", err)
+	}
+	if err := storage.RemoveRepository(testStorageKey); err != nil {
+		t.Fatalf("repeated removal should be idempotent: %v", err)
+	}
+	size, err := storage.Size()
+	if err != nil {
+		t.Fatalf("measure storage: %v", err)
+	}
+	if size != 0 {
+		t.Fatalf("unexpected storage size after cleanup: %d", size)
+	}
 }
