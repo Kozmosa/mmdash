@@ -245,6 +245,18 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/Project"
+  /api/projects/trash:
+    get:
+      tags: [Projects]
+      summary: List recoverable projects owned by the browser user
+      operationId: bff.projects.trash.list
+      responses:
+        "200":
+          description: Projects in the owner's recycle bin.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProjectList"
   /api/projects/{projectId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -272,6 +284,27 @@ paths:
       responses:
         "200":
           description: Project updated.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Project"
+    delete:
+      tags: [Projects]
+      summary: Move an owned project to the recycle bin
+      operationId: bff.projects.trash
+      responses:
+        "204":
+          description: Project moved to the recycle bin.
+  /api/projects/{projectId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      summary: Restore an owned project from the recycle bin
+      operationId: bff.projects.restore
+      responses:
+        "200":
+          description: Restored project.
           content:
             application/json:
               schema:

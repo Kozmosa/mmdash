@@ -26,7 +26,10 @@ type storeStub struct {
 	memberRemoved      bool
 	memberUpdated      bool
 	ownershipMoved     bool
+	projectRestored    bool
+	projectTrashed     bool
 	projectUpdated     bool
+	purgeAt            time.Time
 	role               Role
 }
 
@@ -66,12 +69,22 @@ func (stub *storeStub) Get(context.Context, string, string) (Project, error) {
 func (stub *storeStub) List(context.Context, string, bool) ([]Project, error) {
 	return []Project{{ID: "project-1", Role: stub.role}}, nil
 }
+func (stub *storeStub) ListTrash(context.Context, string, time.Time) ([]Project, error) {
+	return []Project{{ID: "project-trashed", Role: RoleOwner}}, nil
+}
 func (stub *storeStub) ListMembers(context.Context, string) ([]Member, error) {
 	return []Member{{UserID: "user-1", Role: stub.role}}, nil
+}
+func (stub *storeStub) PurgeExpired(context.Context, time.Time) error {
+	return nil
 }
 func (stub *storeStub) RemoveMember(context.Context, string, string, string) error {
 	stub.memberRemoved = true
 	return nil
+}
+func (stub *storeStub) Restore(context.Context, string, string, time.Time) (Project, error) {
+	stub.projectRestored = true
+	return Project{ID: "project-1", Role: RoleOwner}, nil
 }
 func (stub *storeStub) Update(context.Context, string, string, UpdateInput) (Project, error) {
 	stub.projectUpdated = true
@@ -80,6 +93,11 @@ func (stub *storeStub) Update(context.Context, string, string, UpdateInput) (Pro
 func (stub *storeStub) TransferOwnership(context.Context, string, string, string) (Member, error) {
 	stub.ownershipMoved = true
 	return Member{UserID: "user-2", Role: RoleOwner}, nil
+}
+func (stub *storeStub) Trash(_ context.Context, _ string, _ string, _ time.Time, purgeAt time.Time) (Project, error) {
+	stub.projectTrashed = true
+	stub.purgeAt = purgeAt
+	return Project{ID: "project-1", Role: RoleOwner}, nil
 }
 func (stub *storeStub) UpsertMember(context.Context, string, string, string, Role) (Member, error) {
 	stub.memberUpdated = true
@@ -137,6 +155,40 @@ func TestSettingsPermissionsFollowCollaborationRoles(t *testing.T) {
 		true,
 	); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("viewer should not manage settings, got %v", err)
+	}
+}
+
+func TestOnlyOwnerCanTrashAndRestoreProject(t *testing.T) {
+	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "owner"}}
+	store := &storeStub{role: RoleOwner}
+	service := Service{
+		Auth:           authStub{identity: identity},
+		Clock:          fixedProjectClock{now: now},
+		Store:          store,
+		TrashRetention: 30 * 24 * time.Hour,
+	}
+
+	if _, err := service.Trash(context.Background(), identity, "project-1"); err != nil {
+		t.Fatalf("trash project: %v", err)
+	}
+	if !store.projectTrashed || !store.purgeAt.Equal(now.Add(30*24*time.Hour)) {
+		t.Fatalf("trash window was not persisted: %#v", store)
+	}
+	if _, err := service.Restore(context.Background(), identity, "project-1"); err != nil {
+		t.Fatalf("restore project: %v", err)
+	}
+	if !store.projectRestored {
+		t.Fatal("restore did not reach persistence")
+	}
+
+	store.role = RoleMaintainer
+	store.projectTrashed = false
+	if _, err := service.Trash(context.Background(), identity, "project-1"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("maintainer trashed project: %v", err)
+	}
+	if store.projectTrashed {
+		t.Fatal("forbidden trash reached persistence")
 	}
 }
 
@@ -287,6 +339,8 @@ func TestModuleRoutesProjectAndMemberMutationsToTheirHandlers(t *testing.T) {
 		status int
 	}{
 		{body: `{"name":"Renamed"}`, method: http.MethodPatch, path: "/v1/projects/project-1", status: http.StatusOK},
+		{method: http.MethodDelete, path: "/v1/projects/project-1", status: http.StatusNoContent},
+		{method: http.MethodPost, path: "/v1/projects/project-1/restore", status: http.StatusOK},
 		{body: `{"role":"viewer"}`, method: http.MethodPut, path: "/v1/projects/project-1/members/user-2", status: http.StatusOK},
 		{method: http.MethodDelete, path: "/v1/projects/project-1/members/user-2", status: http.StatusNoContent},
 	} {
@@ -298,9 +352,17 @@ func TestModuleRoutesProjectAndMemberMutationsToTheirHandlers(t *testing.T) {
 			t.Fatalf("%s %s: got %d, want %d", test.method, test.path, response.Code, test.status)
 		}
 	}
-	if !store.projectUpdated || !store.memberUpdated || !store.memberRemoved {
+	if !store.projectUpdated || !store.projectTrashed || !store.projectRestored || !store.memberUpdated || !store.memberRemoved {
 		t.Fatalf("expected all mutation handlers to run: %#v", store)
 	}
+}
+
+type fixedProjectClock struct {
+	now time.Time
+}
+
+func (clock fixedProjectClock) Now() time.Time {
+	return clock.now
 }
 
 type roleStoreStub struct {

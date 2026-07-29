@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, LogOut, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, Trash2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -116,6 +116,15 @@ export function UserMenu({
             >
               <UserRound aria-hidden="true" className="size-4" />
               个人中心
+            </Link>
+            <Link
+              className="flex min-h-9 items-center gap-2 rounded-md px-2.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+              href="/projects/trash"
+              onClick={() => setOpen(false)}
+              role="menuitem"
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+              项目回收站
             </Link>
             <button
               className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm text-destructive outline-none hover:bg-destructive/10 focus-visible:bg-destructive/10 disabled:opacity-50"
