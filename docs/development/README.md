@@ -24,10 +24,12 @@ pnpm smoke
 pnpm dev:down
 ```
 
-The smoke verifies login/project creation, Web → BFF → Core → PostgreSQL,
-Worker Job handling, Outbox delivery, Data Hub routing, Audit/request IDs, MCP
-health, CLI startup, and metrics. Local ports are Web `3000`, BFF `3001`, Core
-`8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO Console `9001`.
+The baseline smoke verifies login/project creation, Web → BFF → Core →
+PostgreSQL, Worker Job handling, Outbox delivery, Data Hub routing,
+Audit/request IDs, MCP health, CLI startup, and metrics. Set
+`MMDASH_SMOKE_REPO_MODE=docker` to add the managed Local Git Stage 1 E2E
+described in the [Repo guide](repo.md). Local ports are Web `3000`, BFF `3001`,
+Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO Console `9001`.
 
 ## Isolated native environment
 
@@ -84,3 +86,4 @@ layer only when their module documentation explains why.
 - [Native development environment](native-environment.md)
 - [Stage 3.15 foundation acceptance](foundation-acceptance.md)
 - [Contract development](contracts.md)
+- [Repo development, deployment, and acceptance](repo.md)

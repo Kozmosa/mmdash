@@ -67,6 +67,7 @@ pnpm --filter @mmdash/core-client generate
 - [Endpoint catalog](endpoints.md)
 - [Auth, Project, and RBAC](auth-projects.md)
 - [Settings and secret management](settings.md)
+- [Repo API and safety contract](repo.md)
 - [Jobs and Worker protocol](jobs.md)
 - [Events, Outbox, and replay](events.md)
 - [Data Hub, object routing, and Project Context](datahub.md)
@@ -76,4 +77,5 @@ pnpm --filter @mmdash/core-client generate
 - [Local development](../development/README.md)
 - [Stage 3.15 foundation acceptance](../development/foundation-acceptance.md)
 - [Web BFF development](../development/web-bff.md)
+- [Repo development and operations](../development/repo.md)
 - [Architecture](../architecture/README.md)
