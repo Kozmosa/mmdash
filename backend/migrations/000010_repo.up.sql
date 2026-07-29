@@ -14,6 +14,7 @@ CREATE TABLE repo_repositories (
         )),
     settings_version BIGINT NOT NULL CHECK (settings_version > 0),
     webhook_id UUID NOT NULL UNIQUE,
+    connected_at TIMESTAMPTZ,
     last_synced_at TIMESTAMPTZ,
     last_error_code TEXT,
     last_error_message TEXT,
@@ -22,6 +23,8 @@ CREATE TABLE repo_repositories (
     sync_locked_by TEXT,
     sync_lease_expires_at TIMESTAMPTZ,
     sync_attempts INTEGER NOT NULL DEFAULT 0 CHECK (sync_attempts >= 0),
+    sync_source TEXT NOT NULL DEFAULT 'manual'
+        CHECK (sync_source IN ('manual', 'webhook', 'poll')),
     next_sync_at TIMESTAMPTZ,
     cleanup_after TIMESTAMPTZ,
     created_by UUID NOT NULL REFERENCES auth_users(user_id) ON DELETE RESTRICT,

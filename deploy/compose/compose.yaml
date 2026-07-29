@@ -69,6 +69,8 @@ services:
       CORE_OPENAPI_PATH: /app/contracts/openapi/core.yaml
       # 运行版本，写入 health 与 metrics；生产必须设置为实际发布版本/构建号。
       MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
+      # Webhook 公网基址；生产必须是能从 GitHub 到达的正式 HTTPS 地址。
+      MMDASH_PUBLIC_URL: ${MMDASH_PUBLIC_URL:-http://localhost:3000}
       # Session/API Token 签名密钥；生产必须替换为 Secret 管理器提供的高熵值。
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
       # 浏览器 Session 有效期；生产按安全策略调整。

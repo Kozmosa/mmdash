@@ -192,6 +192,42 @@ func TestModuleRoutesProjectAndMemberMutationsToTheirHandlers(t *testing.T) {
 	}
 }
 
+func TestRepositoryPermissionsMatchCollaborationRoles(t *testing.T) {
+	cases := []struct {
+		role   Role
+		read   bool
+		manage bool
+		write  bool
+	}{
+		{role: RoleOwner, read: true, manage: true, write: true},
+		{role: RoleMaintainer, read: true, manage: true, write: true},
+		{role: RoleEditor, read: true, write: true},
+		{role: RoleViewer, read: true},
+		{role: RoleAgent, read: true},
+		{role: RoleBox, read: true},
+	}
+	for _, testCase := range cases {
+		permissions := permissionsByRole[testCase.role]
+		if hasPermission(permissions, PermissionRepoRead) != testCase.read ||
+			hasPermission(permissions, PermissionRepoManage) != testCase.manage ||
+			hasPermission(permissions, PermissionRepoWrite) != testCase.write {
+			t.Fatalf(
+				"unexpected Repo permissions for %s: %#v",
+				testCase.role, permissions,
+			)
+		}
+	}
+}
+
+func hasPermission(permissions []Permission, expected Permission) bool {
+	for _, permission := range permissions {
+		if permission == expected {
+			return true
+		}
+	}
+	return false
+}
+
 type roleStoreStub struct {
 	storeStub
 	roles map[string]Role

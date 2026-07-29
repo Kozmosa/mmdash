@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -31,6 +32,9 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
+	"github.com/mmdash/mmdash/backend/internal/repo"
+	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
+	"github.com/mmdash/mmdash/backend/internal/repo/provider"
 	"github.com/mmdash/mmdash/backend/internal/settings"
 )
 
@@ -219,6 +223,46 @@ func run(logger *logging.Logger) error {
 	}); err != nil {
 		return err
 	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return fmt.Errorf("find Git executable: %w", err)
+	}
+	askPassPath, err := exec.LookPath(processConfig.Repo.AskPassPath)
+	if err != nil {
+		return fmt.Errorf("find Repo AskPass executable: %w", err)
+	}
+	repoStorage, err := gitcli.NewStorage(processConfig.Repo.StorageRoot)
+	if err != nil {
+		return fmt.Errorf("initialize Repo storage: %w", err)
+	}
+	gitClient, err := gitcli.NewClient(
+		gitPath,
+		askPassPath,
+		processConfig.Repo.CommandTimeout,
+		processConfig.Repo.MaxConcurrentGit,
+		int(processConfig.Repo.MaxTextBytes),
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Git runtime: %w", err)
+	}
+	repoProviders := provider.NewRegistry()
+	if err := repoProviders.Register("github", provider.GitHub{
+		Git: gitClient, RuntimeRoot: repoStorage.Root(),
+		UserAgent: "mmdash-core/" + processConfig.Version,
+	}); err != nil {
+		return err
+	}
+	if err := repoProviders.Register("local", provider.Local{
+		AllowedRoots: processConfig.Repo.LocalAllowedRoots,
+		Git:          gitClient,
+	}); err != nil {
+		return err
+	}
+	if err := settingsRegistry.Register(repo.SettingDefinition(
+		repo.ConnectionTester{Providers: repoProviders},
+	)); err != nil {
+		return err
+	}
 	settingsService := settings.Service{
 		Access:   settings.AccessPolicy{Projects: projectService},
 		Clock:    systemClock,
@@ -233,6 +277,19 @@ func run(logger *logging.Logger) error {
 		},
 	}
 	authService.Policy = registrationSettingsPolicy{Store: settingsService.Store}
+	repoStore := repo.PostgresStore{
+		Clock: systemClock, DB: db, Generator: idGenerator,
+		Outbox: outboxWriter, Transaction: transactionManager,
+	}
+	repoService := repo.Service{
+		Access: projectService, Audit: auditRecorder, Clock: systemClock,
+		DisconnectGrace: processConfig.Repo.DisconnectGrace,
+		Providers:       repoProviders,
+		PublicURL:       processConfig.PublicURL,
+		Settings:        settingsService,
+		Store:           repoStore,
+	}
+	repoModule := repo.Module{Service: repoService}
 	jobService := jobs.Service{
 		Auth:     authService,
 		Clock:    systemClock,
@@ -261,7 +318,13 @@ func run(logger *logging.Logger) error {
 	if err := modules.Register(example.New(example.PostgresChecker{DB: db})); err != nil {
 		return err
 	}
-	if err := modules.Register(project.Module{Service: *projectService}); err != nil {
+	if err := modules.Register(project.Module{
+		Repository: repoModule.ProjectHandler(),
+		Service:    *projectService,
+	}); err != nil {
+		return err
+	}
+	if err := modules.Register(repoModule); err != nil {
 		return err
 	}
 	if err := modules.Register(jobs.Module{Service: jobService}); err != nil {
@@ -306,6 +369,8 @@ func run(logger *logging.Logger) error {
 			Checkers: []health.Checker{
 				database.Checker{DB: db},
 				storage,
+				repo.GitChecker{Client: gitClient, Directory: repoStorage.Root()},
+				repo.StorageChecker{Storage: repoStorage},
 			},
 			Version: processConfig.Version,
 		},
@@ -335,6 +400,30 @@ func run(logger *logging.Logger) error {
 			"error": processorErr.Error(),
 		})
 	})
+	syncOwnerID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Repo sync owner identity: %w", err)
+	}
+	repoCoordinator := repo.Coordinator{
+		BatchSize: processConfig.Repo.MaxConcurrentGit,
+		Clock:     systemClock,
+		Lease:     processConfig.Repo.SyncLease,
+		OnError: func(syncErr error) {
+			logger.Error("repo.sync.failed", map[string]interface{}{
+				"error": syncErr.Error(),
+			})
+		},
+		Owner:     "core-" + syncOwnerID,
+		Poll:      processConfig.Repo.SyncPollInterval,
+		Providers: repoProviders,
+		Runtime: repo.Runtime{
+			Clock: systemClock, CloneTimeout: processConfig.Repo.CloneTimeout,
+			Git: gitClient, Storage: repoStorage,
+		},
+		Settings: settingsService,
+		Store:    repoStore,
+	}
+	go repoCoordinator.Run(ctx)
 
 	return server.New(
 		processConfig.Addr,
