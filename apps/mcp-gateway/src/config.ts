@@ -15,6 +15,7 @@ const configSchema = z.object({
   cliTools: z.array(z.string().min(1)),
   coreBaseUrl: z.string().url(),
   coreAuditToken: z.string().min(32).optional(),
+  coreAccessToken: z.string().min(32).optional(),
   host: z.string().min(1),
   nodeEnv: z.enum(["development", "test", "production"]),
   port: z.number().int().min(1).max(65_535),
@@ -45,6 +46,10 @@ export function loadConfig(
     cliTools: parseList(environment.MCP_CLI_TOOLS, ["*"]),
     coreBaseUrl: environment.CORE_BASE_URL ?? "http://localhost:8080",
     coreAuditToken: environment.MCP_CORE_AUDIT_TOKEN || undefined,
+    coreAccessToken:
+      environment.MCP_CORE_ACCESS_TOKEN ||
+      environment.MCP_CORE_AUDIT_TOKEN ||
+      undefined,
     host: environment.MCP_GATEWAY_HOST ?? "127.0.0.1",
     nodeEnv: environment.NODE_ENV ?? "development",
     port: Number(environment.MCP_GATEWAY_PORT ?? 3002),

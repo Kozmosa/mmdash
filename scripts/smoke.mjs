@@ -17,8 +17,10 @@ const runId = `${Date.now()}-${process.pid}`;
 const web = await fetchChecked(`${webUrl}/projects`);
 const html = await web.text();
 assert(
-  html.includes("团队项目") || html.includes("创建团队项目"),
-  "Web smoke check did not find the current project-list shell.",
+  html.includes("团队项目") ||
+    html.includes("创建团队项目") ||
+    html.includes("登录 mmdash"),
+  "Web smoke check did not find the authenticated project shell or login guard.",
 );
 
 const example = await jsonChecked(`${webUrl}/api/example`);

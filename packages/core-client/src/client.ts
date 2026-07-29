@@ -64,6 +64,61 @@ export class CoreClient {
     );
   }
 
+  async register(
+    input: components["schemas"]["RegisterRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["LoginResult"]> {
+    return this.request(
+      "/v1/auth/register",
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async updateProfile(
+    input: components["schemas"]["UpdateProfileRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["User"]> {
+    return this.request(
+      "/v1/auth/me",
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async changePassword(
+    input: components["schemas"]["ChangePasswordRequest"],
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      "/v1/auth/me/password",
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async previewInvitation(
+    token: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectInvitation"]> {
+    return this.request(
+      "/v1/auth/invitations/preview",
+      { body: { token }, method: "POST" },
+      context,
+    );
+  }
+
+  async acceptInvitation(
+    token: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectMember"]> {
+    return this.request(
+      "/v1/auth/invitations/accept",
+      { body: { token }, method: "POST" },
+      context,
+    );
+  }
+
   async logout(context: CoreRequestContext): Promise<void> {
     return this.request("/v1/auth/logout", { method: "POST" }, context);
   }
@@ -133,7 +188,7 @@ export class CoreClient {
     );
   }
 
-  async upsertProjectMember(
+  async updateProjectMember(
     projectId: string,
     userId: string,
     role: components["schemas"]["ProjectRole"],
@@ -142,6 +197,41 @@ export class CoreClient {
     return this.request(
       `/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
       { body: { role }, method: "PUT" },
+      context,
+    );
+  }
+
+  async listProjectInvitations(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["InvitationList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/invitations`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createProjectInvitation(
+    projectId: string,
+    input: components["schemas"]["CreateInvitationRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["IssuedInvitation"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/invitations`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async revokeProjectInvitation(
+    projectId: string,
+    invitationId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/invitations/${encodeURIComponent(invitationId)}`,
+      { method: "DELETE" },
       context,
     );
   }
