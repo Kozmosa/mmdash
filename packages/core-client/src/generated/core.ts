@@ -442,6 +442,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/repository/webhook-secret": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rotate the GitHub webhook secret and return it once */
+    post: operations["repo.webhook-secret.rotate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/repository/workspaces": {
     parameters: {
       query?: never;
@@ -2823,6 +2842,29 @@ export interface operations {
           "application/json": components["schemas"]["Repository"];
         };
       };
+    };
+  };
+  "repo.webhook-secret.rotate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Repository status with the newly generated secret included once. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Repository"];
+        };
+      };
+      400: components["responses"]["Error"];
     };
   };
   "repo.workspaces.update": {

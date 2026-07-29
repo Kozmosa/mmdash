@@ -17,6 +17,8 @@ var (
 	ErrNotConfigured    = errors.New("repository not configured")
 	ErrNotReady         = errors.New("repository not ready")
 	ErrObjectNotFound   = errors.New("repository object not found")
+	ErrWebhookConflict  = errors.New("repository webhook delivery conflict")
+	ErrWebhookSignature = errors.New("repository webhook signature invalid")
 	ErrWorktreeDirty    = errors.New("repository worktree is dirty")
 )
 

@@ -63,6 +63,7 @@ type Service struct {
 	Store           Store
 	WriteLease      time.Duration
 	Writer          *WorkspaceWriter
+	Webhooks        WebhookStore
 }
 
 // ConnectionTestResult enriches shared checks with branches required by Repo UI.

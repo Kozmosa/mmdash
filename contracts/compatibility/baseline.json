@@ -674,6 +674,16 @@
             "202"
           ]
         },
+        "repo.webhook-secret.rotate": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/webhook-secret",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "400"
+          ]
+        },
         "repo.workspaces.update": {
           "method": "PATCH",
           "parameters": [],
@@ -4796,6 +4806,15 @@
           "requestRequired": false,
           "responses": [
             "202"
+          ]
+        },
+        "bff.repo.webhook-secret.rotate": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository/webhook-secret",
+          "requestRequired": false,
+          "responses": [
+            "200"
           ]
         },
         "bff.repo.workspaces.update": {

@@ -3,6 +3,7 @@ package repo
 import (
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,7 +25,12 @@ type Module struct {
 
 func (Module) Name() string { return "repo" }
 
-func (module Module) RegisterRoutes(_ *http.ServeMux) {}
+func (module Module) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc(
+		"/v1/repo/webhooks/github/",
+		module.handleGitHubWebhook,
+	)
+}
 
 // ProjectHandler is mounted by Project because net/http ServeMux cannot register
 // two independent handlers for the same /v1/projects/ subtree on Go 1.17.
@@ -96,6 +102,13 @@ func (module Module) handleProjectResource(
 			module.handleSync(response, request, identity, projectID)
 			return
 		}
+	case "webhook-secret":
+		if len(segments) == 3 {
+			module.handleWebhookSecret(
+				response, request, identity, projectID,
+			)
+			return
+		}
 	case "tree":
 		if len(segments) == 3 {
 			module.handleTree(response, request, identity, projectID)
@@ -108,6 +121,71 @@ func (module Module) handleProjectResource(
 		}
 	}
 	writeRepoError(response, request, ErrNotConfigured)
+}
+
+func (module Module) handleGitHubWebhook(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	hookID := strings.Trim(
+		strings.TrimPrefix(
+			request.URL.Path, "/v1/repo/webhooks/github/",
+		),
+		"/",
+	)
+	if hookID == "" || strings.Contains(hookID, "/") {
+		writeRepoError(response, request, ErrNotConfigured)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(
+		request.Body, maximumWebhookBodyBytes+1,
+	))
+	if err != nil {
+		writeRepoError(response, request, ErrInvalid)
+		return
+	}
+	if int64(len(body)) > maximumWebhookBodyBytes {
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusRequestEntityTooLarge,
+			"REPO_WEBHOOK_TOO_LARGE",
+			"Repository webhook payload is too large",
+		))
+		return
+	}
+	accepted, err := module.Service.AcceptGitHubWebhook(
+		request.Context(), WebhookRequest{
+			Body: body, DeliveryID: request.Header.Get("X-GitHub-Delivery"),
+			Event: request.Header.Get("X-GitHub-Event"), HookID: hookID,
+			Signature: request.Header.Get("X-Hub-Signature-256"),
+		},
+	)
+	if err != nil {
+		writeRepoError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusAccepted, accepted)
+}
+
+func (module Module) handleWebhookSecret(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	repository, err := module.Service.RotateWebhookSecret(
+		request.Context(), identity, projectID,
+	)
+	if err != nil {
+		writeRepoError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, repository)
 }
 
 func (module Module) handleRepository(
@@ -594,6 +672,18 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 	case errors.Is(err, ErrNoChanges):
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusConflict, "REPO_NO_CHANGES", "Repository commit contains no changes",
+		))
+	case errors.Is(err, ErrWebhookSignature):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusUnauthorized,
+			"REPO_WEBHOOK_SIGNATURE_INVALID",
+			"Repository webhook signature is invalid",
+		))
+	case errors.Is(err, ErrWebhookConflict):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict,
+			"REPO_WEBHOOK_DELIVERY_CONFLICT",
+			"Repository webhook delivery conflicts with a previous payload",
 		))
 	case errors.Is(err, ErrBranchMapping), errors.Is(err, provider.ErrInvalidConfig):
 		httpx.WriteError(response, request, apperror.New(

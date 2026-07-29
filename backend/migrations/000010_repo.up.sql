@@ -1,3 +1,9 @@
+ALTER TABLE data_objects
+    DROP CONSTRAINT data_objects_object_type_check;
+ALTER TABLE data_objects
+    ADD CONSTRAINT data_objects_object_type_check
+    CHECK (object_type ~ '^[a-z][a-z0-9_-]*$');
+
 CREATE TABLE repo_repositories (
     repository_id UUID PRIMARY KEY,
     project_id UUID NOT NULL UNIQUE
