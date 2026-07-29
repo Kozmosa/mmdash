@@ -21,10 +21,12 @@ func (stub authStub) Authenticate(context.Context, string) (auth.Identity, error
 }
 
 type storeStub struct {
-	memberRemoved  bool
-	memberUpdated  bool
-	projectUpdated bool
-	role           Role
+	invitationDeclined bool
+	memberRemoved      bool
+	memberUpdated      bool
+	ownershipMoved     bool
+	projectUpdated     bool
+	role               Role
 }
 
 func (stub *storeStub) AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error) {
@@ -32,6 +34,10 @@ func (stub *storeStub) AcceptInvitation(context.Context, string, string, string,
 }
 func (stub *storeStub) CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error) {
 	return IssuedInvitation{}, nil
+}
+func (stub *storeStub) DeclineInvitation(context.Context, string, time.Time) error {
+	stub.invitationDeclined = true
+	return nil
 }
 func (stub *storeStub) ListInvitations(context.Context, string, time.Time) ([]Invitation, error) {
 	return []Invitation{}, nil
@@ -68,6 +74,10 @@ func (stub *storeStub) RemoveMember(context.Context, string, string, string) err
 func (stub *storeStub) Update(context.Context, string, string, UpdateInput) (Project, error) {
 	stub.projectUpdated = true
 	return Project{ID: "project-1", Role: stub.role}, nil
+}
+func (stub *storeStub) TransferOwnership(context.Context, string, string, string) (Member, error) {
+	stub.ownershipMoved = true
+	return Member{UserID: "user-2", Role: RoleOwner}, nil
 }
 func (stub *storeStub) UpsertMember(context.Context, string, string, string, Role) (Member, error) {
 	stub.memberUpdated = true
@@ -160,8 +170,94 @@ func TestMaintainerCannotGrantOrManageOwnerRole(t *testing.T) {
 	}
 }
 
+func TestOwnerRoleCanOnlyChangeThroughTransfer(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "creator"}}
+	store := &roleStoreStub{roles: map[string]Role{
+		"creator": RoleOwner,
+		"member":  RoleEditor,
+	}}
+	service := Service{Auth: authStub{identity: identity}, Store: store}
+
+	if _, err := service.UpsertMember(context.Background(), identity, "project-1", "creator", RoleMaintainer); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("owner changed their own role without transfer: %v", err)
+	}
+	if store.memberUpdated || store.ownershipMoved {
+		t.Fatal("forbidden owner role change reached persistence")
+	}
+
+	member, err := service.UpsertMember(context.Background(), identity, "project-1", "member", RoleOwner)
+	if err != nil {
+		t.Fatalf("transfer ownership: %v", err)
+	}
+	if !store.ownershipMoved || member.Role != RoleOwner {
+		t.Fatalf("ownership was not transferred atomically: %#v", member)
+	}
+}
+
+func TestOwnerCannotRemoveSelf(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "creator"}}
+	store := &roleStoreStub{roles: map[string]Role{"creator": RoleOwner}}
+	service := Service{Auth: authStub{identity: identity}, Store: store}
+
+	if err := service.RemoveMember(context.Background(), identity, "project-1", "creator"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("owner removed self: %v", err)
+	}
+	if store.memberRemoved {
+		t.Fatal("forbidden owner removal reached persistence")
+	}
+}
+
+func TestOwnerCannotBeInvitedWithoutTransfer(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "creator"}}
+	store := &roleStoreStub{roles: map[string]Role{"creator": RoleOwner}}
+	service := Service{Auth: authStub{identity: identity}, Store: store}
+
+	if _, err := service.CreateInvitation(context.Background(), identity, "project-1", "new-owner@example.com", RoleOwner); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("owner invitation should be rejected, got %v", err)
+	}
+}
+
+func TestHumanMembershipRejectsMachineRoles(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "owner"}}
+	store := &roleStoreStub{roles: map[string]Role{
+		"owner":  RoleOwner,
+		"member": RoleViewer,
+	}}
+	service := Service{Auth: authStub{identity: identity}, Store: store}
+
+	for _, role := range []Role{RoleAgent, RoleBox} {
+		if _, err := service.UpsertMember(context.Background(), identity, "project-1", "member", role); !errors.Is(err, ErrInvalid) {
+			t.Errorf("human member accepted machine role %q: %v", role, err)
+		}
+		if _, err := service.CreateInvitation(context.Background(), identity, "project-1", "human@example.com", role); !errors.Is(err, ErrInvalid) {
+			t.Errorf("human invitation accepted machine role %q: %v", role, err)
+		}
+	}
+	if store.memberUpdated || store.ownershipMoved {
+		t.Fatal("invalid machine role reached persistence")
+	}
+}
+
+func TestInvitationCanBeDeclinedWithoutAuthentication(t *testing.T) {
+	store := &storeStub{}
+	service := Service{Store: store}
+
+	if err := service.DeclineInvitation(context.Background(), "invitation-token"); err != nil {
+		t.Fatalf("decline invitation: %v", err)
+	}
+	if !store.invitationDeclined {
+		t.Fatal("decline did not reach persistence")
+	}
+	if err := service.DeclineInvitation(context.Background(), " "); !errors.Is(err, auth.ErrInvalidInvitation) {
+		t.Fatalf("blank decline token returned %v", err)
+	}
+}
+
 func TestModuleRoutesProjectAndMemberMutationsToTheirHandlers(t *testing.T) {
-	store := &storeStub{role: RoleOwner}
+	store := &roleStoreStub{roles: map[string]Role{
+		"user-1": RoleOwner,
+		"user-2": RoleViewer,
+	}}
 	module := Module{Service: Service{
 		Auth:  authStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}}},
 		Store: store,

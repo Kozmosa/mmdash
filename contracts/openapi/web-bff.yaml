@@ -188,6 +188,21 @@ paths:
       responses:
         "200":
           description: Membership created.
+  /api/auth/invitations/reject:
+    post:
+      tags: [Auth]
+      summary: Reject a project invitation
+      operationId: bff.auth.invitations.reject
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/InvitationTokenRequest"
+      responses:
+        "204":
+          description: Invitation rejected.
   /api/auth/logout:
     post:
       tags: [Auth]
@@ -286,7 +301,7 @@ paths:
           format: uuid
     put:
       tags: [Projects]
-      summary: Change an existing collaborator's role
+      summary: Change a collaborator's role or transfer ownership
       operationId: bff.projects.members.upsert
       requestBody:
         required: true
@@ -303,7 +318,7 @@ paths:
                 $ref: "./core.yaml#/components/schemas/ProjectMember"
     delete:
       tags: [Projects]
-      summary: Remove a collaborator
+      summary: Remove a non-owner collaborator
       operationId: bff.projects.members.remove
       responses:
         "204":

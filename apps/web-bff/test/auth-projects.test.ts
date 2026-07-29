@@ -11,6 +11,56 @@ afterEach(async () => {
 });
 
 describe("auth and collaborative project routes", () => {
+  it("registers a browser account and creates a signed session", async () => {
+    const registerResult = {
+      access_token: "new-core-session-token",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      session_id: "session-new",
+      user: {
+        created_at: "2026-07-29T08:00:00Z",
+        display_name: "New Member",
+        email: "member@example.com",
+        id: "user-new",
+        status: "active",
+        system_role: "member",
+      },
+    };
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(registerResult, { status: 201 }));
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        display_name: "New Member",
+        email: "member@example.com",
+        password: "password-123",
+      },
+      url: "/api/auth/register",
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.headers["set-cookie"]).toContain(`${sessionCookieName}=`);
+    expect(response.json().user).toMatchObject({
+      display_name: "New Member",
+      email: "member@example.com",
+    });
+    const [url, options] = fetchImplementation.mock.calls[0]!;
+    expect(url).toBe("http://core.test/v1/auth/register");
+    expect(options?.method).toBe("POST");
+    expect(JSON.parse(String(options?.body))).toEqual({
+      display_name: "New Member",
+      email: "member@example.com",
+      password: "password-123",
+    });
+  });
+
   it("creates an HTTP-only signed browser session from Core timestamps with offsets", async () => {
     const loginResult = {
       access_token: "core-session-token",

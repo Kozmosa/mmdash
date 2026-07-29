@@ -119,6 +119,17 @@ export class CoreClient {
     );
   }
 
+  async rejectInvitation(
+    token: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      "/v1/auth/invitations/reject",
+      { body: { token }, method: "POST" },
+      context,
+    );
+  }
+
   async logout(context: CoreRequestContext): Promise<void> {
     return this.request("/v1/auth/logout", { method: "POST" }, context);
   }

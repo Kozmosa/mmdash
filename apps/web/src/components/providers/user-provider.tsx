@@ -12,6 +12,7 @@ export type CurrentUser = {
 };
 
 const UserContext = createContext<CurrentUser | null>(null);
+const UserLoadingContext = createContext(true);
 
 export function UserProvider({ children }: Readonly<{ children: ReactNode }>) {
   const identity = useQuery({
@@ -34,12 +35,18 @@ export function UserProvider({ children }: Readonly<{ children: ReactNode }>) {
   });
 
   return (
-    <UserContext.Provider value={identity.data ?? null}>
-      {children}
-    </UserContext.Provider>
+    <UserLoadingContext.Provider value={identity.isLoading}>
+      <UserContext.Provider value={identity.data ?? null}>
+        {children}
+      </UserContext.Provider>
+    </UserLoadingContext.Provider>
   );
 }
 
 export function useCurrentUser(): CurrentUser | null {
   return useContext(UserContext);
+}
+
+export function useCurrentUserLoading(): boolean {
+  return useContext(UserLoadingContext);
 }

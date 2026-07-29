@@ -185,6 +185,7 @@ type Store interface {
 	AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error)
 	CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error)
 	Create(context.Context, string, CreateInput) (Project, error)
+	DeclineInvitation(context.Context, string, time.Time) error
 	FindRole(context.Context, string, string) (Role, error)
 	Get(context.Context, string, string) (Project, error)
 	List(context.Context, string, bool) ([]Project, error)
@@ -193,6 +194,7 @@ type Store interface {
 	PreviewInvitation(context.Context, string, time.Time) (Invitation, error)
 	RemoveMember(context.Context, string, string, string) error
 	RevokeInvitation(context.Context, string, string, string, time.Time) error
+	TransferOwnership(context.Context, string, string, string) (Member, error)
 	Update(context.Context, string, string, UpdateInput) (Project, error)
 	UpsertMember(context.Context, string, string, string, Role) (Member, error)
 }
@@ -309,7 +311,7 @@ func (service Service) UpsertMember(
 	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
 		return Member{}, err
 	}
-	if _, ok := permissionsByRole[role]; !ok {
+	if !isHumanRole(role) {
 		return Member{}, ErrInvalid
 	}
 	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
@@ -320,13 +322,23 @@ func (service Service) UpsertMember(
 	if err != nil {
 		return Member{}, ErrNotFound
 	}
-	if actorRole != RoleOwner && (role == RoleOwner || targetRole == RoleOwner) {
-		return Member{}, ErrForbidden
+	if targetRole == RoleOwner {
+		if role != RoleOwner {
+			return Member{}, ErrForbidden
+		}
+		return service.Store.UpsertMember(ctx, identity.User.ID, projectID, userID, role)
+	}
+	if role == RoleOwner {
+		if actorRole != RoleOwner || identity.User.ID == userID || !isHumanRole(targetRole) {
+			return Member{}, ErrForbidden
+		}
+		return service.Store.TransferOwnership(ctx, identity.User.ID, projectID, userID)
 	}
 	return service.Store.UpsertMember(ctx, identity.User.ID, projectID, userID, role)
 }
 
-// RemoveMember removes a collaborator while preserving at least one owner.
+// RemoveMember removes a collaborator. An owner must transfer ownership first
+// and can never remove their own active ownership through this operation.
 func (service Service) RemoveMember(
 	ctx context.Context,
 	identity auth.Identity,
@@ -336,15 +348,14 @@ func (service Service) RemoveMember(
 	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
 		return err
 	}
-	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
-	if err != nil {
+	if _, err := service.Store.FindRole(ctx, identity.User.ID, projectID); err != nil {
 		return ErrForbidden
 	}
 	targetRole, err := service.Store.FindRole(ctx, userID, projectID)
 	if err != nil {
 		return ErrNotFound
 	}
-	if actorRole != RoleOwner && targetRole == RoleOwner {
+	if targetRole == RoleOwner {
 		return ErrForbidden
 	}
 	return service.Store.RemoveMember(ctx, identity.User.ID, projectID, userID)
@@ -359,11 +370,10 @@ func (service Service) CreateInvitation(ctx context.Context, identity auth.Ident
 	if email == "" {
 		return IssuedInvitation{}, ErrInvalid
 	}
-	if _, ok := permissionsByRole[role]; !ok {
+	if !isInvitableHumanRole(role) {
 		return IssuedInvitation{}, ErrInvalid
 	}
-	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
-	if err != nil || (actorRole != RoleOwner && role == RoleOwner) {
+	if _, err := service.Store.FindRole(ctx, identity.User.ID, projectID); err != nil {
 		return IssuedInvitation{}, ErrForbidden
 	}
 	ttl := service.InvitationTTL
@@ -393,6 +403,19 @@ func (service Service) PreviewInvitation(ctx context.Context, token string) (aut
 		return auth.Invitation{}, auth.ErrInvalidInvitation
 	}
 	return authInvitation(invitation), nil
+}
+
+// DeclineInvitation permanently invalidates a pending invitation using its
+// unguessable invitation token. Authentication is intentionally not required.
+func (service Service) DeclineInvitation(ctx context.Context, token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return auth.ErrInvalidInvitation
+	}
+	if err := service.Store.DeclineInvitation(ctx, hashInvitationToken(token), service.now()); err != nil {
+		return auth.ErrInvalidInvitation
+	}
+	return nil
 }
 
 func (service Service) AcceptInvitation(ctx context.Context, identity auth.Identity, token string) (auth.AcceptedMember, error) {
@@ -438,6 +461,17 @@ func authInvitation(invitation Invitation) auth.Invitation {
 
 func acceptedMember(member Member) auth.AcceptedMember {
 	return auth.AcceptedMember{DisplayName: member.DisplayName, Email: member.Email, JoinedAt: member.JoinedAt, Role: string(member.Role), UserID: member.UserID}
+}
+
+func isHumanRole(role Role) bool {
+	return role == RoleOwner ||
+		role == RoleMaintainer ||
+		role == RoleEditor ||
+		role == RoleViewer
+}
+
+func isInvitableHumanRole(role Role) bool {
+	return role == RoleMaintainer || role == RoleEditor || role == RoleViewer
 }
 
 // Permissions returns the current role and effective permissions.

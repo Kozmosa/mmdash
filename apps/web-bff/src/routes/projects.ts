@@ -16,7 +16,7 @@ const updateProjectSchema = createProjectSchema.partial().extend({
 });
 
 const memberRoleSchema = z.object({
-  role: z.enum(["owner", "maintainer", "editor", "viewer", "agent", "box"]),
+  role: z.enum(["owner", "maintainer", "editor", "viewer"]),
 });
 
 export function registerProjectRoutes(
@@ -71,14 +71,7 @@ export function registerProjectRoutes(
       const input = z
         .object({
           email: z.string().email(),
-          role: z.enum([
-            "owner",
-            "maintainer",
-            "editor",
-            "viewer",
-            "agent",
-            "box",
-          ]),
+          role: z.enum(["maintainer", "editor", "viewer"]),
         })
         .parse(request.body);
       const issued = await coreClient.createProjectInvitation(

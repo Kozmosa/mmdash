@@ -243,6 +243,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectMember"
+  /v1/auth/invitations/reject:
+    post:
+      tags: [Auth]
+      summary: Reject and permanently invalidate an invitation
+      operationId: auth.invitations.reject
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationTokenRequest"
+      responses:
+        "204":
+          description: Invitation rejected.
   /v1/auth/tokens:
     get:
       tags: [Auth]
@@ -378,7 +393,11 @@ paths:
       - $ref: "#/components/parameters/UserId"
     put:
       tags: [Projects]
-      summary: Change an existing collaborator's role
+      summary: Change a collaborator's role or transfer ownership
+      description: >
+        An owner role cannot be changed directly. Setting another existing
+        collaborator's role to owner atomically transfers ownership from the
+        caller and changes the caller to maintainer.
       operationId: projects.members.upsert
       requestBody:
         required: true
@@ -396,6 +415,7 @@ paths:
     delete:
       tags: [Projects]
       summary: Remove a collaborator
+      description: Owners must transfer ownership before they can be removed.
       operationId: projects.members.remove
       responses:
         "204":
@@ -1449,7 +1469,7 @@ components:
           format: date-time
     InvitationStatus:
       type: string
-      enum: [pending, accepted, revoked, expired]
+      enum: [pending, accepted, revoked, declined, expired]
     ProjectInvitation:
       type: object
       additionalProperties: false
@@ -1500,6 +1520,7 @@ components:
           format: email
         role:
           $ref: "#/components/schemas/ProjectRole"
+          description: Human invitations accept maintainer, editor, or viewer.
     IssuedInvitation:
       type: object
       additionalProperties: false
@@ -1525,6 +1546,7 @@ components:
       properties:
         role:
           $ref: "#/components/schemas/ProjectRole"
+          description: Human member updates accept owner, maintainer, editor, or viewer.
     MemberList:
       type: object
       additionalProperties: false
