@@ -23,17 +23,23 @@ describe("CoreAuditSink", () => {
     });
 
     expect(recordAuditEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         action: "mcp.tool.called",
         category: "mcp",
-        metadata: expect.objectContaining({
+        duration_ms: 12,
+        error_code: undefined,
+        metadata: {
           delegated_actor_id: "agent:0123456789abcdef",
           delegated_actor_kind: "agent",
-        }),
+          gateway_session_id: "session-1",
+        },
+        occurred_at: "2026-07-28T12:00:00Z",
+        outcome: "success",
         project_id: "project-1",
         resource_id: "system.echo",
+        resource_type: "mcp-tool",
         source: "mcp-gateway",
-      }),
+      },
       {
         accessToken: "audit-token-with-at-least-thirty-two-characters",
         projectId: "project-1",

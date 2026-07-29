@@ -34,7 +34,7 @@ for (const [relativePath, content] of outputs) {
   const absolutePath = path.join(root, relativePath);
   if (checkOnly) {
     const existing = await readFile(absolutePath, "utf8").catch(() => "");
-    if (existing !== content) {
+    if (normalizeNewlines(existing) !== normalizeNewlines(content)) {
       console.error(`${relativePath} is stale; run pnpm contracts:generate.`);
       changed = true;
     }

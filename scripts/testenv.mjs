@@ -897,6 +897,8 @@ async function main() {
       await execute("pnpm", ["smoke"], {
         environment: {
           ...environment,
+          MMDASH_SMOKE_CORE_URL: `http://${host}:${ports.core}`,
+          MMDASH_SMOKE_MCP_URL: `http://${host}:${ports.mcp}`,
           MMDASH_SMOKE_URL: `http://${host}:${ports.web}`,
         },
       });

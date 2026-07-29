@@ -69,17 +69,21 @@ class WorkerRuntime:
         version: str,
         lease_seconds: int = 60,
         poll_seconds: float = 2.0,
+        renew_interval_seconds: float | None = None,
     ) -> None:
         if lease_seconds < 10:
             raise ValueError("lease_seconds must be at least 10")
         if poll_seconds < 0:
             raise ValueError("poll_seconds cannot be negative")
+        if renew_interval_seconds is not None and renew_interval_seconds < 0:
+            raise ValueError("renew_interval_seconds cannot be negative")
         self.client = client
         self.registry = registry
         self.worker_id = worker_id
         self.version = version
         self.lease_seconds = lease_seconds
         self.poll_seconds = poll_seconds
+        self.renew_interval_seconds = renew_interval_seconds
 
     async def run_once(self) -> bool:
         """Heartbeat, claim, and process at most one job."""
@@ -128,6 +132,12 @@ class WorkerRuntime:
                     "JOB_CANCELLED",
                     "Cancellation was requested while the handler was running",
                 )
+            if context.lease_renewal_failed:
+                raise HandlerError(
+                    "LEASE_RENEWAL_FAILED",
+                    "The worker could not renew the job lease",
+                    retryable=True,
+                )
             await asyncio.to_thread(
                 self.client.complete,
                 job_id,
@@ -154,18 +164,24 @@ class WorkerRuntime:
         context: HandlerContext,
         stop: asyncio.Event,
     ) -> None:
-        interval = max(1.0, self.lease_seconds / 2)
+        interval = self.renew_interval_seconds
+        if interval is None:
+            interval = max(1.0, self.lease_seconds / 2)
         while True:
             try:
                 await asyncio.wait_for(stop.wait(), timeout=interval)
                 return
             except TimeoutError:
-                job = await asyncio.to_thread(
-                    self.client.renew,
-                    context.job_id,
-                    self.worker_id,
-                    self.lease_seconds,
-                )
+                try:
+                    job = await asyncio.to_thread(
+                        self.client.renew,
+                        context.job_id,
+                        self.worker_id,
+                        self.lease_seconds,
+                    )
+                except Exception:  # noqa: BLE001 - lease loss must fail the attempt safely
+                    context.lease_renewal_failed = True
+                    return
                 if job.get("cancel_requested_at"):
                     context.cancellation_requested = True
 
