@@ -583,7 +583,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/RepoWorkspace"
         - $ref: "#/components/parameters/Cursor"
-        - $ref: "#/components/parameters/RepoLimit"
+        - $ref: "#/components/parameters/RepoCommitLimit"
       responses:
         "200":
           description: Commit page pinned to the resolved workspace history.
@@ -1468,6 +1468,14 @@ components:
         type: integer
         minimum: 1
         maximum: 200
+    RepoCommitLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
     TokenId:
       name: tokenId
       in: path

@@ -396,6 +396,13 @@ func (runtime Runtime) readCommit(
 	if initial {
 		source = "connect"
 	}
+	message := strings.TrimRight(fields[9], "\r\n")
+	if len(message) > 100000 {
+		return Commit{}, safe(
+			"REPO_COMMIT_MESSAGE_TOO_LARGE",
+			"Repository commit message exceeds the supported size",
+		)
+	}
 	return Commit{
 		Author: GitIdentity{
 			Email: fields[4], Name: fields[3], Time: authorTime,
@@ -404,7 +411,7 @@ func (runtime Runtime) readCommit(
 		Committer: GitIdentity{
 			Email: fields[7], Name: fields[6], Time: committerTime,
 		},
-		FirstSeenAt: runtime.now(), Message: strings.TrimRight(fields[9], "\r\n"),
+		FirstSeenAt: runtime.now(), Message: message,
 		ParentSHAs: parents, RepositoryID: repositoryID, Source: source,
 		TreeSHA: strings.TrimSpace(fields[1]),
 	}, nil

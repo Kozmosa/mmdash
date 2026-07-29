@@ -211,8 +211,9 @@ func (config Config) Validate() error {
 	if config.Repo.MaxConcurrentGit < 1 {
 		return fmt.Errorf("REPO_MAX_CONCURRENT_GIT must be positive")
 	}
-	if config.Repo.MaxTextBytes < 1 {
-		return fmt.Errorf("REPO_MAX_TEXT_BYTES must be positive")
+	if config.Repo.MaxTextBytes < 1 ||
+		config.Repo.MaxTextBytes > 64*1024*1024 {
+		return fmt.Errorf("REPO_MAX_TEXT_BYTES must be between 1 byte and 64 MiB")
 	}
 	if config.Repo.CommandTimeout <= 0 ||
 		config.Repo.CloneTimeout <= 0 ||

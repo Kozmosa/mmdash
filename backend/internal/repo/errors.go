@@ -14,6 +14,7 @@ var (
 	ErrLocked           = errors.New("repository locked")
 	ErrNotConfigured    = errors.New("repository not configured")
 	ErrNotReady         = errors.New("repository not ready")
+	ErrObjectNotFound   = errors.New("repository object not found")
 	ErrWorktreeDirty    = errors.New("repository worktree is dirty")
 )
 

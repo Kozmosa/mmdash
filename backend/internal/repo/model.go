@@ -164,6 +164,73 @@ type ChangedPath struct {
 	Status       string `json:"status"`
 }
 
+// Revision pins a logical workspace to one immutable full commit SHA.
+type Revision struct {
+	Branch       string        `json:"branch"`
+	CommitSHA    string        `json:"resolved_revision"`
+	RepositoryID string        `json:"repository_id,omitempty"`
+	Workspace    WorkspaceKind `json:"workspace"`
+}
+
+// Branch is one fetched remote branch and its optional logical mapping.
+type Branch struct {
+	CommitSHA string         `json:"commit_sha"`
+	Default   bool           `json:"default"`
+	Name      string         `json:"name"`
+	Workspace *WorkspaceKind `json:"workspace"`
+}
+
+// BranchList is the deterministic fetched branch response.
+type BranchList struct {
+	Items []Branch `json:"items"`
+}
+
+// CommitPage is one immutable, revision-pinned history page.
+type CommitPage struct {
+	Branch           string        `json:"branch"`
+	HasMore          bool          `json:"has_more"`
+	Items            []Commit      `json:"items"`
+	NextCursor       *string       `json:"next_cursor"`
+	ResolvedRevision string        `json:"resolved_revision"`
+	Workspace        WorkspaceKind `json:"workspace"`
+}
+
+// TreeEntry is one immutable Git object in a directory.
+type TreeEntry struct {
+	Kind     string `json:"kind"`
+	Mode     string `json:"mode"`
+	Name     string `json:"name"`
+	ObjectID string `json:"object_id"`
+	Path     string `json:"path"`
+	Size     *int64 `json:"size"`
+}
+
+// TreePage is one directory page pinned to a full commit SHA.
+type TreePage struct {
+	Branch           string        `json:"branch"`
+	HasMore          bool          `json:"has_more"`
+	Items            []TreeEntry   `json:"items"`
+	NextCursor       *string       `json:"next_cursor"`
+	Path             string        `json:"path"`
+	ResolvedRevision string        `json:"resolved_revision"`
+	Workspace        WorkspaceKind `json:"workspace"`
+}
+
+// FileContent returns text or safe metadata for a fixed Git object.
+type FileContent struct {
+	Branch           string        `json:"branch"`
+	Content          *string       `json:"content"`
+	Encoding         *string       `json:"encoding"`
+	Kind             string        `json:"kind"`
+	Mode             string        `json:"mode"`
+	ObjectID         string        `json:"object_id"`
+	Path             string        `json:"path"`
+	PreviewStatus    string        `json:"preview_status"`
+	ResolvedRevision string        `json:"resolved_revision"`
+	Size             int64         `json:"size"`
+	Workspace        WorkspaceKind `json:"workspace"`
+}
+
 // Checkout is a detached, leased worktree without a public server path.
 type Checkout struct {
 	CheckoutID      string     `json:"checkout_id"`
