@@ -3,9 +3,11 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgconn"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
@@ -19,12 +21,39 @@ type PostgresStore struct {
 
 func (store PostgresStore) CreateUser(ctx context.Context, user User, passwordHash string) error {
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO auth_users (user_id,email,display_name,password_hash,status,system_role,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`, user.ID, user.Email, user.DisplayName, passwordHash, user.Status, user.SystemRole, user.CreatedAt); err != nil {
+		return store.createUser(ctx, tx, user, passwordHash)
+	})
+}
+
+// CreateUserAndAcceptInvitation keeps account creation and invitation
+// consumption atomic, including their durable events.
+func (store PostgresStore) CreateUserAndAcceptInvitation(
+	ctx context.Context,
+	user User,
+	passwordHash string,
+	accept func(transaction.Tx) error,
+) error {
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if err := store.createUser(ctx, tx, user, passwordHash); err != nil {
 			return err
 		}
-		_, err := store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": user.ID}, EventType: "user.registered", Payload: map[string]interface{}{"display_name": user.DisplayName, "email": user.Email, "user_id": user.ID}, Producer: "auth"})
-		return err
+		return accept(tx)
 	})
+	if isUniqueViolation(err) {
+		return ErrConflict
+	}
+	return err
+}
+
+func (store PostgresStore) createUser(ctx context.Context, tx transaction.Tx, user User, passwordHash string) error {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO auth_users (user_id,email,display_name,password_hash,status,system_role,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`, user.ID, user.Email, user.DisplayName, passwordHash, user.Status, user.SystemRole, user.CreatedAt); err != nil {
+		if isUniqueViolation(err) {
+			return ErrConflict
+		}
+		return err
+	}
+	_, err := store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": user.ID}, EventType: "user.registered", Payload: map[string]interface{}{"display_name": user.DisplayName, "email": user.Email, "user_id": user.ID}, Producer: "auth"})
+	return err
 }
 
 func (store PostgresStore) DeleteUser(ctx context.Context, userID string) error {
@@ -39,6 +68,9 @@ func (store PostgresStore) UpdateUser(ctx context.Context, userID string, email 
 		WHERE user_id = $1
 		RETURNING user_id, email, display_name, status, system_role, created_at
 	`, userID, email, displayName, now).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Status, &user.SystemRole, &user.CreatedAt)
+	if isUniqueViolation(err) {
+		return User{}, ErrConflict
+	}
 	return user, err
 }
 
@@ -239,4 +271,9 @@ func wrapStore(operation string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func isUniqueViolation(err error) bool {
+	var postgresError *pgconn.PgError
+	return errors.As(err, &postgresError) && postgresError.Code == "23505"
 }

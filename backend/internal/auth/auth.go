@@ -19,6 +19,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
 // User is the public account projection.
@@ -150,6 +151,18 @@ type InvitationService interface {
 	PreviewInvitation(context.Context, string) (Invitation, error)
 }
 
+// TransactionalInvitationService consumes an invitation in the caller's
+// registration transaction so user and membership state cannot diverge.
+type TransactionalInvitationService interface {
+	AcceptRegistrationInTransaction(context.Context, transaction.Tx, string, User) (AcceptedMember, error)
+}
+
+// TransactionalRegistrationStore creates an account and invokes invitation
+// acceptance inside the same database transaction.
+type TransactionalRegistrationStore interface {
+	CreateUserAndAcceptInvitation(context.Context, User, string, func(transaction.Tx) error) error
+}
+
 // ProjectTokenAuthorizer verifies project-scoped token management.
 type ProjectTokenAuthorizer interface {
 	AuthorizeTokenManagement(context.Context, Identity, string) error
@@ -209,14 +222,20 @@ func (service Service) Register(ctx context.Context, input RegisterInput) (Login
 		return LoginResult{}, err
 	}
 	user := User{CreatedAt: service.Clock.Now().UTC(), DisplayName: input.DisplayName, Email: input.Email, ID: userID, Status: "active", SystemRole: "member"}
-	if err := service.Store.CreateUser(ctx, user, string(hash)); err != nil {
-		return LoginResult{}, ErrConflict
-	}
 	if input.InvitationToken != "" {
-		if _, err := service.Invitations.AcceptRegistration(ctx, input.InvitationToken, user); err != nil {
-			_ = service.Store.DeleteUser(ctx, user.ID)
+		store, storeOK := service.Store.(TransactionalRegistrationStore)
+		invitations, invitationsOK := service.Invitations.(TransactionalInvitationService)
+		if !storeOK || !invitationsOK {
+			return LoginResult{}, fmt.Errorf("invitation registration transaction is not configured")
+		}
+		if err := store.CreateUserAndAcceptInvitation(ctx, user, string(hash), func(tx transaction.Tx) error {
+			_, err := invitations.AcceptRegistrationInTransaction(ctx, tx, input.InvitationToken, user)
+			return err
+		}); err != nil {
 			return LoginResult{}, err
 		}
+	} else if err := service.Store.CreateUser(ctx, user, string(hash)); err != nil {
+		return LoginResult{}, err
 	}
 	return service.Login(ctx, user.Email, input.Password)
 }
@@ -243,7 +262,7 @@ func (service Service) UpdateProfile(ctx context.Context, identity Identity, inp
 	}
 	updated, err := service.Store.UpdateUser(ctx, user.ID, email, displayName, service.Clock.Now().UTC())
 	if err != nil {
-		return User{}, ErrConflict
+		return User{}, err
 	}
 	return updated, nil
 }

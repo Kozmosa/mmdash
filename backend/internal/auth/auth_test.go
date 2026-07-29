@@ -9,6 +9,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
 type memoryStore struct {
@@ -29,6 +30,7 @@ func (policy registrationPolicyStub) AllowOpenRegistration(context.Context) (boo
 type invitationStub struct {
 	invitation Invitation
 	accepted   bool
+	err        error
 }
 
 func (stub *invitationStub) PreviewInvitation(context.Context, string) (Invitation, error) {
@@ -39,6 +41,16 @@ func (stub *invitationStub) AcceptInvitation(context.Context, Identity, string) 
 	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
 }
 func (stub *invitationStub) AcceptRegistration(context.Context, string, User) (AcceptedMember, error) {
+	if stub.err != nil {
+		return AcceptedMember{}, stub.err
+	}
+	stub.accepted = true
+	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
+}
+func (stub *invitationStub) AcceptRegistrationInTransaction(context.Context, transaction.Tx, string, User) (AcceptedMember, error) {
+	if stub.err != nil {
+		return AcceptedMember{}, stub.err
+	}
 	stub.accepted = true
 	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
 }
@@ -65,6 +77,23 @@ func (store *memoryStore) CreateUser(
 ) error {
 	store.user = user
 	store.passwordHash = passwordHash
+	return nil
+}
+
+func (store *memoryStore) CreateUserAndAcceptInvitation(
+	ctx context.Context,
+	user User,
+	passwordHash string,
+	accept func(transaction.Tx) error,
+) error {
+	previousUser, previousHash := store.user, store.passwordHash
+	if err := store.CreateUser(ctx, user, passwordHash); err != nil {
+		return err
+	}
+	if err := accept(nil); err != nil {
+		store.user, store.passwordHash = previousUser, previousHash
+		return err
+	}
 	return nil
 }
 
@@ -260,6 +289,35 @@ func TestRegistrationPolicyAndInvitationEmailAreEnforced(t *testing.T) {
 	}
 	if result.User.Email != "invited@example.com" || !invites.accepted {
 		t.Fatalf("unexpected registration: %#v", result)
+	}
+}
+
+func TestInvitedRegistrationRollsBackUserWhenInvitationCannotBeConsumed(t *testing.T) {
+	now := time.Date(2026, time.July, 29, 0, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	invites := &invitationStub{
+		invitation: Invitation{Email: "invited@example.com", Status: "pending", ExpiresAt: now.Add(time.Hour)},
+		err:        errors.New("invitation was revoked"),
+	}
+	service := Service{
+		Clock:       clock.Fixed{Time: now},
+		Generator:   identity.Generator{Reader: bytes.NewReader(make([]byte, 64))},
+		Invitations: invites,
+		JWTSecret:   []byte("test-jwt-secret-with-at-least-32-characters"),
+		SessionTTL:  time.Hour,
+		Store:       store,
+	}
+	_, err := service.Register(context.Background(), RegisterInput{
+		DisplayName:     "Invited",
+		Email:           "invited@example.com",
+		InvitationToken: "token",
+		Password:        "password-123",
+	})
+	if !errors.Is(err, invites.err) {
+		t.Fatalf("expected invitation failure, got %v", err)
+	}
+	if store.user.ID != "" {
+		t.Fatalf("failed invited registration left a user: %#v", store.user)
 	}
 }
 
