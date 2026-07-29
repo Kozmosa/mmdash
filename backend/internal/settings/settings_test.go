@@ -68,13 +68,15 @@ func (allowAccess) Authorize(
 	return nil
 }
 
-type secretCheckingTester struct{}
+type secretCheckingTester struct {
+	expectedSecret string
+}
 
-func (secretCheckingTester) Test(
+func (tester secretCheckingTester) Test(
 	_ context.Context,
 	setting ResolvedSetting,
 ) ([]ConnectionCheck, error) {
-	if setting.Values["token"] != "plain-secret" {
+	if setting.Values["token"] != tester.expectedSecret {
 		return nil, errors.New("secret was not decrypted")
 	}
 	return []ConnectionCheck{{Name: "authentication", Status: "passed"}}, nil
@@ -176,7 +178,7 @@ func TestSecretCodecUsesAuthenticatedEncryption(t *testing.T) {
 
 func TestServiceRedactsHTTPProjectionAndResolvesForModules(t *testing.T) {
 	registry := NewRegistry()
-	if err := registry.Register(fixtureDefinition(secretCheckingTester{})); err != nil {
+	if err := registry.Register(fixtureDefinition(secretCheckingTester{expectedSecret: "replacement-secret"})); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	codec, err := NewSecretCodec("test-settings-encryption-key-with-32-characters")
@@ -213,6 +215,33 @@ func TestServiceRedactsHTTPProjectionAndResolvesForModules(t *testing.T) {
 	if encoded := store.setting.EncryptedSecrets["token"]; encoded.Ciphertext == "plain-secret" {
 		t.Fatal("store received plaintext secret")
 	}
+	originalSecret := store.setting.EncryptedSecrets["token"]
+	if _, err := service.Update(
+		context.Background(),
+		identity,
+		ScopeProject,
+		"project-1",
+		"fixture.provider",
+		map[string]interface{}{"token": RedactedSecret},
+	); err != nil {
+		t.Fatalf("preserve redacted secret: %v", err)
+	}
+	if store.setting.EncryptedSecrets["token"] != originalSecret {
+		t.Fatal("redacted secret placeholder replaced the stored secret")
+	}
+	if _, err := service.Update(
+		context.Background(),
+		identity,
+		ScopeProject,
+		"project-1",
+		"fixture.provider",
+		map[string]interface{}{"token": "replacement-secret"},
+	); err != nil {
+		t.Fatalf("replace secret: %v", err)
+	}
+	if store.setting.EncryptedSecrets["token"] == originalSecret {
+		t.Fatal("new secret did not replace the encrypted value")
+	}
 	resolved, err := service.Resolve(
 		context.Background(),
 		ScopeProject,
@@ -222,7 +251,7 @@ func TestServiceRedactsHTTPProjectionAndResolvesForModules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if resolved.Values["token"] != "plain-secret" {
+	if resolved.Values["token"] != "replacement-secret" {
 		t.Fatalf("trusted resolution did not decrypt secret: %#v", resolved.Values)
 	}
 	testResult, err := service.TestConnection(

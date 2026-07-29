@@ -64,7 +64,17 @@ describe("PageAggregatorRegistry", () => {
         requestId: "request-1",
       }),
     ).resolves.toMatchObject({ fragments: { home } });
-    expect(calls).toHaveLength(1);
+    expect(calls).toEqual([
+      [
+        "project-1",
+        {
+          accessToken: "token",
+          projectId: "project-1",
+          requestId: "request-1",
+          userId: "user-1",
+        },
+      ],
+    ]);
   });
 
   it("rejects duplicate page and fragment registrations", () => {

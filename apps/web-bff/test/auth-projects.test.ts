@@ -15,7 +15,7 @@ describe("auth and collaborative project routes", () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         access_token: "core-session-token",
-        expires_at: "2026-07-29T00:00:00Z",
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
         session_id: "session-1",
         user: {
           created_at: "2026-07-28T08:00:00+08:00",
@@ -43,6 +43,20 @@ describe("auth and collaborative project routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["set-cookie"]).toContain(`${sessionCookieName}=`);
     expect(response.headers["set-cookie"]).toContain("HttpOnly");
+    expect(response.headers["set-cookie"]).toContain("SameSite=Lax");
+    const cookie = String(response.headers["set-cookie"]).split(";", 1)[0]!;
+    const identity = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/auth/me",
+    });
+    expect(identity.statusCode).toBe(200);
+    expect(identity.json().user).toMatchObject({
+      created_at: "2026-07-28T08:00:00+08:00",
+      email: "owner@example.com",
+      id: "user-1",
+      system_role: "admin",
+    });
     const [url, options] = fetchImplementation.mock.calls[0]!;
     expect(url).toBe("http://core.test/v1/auth/login");
     expect(options?.method).toBe("POST");
