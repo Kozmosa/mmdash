@@ -25,15 +25,16 @@ describe("auth and collaborative project routes", () => {
         system_role: "admin",
       },
     };
-    const fetchImplementation = vi.fn<typeof fetch>()
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json(loginResult))
       .mockResolvedValueOnce(
-      Response.json({
-        kind: "session",
-        session_id: "session-1",
-        user: loginResult.user,
-      }),
-    );
+        Response.json({
+          kind: "session",
+          session_id: "session-1",
+          user: loginResult.user,
+        }),
+      );
     const app = buildApp({
       config: testConfig,
       fetchImplementation,
@@ -112,5 +113,53 @@ describe("auth and collaborative project routes", () => {
     expect(new Headers(options?.headers).get("authorization")).toBe(
       "Bearer test-access-token",
     );
+  });
+
+  it("preserves the Core contract methods for project and member mutations", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        Response.json({
+          created_at: "2026-07-28T00:00:00Z",
+          display_name: "Member",
+          email: "member@example.com",
+          joined_at: "2026-07-28T00:00:00Z",
+          role: "viewer",
+          user_id: "00000000-0000-4000-8000-000000000002",
+        }),
+      ),
+    );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+    const projectId = "00000000-0000-4000-8000-000000000001";
+    const userId = "00000000-0000-4000-8000-000000000002";
+
+    const memberResponse = await app.inject({
+      headers: { cookie },
+      method: "PUT",
+      payload: { role: "viewer" },
+      url: `/api/projects/${projectId}/members/${userId}`,
+    });
+    expect(memberResponse.statusCode).toBe(200);
+    const [memberUrl, memberOptions] = fetchImplementation.mock.calls[0]!;
+    expect(memberUrl).toBe(
+      `http://core.test/v1/projects/${projectId}/members/${userId}`,
+    );
+    expect(memberOptions?.method).toBe("PUT");
+
+    const projectResponse = await app.inject({
+      headers: { cookie },
+      method: "PATCH",
+      payload: { name: "Renamed" },
+      url: `/api/projects/${projectId}`,
+    });
+    expect(projectResponse.statusCode).toBe(200);
+    const [projectUrl, projectOptions] = fetchImplementation.mock.calls[1]!;
+    expect(projectUrl).toBe(`http://core.test/v1/projects/${projectId}`);
+    expect(projectOptions?.method).toBe("PATCH");
   });
 });

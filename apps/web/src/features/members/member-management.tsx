@@ -62,16 +62,14 @@ export function MemberManagement() {
   };
   const invite = useMutation({
     mutationFn: (input: { email: string; role: Role }) =>
-      apiClient.request<{ token?: string }>(`${base}/invitations`, {
+      apiClient.request<{ token: string }>(`${base}/invitations`, {
         method: "POST",
         body: input,
       }),
     onSuccess: async (result) => {
       await refresh();
       toast.success(
-        result.token
-          ? `邀请已创建：${location.origin}/invite?token=${encodeURIComponent(result.token)}`
-          : "该邮箱已有有效邀请",
+        `邀请已创建：${location.origin}/invite?token=${encodeURIComponent(result.token)}`,
       );
     },
   });
@@ -140,7 +138,7 @@ export function MemberManagement() {
                 value={member.role}
                 onChange={async (e) => {
                   await apiClient.request(`${base}/members/${member.user_id}`, {
-                  method: "PUT",
+                    method: "PUT",
                     body: { role: e.target.value },
                   });
                   await refresh();

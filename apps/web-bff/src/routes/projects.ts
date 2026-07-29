@@ -86,7 +86,7 @@ export function registerProjectRoutes(
         input,
         coreContext(request, request.currentProjectId),
       );
-      return reply.code(issued.token ? 201 : 200).send(issued);
+      return reply.code(201).send(issued);
     },
   );
 

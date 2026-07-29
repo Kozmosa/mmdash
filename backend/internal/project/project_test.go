@@ -3,6 +3,9 @@ package project
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +21,10 @@ func (stub authStub) Authenticate(context.Context, string) (auth.Identity, error
 }
 
 type storeStub struct {
-	role Role
+	memberRemoved  bool
+	memberUpdated  bool
+	projectUpdated bool
+	role           Role
 }
 
 func (stub *storeStub) AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error) {
@@ -56,12 +62,15 @@ func (stub *storeStub) ListMembers(context.Context, string) ([]Member, error) {
 	return []Member{{UserID: "user-1", Role: stub.role}}, nil
 }
 func (stub *storeStub) RemoveMember(context.Context, string, string, string) error {
+	stub.memberRemoved = true
 	return nil
 }
 func (stub *storeStub) Update(context.Context, string, string, UpdateInput) (Project, error) {
+	stub.projectUpdated = true
 	return Project{ID: "project-1", Role: stub.role}, nil
 }
 func (stub *storeStub) UpsertMember(context.Context, string, string, string, Role) (Member, error) {
+	stub.memberUpdated = true
 	return Member{UserID: "user-2", Role: RoleViewer}, nil
 }
 
@@ -148,6 +157,38 @@ func TestMaintainerCannotGrantOrManageOwnerRole(t *testing.T) {
 	}
 	if err := service.RemoveMember(context.Background(), identity, "project-1", "owner"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("maintainer removed owner: %v", err)
+	}
+}
+
+func TestModuleRoutesProjectAndMemberMutationsToTheirHandlers(t *testing.T) {
+	store := &storeStub{role: RoleOwner}
+	module := Module{Service: Service{
+		Auth:  authStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}}},
+		Store: store,
+	}}
+	mux := http.NewServeMux()
+	module.RegisterRoutes(mux)
+
+	for _, test := range []struct {
+		body   string
+		method string
+		path   string
+		status int
+	}{
+		{body: `{"name":"Renamed"}`, method: http.MethodPatch, path: "/v1/projects/project-1", status: http.StatusOK},
+		{body: `{"role":"viewer"}`, method: http.MethodPut, path: "/v1/projects/project-1/members/user-2", status: http.StatusOK},
+		{method: http.MethodDelete, path: "/v1/projects/project-1/members/user-2", status: http.StatusNoContent},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+		request.Header.Set("Authorization", "Bearer test")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		if response.Code != test.status {
+			t.Fatalf("%s %s: got %d, want %d", test.method, test.path, response.Code, test.status)
+		}
+	}
+	if !store.projectUpdated || !store.memberUpdated || !store.memberRemoved {
+		t.Fatalf("expected all mutation handlers to run: %#v", store)
 	}
 }
 

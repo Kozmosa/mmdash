@@ -2195,15 +2195,6 @@ export interface operations {
       };
     };
     responses: {
-      /** @description An active invitation already exists. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["IssuedInvitation"];
-        };
-      };
       /** @description Invitation created; token is returned once. */
       201: {
         headers: {
@@ -2213,6 +2204,7 @@ export interface operations {
           "application/json": components["schemas"]["IssuedInvitation"];
         };
       };
+      409: components["responses"]["Error"];
     };
   };
   "projects.invitations.revoke": {

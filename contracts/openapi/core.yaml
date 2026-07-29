@@ -433,12 +433,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IssuedInvitation"
-        "200":
-          description: An active invitation already exists.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssuedInvitation"
+        "409":
+          $ref: "#/components/responses/Error"
   /v1/projects/{projectId}/invitations/{invitationId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"

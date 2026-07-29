@@ -84,6 +84,10 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 			module.handleMembers(response, request, identity, projectID)
 			return
 		}
+		if len(segments) == 3 {
+			module.handleMember(response, request, identity, projectID, segments[2])
+			return
+		}
 	case "invitations":
 		if len(segments) == 2 {
 			module.handleInvitations(response, request, identity, projectID)
@@ -91,10 +95,6 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 		}
 		if len(segments) == 3 {
 			module.handleInvitation(response, request, identity, projectID, segments[2])
-			return
-		}
-		if len(segments) == 3 {
-			module.handleMember(response, request, identity, projectID, segments[2])
 			return
 		}
 	case "permissions":
@@ -120,7 +120,7 @@ func (module Module) handleProject(
 			return
 		}
 		httpx.WriteJSON(response, http.StatusOK, project)
-	case http.MethodPut:
+	case http.MethodPatch:
 		var body contract.UpdateProjectRequest
 		if !httpx.DecodeJSON(response, request, &body) {
 			return
@@ -172,7 +172,7 @@ func (module Module) handleMember(
 	userID string,
 ) {
 	switch request.Method {
-	case http.MethodPatch:
+	case http.MethodPut:
 		var body contract.UpdateProjectMemberRequest
 		if !httpx.DecodeJSON(response, request, &body) {
 			return
