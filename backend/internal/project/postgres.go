@@ -119,7 +119,7 @@ func (store PostgresStore) ListInvitations(ctx context.Context, projectID string
 
 func (store PostgresStore) PreviewInvitation(ctx context.Context, tokenHash string, now time.Time) (Invitation, error) {
 	var i Invitation
-	err := store.DB.QueryRowContext(ctx, `SELECT i.invitation_id,i.project_id,p.name,i.email,i.role,i.status,i.invited_by,i.expires_at,i.created_at FROM project_invitations i JOIN projects p USING(project_id) WHERE i.token_hash=$1 AND i.status='pending' AND i.expires_at>$2`, tokenHash, now).Scan(&i.ID, &i.ProjectID, &i.ProjectName, &i.Email, &i.Role, &i.Status, &i.InvitedBy, &i.ExpiresAt, &i.CreatedAt)
+	err := store.DB.QueryRowContext(ctx, `SELECT i.invitation_id,i.project_id,p.name,i.email,i.role,i.status,i.invited_by,i.expires_at,i.created_at FROM project_invitations i JOIN projects p USING(project_id) WHERE i.token_hash=$1 AND i.status='pending' AND i.expires_at>$2 AND p.deleted_at IS NULL`, tokenHash, now).Scan(&i.ID, &i.ProjectID, &i.ProjectName, &i.Email, &i.Role, &i.Status, &i.InvitedBy, &i.ExpiresAt, &i.CreatedAt)
 	return i, err
 }
 
@@ -165,7 +165,7 @@ func (store PostgresStore) AcceptInvitation(ctx context.Context, tokenHash strin
 func (store PostgresStore) AcceptInvitationInTransaction(ctx context.Context, tx transaction.Tx, tokenHash string, userID string, email string, now time.Time) (Member, error) {
 	var invitationID, projectID string
 	var invitationRole Role
-	if err := tx.QueryRowContext(ctx, `SELECT invitation_id,project_id,role FROM project_invitations WHERE token_hash=$1 AND LOWER(email)=LOWER($2) AND status='pending' AND expires_at>$3 FOR UPDATE`, tokenHash, email, now).Scan(&invitationID, &projectID, &invitationRole); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT invitation.invitation_id,invitation.project_id,invitation.role FROM project_invitations AS invitation JOIN projects AS project USING(project_id) WHERE invitation.token_hash=$1 AND LOWER(invitation.email)=LOWER($2) AND invitation.status='pending' AND invitation.expires_at>$3 AND project.deleted_at IS NULL FOR UPDATE OF invitation`, tokenHash, email, now).Scan(&invitationID, &projectID, &invitationRole); err != nil {
 		return Member{}, err
 	}
 	if !isInvitableHumanRole(invitationRole) {
@@ -302,13 +302,48 @@ func (store PostgresStore) List(
 	rows, err := store.DB.QueryContext(ctx, `
 		SELECT project_id, name, problem_title, problem_summary,
 		       project_constraints, source_artifact_ids, created_by,
-		       archived_at, project.created_at, project.updated_at, member.role
+		       archived_at, deleted_at, purge_at,
+		       project.created_at, project.updated_at, member.role
 		FROM projects AS project
 		JOIN project_members AS member USING (project_id)
 		WHERE member.user_id = $1
+		  AND project.deleted_at IS NULL
 		  AND ($2 OR project.archived_at IS NULL)
 		ORDER BY project.updated_at DESC, project.project_id
 	`, userID, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	projects := []Project{}
+	for rows.Next() {
+		project, err := scanProject(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		projects = append(projects, project)
+	}
+	return projects, rows.Err()
+}
+
+func (store PostgresStore) ListTrash(
+	ctx context.Context,
+	userID string,
+	now time.Time,
+) ([]Project, error) {
+	rows, err := store.DB.QueryContext(ctx, `
+		SELECT project_id, name, problem_title, problem_summary,
+		       project_constraints, source_artifact_ids, created_by,
+		       archived_at, deleted_at, purge_at,
+		       project.created_at, project.updated_at, member.role
+		FROM projects AS project
+		JOIN project_members AS member USING (project_id)
+		WHERE member.user_id = $1
+		  AND member.role = 'owner'
+		  AND project.deleted_at IS NOT NULL
+		  AND project.purge_at > $2
+		ORDER BY project.deleted_at DESC, project.project_id
+	`, userID, now)
 	if err != nil {
 		return nil, err
 	}
@@ -332,10 +367,13 @@ func (store PostgresStore) Get(
 	project, err := scanProject(store.DB.QueryRowContext(ctx, `
 		SELECT project_id, name, problem_title, problem_summary,
 		       project_constraints, source_artifact_ids, created_by,
-		       archived_at, project.created_at, project.updated_at, member.role
+		       archived_at, deleted_at, purge_at,
+		       project.created_at, project.updated_at, member.role
 		FROM projects AS project
 		JOIN project_members AS member USING (project_id)
-		WHERE project.project_id = $1 AND member.user_id = $2
+		WHERE project.project_id = $1
+		  AND member.user_id = $2
+		  AND project.deleted_at IS NULL
 	`, projectID, userID).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Project{}, ErrNotFound
@@ -350,8 +388,12 @@ func (store PostgresStore) FindRole(
 ) (Role, error) {
 	var role Role
 	err := store.DB.QueryRowContext(ctx, `
-		SELECT role FROM project_members
-		WHERE project_id = $1 AND user_id = $2
+		SELECT member.role
+		FROM project_members AS member
+		JOIN projects AS project USING (project_id)
+		WHERE member.project_id = $1
+		  AND member.user_id = $2
+		  AND project.deleted_at IS NULL
 	`, projectID, userID).Scan(&role)
 	return role, err
 }
@@ -377,7 +419,7 @@ func (store PostgresStore) Update(
 			      ELSE NULL
 			    END,
 			    updated_at = $8
-			WHERE project_id = $1
+			WHERE project_id = $1 AND deleted_at IS NULL
 		`,
 			projectID,
 			input.Name,
@@ -411,6 +453,129 @@ func (store PostgresStore) Update(
 		return Project{}, wrap("update project", err)
 	}
 	return store.Get(ctx, actorID, projectID)
+}
+
+func (store PostgresStore) Trash(
+	ctx context.Context,
+	actorID string,
+	projectID string,
+	deletedAt time.Time,
+	purgeAt time.Time,
+) (Project, error) {
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE projects AS project
+			SET archived_at = NULL,
+			    deleted_at = $3,
+			    purge_at = $4,
+			    updated_at = $3
+			WHERE project.project_id = $1
+			  AND project.deleted_at IS NULL
+			  AND EXISTS (
+			    SELECT 1
+			    FROM project_members AS member
+			    WHERE member.project_id = project.project_id
+			      AND member.user_id = $2
+			      AND member.role = 'owner'
+			  )
+		`, projectID, actorID, deletedAt, purgeAt)
+		if err := requireProjectAffected(result, err); err != nil {
+			return err
+		}
+		_, err = store.Outbox.Write(ctx, tx, outbox.Event{
+			Actor:     map[string]string{"user_id": actorID},
+			EventType: "project.trashed",
+			Payload: map[string]interface{}{
+				"project_id": projectID,
+				"purge_at":   purgeAt,
+			},
+			Producer:  "project",
+			ProjectID: projectID,
+		})
+		return err
+	})
+	if err != nil {
+		return Project{}, wrap("trash project", err)
+	}
+	return store.getTrashed(ctx, actorID, projectID, deletedAt)
+}
+
+func (store PostgresStore) Restore(
+	ctx context.Context,
+	actorID string,
+	projectID string,
+	now time.Time,
+) (Project, error) {
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE projects AS project
+			SET deleted_at = NULL,
+			    purge_at = NULL,
+			    updated_at = $3
+			WHERE project.project_id = $1
+			  AND project.deleted_at IS NOT NULL
+			  AND project.purge_at > $3
+			  AND EXISTS (
+			    SELECT 1
+			    FROM project_members AS member
+			    WHERE member.project_id = project.project_id
+			      AND member.user_id = $2
+			      AND member.role = 'owner'
+			  )
+		`, projectID, actorID, now)
+		if err := requireProjectAffected(result, err); err != nil {
+			return err
+		}
+		_, err = store.Outbox.Write(ctx, tx, outbox.Event{
+			Actor:     map[string]string{"user_id": actorID},
+			EventType: "project.restored",
+			Payload:   map[string]interface{}{"project_id": projectID},
+			Producer:  "project",
+			ProjectID: projectID,
+		})
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return Project{}, ErrNotFound
+		}
+		return Project{}, wrap("restore project", err)
+	}
+	return store.Get(ctx, actorID, projectID)
+}
+
+func (store PostgresStore) PurgeExpired(ctx context.Context, now time.Time) error {
+	_, err := store.DB.ExecContext(ctx, `
+		DELETE FROM projects
+		WHERE deleted_at IS NOT NULL AND purge_at <= $1
+	`, now)
+	return wrap("purge expired projects", err)
+}
+
+func (store PostgresStore) getTrashed(
+	ctx context.Context,
+	userID string,
+	projectID string,
+	now time.Time,
+) (Project, error) {
+	project, err := scanProject(store.DB.QueryRowContext(ctx, `
+		SELECT project.project_id, project.name, project.problem_title,
+		       project.problem_summary, project.project_constraints,
+		       project.source_artifact_ids, project.created_by,
+		       project.archived_at, project.deleted_at, project.purge_at,
+		       project.created_at, project.updated_at, member.role
+		FROM projects AS project
+		JOIN project_members AS member USING (project_id)
+		WHERE project.project_id = $1
+		  AND member.user_id = $2
+		  AND member.role = 'owner'
+		  AND project.deleted_at IS NOT NULL
+		  AND project.purge_at > $3
+	`, projectID, userID, now).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Project{}, ErrNotFound
+	}
+	return project, err
 }
 
 func (store PostgresStore) ListMembers(ctx context.Context, projectID string) ([]Member, error) {
@@ -656,6 +821,8 @@ func scanProject(scan scanFunction) (Project, error) {
 		&artifacts,
 		&project.CreatedBy,
 		&project.ArchivedAt,
+		&project.DeletedAt,
+		&project.PurgeAt,
 		&project.CreatedAt,
 		&project.UpdatedAt,
 		&project.Role,

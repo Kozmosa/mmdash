@@ -123,11 +123,13 @@ type Project struct {
 	ArchivedAt         *time.Time `json:"archived_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	CreatedBy          string     `json:"created_by"`
+	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
 	ID                 string     `json:"id"`
 	Name               string     `json:"name"`
 	ProblemSummary     string     `json:"problem_summary"`
 	ProblemTitle       string     `json:"problem_title"`
 	ProjectConstraints []string   `json:"project_constraints"`
+	PurgeAt            *time.Time `json:"purge_at,omitempty"`
 	Role               Role       `json:"role"`
 	SourceArtifactIDs  []string   `json:"source_artifact_ids"`
 	UpdatedAt          time.Time  `json:"updated_at"`
@@ -189,11 +191,15 @@ type Store interface {
 	FindRole(context.Context, string, string) (Role, error)
 	Get(context.Context, string, string) (Project, error)
 	List(context.Context, string, bool) ([]Project, error)
+	ListTrash(context.Context, string, time.Time) ([]Project, error)
 	ListMembers(context.Context, string) ([]Member, error)
 	ListInvitations(context.Context, string, time.Time) ([]Invitation, error)
 	PreviewInvitation(context.Context, string, time.Time) (Invitation, error)
+	PurgeExpired(context.Context, time.Time) error
 	RemoveMember(context.Context, string, string, string) error
+	Restore(context.Context, string, string, time.Time) (Project, error)
 	RevokeInvitation(context.Context, string, string, string, time.Time) error
+	Trash(context.Context, string, string, time.Time, time.Time) (Project, error)
 	TransferOwnership(context.Context, string, string, string) (Member, error)
 	Update(context.Context, string, string, UpdateInput) (Project, error)
 	UpsertMember(context.Context, string, string, string, Role) (Member, error)
@@ -210,10 +216,11 @@ type Authenticator interface {
 
 // Service applies collaboration and RBAC policy.
 type Service struct {
-	Auth          Authenticator
-	Clock         interface{ Now() time.Time }
-	Store         Store
-	InvitationTTL time.Duration
+	Auth           Authenticator
+	Clock          interface{ Now() time.Time }
+	Store          Store
+	InvitationTTL  time.Duration
+	TrashRetention time.Duration
 }
 
 // Authenticate resolves an identity through the Auth module.
@@ -249,7 +256,22 @@ func (service Service) List(
 	identity auth.Identity,
 	includeArchived bool,
 ) ([]Project, error) {
+	if err := service.Store.PurgeExpired(ctx, service.now()); err != nil {
+		return nil, err
+	}
 	return service.Store.List(ctx, identity.User.ID, includeArchived)
+}
+
+// ListTrash returns recoverable projects owned by the caller.
+func (service Service) ListTrash(
+	ctx context.Context,
+	identity auth.Identity,
+) ([]Project, error) {
+	now := service.now()
+	if err := service.Store.PurgeExpired(ctx, now); err != nil {
+		return nil, err
+	}
+	return service.Store.ListTrash(ctx, identity.User.ID, now)
 }
 
 // Get returns one project after permission checks.
@@ -271,11 +293,20 @@ func (service Service) Update(
 	projectID string,
 	input UpdateInput,
 ) (Project, error) {
-	permission := PermissionUpdate
 	if input.Archived != nil {
-		permission = PermissionArchive
+		if *input.Archived {
+			return service.Trash(ctx, identity, projectID)
+		}
+		restored, err := service.Restore(ctx, identity, projectID)
+		if err == nil {
+			return restored, nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return Project{}, err
+		}
+		input.Archived = nil
 	}
-	if err := service.Authorize(ctx, identity, projectID, permission); err != nil {
+	if err := service.Authorize(ctx, identity, projectID, PermissionUpdate); err != nil {
 		return Project{}, err
 	}
 	if input.Name != nil {
@@ -286,6 +317,38 @@ func (service Service) Update(
 		input.Name = &trimmed
 	}
 	return service.Store.Update(ctx, identity.User.ID, projectID, input)
+}
+
+// Trash moves an active project into the owner's recoverable recycle bin.
+func (service Service) Trash(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (Project, error) {
+	if err := service.Authorize(ctx, identity, projectID, PermissionArchive); err != nil {
+		return Project{}, err
+	}
+	now := service.now()
+	retention := service.TrashRetention
+	if retention <= 0 {
+		retention = 30 * 24 * time.Hour
+	}
+	return service.Store.Trash(
+		ctx,
+		identity.User.ID,
+		projectID,
+		now,
+		now.Add(retention),
+	)
+}
+
+// Restore recovers a trashed project while its retention window is active.
+func (service Service) Restore(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (Project, error) {
+	return service.Store.Restore(ctx, identity.User.ID, projectID, service.now())
 }
 
 // ListMembers returns the project team.

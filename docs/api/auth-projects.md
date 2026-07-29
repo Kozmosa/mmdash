@@ -59,6 +59,15 @@ A recipient may reject a pending invitation with its one-time token without
 signing in. Rejection changes the invitation status to `declined` and
 permanently prevents later acceptance.
 
+## Project recycle bin
+
+Only the current project owner may move a project to the recycle bin. Trashed
+projects disappear from every member's normal project list and cannot be used
+through project-scoped APIs. The owner can list and restore them for 30 days.
+After `purge_at`, Core permanently removes the project and its cascading
+project-owned records. Projects that used the earlier archive action are
+migrated into the recycle bin with the same 30-day recovery window.
+
 ## Project data boundary
 
 Project owns the structured problem fields:

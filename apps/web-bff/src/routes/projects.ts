@@ -37,6 +37,12 @@ export function registerProjectRoutes(
     },
   );
 
+  app.get(
+    "/api/projects/trash",
+    { config: { auth: "required", project: "none" } },
+    async (request) => coreClient.listProjectTrash(coreContext(request)),
+  );
+
   app.put(
     "/api/projects/:projectId/members/:userId",
     { config: { auth: "required", project: "required" } },
@@ -136,6 +142,29 @@ export function registerProjectRoutes(
         request.currentProjectId!,
         coreContext(request, request.currentProjectId),
       ),
+  );
+
+  app.delete(
+    "/api/projects/:projectId",
+    { config: { auth: "required", project: "none" } },
+    async (request, reply) => {
+      const { projectId } = z
+        .object({ projectId: z.string().uuid() })
+        .parse(request.params);
+      await coreClient.trashProject(projectId, coreContext(request));
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    "/api/projects/:projectId/restore",
+    { config: { auth: "required", project: "none" } },
+    async (request) => {
+      const { projectId } = z
+        .object({ projectId: z.string().uuid() })
+        .parse(request.params);
+      return coreClient.restoreProject(projectId, coreContext(request));
+    },
   );
 
   app.patch(

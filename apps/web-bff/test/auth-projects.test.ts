@@ -211,5 +211,37 @@ describe("auth and collaborative project routes", () => {
     const [projectUrl, projectOptions] = fetchImplementation.mock.calls[1]!;
     expect(projectUrl).toBe(`http://core.test/v1/projects/${projectId}`);
     expect(projectOptions?.method).toBe("PATCH");
+
+    const trashListResponse = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/projects/trash",
+    });
+    expect(trashListResponse.statusCode).toBe(200);
+    const [trashListUrl, trashListOptions] = fetchImplementation.mock.calls[2]!;
+    expect(trashListUrl).toBe("http://core.test/v1/projects/trash");
+    expect(trashListOptions?.method).toBe("GET");
+
+    const trashResponse = await app.inject({
+      headers: { cookie },
+      method: "DELETE",
+      url: `/api/projects/${projectId}`,
+    });
+    expect(trashResponse.statusCode).toBe(204);
+    const [trashUrl, trashOptions] = fetchImplementation.mock.calls[3]!;
+    expect(trashUrl).toBe(`http://core.test/v1/projects/${projectId}`);
+    expect(trashOptions?.method).toBe("DELETE");
+
+    const restoreResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      url: `/api/projects/${projectId}/restore`,
+    });
+    expect(restoreResponse.statusCode).toBe(200);
+    const [restoreUrl, restoreOptions] = fetchImplementation.mock.calls[4]!;
+    expect(restoreUrl).toBe(
+      `http://core.test/v1/projects/${projectId}/restore`,
+    );
+    expect(restoreOptions?.method).toBe("POST");
   });
 });

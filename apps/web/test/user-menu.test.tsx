@@ -54,7 +54,7 @@ describe("user menu", () => {
     mocks.request.mockResolvedValue(undefined);
   });
 
-  it("opens from the avatar and exposes account and logout actions", async () => {
+  it("opens from the avatar and exposes account, trash, and logout actions", async () => {
     render(<UserMenu />, { wrapper: Providers });
 
     fireEvent.click(
@@ -66,6 +66,9 @@ describe("user menu", () => {
       "href",
       "/account",
     );
+    expect(
+      screen.getByRole("menuitem", { name: "项目回收站" }),
+    ).toHaveAttribute("href", "/projects/trash");
 
     fireEvent.click(screen.getByRole("menuitem", { name: "退出登录" }));
 

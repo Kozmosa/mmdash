@@ -281,6 +281,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/trash": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List recoverable projects owned by the current user */
+    get: operations["projects.trash.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}": {
     parameters: {
       query?: never;
@@ -294,11 +311,31 @@ export interface paths {
     get: operations["projects.get"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Move a project to the owner's recycle bin */
+    delete: operations["projects.trash"];
     options?: never;
     head?: never;
     /** Update or archive a project */
     patch: operations["projects.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore an owned project from the recycle bin */
+    post: operations["projects.restore"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/v1/projects/{projectId}/members": {
@@ -1038,6 +1075,16 @@ export interface components {
       created_by: string;
       /** Format: date-time */
       archived_at?: string;
+      /**
+       * Format: date-time
+       * @description Time the owner moved the project to the recycle bin.
+       */
+      deleted_at?: string;
+      /**
+       * Format: date-time
+       * @description Time after which the project can no longer be restored.
+       */
+      purge_at?: string;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
@@ -1060,6 +1107,10 @@ export interface components {
       problem_summary?: string;
       project_constraints?: string[];
       source_artifact_ids?: string[];
+      /**
+       * @deprecated
+       * @description Compatibility alias. true moves the project to the recycle bin; false restores it when still recoverable.
+       */
       archived?: boolean;
     };
     ProjectMember: {
@@ -2086,6 +2137,26 @@ export interface operations {
       };
     };
   };
+  "projects.trash.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Owner projects that remain inside their recovery window. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectList"];
+        };
+      };
+    };
+  };
   "projects.get": {
     parameters: {
       query?: never;
@@ -2106,6 +2177,28 @@ export interface operations {
           "application/json": components["schemas"]["Project"];
         };
       };
+      404: components["responses"]["Error"];
+    };
+  };
+  "projects.trash": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project moved to the recycle bin for 30 days. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      403: components["responses"]["Error"];
       404: components["responses"]["Error"];
     };
   };
@@ -2133,6 +2226,29 @@ export interface operations {
           "application/json": components["schemas"]["Project"];
         };
       };
+    };
+  };
+  "projects.restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Restored project. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Project"];
+        };
+      };
+      404: components["responses"]["Error"];
     };
   };
   "projects.members.list": {

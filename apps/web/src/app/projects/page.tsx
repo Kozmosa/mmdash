@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, FlaskConical, FolderKanban, Plus } from "lucide-react";
+import { FlaskConical, FolderKanban, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
@@ -64,15 +64,20 @@ export default function ProjectsPage() {
     },
   });
 
-  const archiveProject = useMutation({
+  const trashProject = useMutation({
     mutationFn: (projectId: string) =>
       apiClient.request(`/projects/${encodeURIComponent(projectId)}`, {
-        body: { archived: true },
-        method: "PATCH",
+        method: "DELETE",
       }),
     onSuccess() {
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("项目已归档");
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["project-trash"] }),
+      ]);
+      toast.success("项目已移入回收站，可在 30 天内恢复");
+    },
+    onError(error) {
+      toast.error(error instanceof Error ? error.message : "移入回收站失败");
     },
   });
 
@@ -205,13 +210,21 @@ export default function ProjectsPage() {
                 </Button>
                 {project.role === "owner" ? (
                   <Button
-                    aria-label={`归档 ${project.name}`}
-                    disabled={archiveProject.isPending}
-                    onClick={() => archiveProject.mutate(project.id)}
+                    aria-label={`将 ${project.name} 移入回收站`}
+                    disabled={trashProject.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `确定将“${project.name}”移入回收站吗？30 天内可以恢复。`,
+                        )
+                      ) {
+                        trashProject.mutate(project.id);
+                      }
+                    }}
                     size="icon"
                     variant="ghost"
                   >
-                    <Archive aria-hidden="true" className="size-4" />
+                    <Trash2 aria-hidden="true" className="size-4" />
                   </Button>
                 ) : null}
               </CardFooter>

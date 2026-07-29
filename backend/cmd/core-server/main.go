@@ -128,9 +128,10 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	projectService := &project.Service{
-		Auth:          authService,
-		Clock:         systemClock,
-		InvitationTTL: 72 * time.Hour,
+		Auth:           authService,
+		Clock:          systemClock,
+		InvitationTTL:  72 * time.Hour,
+		TrashRetention: 30 * 24 * time.Hour,
 		Store: project.PostgresStore{
 			Clock:       systemClock,
 			DB:          db,
