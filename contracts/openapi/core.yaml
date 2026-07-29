@@ -19,6 +19,8 @@ tags:
     description: Users, sessions, and revocable access credentials.
   - name: Projects
     description: Collaborative projects, membership, roles, and permissions.
+  - name: Repo
+    description: Managed Git repositories, immutable object reads, synchronization, and internal writes.
   - name: Settings
     description: Typed system/project configuration, redacted secrets, and connection tests.
   - name: Jobs
@@ -465,6 +467,289 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectPermissions"
+  /v1/projects/{projectId}/repository:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: Get the managed repository bound to a project
+      operationId: repo.get
+      responses:
+        "200":
+          description: Managed repository and workspace status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Repo]
+      summary: Apply a tested repository setting and request initial synchronization
+      operationId: repo.connect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoConnectRequest"
+      responses:
+        "202":
+          description: Repository connection accepted for asynchronous synchronization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Repo]
+      summary: Disconnect the managed repository without deleting remote Git data
+      operationId: repo.disconnect
+      responses:
+        "204":
+          description: Repository disconnected and scheduled for managed cleanup.
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/repository/test:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Repo]
+      summary: Test the saved repo.connection setting and mapped branches
+      operationId: repo.connection.test
+      responses:
+        "200":
+          description: Safe provider and branch checks.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoConnectionTestResult"
+  /v1/projects/{projectId}/repository/sync:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Repo]
+      summary: Coalesce a manual synchronization request
+      operationId: repo.sync.request
+      responses:
+        "202":
+          description: Synchronization request accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+  /v1/projects/{projectId}/repository/workspaces:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    patch:
+      tags: [Repo]
+      summary: Apply three distinct existing remote branch mappings
+      operationId: repo.workspaces.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoUpdateWorkspacesRequest"
+      responses:
+        "202":
+          description: Workspace mapping update accepted for synchronization.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+  /v1/projects/{projectId}/repository/branches:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: List fetched remote branches
+      operationId: repo.branches.list
+      responses:
+        "200":
+          description: Remote branches and current workspace mappings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoBranchList"
+  /v1/projects/{projectId}/repository/commits:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: List immutable commits for one logical workspace
+      operationId: repo.commits.list
+      parameters:
+        - $ref: "#/components/parameters/RepoWorkspace"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/RepoLimit"
+      responses:
+        "200":
+          description: Commit page pinned to the resolved workspace history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCommitPage"
+    post:
+      tags: [Repo]
+      summary: Apply controlled file changes and push a commit
+      description: Internal Core capability. Stage 1 Web BFF and MCP do not expose this operation.
+      operationId: repo.commits.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoCreateCommitRequest"
+      responses:
+        "201":
+          description: Commit pushed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCommitResult"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/repository/commits/{commitSha}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/CommitSha"
+    get:
+      tags: [Repo]
+      summary: Get immutable commit metadata and changes
+      operationId: repo.commits.get
+      responses:
+        "200":
+          description: Commit detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCommit"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/repository/tree:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: List one directory from a fixed commit
+      operationId: repo.tree.list
+      parameters:
+        - $ref: "#/components/parameters/RepoWorkspace"
+        - $ref: "#/components/parameters/RepoRevision"
+        - $ref: "#/components/parameters/RepoPath"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/RepoLimit"
+      responses:
+        "200":
+          description: One directory page and the full resolved commit SHA.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoTreePage"
+  /v1/projects/{projectId}/repository/content:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: Read one path from a fixed commit
+      operationId: repo.content.get
+      parameters:
+        - $ref: "#/components/parameters/RepoWorkspace"
+        - $ref: "#/components/parameters/RepoRevision"
+        - $ref: "#/components/parameters/RequiredRepoPath"
+      responses:
+        "200":
+          description: Text content or safe metadata describing a non-previewable object.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoFileContent"
+  /v1/projects/{projectId}/repository/checkouts:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Repo]
+      summary: Create a leased detached checkout for a fixed commit
+      operationId: repo.checkouts.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepoCreateCheckoutRequest"
+      responses:
+        "201":
+          description: Checkout lease created. Server paths are intentionally omitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCheckout"
+  /v1/projects/{projectId}/repository/checkouts/{checkoutId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/CheckoutId"
+    get:
+      tags: [Repo]
+      summary: Get checkout lease metadata
+      operationId: repo.checkouts.get
+      responses:
+        "200":
+          description: Checkout lease metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCheckout"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Repo]
+      summary: Release a detached checkout idempotently
+      operationId: repo.checkouts.release
+      responses:
+        "204":
+          description: Checkout released or already absent.
+  /v1/repo/webhooks/github/{hookId}:
+    parameters:
+      - $ref: "#/components/parameters/HookId"
+    post:
+      tags: [Repo]
+      summary: Accept a signed GitHub webhook without trusting payload commit data
+      operationId: repo.webhooks.github
+      security: []
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "202":
+          description: Delivery accepted, ignored, or identified as a duplicate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoWebhookAcceptance"
+        "401":
+          $ref: "#/components/responses/Error"
   /v1/settings/types:
     get:
       tags: [Settings]
@@ -1117,6 +1402,72 @@ components:
       schema:
         type: string
         format: uuid
+    CommitSha:
+      name: commitSha
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    CheckoutId:
+      name: checkoutId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    HookId:
+      name: hookId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RepoWorkspace:
+      name: workspace
+      in: query
+      required: true
+      schema:
+        $ref: "#/components/schemas/RepoWorkspaceKind"
+    RepoRevision:
+      name: revision
+      in: query
+      required: true
+      description: A full commit SHA after the initial workspace resolution.
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    RepoPath:
+      name: path
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 4096
+        default: ""
+    RequiredRepoPath:
+      name: path
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 4096
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 2048
+    RepoLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
     TokenId:
       name: tokenId
       in: path
@@ -1545,6 +1896,522 @@ components:
           type: array
           items:
             type: string
+    RepoProvider:
+      type: string
+      enum: [github, local]
+    RepoWorkspaceKind:
+      type: string
+      enum: [code, article, result]
+    RepositoryStatus:
+      type: string
+      enum: [pending, cloning, configuring, ready, syncing, error, disconnected]
+    RepoWorkspaceStatus:
+      type: string
+      enum: [pending, ready, missing, dirty, error]
+    RepoWorkspace:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          workspace,
+          remote_branch,
+          local_branch,
+          head_commit_sha,
+          tree_sha,
+          status,
+          updated_at,
+        ]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/RepoWorkspaceKind"
+        remote_branch:
+          type: string
+          minLength: 1
+          maxLength: 255
+        local_branch:
+          type: string
+          enum: [mmdash/code, mmdash/article, mmdash/result]
+        head_commit_sha:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        tree_sha:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        status:
+          $ref: "#/components/schemas/RepoWorkspaceStatus"
+        updated_at:
+          type: string
+          format: date-time
+    RepoWebhook:
+      type: object
+      additionalProperties: false
+      required: [hook_id, public_url, secret_configured]
+      properties:
+        hook_id:
+          type: string
+          format: uuid
+        public_url:
+          type: string
+        secret_configured:
+          type: boolean
+        secret:
+          description: Returned only when a secret is generated or rotated.
+          type: string
+    Repository:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          repository_id,
+          project_id,
+          provider,
+          display_name,
+          remote_url,
+          default_branch,
+          status,
+          settings_version,
+          last_synced_at,
+          last_error_code,
+          last_error_message,
+          workspaces,
+          webhook,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        repository_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        provider:
+          $ref: "#/components/schemas/RepoProvider"
+        display_name:
+          type: string
+        remote_url:
+          description: Canonical GitHub URL. Local provider paths are always returned as null.
+          type: [string, "null"]
+        default_branch:
+          type: string
+        status:
+          $ref: "#/components/schemas/RepositoryStatus"
+        settings_version:
+          type: integer
+          minimum: 1
+        last_synced_at:
+          type: [string, "null"]
+          format: date-time
+        last_error_code:
+          type: [string, "null"]
+        last_error_message:
+          type: [string, "null"]
+        workspaces:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/RepoWorkspace"
+        webhook:
+          $ref: "#/components/schemas/RepoWebhook"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    RepoConnectRequest:
+      type: object
+      additionalProperties: false
+      required: [settings_version]
+      properties:
+        settings_version:
+          type: integer
+          minimum: 1
+    RepoUpdateWorkspacesRequest:
+      type: object
+      additionalProperties: false
+      required: [code_branch, article_branch, result_branch]
+      properties:
+        code_branch:
+          type: string
+          minLength: 1
+          maxLength: 255
+        article_branch:
+          type: string
+          minLength: 1
+          maxLength: 255
+        result_branch:
+          type: string
+          minLength: 1
+          maxLength: 255
+    RepoConnectionTestResult:
+      type: object
+      additionalProperties: false
+      required: [checked_at, status, checks, default_branch, branches]
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [passed, failed]
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectionCheck"
+        default_branch:
+          type: string
+        branches:
+          type: array
+          items:
+            type: string
+    RepoBranch:
+      type: object
+      additionalProperties: false
+      required: [name, commit_sha, default, workspace]
+      properties:
+        name:
+          type: string
+        commit_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        default:
+          type: boolean
+        workspace:
+          oneOf:
+            - $ref: "#/components/schemas/RepoWorkspaceKind"
+            - type: "null"
+    RepoBranchList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RepoBranch"
+    RepoGitIdentity:
+      type: object
+      additionalProperties: false
+      required: [name, email, time]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        time:
+          type: string
+          format: date-time
+    RepoChangedPath:
+      type: object
+      additionalProperties: false
+      required: [status, path]
+      properties:
+        status:
+          type: string
+          enum:
+            [
+              added,
+              modified,
+              deleted,
+              renamed,
+              copied,
+              type_changed,
+              unmerged,
+              unknown,
+            ]
+        path:
+          type: string
+        previous_path:
+          type: string
+    RepoCommit:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          repository_id,
+          commit_sha,
+          tree_sha,
+          parent_shas,
+          author,
+          committer,
+          message,
+          source,
+          first_seen_at,
+          changes,
+        ]
+      properties:
+        repository_id:
+          type: string
+          format: uuid
+        commit_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        tree_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        parent_shas:
+          type: array
+          items:
+            type: string
+            pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        author:
+          $ref: "#/components/schemas/RepoGitIdentity"
+        committer:
+          $ref: "#/components/schemas/RepoGitIdentity"
+        message:
+          type: string
+        source:
+          type: string
+          enum: [connect, webhook, sync, mmdash, reference]
+        first_seen_at:
+          type: string
+          format: date-time
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RepoChangedPath"
+    RepoCommitPage:
+      type: object
+      additionalProperties: false
+      required:
+        [workspace, branch, resolved_revision, items, has_more, next_cursor]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/RepoWorkspaceKind"
+        branch:
+          type: string
+        resolved_revision:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RepoCommit"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    RepoTreeEntry:
+      type: object
+      additionalProperties: false
+      required: [name, path, kind, object_id, mode, size]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        kind:
+          type: string
+          enum: [file, directory, symlink, submodule]
+        object_id:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        mode:
+          type: string
+        size:
+          type: [integer, "null"]
+          minimum: 0
+    RepoTreePage:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          workspace,
+          branch,
+          resolved_revision,
+          path,
+          items,
+          has_more,
+          next_cursor,
+        ]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/RepoWorkspaceKind"
+        branch:
+          type: string
+        resolved_revision:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        path:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RepoTreeEntry"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    RepoFileContent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          workspace,
+          branch,
+          resolved_revision,
+          path,
+          object_id,
+          kind,
+          mode,
+          size,
+          preview_status,
+          content,
+          encoding,
+        ]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/RepoWorkspaceKind"
+        branch:
+          type: string
+        resolved_revision:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        path:
+          type: string
+        object_id:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        kind:
+          type: string
+          enum: [file, symlink, submodule]
+        mode:
+          type: string
+        size:
+          type: integer
+          minimum: 0
+        preview_status:
+          type: string
+          enum:
+            [text, binary, too_large, lfs_not_materialized, symlink, submodule]
+        content:
+          type: [string, "null"]
+        encoding:
+          type: [string, "null"]
+          enum: [utf-8, null]
+    RepoCreateCheckoutRequest:
+      type: object
+      additionalProperties: false
+      required: [commit_sha, purpose]
+      properties:
+        commit_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 100
+        ttl_seconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+    RepoCheckout:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          checkout_id,
+          repository_id,
+          commit_sha,
+          purpose,
+          status,
+          created_at,
+          expires_at,
+          released_at,
+        ]
+      properties:
+        checkout_id:
+          type: string
+          format: uuid
+        repository_id:
+          type: string
+          format: uuid
+        commit_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        purpose:
+          type: string
+        status:
+          type: string
+          enum: [active, released, expired, error]
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        released_at:
+          type: [string, "null"]
+          format: date-time
+    RepoCreateCommitRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [workspace, expected_head_sha, message, idempotency_key, changes]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/RepoWorkspaceKind"
+        expected_head_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        message:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+        changes:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [operation, path]
+            properties:
+              operation:
+                type: string
+                enum: [put, delete]
+              path:
+                type: string
+                minLength: 1
+                maxLength: 4096
+              content_base64:
+                type: string
+    RepoCommitResult:
+      type: object
+      additionalProperties: false
+      required:
+        [repository_id, workspace, branch, previous_commit_sha, commit_sha]
+      properties:
+        repository_id:
+          type: string
+          format: uuid
+        workspace:
+          $ref: "#/components/schemas/RepoWorkspaceKind"
+        branch:
+          type: string
+        previous_commit_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        commit_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    RepoWebhookAcceptance:
+      type: object
+      additionalProperties: false
+      required: [accepted, duplicate, event]
+      properties:
+        accepted:
+          type: boolean
+        duplicate:
+          type: boolean
+        event:
+          type: string
     SettingScope:
       type: string
       enum: [system, project]

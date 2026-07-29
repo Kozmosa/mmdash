@@ -4,6 +4,12 @@
 events, Outbox delivery, replay, and cross-process consumers. Domain modules
 version their payload schemas independently while preserving the envelope.
 
+Stage 1 Repo payloads are defined by:
+
+- `repo.connected.schema.json`
+- `repo.commit.created.schema.json`
+- `repo.commit.detected.schema.json`
+
 The required fields are `event_id`, `event_type`, `schema_version`,
 `occurred_at`, `producer`, `project_id`, `actor`, `correlation_id`,
 `causation_id`, and `payload`.
