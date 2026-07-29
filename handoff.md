@@ -31,7 +31,6 @@ Dockerfile 修复、可检索 API 文档和 3.15 验收脚本均已纳入版本�
 
 ## 已完成的开发环境验收
 
-- `node scripts/check-stage-3.15.mjs`
 - Node 语法检查
 - OpenAPI 与 JSON Schema 契约检查
 - 契约兼容性基线检查
@@ -222,4 +221,3 @@ uv run --offline --package mmdash-worker mmdash-worker --status
 - 务必告知开发者测试账号和密码
   - 账号：admin@mmdash.local
   - 密码：mmdash-local-admin
-
