@@ -202,6 +202,7 @@ services:
       # MCP Gateway 监听端口；生产可保留或按平台端口策略调整。
       MCP_GATEWAY_PORT: 3002
       # 写入 Core Audit 的专用 Token；生产启用 MCP 审计时必须由 Core 签发并注入。
+      MCP_CORE_ACCESS_TOKEN: ${MCP_CORE_ACCESS_TOKEN:-}
       MCP_CORE_AUDIT_TOKEN: ${MCP_CORE_AUDIT_TOKEN:-}
       # MCP Gateway 版本；生产必须与发布版本/构建号保持一致。
       MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}

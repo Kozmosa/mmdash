@@ -5,7 +5,21 @@ machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 
 | Tool          | Purpose                                  | Project scoped | Token kinds | Input/output contract | Status              |
 | ------------- | ---------------------------------------- | -------------- | ----------- | --------------------- | ------------------- |
+| `data.list`   | List Data Hub object projections         | Yes            | CLI, Agent  | `data.list.json`      | Stage 1 read        |
+| `data.read`   | Read through the authoritative adapter   | Yes            | CLI, Agent  | `data.read.json`      | Stage 1 read        |
 | `system.echo` | Verify the complete MCP Gateway boundary | Yes            | CLI, Agent  | `system.echo.json`    | Stage 3.5 test tool |
+
+## `data.list` and `data.read`
+
+These read-only tools call the generated Core Client and never access Git or
+PostgreSQL directly. `data.list` accepts a `project_id` plus optional `type`,
+`cursor`, and `limit`. Stage 1 Repo types are `repository`, `repo_commit`, and
+`repo_file`. `data.read` accepts a `project_id` and Data Hub `object_id`, then
+Core resolves full content through the owning module's authorized reader.
+
+For `repo_file`, the returned content remains pinned to the full commit SHA
+stored in the projection. Binary, oversized, LFS, symlink, and submodule
+objects return safe metadata rather than editable text.
 
 ## `system.echo`
 
