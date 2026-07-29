@@ -27,10 +27,16 @@
           ]
         },
         "causation_id": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "correlation_id": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "event_id": {
           "type": "string",
@@ -38,7 +44,7 @@
         },
         "event_type": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         },
         "occurred_at": {
           "$ref": "../common/dtos.schema.json#/$defs/Timestamp"
@@ -53,11 +59,182 @@
           "maxLength": 100
         },
         "project_id": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "schema_version": {
           "type": "integer",
           "minimum": 1
+        }
+      }
+    },
+    "contracts/events/repo.commit.created.schema.json": {
+      "$ref": "#/$defs/commit",
+      "$defs": {
+        "commit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "commit_sha",
+            "history_rewritten",
+            "previous_commit_sha",
+            "repository_id",
+            "source",
+            "workspace"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "history_rewritten": {
+              "type": "boolean"
+            },
+            "previous_commit_sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "repository_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source": {
+              "type": "string"
+            },
+            "workspace": {
+              "type": "string",
+              "enum": [
+                "article",
+                "code",
+                "result"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "contracts/events/repo.commit.detected.schema.json": {
+      "$ref": "#/$defs/commit",
+      "$defs": {
+        "commit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "commit_sha",
+            "history_rewritten",
+            "previous_commit_sha",
+            "repository_id",
+            "source",
+            "workspace"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "history_rewritten": {
+              "type": "boolean"
+            },
+            "previous_commit_sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "repository_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "poll",
+                "webhook"
+              ]
+            },
+            "workspace": {
+              "type": "string",
+              "enum": [
+                "article",
+                "code",
+                "result"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "contracts/events/repo.connected.schema.json": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "repository_id",
+        "workspaces"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "github",
+            "local"
+          ]
+        },
+        "repository_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspaces": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "branch",
+              "commit_sha",
+              "workspace"
+            ],
+            "properties": {
+              "branch": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "commit_sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+              },
+              "workspace": {
+                "type": "string",
+                "enum": [
+                  "article",
+                  "code",
+                  "result"
+                ]
+              }
+            }
+          }
         }
       }
     },
@@ -72,20 +249,28 @@
         "CursorPage": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["has_more"],
+          "required": [
+            "has_more"
+          ],
           "properties": {
             "has_more": {
               "type": "boolean"
             },
             "next_cursor": {
-              "type": ["string", "null"]
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },
         "Error": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["code", "message"],
+          "required": [
+            "code",
+            "message"
+          ],
           "properties": {
             "code": {
               "type": "string",
@@ -121,7 +306,10 @@
         "input": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["message", "project_id"],
+          "required": [
+            "message",
+            "project_id"
+          ],
           "properties": {
             "message": {
               "type": "string",
@@ -150,7 +338,10 @@
             },
             "principal_kind": {
               "type": "string",
-              "enum": ["agent", "cli"]
+              "enum": [
+                "agent",
+                "cli"
+              ]
             },
             "project_id": {
               "type": "string"
@@ -175,70 +366,151 @@
           "parameters": [],
           "path": "/health/live",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "health.ready": {
           "method": "GET",
           "parameters": [],
           "path": "/health/ready",
           "requestRequired": false,
-          "responses": ["200", "503"]
+          "responses": [
+            "200",
+            "503"
+          ]
         },
         "system.openapi.get": {
           "method": "GET",
           "parameters": [],
           "path": "/openapi.yaml",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
+        },
+        "observability.metrics.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/metrics",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
         },
         "example.check": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/example",
           "requestRequired": false,
-          "responses": ["200", "503"]
+          "responses": [
+            "200",
+            "503"
+          ]
         },
         "auth.login": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/login",
           "requestRequired": true,
-          "responses": ["200", "401"]
+          "responses": [
+            "200",
+            "401"
+          ]
+        },
+        "auth.register": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/auth/register",
+          "requestRequired": true,
+          "responses": [
+            "201",
+            "409"
+          ]
         },
         "auth.logout": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/logout",
           "requestRequired": false,
-          "responses": ["204", "401"]
+          "responses": [
+            "204",
+            "401"
+          ]
         },
         "auth.me": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/auth/me",
           "requestRequired": false,
-          "responses": ["200", "401"]
+          "responses": [
+            "200",
+            "401"
+          ]
+        },
+        "auth.me.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/v1/auth/me",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
+        },
+        "auth.me.password.update": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/auth/me/password",
+          "requestRequired": true,
+          "responses": [
+            "204"
+          ]
+        },
+        "auth.invitations.preview": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/auth/invitations/preview",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
+        },
+        "auth.invitations.accept": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/auth/invitations/accept",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
         },
         "auth.tokens.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/auth/tokens",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "auth.tokens.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/tokens",
           "requestRequired": true,
-          "responses": ["201"]
+          "responses": [
+            "201"
+          ]
         },
         "auth.tokens.revoke": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/auth/tokens/{tokenId}",
           "requestRequired": false,
-          "responses": ["204", "404"]
+          "responses": [
+            "204",
+            "404"
+          ]
         },
         "projects.list": {
           "method": "GET",
@@ -251,56 +523,275 @@
           ],
           "path": "/v1/projects",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "projects.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects",
           "requestRequired": true,
-          "responses": ["201"]
+          "responses": [
+            "201"
+          ]
         },
         "projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}",
           "requestRequired": false,
-          "responses": ["200", "404"]
+          "responses": [
+            "200",
+            "404"
+          ]
         },
         "projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/projects/{projectId}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "projects.members.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/members",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "projects.members.upsert": {
           "method": "PUT",
           "parameters": [],
           "path": "/v1/projects/{projectId}/members/{userId}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "projects.members.remove": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}/members/{userId}",
           "requestRequired": false,
-          "responses": ["204", "409"]
+          "responses": [
+            "204",
+            "409"
+          ]
+        },
+        "projects.invitations.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/invitations",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "projects.invitations.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/invitations",
+          "requestRequired": true,
+          "responses": [
+            "201",
+            "409"
+          ]
+        },
+        "projects.invitations.revoke": {
+          "method": "DELETE",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "invitationId",
+              "required": true
+            }
+          ],
+          "path": "/v1/projects/{projectId}/invitations/{invitationId}",
+          "requestRequired": false,
+          "responses": [
+            "204"
+          ]
         },
         "projects.permissions.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/permissions",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
+        },
+        "repo.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "404"
+          ]
+        },
+        "repo.connect": {
+          "method": "PUT",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository",
+          "requestRequired": true,
+          "responses": [
+            "202",
+            "409"
+          ]
+        },
+        "repo.disconnect": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository",
+          "requestRequired": false,
+          "responses": [
+            "204",
+            "404"
+          ]
+        },
+        "repo.connection.test": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/test",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "repo.sync.request": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/sync",
+          "requestRequired": false,
+          "responses": [
+            "202"
+          ]
+        },
+        "repo.workspaces.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/workspaces",
+          "requestRequired": true,
+          "responses": [
+            "202"
+          ]
+        },
+        "repo.branches.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/branches",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "repo.commits.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/commits",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "repo.commits.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/commits",
+          "requestRequired": true,
+          "responses": [
+            "201",
+            "409"
+          ]
+        },
+        "repo.commits.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/commits/{commitSha}",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "404"
+          ]
+        },
+        "repo.tree.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/tree",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "repo.content.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/content",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "repo.checkouts.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/checkouts",
+          "requestRequired": true,
+          "responses": [
+            "201"
+          ]
+        },
+        "repo.checkouts.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/checkouts/{checkoutId}",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "404"
+          ]
+        },
+        "repo.checkouts.release": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/v1/projects/{projectId}/repository/checkouts/{checkoutId}",
+          "requestRequired": false,
+          "responses": [
+            "204"
+          ]
+        },
+        "repo.webhooks.github": {
+          "method": "POST",
+          "parameters": [
+            {
+              "in": "header",
+              "name": "X-GitHub-Delivery",
+              "required": true
+            },
+            {
+              "in": "header",
+              "name": "X-GitHub-Event",
+              "required": true
+            },
+            {
+              "in": "header",
+              "name": "X-Hub-Signature-256",
+              "required": true
+            }
+          ],
+          "path": "/v1/repo/webhooks/github/{hookId}",
+          "requestRequired": true,
+          "responses": [
+            "202",
+            "401"
+          ]
         },
         "settings.types.list": {
           "method": "GET",
@@ -318,70 +809,410 @@
           ],
           "path": "/v1/settings/types",
           "requestRequired": false,
-          "responses": ["200", "403"]
+          "responses": [
+            "200",
+            "403"
+          ]
         },
         "settings.system.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": ["200", "404"]
+          "responses": [
+            "200",
+            "404"
+          ]
         },
         "settings.system.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "settings.system.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": ["204"]
+          "responses": [
+            "204"
+          ]
         },
         "settings.system.test": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}/test",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "settings.projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}",
           "requestRequired": false,
-          "responses": ["200", "404"]
+          "responses": [
+            "200",
+            "404"
+          ]
         },
         "settings.projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "settings.projects.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}",
           "requestRequired": false,
-          "responses": ["204"]
+          "responses": [
+            "204"
+          ]
         },
         "settings.projects.test": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}/test",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
+        },
+        "jobs.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs",
+          "requestRequired": true,
+          "responses": [
+            "200",
+            "201"
+          ]
+        },
+        "jobs.claim": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs/claim",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
+        },
+        "jobs.workers.heartbeat": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs/workers/heartbeat",
+          "requestRequired": true,
+          "responses": [
+            "204"
+          ]
+        },
+        "jobs.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/jobs/{jobId}",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "404"
+          ]
+        },
+        "jobs.cancel": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs/{jobId}/cancel",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "jobs.lease.renew": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs/{jobId}/heartbeat",
+          "requestRequired": true,
+          "responses": [
+            "200",
+            "409"
+          ]
+        },
+        "jobs.logs.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/jobs/{jobId}/logs",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "jobs.logs.append": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs/{jobId}/logs",
+          "requestRequired": true,
+          "responses": [
+            "201"
+          ]
+        },
+        "jobs.complete": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs/{jobId}/complete",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
+        },
+        "jobs.fail": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/jobs/{jobId}/fail",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
+        },
+        "events.test.emit": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/events/test",
+          "requestRequired": true,
+          "responses": [
+            "201",
+            "403"
+          ]
+        },
+        "events.consumers.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/events/consumers",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "events.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/events/{eventId}",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "404"
+          ]
+        },
+        "events.replay": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/events/{eventId}/replay",
+          "requestRequired": true,
+          "responses": [
+            "202",
+            "404"
+          ]
+        },
+        "data.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "cursor",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "type",
+              "required": false
+            }
+          ],
+          "path": "/v1/data/projects/{projectId}/objects",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "403"
+          ]
+        },
+        "data.read": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "objectId",
+              "required": true
+            }
+          ],
+          "path": "/v1/data/projects/{projectId}/objects/{objectId}",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "404"
+          ]
+        },
+        "data.activity.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "cursor",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false
+            }
+          ],
+          "path": "/v1/data/projects/{projectId}/activity",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "data.context.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/data/projects/{projectId}/context",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "data.context.proposals.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/data/projects/{projectId}/context/proposals",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "data.context.proposals.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/data/projects/{projectId}/context/proposals",
+          "requestRequired": true,
+          "responses": [
+            "201"
+          ]
+        },
+        "data.context.proposals.review": {
+          "method": "POST",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "proposalId",
+              "required": true
+            }
+          ],
+          "path": "/v1/data/projects/{projectId}/context/proposals/{proposalId}/review",
+          "requestRequired": true,
+          "responses": [
+            "200",
+            "403",
+            "409"
+          ]
+        },
+        "data.home.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/v1/data/projects/{projectId}/home",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "audit.events.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "action",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "actor_id",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "category",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "cursor",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "outcome",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "project_id",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "request_id",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "source",
+              "required": false
+            }
+          ],
+          "path": "/v1/audit/events",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "403"
+          ]
+        },
+        "audit.events.record": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/v1/audit/events",
+          "requestRequired": true,
+          "responses": [
+            "201",
+            "403"
+          ]
         }
       },
       "schemas": {
         "AccessToken": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["created_at", "id", "kind", "name", "user_id"],
+          "required": [
+            "created_at",
+            "id",
+            "kind",
+            "name",
+            "user_id"
+          ],
           "properties": {
             "created_at": {
               "type": "string",
@@ -397,7 +1228,11 @@
             },
             "kind": {
               "type": "string",
-              "enum": ["agent", "api", "box"]
+              "enum": [
+                "agent",
+                "api",
+                "box"
+              ]
             },
             "name": {
               "type": "string"
@@ -416,10 +1251,214 @@
             }
           }
         },
+        "AppendJobLogRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "level",
+            "message",
+            "worker_id"
+          ],
+          "properties": {
+            "fields": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "level": {
+              "type": "string",
+              "enum": [
+                "debug",
+                "error",
+                "info",
+                "warning"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "worker_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "AuditEvent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "actor_kind",
+            "audit_id",
+            "category",
+            "error_code",
+            "metadata",
+            "occurred_at",
+            "outcome",
+            "recorded_at",
+            "request_id",
+            "resource_id",
+            "resource_type",
+            "source"
+          ],
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_kind": {
+              "type": "string"
+            },
+            "audit_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "category": {
+              "type": "string"
+            },
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error_code": {
+              "type": "string"
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "denied",
+                "error",
+                "success"
+              ]
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recorded_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "resource_id": {
+              "type": "string"
+            },
+            "resource_type": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          }
+        },
+        "AuditEventPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "has_more",
+            "items"
+          ],
+          "properties": {
+            "has_more": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/AuditEvent"
+              }
+            },
+            "next_cursor": {
+              "type": "string"
+            }
+          }
+        },
+        "ChangePasswordRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "current_password",
+            "new_password"
+          ],
+          "properties": {
+            "current_password": {
+              "type": "string"
+            },
+            "new_password": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        },
+        "ClaimJobRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "job_types",
+            "worker_id"
+          ],
+          "properties": {
+            "job_types": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+              }
+            },
+            "lease_seconds": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 900
+            },
+            "worker_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "CompleteJobRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "result",
+            "worker_id"
+          ],
+          "properties": {
+            "result": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "worker_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
         "ConnectionCheck": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "status"],
+          "required": [
+            "name",
+            "status"
+          ],
           "properties": {
             "message": {
               "type": "string"
@@ -429,14 +1468,21 @@
             },
             "status": {
               "type": "string",
-              "enum": ["failed", "passed"]
+              "enum": [
+                "failed",
+                "passed"
+              ]
             }
           }
         },
         "ConnectionTestResult": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["checked_at", "checks", "status"],
+          "required": [
+            "checked_at",
+            "checks",
+            "status"
+          ],
           "properties": {
             "checked_at": {
               "type": "string",
@@ -450,14 +1496,217 @@
             },
             "status": {
               "type": "string",
-              "enum": ["failed", "passed", "unsupported"]
+              "enum": [
+                "failed",
+                "passed",
+                "unsupported"
+              ]
+            }
+          }
+        },
+        "ContextProposal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "content",
+            "context_type",
+            "created_at",
+            "project_id",
+            "proposal_id",
+            "proposed_by",
+            "rationale",
+            "review_note",
+            "source_object_ids",
+            "status",
+            "title",
+            "updated_at"
+          ],
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "context_type": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "promoted_context_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "proposal_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "proposed_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "rationale": {
+              "type": "string"
+            },
+            "review_note": {
+              "type": "string"
+            },
+            "reviewed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reviewed_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source_object_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "pending",
+                "rejected"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "ContextProposalList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ContextProposal"
+              }
+            }
+          }
+        },
+        "CreateContextProposalRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "content",
+            "context_type",
+            "title"
+          ],
+          "properties": {
+            "content": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20000
+            },
+            "context_type": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "rationale": {
+              "type": "string",
+              "maxLength": 2000
+            },
+            "source_object_ids": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "CreateInvitationRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "email",
+            "role"
+          ],
+          "properties": {
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "role": {
+              "$ref": "#/components/schemas/ProjectRole"
+            }
+          }
+        },
+        "CreateJobRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "job_type",
+            "payload",
+            "project_id"
+          ],
+          "properties": {
+            "available_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "job_type": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "payload": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
             }
           }
         },
         "CreateProjectRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name"],
+          "required": [
+            "name"
+          ],
           "properties": {
             "name": {
               "type": "string",
@@ -486,7 +1735,10 @@
         "CreateTokenRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "name"],
+          "required": [
+            "kind",
+            "name"
+          ],
           "properties": {
             "expires_at": {
               "type": "string",
@@ -494,7 +1746,11 @@
             },
             "kind": {
               "type": "string",
-              "enum": ["agent", "api", "box"]
+              "enum": [
+                "agent",
+                "api",
+                "box"
+              ]
             },
             "name": {
               "type": "string",
@@ -506,10 +1762,212 @@
             }
           }
         },
+        "DataActivity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "activity_id",
+            "activity_type",
+            "actor",
+            "created_at",
+            "metadata",
+            "occurred_at",
+            "project_id",
+            "summary",
+            "title"
+          ],
+          "properties": {
+            "activity_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "activity_type": {
+              "type": "string"
+            },
+            "actor": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "object_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          }
+        },
+        "DataActivityPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "has_more",
+            "items"
+          ],
+          "properties": {
+            "has_more": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/DataActivity"
+              }
+            },
+            "next_cursor": {
+              "type": "string"
+            }
+          }
+        },
+        "DataObject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "created_at",
+            "metadata",
+            "object_id",
+            "object_type",
+            "occurred_at",
+            "project_id",
+            "source_id",
+            "source_module",
+            "status",
+            "summary",
+            "title",
+            "updated_at",
+            "version"
+          ],
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "object_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "object_type": {
+              "type": "string"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source_id": {
+              "type": "string"
+            },
+            "source_module": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "DataObjectPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "has_more",
+            "items"
+          ],
+          "properties": {
+            "has_more": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/DataObject"
+              }
+            },
+            "next_cursor": {
+              "type": "string"
+            }
+          }
+        },
+        "DataObjectRead": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "content",
+            "object"
+          ],
+          "properties": {
+            "content": {},
+            "object": {
+              "$ref": "#/components/schemas/DataObject"
+            }
+          }
+        },
+        "EmitTestEventRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "payload": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
         "Error": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["code", "message"],
+          "required": [
+            "code",
+            "message"
+          ],
           "properties": {
             "code": {
               "type": "string"
@@ -523,10 +1981,285 @@
             }
           }
         },
+        "EventConsumer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "patterns"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "patterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "EventConsumerList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/EventConsumer"
+              }
+            }
+          }
+        },
+        "EventDelivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "available_at",
+            "consumer_name",
+            "created_at",
+            "delivery_key",
+            "id",
+            "max_attempts",
+            "status",
+            "updated_at"
+          ],
+          "properties": {
+            "attempts": {
+              "type": "integer"
+            },
+            "available_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "completed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "consumer_name": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "delivery_key": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "last_error": {
+              "type": "string"
+            },
+            "lease_expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "locked_by": {
+              "type": "string"
+            },
+            "max_attempts": {
+              "type": "integer"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "failed",
+                "pending",
+                "processing",
+                "succeeded"
+              ]
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "EventEnqueued": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_id",
+            "status"
+          ],
+          "properties": {
+            "event_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "type": "string"
+            }
+          }
+        },
+        "EventEnvelope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "actor",
+            "causation_id",
+            "correlation_id",
+            "event_id",
+            "event_type",
+            "occurred_at",
+            "payload",
+            "producer",
+            "project_id",
+            "schema_version"
+          ],
+          "properties": {
+            "actor": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "causation_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "correlation_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "event_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "event_type": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "producer": {
+              "type": "string"
+            },
+            "project_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "schema_version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "EventFailure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempt",
+            "consumer_name",
+            "delivery_id",
+            "delivery_key",
+            "error_message",
+            "event_id",
+            "failed_at",
+            "id"
+          ],
+          "properties": {
+            "attempt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "consumer_name": {
+              "type": "string"
+            },
+            "delivery_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "delivery_key": {
+              "type": "string"
+            },
+            "error_message": {
+              "type": "string"
+            },
+            "event_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "failed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "EventReplay": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "created_at",
+            "event_id",
+            "id",
+            "reason",
+            "requested_by"
+          ],
+          "properties": {
+            "consumer_name": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "event_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "requested_by": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
         "ExampleCheck": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["checked_at", "status", "storage"],
+          "required": [
+            "checked_at",
+            "status",
+            "storage"
+          ],
           "properties": {
             "checked_at": {
               "type": "string",
@@ -540,14 +2273,123 @@
             }
           }
         },
+        "FailJobRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message",
+            "retryable",
+            "worker_id"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retry_delay_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "worker_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "HomeAggregate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "agent",
+            "article",
+            "experiments",
+            "generated_at",
+            "milestones",
+            "models",
+            "problem",
+            "project_id",
+            "todos"
+          ],
+          "properties": {
+            "agent": {
+              "$ref": "#/components/schemas/HomeSection"
+            },
+            "article": {
+              "$ref": "#/components/schemas/HomeSection"
+            },
+            "experiments": {
+              "$ref": "#/components/schemas/HomeSection"
+            },
+            "generated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "milestones": {
+              "$ref": "#/components/schemas/HomeSection"
+            },
+            "models": {
+              "$ref": "#/components/schemas/HomeSection"
+            },
+            "problem": {
+              "$ref": "#/components/schemas/HomeSection"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "todos": {
+              "$ref": "#/components/schemas/HomeSection"
+            }
+          }
+        },
+        "HomeSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "available",
+            "items",
+            "total"
+          ],
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {}
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
         "Identity": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "user"],
+          "required": [
+            "kind",
+            "user"
+          ],
           "properties": {
             "kind": {
               "type": "string",
-              "enum": ["agent", "api", "box", "session"]
+              "enum": [
+                "agent",
+                "api",
+                "box",
+                "session"
+              ]
             },
             "project_id": {
               "type": "string",
@@ -566,10 +2408,64 @@
             }
           }
         },
+        "InvitationList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ProjectInvitation"
+              }
+            }
+          }
+        },
+        "InvitationStatus": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "expired",
+            "pending",
+            "revoked"
+          ]
+        },
+        "InvitationTokenRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "token": {
+              "type": "string"
+            }
+          }
+        },
+        "IssuedInvitation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "invitation"
+          ],
+          "properties": {
+            "invitation": {
+              "$ref": "#/components/schemas/ProjectInvitation"
+            },
+            "token": {
+              "type": "string"
+            }
+          }
+        },
         "IssuedToken": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["credential", "token"],
+          "required": [
+            "credential",
+            "token"
+          ],
           "properties": {
             "credential": {
               "$ref": "#/components/schemas/AccessToken"
@@ -579,10 +2475,212 @@
             }
           }
         },
+        "Job": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "available_at",
+            "created_at",
+            "created_by",
+            "id",
+            "job_type",
+            "max_attempts",
+            "payload",
+            "priority",
+            "project_id",
+            "status",
+            "timeout_seconds",
+            "updated_at"
+          ],
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "available_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "cancel_requested_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "created_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "error_code": {
+              "type": "string"
+            },
+            "error_message": {
+              "type": "string"
+            },
+            "finished_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "idempotency_key": {
+              "type": "string"
+            },
+            "job_type": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+            },
+            "lease_expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "locked_by": {
+              "type": "string"
+            },
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "payload": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "result": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "started_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "status": {
+              "$ref": "#/components/schemas/JobStatus"
+            },
+            "timeout_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "JobClaim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "job"
+          ],
+          "properties": {
+            "job": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Job"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "JobLog": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempt",
+            "created_at",
+            "fields",
+            "id",
+            "level",
+            "message",
+            "worker_id"
+          ],
+          "properties": {
+            "attempt": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "fields": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "level": {
+              "type": "string",
+              "enum": [
+                "debug",
+                "error",
+                "info",
+                "warning"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "worker_id": {
+              "type": "string"
+            }
+          }
+        },
+        "JobLogList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/JobLog"
+              }
+            }
+          }
+        },
+        "JobStatus": {
+          "type": "string",
+          "enum": [
+            "cancelled",
+            "failed",
+            "queued",
+            "running",
+            "succeeded",
+            "timed_out"
+          ]
+        },
         "Liveness": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["service", "status", "version"],
+          "required": [
+            "service",
+            "status",
+            "version"
+          ],
           "properties": {
             "service": {
               "type": "string"
@@ -598,7 +2696,10 @@
         "LoginRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["email", "password"],
+          "required": [
+            "email",
+            "password"
+          ],
           "properties": {
             "email": {
               "type": "string",
@@ -613,7 +2714,12 @@
         "LoginResult": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["access_token", "expires_at", "session_id", "user"],
+          "required": [
+            "access_token",
+            "expires_at",
+            "session_id",
+            "user"
+          ],
           "properties": {
             "access_token": {
               "type": "string"
@@ -634,13 +2740,101 @@
         "MemberList": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["items"],
+          "required": [
+            "items"
+          ],
           "properties": {
             "items": {
               "type": "array",
               "items": {
                 "$ref": "#/components/schemas/ProjectMember"
               }
+            }
+          }
+        },
+        "OutboxEventState": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "deliveries",
+            "failures",
+            "record",
+            "replays"
+          ],
+          "properties": {
+            "deliveries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/EventDelivery"
+              }
+            },
+            "failures": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/EventFailure"
+              }
+            },
+            "record": {
+              "$ref": "#/components/schemas/OutboxRecord"
+            },
+            "replays": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/EventReplay"
+              }
+            }
+          }
+        },
+        "OutboxRecord": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "available_at",
+            "event",
+            "max_attempts",
+            "status"
+          ],
+          "properties": {
+            "attempts": {
+              "type": "integer"
+            },
+            "available_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "event": {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            "failed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "last_error": {
+              "type": "string"
+            },
+            "lease_expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "locked_by": {
+              "type": "string"
+            },
+            "max_attempts": {
+              "type": "integer"
+            },
+            "published_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "failed",
+                "pending",
+                "published",
+                "publishing"
+              ]
             }
           }
         },
@@ -706,10 +2900,140 @@
             }
           }
         },
+        "ProjectContext": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "confirmed_at",
+            "confirmed_by",
+            "content",
+            "context_id",
+            "context_type",
+            "created_at",
+            "project_id",
+            "proposed_by",
+            "source_object_ids",
+            "title",
+            "updated_at"
+          ],
+          "properties": {
+            "confirmed_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "confirmed_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "content": {
+              "type": "string"
+            },
+            "context_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "context_type": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "proposed_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source_object_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "title": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "ProjectContextList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ProjectContext"
+              }
+            }
+          }
+        },
+        "ProjectInvitation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "created_at",
+            "email",
+            "expires_at",
+            "id",
+            "invited_by",
+            "project_id",
+            "project_name",
+            "role",
+            "status"
+          ],
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "invited_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "role": {
+              "$ref": "#/components/schemas/ProjectRole"
+            },
+            "status": {
+              "$ref": "#/components/schemas/InvitationStatus"
+            }
+          }
+        },
         "ProjectList": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["items"],
+          "required": [
+            "items"
+          ],
           "properties": {
             "items": {
               "type": "array",
@@ -722,7 +3046,13 @@
         "ProjectMember": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["display_name", "email", "joined_at", "role", "user_id"],
+          "required": [
+            "display_name",
+            "email",
+            "joined_at",
+            "role",
+            "user_id"
+          ],
           "properties": {
             "display_name": {
               "type": "string"
@@ -747,7 +3077,10 @@
         "ProjectPermissions": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["permissions", "role"],
+          "required": [
+            "permissions",
+            "role"
+          ],
           "properties": {
             "permissions": {
               "type": "array",
@@ -762,24 +3095,1030 @@
         },
         "ProjectRole": {
           "type": "string",
-          "enum": ["agent", "box", "editor", "maintainer", "owner", "viewer"]
+          "enum": [
+            "agent",
+            "box",
+            "editor",
+            "maintainer",
+            "owner",
+            "viewer"
+          ]
         },
         "Readiness": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["dependencies", "status"],
+          "required": [
+            "dependencies",
+            "status"
+          ],
           "properties": {
             "dependencies": {
               "type": "object",
               "additionalProperties": {
                 "type": "string",
-                "enum": ["ready", "unavailable"]
+                "enum": [
+                  "ready",
+                  "unavailable"
+                ]
               },
-              "required": ["object_storage", "postgres"]
+              "required": [
+                "object_storage",
+                "postgres"
+              ]
             },
             "status": {
               "type": "string",
-              "enum": ["not_ready", "ready"]
+              "enum": [
+                "not_ready",
+                "ready"
+              ]
+            }
+          }
+        },
+        "RecordAuditEventRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "category",
+            "outcome",
+            "source"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+              "maxLength": 200
+            },
+            "category": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "maxLength": 100
+            },
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error_code": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "denied",
+                "error",
+                "success"
+              ]
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "resource_id": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "resource_type": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "source": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "maxLength": 100
+            }
+          }
+        },
+        "RegisterRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "display_name",
+            "email",
+            "password"
+          ],
+          "properties": {
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "invitation_token": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        },
+        "RenewJobLeaseRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lease_seconds",
+            "worker_id"
+          ],
+          "properties": {
+            "lease_seconds": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 900
+            },
+            "worker_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "ReplayEventRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reason"
+          ],
+          "properties": {
+            "consumer_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          }
+        },
+        "RepoBranch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit_sha",
+            "default",
+            "name",
+            "workspace"
+          ],
+          "properties": {
+            "commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "workspace": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/RepoWorkspaceKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "RepoBranchList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RepoBranch"
+              }
+            }
+          }
+        },
+        "RepoChangedPath": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "status"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "previous_path": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "added",
+                "copied",
+                "deleted",
+                "modified",
+                "renamed",
+                "type_changed",
+                "unknown",
+                "unmerged"
+              ]
+            }
+          }
+        },
+        "RepoCheckout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "checkout_id",
+            "commit_sha",
+            "created_at",
+            "expires_at",
+            "purpose",
+            "released_at",
+            "repository_id",
+            "status"
+          ],
+          "properties": {
+            "checkout_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "purpose": {
+              "type": "string"
+            },
+            "released_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "repository_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "active",
+                "error",
+                "expired",
+                "released"
+              ]
+            }
+          }
+        },
+        "RepoCommit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "author",
+            "changes",
+            "commit_sha",
+            "committer",
+            "first_seen_at",
+            "message",
+            "parent_shas",
+            "repository_id",
+            "source",
+            "tree_sha"
+          ],
+          "properties": {
+            "author": {
+              "$ref": "#/components/schemas/RepoGitIdentity"
+            },
+            "changes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RepoChangedPath"
+              }
+            },
+            "commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "committer": {
+              "$ref": "#/components/schemas/RepoGitIdentity"
+            },
+            "first_seen_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "message": {
+              "type": "string"
+            },
+            "parent_shas": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+              }
+            },
+            "repository_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "connect",
+                "mmdash",
+                "reference",
+                "sync",
+                "webhook"
+              ]
+            },
+            "tree_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            }
+          }
+        },
+        "RepoCommitPage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "has_more",
+            "items",
+            "next_cursor",
+            "resolved_revision",
+            "workspace"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "has_more": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RepoCommit"
+              }
+            },
+            "next_cursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "resolved_revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "workspace": {
+              "$ref": "#/components/schemas/RepoWorkspaceKind"
+            }
+          }
+        },
+        "RepoCommitResult": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "commit_sha",
+            "previous_commit_sha",
+            "repository_id",
+            "workspace"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "previous_commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "repository_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "workspace": {
+              "$ref": "#/components/schemas/RepoWorkspaceKind"
+            }
+          }
+        },
+        "RepoConnectionTestResult": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branches",
+            "checked_at",
+            "checks",
+            "default_branch",
+            "status"
+          ],
+          "properties": {
+            "branches": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "checked_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ConnectionCheck"
+              }
+            },
+            "default_branch": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "failed",
+                "passed"
+              ]
+            }
+          }
+        },
+        "RepoConnectRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "settings_version"
+          ],
+          "properties": {
+            "settings_version": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "RepoCreateCheckoutRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit_sha",
+            "purpose"
+          ],
+          "properties": {
+            "commit_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "purpose": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "ttl_seconds": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 86400
+            }
+          }
+        },
+        "RepoCreateCommitRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "changes",
+            "expected_head_sha",
+            "idempotency_key",
+            "message",
+            "workspace"
+          ],
+          "properties": {
+            "changes": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operation",
+                  "path"
+                ],
+                "properties": {
+                  "content_base64": {
+                    "type": "string"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "delete",
+                      "put"
+                    ]
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                }
+              }
+            },
+            "expected_head_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "idempotency_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            "workspace": {
+              "$ref": "#/components/schemas/RepoWorkspaceKind"
+            }
+          }
+        },
+        "RepoFileContent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "content",
+            "encoding",
+            "kind",
+            "mode",
+            "object_id",
+            "path",
+            "preview_status",
+            "resolved_revision",
+            "size",
+            "workspace"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "content": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "encoding": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                null,
+                "utf-8"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "file",
+                "submodule",
+                "symlink"
+              ]
+            },
+            "mode": {
+              "type": "string"
+            },
+            "object_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "path": {
+              "type": "string"
+            },
+            "preview_status": {
+              "type": "string",
+              "enum": [
+                "binary",
+                "lfs_not_materialized",
+                "submodule",
+                "symlink",
+                "text",
+                "too_large"
+              ]
+            },
+            "resolved_revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "workspace": {
+              "$ref": "#/components/schemas/RepoWorkspaceKind"
+            }
+          }
+        },
+        "RepoGitIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "email",
+            "name",
+            "time"
+          ],
+          "properties": {
+            "email": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "RepoProvider": {
+          "type": "string",
+          "enum": [
+            "github",
+            "local"
+          ]
+        },
+        "Repository": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "created_at",
+            "default_branch",
+            "display_name",
+            "last_error_code",
+            "last_error_message",
+            "last_synced_at",
+            "project_id",
+            "provider",
+            "remote_url",
+            "repository_id",
+            "settings_version",
+            "status",
+            "updated_at",
+            "webhook",
+            "workspaces"
+          ],
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "default_branch": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "last_error_code": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_error_message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_synced_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "provider": {
+              "$ref": "#/components/schemas/RepoProvider"
+            },
+            "remote_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repository_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "settings_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "status": {
+              "$ref": "#/components/schemas/RepositoryStatus"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "webhook": {
+              "$ref": "#/components/schemas/RepoWebhook"
+            },
+            "workspaces": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "$ref": "#/components/schemas/RepoWorkspace"
+              }
+            }
+          }
+        },
+        "RepositoryStatus": {
+          "type": "string",
+          "enum": [
+            "cloning",
+            "configuring",
+            "disconnected",
+            "error",
+            "pending",
+            "ready",
+            "syncing"
+          ]
+        },
+        "RepoTreeEntry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "mode",
+            "name",
+            "object_id",
+            "path",
+            "size"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "directory",
+                "file",
+                "submodule",
+                "symlink"
+              ]
+            },
+            "mode": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "object_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "path": {
+              "type": "string"
+            },
+            "size": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "RepoTreePage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "has_more",
+            "items",
+            "next_cursor",
+            "path",
+            "resolved_revision",
+            "workspace"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "has_more": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RepoTreeEntry"
+              }
+            },
+            "next_cursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "resolved_revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "workspace": {
+              "$ref": "#/components/schemas/RepoWorkspaceKind"
+            }
+          }
+        },
+        "RepoUpdateWorkspacesRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "article_branch",
+            "code_branch",
+            "result_branch"
+          ],
+          "properties": {
+            "article_branch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "code_branch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "result_branch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            }
+          }
+        },
+        "RepoWebhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hook_id",
+            "public_url",
+            "secret_configured"
+          ],
+          "properties": {
+            "hook_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "public_url": {
+              "type": "string"
+            },
+            "secret": {
+              "type": "string"
+            },
+            "secret_configured": {
+              "type": "boolean"
+            }
+          }
+        },
+        "RepoWebhookAcceptance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "accepted",
+            "duplicate",
+            "event"
+          ],
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "duplicate": {
+              "type": "boolean"
+            },
+            "event": {
+              "type": "string"
+            }
+          }
+        },
+        "RepoWorkspace": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "head_commit_sha",
+            "local_branch",
+            "remote_branch",
+            "status",
+            "tree_sha",
+            "updated_at",
+            "workspace"
+          ],
+          "properties": {
+            "head_commit_sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "local_branch": {
+              "type": "string",
+              "enum": [
+                "mmdash/article",
+                "mmdash/code",
+                "mmdash/result"
+              ]
+            },
+            "remote_branch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "status": {
+              "$ref": "#/components/schemas/RepoWorkspaceStatus"
+            },
+            "tree_sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "workspace": {
+              "$ref": "#/components/schemas/RepoWorkspaceKind"
+            }
+          }
+        },
+        "RepoWorkspaceKind": {
+          "type": "string",
+          "enum": [
+            "article",
+            "code",
+            "result"
+          ]
+        },
+        "RepoWorkspaceStatus": {
+          "type": "string",
+          "enum": [
+            "dirty",
+            "error",
+            "missing",
+            "pending",
+            "ready"
+          ]
+        },
+        "ReviewContextProposalRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "decision"
+          ],
+          "properties": {
+            "decision": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "rejected"
+              ]
+            },
+            "review_note": {
+              "type": "string",
+              "maxLength": 2000
             }
           }
         },
@@ -825,7 +4164,12 @@
         "SettingFieldDefinition": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["key", "kind", "label", "required"],
+          "required": [
+            "key",
+            "kind",
+            "label",
+            "required"
+          ],
           "properties": {
             "description": {
               "type": "string"
@@ -852,11 +4196,21 @@
         },
         "SettingFieldKind": {
           "type": "string",
-          "enum": ["boolean", "number", "secret", "select", "string", "url"]
+          "enum": [
+            "boolean",
+            "number",
+            "secret",
+            "select",
+            "string",
+            "url"
+          ]
         },
         "SettingScope": {
           "type": "string",
-          "enum": ["project", "system"]
+          "enum": [
+            "project",
+            "system"
+          ]
         },
         "SettingType": {
           "type": "object",
@@ -907,7 +4261,9 @@
         "SettingTypeList": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["items"],
+          "required": [
+            "items"
+          ],
           "properties": {
             "items": {
               "type": "array",
@@ -921,10 +4277,30 @@
           "type": "object",
           "additionalProperties": true
         },
+        "UpdateProfileRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "current_password": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            }
+          }
+        },
         "UpdateProjectMemberRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["role"],
+          "required": [
+            "role"
+          ],
           "properties": {
             "role": {
               "$ref": "#/components/schemas/ProjectRole"
@@ -965,7 +4341,9 @@
         "UpdateSettingRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["values"],
+          "required": [
+            "values"
+          ],
           "properties": {
             "values": {
               "$ref": "#/components/schemas/SettingValues"
@@ -1001,11 +4379,49 @@
             },
             "status": {
               "type": "string",
-              "enum": ["active", "disabled"]
+              "enum": [
+                "active",
+                "disabled"
+              ]
             },
             "system_role": {
               "type": "string",
-              "enum": ["admin", "member"]
+              "enum": [
+                "admin",
+                "member"
+              ]
+            }
+          }
+        },
+        "WorkerHeartbeatRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "capabilities",
+            "version",
+            "worker_id"
+          ],
+          "properties": {
+            "capabilities": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "string"
+              }
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "worker_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
             }
           }
         }
@@ -1018,42 +4434,103 @@
           "parameters": [],
           "path": "/health/live",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.health.ready": {
           "method": "GET",
           "parameters": [],
           "path": "/health/ready",
           "requestRequired": false,
-          "responses": ["200", "503"]
+          "responses": [
+            "200",
+            "503"
+          ]
         },
         "bff.example.check": {
           "method": "GET",
           "parameters": [],
           "path": "/api/example",
           "requestRequired": false,
-          "responses": ["200", "502"]
+          "responses": [
+            "200",
+            "502"
+          ]
         },
         "bff.auth.login": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/login",
           "requestRequired": true,
-          "responses": ["200", "401"]
+          "responses": [
+            "200",
+            "401"
+          ]
+        },
+        "bff.auth.register": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/auth/register",
+          "requestRequired": true,
+          "responses": [
+            "201"
+          ]
         },
         "bff.auth.me": {
           "method": "GET",
           "parameters": [],
           "path": "/api/auth/me",
           "requestRequired": false,
-          "responses": ["200", "401"]
+          "responses": [
+            "200",
+            "401"
+          ]
+        },
+        "bff.auth.me.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/api/auth/me",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.auth.me.password.update": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/auth/me/password",
+          "requestRequired": true,
+          "responses": [
+            "204"
+          ]
+        },
+        "bff.auth.invitations.preview": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/auth/invitations/preview",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.auth.invitations.accept": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/auth/invitations/accept",
+          "requestRequired": true,
+          "responses": [
+            "200"
+          ]
         },
         "bff.auth.logout": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/logout",
           "requestRequired": false,
-          "responses": ["204"]
+          "responses": [
+            "204"
+          ]
         },
         "bff.projects.list": {
           "method": "GET",
@@ -1066,35 +4543,45 @@
           ],
           "path": "/api/projects",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.projects.create": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects",
           "requestRequired": true,
-          "responses": ["201"]
+          "responses": [
+            "201"
+          ]
         },
         "bff.projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/projects/{projectId}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.projects.members.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/members",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.projects.members.upsert": {
           "method": "PUT",
@@ -1107,7 +4594,9 @@
           ],
           "path": "/api/projects/{projectId}/members/{userId}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.projects.members.remove": {
           "method": "DELETE",
@@ -1120,14 +4609,52 @@
           ],
           "path": "/api/projects/{projectId}/members/{userId}",
           "requestRequired": false,
-          "responses": ["204"]
+          "responses": [
+            "204"
+          ]
+        },
+        "bff.projects.invitations.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/invitations",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.projects.invitations.create": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/invitations",
+          "requestRequired": true,
+          "responses": [
+            "201",
+            "409"
+          ]
+        },
+        "bff.projects.invitations.revoke": {
+          "method": "DELETE",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "invitationId",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/invitations/{invitationId}",
+          "requestRequired": false,
+          "responses": [
+            "204"
+          ]
         },
         "bff.projects.permissions.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/permissions",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.system.types.list": {
           "method": "GET",
@@ -1140,70 +4667,285 @@
           ],
           "path": "/api/settings/types",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.system.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.system.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.system.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": ["204"]
+          "responses": [
+            "204"
+          ]
         },
         "bff.settings.system.test": {
           "method": "POST",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}/test",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.projects.types.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/types",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}",
           "requestRequired": true,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
         },
         "bff.settings.projects.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}",
           "requestRequired": false,
-          "responses": ["204"]
+          "responses": [
+            "204"
+          ]
         },
         "bff.settings.projects.test": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}/test",
           "requestRequired": false,
-          "responses": ["200"]
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.repo.get": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository",
+          "requestRequired": false,
+          "responses": [
+            "200",
+            "404"
+          ]
+        },
+        "bff.repo.connect": {
+          "method": "PUT",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository",
+          "requestRequired": true,
+          "responses": [
+            "202"
+          ]
+        },
+        "bff.repo.disconnect": {
+          "method": "DELETE",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository",
+          "requestRequired": false,
+          "responses": [
+            "204"
+          ]
+        },
+        "bff.repo.connection.test": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository/test",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.repo.sync.request": {
+          "method": "POST",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository/sync",
+          "requestRequired": false,
+          "responses": [
+            "202"
+          ]
+        },
+        "bff.repo.workspaces.update": {
+          "method": "PATCH",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository/workspaces",
+          "requestRequired": true,
+          "responses": [
+            "202"
+          ]
+        },
+        "bff.repo.branches.list": {
+          "method": "GET",
+          "parameters": [],
+          "path": "/api/projects/{projectId}/repository/branches",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.repo.commits.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "cursor",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "workspace",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/repository/commits",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.repo.commits.get": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "commitSha",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/repository/commits/{commitSha}",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.repo.tree.list": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "cursor",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "path",
+              "required": false
+            },
+            {
+              "in": "query",
+              "name": "revision",
+              "required": true
+            },
+            {
+              "in": "query",
+              "name": "workspace",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/repository/tree",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.repo.content.get": {
+          "method": "GET",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "path",
+              "required": true
+            },
+            {
+              "in": "query",
+              "name": "revision",
+              "required": true
+            },
+            {
+              "in": "query",
+              "name": "workspace",
+              "required": true
+            }
+          ],
+          "path": "/api/projects/{projectId}/repository/content",
+          "requestRequired": false,
+          "responses": [
+            "200"
+          ]
+        },
+        "bff.repo.webhooks.github": {
+          "method": "POST",
+          "parameters": [
+            {
+              "in": "header",
+              "name": "X-GitHub-Delivery",
+              "required": true
+            },
+            {
+              "in": "header",
+              "name": "X-GitHub-Event",
+              "required": true
+            },
+            {
+              "in": "header",
+              "name": "X-Hub-Signature-256",
+              "required": true
+            },
+            {
+              "in": "path",
+              "name": "hookId",
+              "required": true
+            }
+          ],
+          "path": "/api/webhooks/github/{hookId}",
+          "requestRequired": true,
+          "responses": [
+            "202",
+            "401"
+          ]
         },
         "bff.page.get": {
           "method": "GET",
@@ -1216,7 +4958,12 @@
           ],
           "path": "/api/projects/{projectId}/pages/{pageId}",
           "requestRequired": false,
-          "responses": ["200", "400", "401", "404"]
+          "responses": [
+            "200",
+            "400",
+            "401",
+            "404"
+          ]
         },
         "bff.events.stream": {
           "method": "GET",
@@ -1229,14 +4976,20 @@
           ],
           "path": "/api/projects/{projectId}/events",
           "requestRequired": false,
-          "responses": ["200", "401"]
+          "responses": [
+            "200",
+            "401"
+          ]
         },
         "bff.socket.connect": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/socket",
           "requestRequired": false,
-          "responses": ["101", "401"]
+          "responses": [
+            "101",
+            "401"
+          ]
         },
         "bff.file.download": {
           "method": "GET",
@@ -1254,7 +5007,11 @@
           ],
           "path": "/api/projects/{projectId}/files/{filePath}",
           "requestRequired": false,
-          "responses": ["200", "206", "401"]
+          "responses": [
+            "200",
+            "206",
+            "401"
+          ]
         },
         "bff.file.upload": {
           "method": "PUT",
@@ -1267,7 +5024,11 @@
           ],
           "path": "/api/projects/{projectId}/files/{filePath}",
           "requestRequired": true,
-          "responses": ["200", "201", "401"]
+          "responses": [
+            "200",
+            "201",
+            "401"
+          ]
         },
         "bff.file.head": {
           "method": "HEAD",
@@ -1280,14 +5041,21 @@
           ],
           "path": "/api/projects/{projectId}/files/{filePath}",
           "requestRequired": false,
-          "responses": ["200", "401"]
+          "responses": [
+            "200",
+            "401"
+          ]
         }
       },
       "schemas": {
         "Error": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["code", "message", "request_id"],
+          "required": [
+            "code",
+            "message",
+            "request_id"
+          ],
           "properties": {
             "code": {
               "type": "string"
@@ -1310,7 +5078,11 @@
         "Liveness": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["service", "status", "version"],
+          "required": [
+            "service",
+            "status",
+            "version"
+          ],
           "properties": {
             "service": {
               "type": "string"
@@ -1326,7 +5098,12 @@
         "PageAggregation": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["fragments", "page_id", "project_id", "request_id"],
+          "required": [
+            "fragments",
+            "page_id",
+            "project_id",
+            "request_id"
+          ],
           "properties": {
             "fragments": {
               "type": "object",
@@ -1345,21 +5122,32 @@
         },
         "Readiness": {
           "type": "object",
-          "required": ["dependencies", "status"],
+          "required": [
+            "dependencies",
+            "status"
+          ],
           "properties": {
             "dependencies": {
               "type": "object",
-              "required": ["core"],
+              "required": [
+                "core"
+              ],
               "properties": {
                 "core": {
                   "type": "string",
-                  "enum": ["ready", "unavailable"]
+                  "enum": [
+                    "ready",
+                    "unavailable"
+                  ]
                 }
               }
             },
             "status": {
               "type": "string",
-              "enum": ["not_ready", "ready"]
+              "enum": [
+                "not_ready",
+                "ready"
+              ]
             }
           }
         }
