@@ -3,6 +3,7 @@ import { Settings } from "lucide-react";
 import { SettingsSlotGrid } from "@/features/settings/settings-slot-grid";
 import { RegisteredSettingsPanel } from "@/features/settings/registered-settings-panel";
 import { settingsSlots } from "@/features/settings/registry";
+import { MemberManagement } from "@/features/members/member-management";
 
 export default function SettingsPage() {
   return (
@@ -22,6 +23,7 @@ export default function SettingsPage() {
         </p>
       </header>
       <SettingsSlotGrid slots={settingsSlots.list()} />
+      <MemberManagement />
       <section
         className="space-y-3"
         aria-labelledby="registered-settings-title"

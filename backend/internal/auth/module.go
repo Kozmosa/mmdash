@@ -19,10 +19,30 @@ func (Module) Name() string { return "auth" }
 
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/auth/login", module.handleLogin)
+	mux.HandleFunc("/v1/auth/register", module.handleRegister)
 	mux.HandleFunc("/v1/auth/logout", module.handleLogout)
 	mux.HandleFunc("/v1/auth/me", module.handleMe)
+	mux.HandleFunc("/v1/auth/me/password", module.handlePassword)
+	mux.HandleFunc("/v1/auth/invitations/preview", module.handleInvitationPreview)
+	mux.HandleFunc("/v1/auth/invitations/accept", module.handleInvitationAccept)
 	mux.HandleFunc("/v1/auth/tokens", module.handleTokens)
 	mux.HandleFunc("/v1/auth/tokens/", module.handleToken)
+}
+
+func (module Module) handleRegister(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body registerRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	result, err := module.Service.Register(request.Context(), RegisterInput{DisplayName: body.DisplayName, Email: body.Email, InvitationToken: stringValue(body.InvitationToken), Password: body.Password})
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusCreated, result)
 }
 
 func (module Module) handleLogin(response http.ResponseWriter, request *http.Request) {
@@ -53,7 +73,33 @@ func (module Module) handleLogout(response http.ResponseWriter, request *http.Re
 }
 
 func (module Module) handleMe(response http.ResponseWriter, request *http.Request) {
-	if !httpx.RequireMethod(response, request, http.MethodGet) {
+	identity, err := module.Service.Authenticate(request.Context(), request.Header.Get("Authorization"))
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	switch request.Method {
+	case http.MethodGet:
+		httpx.WriteJSON(response, http.StatusOK, identity)
+	case http.MethodPatch:
+		var body updateProfileRequest
+		if !httpx.DecodeJSON(response, request, &body) {
+			return
+		}
+		user, err := module.Service.UpdateProfile(request.Context(), identity, UpdateProfileInput{CurrentPassword: stringValue(body.CurrentPassword), DisplayName: body.DisplayName, Email: body.Email})
+		if err != nil {
+			writeDomainError(response, request, err)
+			return
+		}
+		httpx.WriteJSON(response, http.StatusOK, user)
+	default:
+		response.Header().Set("Allow", "GET, PATCH")
+		writeDomainError(response, request, apperror.New(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed"))
+	}
+}
+
+func (module Module) handlePassword(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
 		return
 	}
 	identity, err := module.Service.Authenticate(request.Context(), request.Header.Get("Authorization"))
@@ -61,7 +107,52 @@ func (module Module) handleMe(response http.ResponseWriter, request *http.Reques
 		writeDomainError(response, request, err)
 		return
 	}
-	httpx.WriteJSON(response, http.StatusOK, identity)
+	var body changePasswordRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	if err := module.Service.ChangePassword(request.Context(), identity, body.CurrentPassword, body.NewPassword); err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (module Module) handleInvitationPreview(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body invitationTokenRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	invitation, err := module.Service.PreviewInvitation(request.Context(), body.Token)
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, invitation)
+}
+
+func (module Module) handleInvitationAccept(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	identity, err := module.Service.Authenticate(request.Context(), request.Header.Get("Authorization"))
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	var body invitationTokenRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	member, err := module.Service.AcceptInvitation(request.Context(), identity, body.Token)
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, member)
 }
 
 func (module Module) handleTokens(response http.ResponseWriter, request *http.Request) {
@@ -158,6 +249,12 @@ func writeDomainError(response http.ResponseWriter, request *http.Request, err e
 			"NOT_FOUND",
 			"Resource not found",
 		))
+	case errors.Is(err, ErrConflict):
+		httpx.WriteError(response, request, apperror.New(http.StatusConflict, "AUTH_CONFLICT", "The account already exists or conflicts with another account"))
+	case errors.Is(err, ErrRegistrationClosed):
+		httpx.WriteError(response, request, apperror.New(http.StatusForbidden, "REGISTRATION_CLOSED", "Open registration is disabled"))
+	case errors.Is(err, ErrInvalidInvitation):
+		httpx.WriteError(response, request, apperror.New(http.StatusBadRequest, "INVALID_INVITATION", "The invitation is invalid, expired, revoked, or already used"))
 	default:
 		httpx.WriteError(response, request, err)
 	}
@@ -168,4 +265,23 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+type registerRequest struct {
+	Email           string  `json:"email"`
+	DisplayName     string  `json:"display_name"`
+	Password        string  `json:"password"`
+	InvitationToken *string `json:"invitation_token,omitempty"`
+}
+type updateProfileRequest struct {
+	DisplayName     *string `json:"display_name,omitempty"`
+	Email           *string `json:"email,omitempty"`
+	CurrentPassword *string `json:"current_password,omitempty"`
+}
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+type invitationTokenRequest struct {
+	Token string `json:"token"`
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
 type memoryStore struct {
@@ -19,6 +20,40 @@ type memoryStore struct {
 }
 
 type projectAuthorizerStub struct{}
+
+type registrationPolicyStub bool
+
+func (policy registrationPolicyStub) AllowOpenRegistration(context.Context) (bool, error) {
+	return bool(policy), nil
+}
+
+type invitationStub struct {
+	invitation Invitation
+	accepted   bool
+	err        error
+}
+
+func (stub *invitationStub) PreviewInvitation(context.Context, string) (Invitation, error) {
+	return stub.invitation, nil
+}
+func (stub *invitationStub) AcceptInvitation(context.Context, Identity, string) (AcceptedMember, error) {
+	stub.accepted = true
+	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
+}
+func (stub *invitationStub) AcceptRegistration(context.Context, string, User) (AcceptedMember, error) {
+	if stub.err != nil {
+		return AcceptedMember{}, stub.err
+	}
+	stub.accepted = true
+	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
+}
+func (stub *invitationStub) AcceptRegistrationInTransaction(context.Context, transaction.Tx, string, User) (AcceptedMember, error) {
+	if stub.err != nil {
+		return AcceptedMember{}, stub.err
+	}
+	stub.accepted = true
+	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
+}
 
 func (projectAuthorizerStub) AuthorizeTokenManagement(
 	context.Context,
@@ -42,6 +77,55 @@ func (store *memoryStore) CreateUser(
 ) error {
 	store.user = user
 	store.passwordHash = passwordHash
+	return nil
+}
+
+func (store *memoryStore) CreateUserAndAcceptInvitation(
+	ctx context.Context,
+	user User,
+	passwordHash string,
+	accept func(transaction.Tx) error,
+) error {
+	previousUser, previousHash := store.user, store.passwordHash
+	if err := store.CreateUser(ctx, user, passwordHash); err != nil {
+		return err
+	}
+	if err := accept(nil); err != nil {
+		store.user, store.passwordHash = previousUser, previousHash
+		return err
+	}
+	return nil
+}
+
+func (store *memoryStore) DeleteUser(_ context.Context, userID string) error {
+	if store.user.ID == userID {
+		store.user = User{}
+		store.passwordHash = ""
+	}
+	return nil
+}
+func (store *memoryStore) UpdateUser(_ context.Context, userID, email, displayName string, _ time.Time) (User, error) {
+	if store.user.ID != userID {
+		return User{}, ErrNotFound
+	}
+	store.user.Email = email
+	store.user.DisplayName = displayName
+	return store.user, nil
+}
+func (store *memoryStore) UpdatePassword(_ context.Context, userID, passwordHash string, _ time.Time) error {
+	if store.user.ID != userID {
+		return ErrNotFound
+	}
+	store.passwordHash = passwordHash
+	return nil
+}
+func (store *memoryStore) RevokeOtherSessions(_ context.Context, userID, current string, now time.Time) error {
+	for id, s := range store.sessions {
+		if s.UserID == userID && id != current {
+			s.RevokedAt = &now
+			store.sessions[id] = s
+		}
+	}
 	return nil
 }
 
@@ -184,6 +268,84 @@ func TestSessionLoginAuthenticationAndRevocation(t *testing.T) {
 	}
 	if _, err := service.Authenticate(ctx, "Bearer "+result.AccessToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("expected revoked session to fail, got %v", err)
+	}
+}
+
+func TestRegistrationPolicyAndInvitationEmailAreEnforced(t *testing.T) {
+	now := time.Date(2026, time.July, 29, 0, 0, 0, 0, time.UTC)
+	service := Service{Clock: clock.Fixed{Time: now}, Generator: identity.Generator{Reader: bytes.NewReader(make([]byte, 128))}, JWTSecret: []byte("test-jwt-secret-with-at-least-32-characters"), SessionTTL: time.Hour, Store: newMemoryStore(), Policy: registrationPolicyStub(false)}
+	if _, err := service.Register(context.Background(), RegisterInput{Email: "new@example.com", DisplayName: "New", Password: "password-123"}); !errors.Is(err, ErrRegistrationClosed) {
+		t.Fatalf("expected closed registration, got %v", err)
+	}
+	invites := &invitationStub{invitation: Invitation{Email: "invited@example.com", Status: "pending", ExpiresAt: now.Add(time.Hour)}}
+	service.Invitations = invites
+	if _, err := service.Register(context.Background(), RegisterInput{Email: "other@example.com", DisplayName: "New", Password: "password-123", InvitationToken: "token"}); !errors.Is(err, ErrInvalidInvitation) {
+		t.Fatalf("expected email mismatch, got %v", err)
+	}
+	service.Store = newMemoryStore()
+	result, err := service.Register(context.Background(), RegisterInput{Email: "INVITED@example.com", DisplayName: "Invited", Password: "password-123", InvitationToken: "token"})
+	if err != nil {
+		t.Fatalf("register invited user: %v", err)
+	}
+	if result.User.Email != "invited@example.com" || !invites.accepted {
+		t.Fatalf("unexpected registration: %#v", result)
+	}
+}
+
+func TestInvitedRegistrationRollsBackUserWhenInvitationCannotBeConsumed(t *testing.T) {
+	now := time.Date(2026, time.July, 29, 0, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	invites := &invitationStub{
+		invitation: Invitation{Email: "invited@example.com", Status: "pending", ExpiresAt: now.Add(time.Hour)},
+		err:        errors.New("invitation was revoked"),
+	}
+	service := Service{
+		Clock:       clock.Fixed{Time: now},
+		Generator:   identity.Generator{Reader: bytes.NewReader(make([]byte, 64))},
+		Invitations: invites,
+		JWTSecret:   []byte("test-jwt-secret-with-at-least-32-characters"),
+		SessionTTL:  time.Hour,
+		Store:       store,
+	}
+	_, err := service.Register(context.Background(), RegisterInput{
+		DisplayName:     "Invited",
+		Email:           "invited@example.com",
+		InvitationToken: "token",
+		Password:        "password-123",
+	})
+	if !errors.Is(err, invites.err) {
+		t.Fatalf("expected invitation failure, got %v", err)
+	}
+	if store.user.ID != "" {
+		t.Fatalf("failed invited registration left a user: %#v", store.user)
+	}
+}
+
+func TestProfileEmailAndPasswordChangesRequireCurrentPassword(t *testing.T) {
+	now := time.Date(2026, time.July, 29, 0, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	service := Service{Clock: clock.Fixed{Time: now}, Generator: identity.Generator{Reader: bytes.NewReader(make([]byte, 128))}, JWTSecret: []byte("test-jwt-secret-with-at-least-32-characters"), SessionTTL: time.Hour, Store: store}
+	if err := service.EnsureBootstrapUser(context.Background(), "admin@example.com", "Admin", "old-password"); err != nil {
+		t.Fatal(err)
+	}
+	login, err := service.Login(context.Background(), "admin@example.com", "old-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := service.Authenticate(context.Background(), "Bearer "+login.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newEmail := "next@example.com"
+	if _, err := service.UpdateProfile(context.Background(), identity, UpdateProfileInput{Email: &newEmail, CurrentPassword: "wrong"}); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected credential failure, got %v", err)
+	}
+	if _, err := service.UpdateProfile(context.Background(), identity, UpdateProfileInput{Email: &newEmail, CurrentPassword: "old-password"}); err != nil {
+		t.Fatal(err)
+	}
+	identity.User.Email = newEmail
+	if err := service.ChangePassword(context.Background(), identity, "old-password", "new-password"); err != nil {
+		t.Fatal(err)
 	}
 }
 

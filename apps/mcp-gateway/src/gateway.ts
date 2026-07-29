@@ -27,6 +27,10 @@ import {
 } from "./sessions/session-registry.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { systemEchoTool } from "./tools/system-echo.js";
+import {
+  projectMemberGetTool,
+  projectMemberListTool,
+} from "./tools/project-members.js";
 
 export type GatewayFetchHandler = {
   close(): Promise<void>;
@@ -71,6 +75,7 @@ export function buildGateway(
         audit,
         authorizer,
         coreClient,
+        coreAccessToken: config.coreAccessToken,
         now,
         principal,
         requestId: readExtra(requestContext.authInfo?.extra, "requestId"),
@@ -104,6 +109,8 @@ export function buildGateway(
 function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(systemEchoTool);
+  registry.register(projectMemberListTool);
+  registry.register(projectMemberGetTool);
   return registry;
 }
 
