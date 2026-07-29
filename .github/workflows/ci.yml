@@ -12,6 +12,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      CADDY_VERSION: 2.11.4
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,6 +32,15 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - name: Install Caddy
+        run: |
+          archive="caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
+          release_url="https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}"
+          curl --fail --location --silent --show-error --remote-name "${release_url}/${archive}"
+          curl --fail --location --silent --show-error --remote-name "${release_url}/caddy_${CADDY_VERSION}_checksums.txt"
+          grep " ${archive}$" "caddy_${CADDY_VERSION}_checksums.txt" | sha512sum --check
+          sudo tar --extract --gzip --file "${archive}" --directory /usr/local/bin caddy
+          caddy version
       - run: pnpm install --frozen-lockfile
       - run: uv sync --all-packages --frozen
       - run: pnpm check

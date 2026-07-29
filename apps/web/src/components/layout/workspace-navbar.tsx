@@ -7,6 +7,7 @@ import { useCurrentProject } from "@/components/providers/project-provider";
 import { useCurrentUser } from "@/components/providers/user-provider";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { UserAvatar } from "@/components/user-avatar";
 
 export function WorkspaceNavbar() {
   const project = useCurrentProject();
@@ -45,10 +46,11 @@ export function WorkspaceNavbar() {
           aria-label={`当前用户：${user?.displayName ?? "加载中"}`}
           className="gap-2"
           variant="ghost"
+          onClick={() => {
+            window.location.href = "/account";
+          }}
         >
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
-            {(user?.displayName ?? "·").slice(0, 1).toUpperCase()}
-          </span>
+          <UserAvatar displayName={user?.displayName} email={user?.email} />
           <span className="hidden text-sm sm:inline">
             {user?.displayName ?? "加载中"}
           </span>

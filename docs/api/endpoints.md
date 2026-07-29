@@ -4,6 +4,18 @@ Search this file by `operationId`, method/name, path, service, or module. The
 catalog is the human-readable lookup index; the linked OpenAPI contract is the
 machine-readable source of truth.
 
+Stage 3.16 adds the following account and collaboration operations:
+
+- Core: `auth.register`, `auth.me.update`, `auth.me.password.update`,
+  `auth.invitations.preview`, `auth.invitations.accept`,
+  `projects.members.upsert`, `projects.invitations.list`,
+  `projects.invitations.create`, and `projects.invitations.revoke`.
+- Web BFF: `bff.auth.register`, `bff.auth.me.update`,
+  `bff.auth.me.password.update`, `bff.auth.invitations.preview`,
+  `bff.auth.invitations.accept`, `bff.projects.members.upsert`,
+  `bff.projects.invitations.list`, `bff.projects.invitations.create`, and
+  `bff.projects.invitations.revoke`.
+
 | Service     | Kind          | Method / name | Path                                                                  | `operationId`                      | Module               | Contract           |
 | ----------- | ------------- | ------------- | --------------------------------------------------------------------- | ---------------------------------- | -------------------- | ------------------ |
 | Core        | HTTP          | `GET`         | `/health/live`                                                        | `health.live`                      | platform health      | `core.yaml`        |

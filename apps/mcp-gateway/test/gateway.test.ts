@@ -68,7 +68,11 @@ describe("MCP Gateway", () => {
     });
     await client.close();
 
-    expect(listed.tools.map((tool) => tool.name)).toEqual(["system.echo"]);
+    expect(listed.tools.map((tool) => tool.name)).toEqual([
+      "project.member.get",
+      "project.member.list",
+      "system.echo",
+    ]);
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
       message: "hello",

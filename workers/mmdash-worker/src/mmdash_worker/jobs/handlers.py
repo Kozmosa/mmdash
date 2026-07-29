@@ -39,6 +39,7 @@ class HandlerContext:
     job_id: str
     worker_id: str
     cancellation_requested: bool = False
+    lease_renewal_failed: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

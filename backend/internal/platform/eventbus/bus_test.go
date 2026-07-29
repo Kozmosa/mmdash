@@ -97,6 +97,20 @@ func TestPublishRejectsInvalidEnvelopeEvenWithoutConsumers(t *testing.T) {
 	}
 }
 
+func TestBusAcceptsUnderscoreEventSegments(t *testing.T) {
+	bus := New()
+	if err := bus.Register(Consumer{
+		Name:     "membership-projector",
+		Patterns: []string{"project.member.role_changed"},
+		Handler:  func(context.Context, contract.EventEnvelope) error { return nil },
+	}); err != nil {
+		t.Fatalf("register underscore event pattern: %v", err)
+	}
+	if _, err := bus.Publish(context.Background(), fixtureEvent("project.member.role_changed")); err != nil {
+		t.Fatalf("publish underscore event type: %v", err)
+	}
+}
+
 func fixtureEvent(eventType string) contract.EventEnvelope {
 	return contract.EventEnvelope{
 		EventID:       "00000000-0000-4000-8000-000000000001",

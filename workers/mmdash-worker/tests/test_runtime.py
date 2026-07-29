@@ -2,14 +2,27 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from mmdash_worker.jobs.handlers import HandlerError, HandlerRegistry, baseline_registry
+from mmdash_worker.jobs.handlers import (
+    HandlerContext,
+    HandlerError,
+    HandlerRegistry,
+    baseline_registry,
+)
 from mmdash_worker.jobs.runtime import WorkerRuntime
 
 
 class FakeClient:
-    def __init__(self, job: dict[str, Any] | None) -> None:
+    def __init__(
+        self,
+        job: dict[str, Any] | None,
+        *,
+        renew_error: Exception | None = None,
+        renew_result: dict[str, Any] | None = None,
+    ) -> None:
         self.job = job
         self.calls: list[tuple[Any, ...]] = []
+        self.renew_error = renew_error
+        self.renew_result = renew_result
 
     def heartbeat_worker(
         self,
@@ -31,7 +44,9 @@ class FakeClient:
 
     def renew(self, job_id: str, worker_id: str, lease_seconds: int) -> dict[str, Any]:
         self.calls.append(("renew", job_id, worker_id, lease_seconds))
-        return dict(self.job or {})
+        if self.renew_error is not None:
+            raise self.renew_error
+        return dict(self.renew_result if self.renew_result is not None else self.job or {})
 
     def append_log(
         self,
@@ -144,3 +159,104 @@ def test_empty_poll_reports_no_work_without_dispatch() -> None:
     )
     assert asyncio.run(runtime.run_once()) is False
     assert [call[0] for call in client.calls] == ["heartbeat", "claim"]
+
+
+def test_long_running_handler_renews_its_lease_before_completion() -> None:
+    registry = HandlerRegistry()
+    client = FakeClient({"id": "job-3", "job_type": "system.long", "payload": {}})
+
+    async def long_handler(_context: object, _payload: object) -> dict[str, Any]:
+        while not any(call[0] == "renew" for call in client.calls):
+            await asyncio.sleep(0)
+        return {"status": "renewed"}
+
+    registry.register("system.long", long_handler)
+    runtime = WorkerRuntime(
+        client,
+        registry,
+        worker_id="worker-1",
+        version="0.1.0",
+        lease_seconds=15,
+        poll_seconds=0,
+        renew_interval_seconds=0.001,
+    )
+
+    assert asyncio.run(runtime.run_once()) is True
+    assert ("renew", "job-3", "worker-1", 15) in client.calls
+    assert ("complete", "job-3", "worker-1", {"status": "renewed"}) in client.calls
+
+
+def test_renewal_cancellation_submits_a_stable_failure_without_completion() -> None:
+    registry = HandlerRegistry()
+    client = FakeClient(
+        {"id": "job-4", "job_type": "system.cancel", "payload": {}},
+        renew_result={"cancel_requested_at": "2026-07-28T00:00:00Z"},
+    )
+
+    async def cancellation_aware_handler(
+        context: HandlerContext, _payload: object
+    ) -> dict[str, Any]:
+        while not context.cancellation_requested:
+            await asyncio.sleep(0)
+        return {"status": "cancelled"}
+
+    registry.register("system.cancel", cancellation_aware_handler)
+    runtime = WorkerRuntime(
+        client,
+        registry,
+        worker_id="worker-1",
+        version="0.1.0",
+        lease_seconds=12,
+        poll_seconds=0,
+        renew_interval_seconds=0.001,
+    )
+
+    assert asyncio.run(runtime.run_once()) is True
+    assert not any(call[0] == "complete" for call in client.calls)
+    assert (
+        "fail",
+        "job-4",
+        "worker-1",
+        "JOB_CANCELLED",
+        "Cancellation was requested while the handler was running",
+        False,
+        0,
+    ) in client.calls
+
+
+def test_renewal_failure_submits_a_retryable_failure_without_completion() -> None:
+    registry = HandlerRegistry()
+    client = FakeClient(
+        {"id": "job-5", "job_type": "system.renew", "payload": {}},
+        renew_error=RuntimeError("Core unavailable"),
+    )
+
+    async def lease_aware_handler(
+        context: HandlerContext, _payload: object
+    ) -> dict[str, Any]:
+        while not context.lease_renewal_failed:
+            await asyncio.sleep(0)
+        return {"status": "lease-lost"}
+
+    registry.register("system.renew", lease_aware_handler)
+    runtime = WorkerRuntime(
+        client,
+        registry,
+        worker_id="worker-1",
+        version="0.1.0",
+        lease_seconds=12,
+        poll_seconds=0,
+        renew_interval_seconds=0.001,
+    )
+
+    assert asyncio.run(runtime.run_once()) is True
+    assert not any(call[0] == "complete" for call in client.calls)
+    assert (
+        "fail",
+        "job-5",
+        "worker-1",
+        "LEASE_RENEWAL_FAILED",
+        "The worker could not renew the job lease",
+        True,
+        0,
+    ) in client.calls
