@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgconn"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
@@ -21,11 +22,6 @@ import (
 
 func (store PostgresStore) CreateInvitation(ctx context.Context, actorID string, projectID string, email string, role Role, expiresAt time.Time) (IssuedInvitation, error) {
 	now := store.Clock.Now().UTC()
-	if _, err := store.pendingInvitation(ctx, projectID, email, now); err == nil {
-		return IssuedInvitation{}, ErrConflict
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return IssuedInvitation{}, err
-	}
 	invitationID, err := store.Generator.New()
 	if err != nil {
 		return IssuedInvitation{}, err
@@ -36,6 +32,27 @@ func (store PostgresStore) CreateInvitation(ctx context.Context, actorID string,
 	}
 	var invitation Invitation
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE project_invitations
+			SET status = 'expired', updated_at = $3
+			WHERE project_id = $1 AND LOWER(email) = LOWER($2)
+			  AND status = 'pending' AND expires_at <= $3
+		`, projectID, email, now); err != nil {
+			return err
+		}
+		var active bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM project_invitations
+				WHERE project_id = $1 AND LOWER(email) = LOWER($2)
+				  AND status = 'pending' AND expires_at > $3
+			)
+		`, projectID, email, now).Scan(&active); err != nil {
+			return err
+		}
+		if active {
+			return ErrConflict
+		}
 		if err := tx.QueryRowContext(ctx, `
 			INSERT INTO project_invitations (invitation_id, project_id, email, role, token_hash, status, invited_by, expires_at, created_at, updated_at)
 			VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8,$8)
@@ -47,15 +64,12 @@ func (store PostgresStore) CreateInvitation(ctx context.Context, actorID string,
 		return err
 	})
 	if err != nil {
+		if isUniqueViolation(err) {
+			return IssuedInvitation{}, ErrConflict
+		}
 		return IssuedInvitation{}, wrap("create invitation", err)
 	}
 	return IssuedInvitation{Invitation: invitation, Token: token}, nil
-}
-
-func (store PostgresStore) pendingInvitation(ctx context.Context, projectID string, email string, now time.Time) (Invitation, error) {
-	var invitation Invitation
-	err := store.DB.QueryRowContext(ctx, `SELECT i.invitation_id,i.project_id,p.name,i.email,i.role,i.status,i.invited_by,i.expires_at,i.created_at FROM project_invitations i JOIN projects p USING(project_id) WHERE i.project_id=$1 AND LOWER(i.email)=LOWER($2) AND i.status='pending' AND i.expires_at>$3`, projectID, email, now).Scan(&invitation.ID, &invitation.ProjectID, &invitation.ProjectName, &invitation.Email, &invitation.Role, &invitation.Status, &invitation.InvitedBy, &invitation.ExpiresAt, &invitation.CreatedAt)
-	return invitation, err
 }
 
 func (store PostgresStore) ListInvitations(ctx context.Context, projectID string, now time.Time) ([]Invitation, error) {
@@ -85,25 +99,38 @@ func (store PostgresStore) PreviewInvitation(ctx context.Context, tokenHash stri
 func (store PostgresStore) AcceptInvitation(ctx context.Context, tokenHash string, userID string, email string, now time.Time) (Member, error) {
 	var member Member
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		var invitationID, projectID string
-		var role Role
-		if err := tx.QueryRowContext(ctx, `SELECT invitation_id,project_id,role FROM project_invitations WHERE token_hash=$1 AND LOWER(email)=LOWER($2) AND status='pending' AND expires_at>$3 FOR UPDATE`, tokenHash, email, now).Scan(&invitationID, &projectID, &role); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role,created_at,updated_at) VALUES($1,$2,$3,$4,$4) ON CONFLICT(project_id,user_id) DO NOTHING`, projectID, userID, role, now); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE project_invitations SET status='accepted',accepted_by=$2,accepted_at=$3,updated_at=$3 WHERE invitation_id=$1`, invitationID, userID, now); err != nil {
-			return err
-		}
-		_, err := store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": userID}, EventType: "project.member.joined", Payload: map[string]interface{}{"project_id": projectID, "role": role, "user_id": userID}, Producer: "project", ProjectID: projectID})
-		return err
+		var acceptErr error
+		member, acceptErr = store.AcceptInvitationInTransaction(ctx, tx, tokenHash, userID, email, now)
+		return acceptErr
 	})
 	if err != nil {
 		return Member{}, err
 	}
-	err = store.DB.QueryRowContext(ctx, `SELECT u.user_id,u.email,u.display_name,m.role,m.created_at FROM project_members m JOIN auth_users u USING(user_id) JOIN project_invitations i ON i.project_id=m.project_id AND i.accepted_by=m.user_id WHERE i.token_hash=$1`, tokenHash).Scan(&member.UserID, &member.Email, &member.DisplayName, &member.Role, &member.JoinedAt)
-	return member, err
+	return member, nil
+}
+
+// AcceptInvitationInTransaction consumes an invitation through a transaction
+// owned by Auth or Project, preventing account and membership divergence.
+func (store PostgresStore) AcceptInvitationInTransaction(ctx context.Context, tx transaction.Tx, tokenHash string, userID string, email string, now time.Time) (Member, error) {
+	var invitationID, projectID string
+	var invitationRole Role
+	if err := tx.QueryRowContext(ctx, `SELECT invitation_id,project_id,role FROM project_invitations WHERE token_hash=$1 AND LOWER(email)=LOWER($2) AND status='pending' AND expires_at>$3 FOR UPDATE`, tokenHash, email, now).Scan(&invitationID, &projectID, &invitationRole); err != nil {
+		return Member{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role,created_at,updated_at) VALUES($1,$2,$3,$4,$4) ON CONFLICT(project_id,user_id) DO NOTHING`, projectID, userID, invitationRole, now); err != nil {
+		return Member{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE project_invitations SET status='accepted',accepted_by=$2,accepted_at=$3,updated_at=$3 WHERE invitation_id=$1`, invitationID, userID, now); err != nil {
+		return Member{}, err
+	}
+	var member Member
+	if err := tx.QueryRowContext(ctx, `SELECT u.user_id,u.email,u.display_name,m.role,m.created_at FROM project_members m JOIN auth_users u USING(user_id) WHERE m.project_id=$1 AND m.user_id=$2`, projectID, userID).Scan(&member.UserID, &member.Email, &member.DisplayName, &member.Role, &member.JoinedAt); err != nil {
+		return Member{}, err
+	}
+	if _, err := store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": userID}, EventType: "project.member.joined", Payload: map[string]interface{}{"project_id": projectID, "role": member.Role, "user_id": userID}, Producer: "project", ProjectID: projectID}); err != nil {
+		return Member{}, err
+	}
+	return member, nil
 }
 
 func (store PostgresStore) RevokeInvitation(ctx context.Context, actorID string, projectID string, invitationID string, now time.Time) error {
@@ -140,6 +167,11 @@ func requireProjectAffected(result sql.Result, err error) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func isUniqueViolation(err error) bool {
+	var postgresError *pgconn.PgError
+	return errors.As(err, &postgresError) && postgresError.Code == "23505"
 }
 
 // PostgresStore persists projects and collaboration membership.

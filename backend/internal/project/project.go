@@ -10,6 +10,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
 // Role is one of the stable collaboration roles.
@@ -194,6 +195,10 @@ type Store interface {
 	RevokeInvitation(context.Context, string, string, string, time.Time) error
 	Update(context.Context, string, string, UpdateInput) (Project, error)
 	UpsertMember(context.Context, string, string, string, Role) (Member, error)
+}
+
+type transactionalInvitationStore interface {
+	AcceptInvitationInTransaction(context.Context, transaction.Tx, string, string, string, time.Time) (Member, error)
 }
 
 // Authenticator resolves trusted caller identity.
@@ -400,6 +405,20 @@ func (service Service) AcceptInvitation(ctx context.Context, identity auth.Ident
 
 func (service Service) AcceptRegistration(ctx context.Context, token string, user auth.User) (auth.AcceptedMember, error) {
 	member, err := service.Store.AcceptInvitation(ctx, hashInvitationToken(token), user.ID, user.Email, service.now())
+	if err != nil {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	return acceptedMember(member), nil
+}
+
+// AcceptRegistrationInTransaction lets Auth atomically create an invited user
+// and consume the invitation in one database transaction.
+func (service Service) AcceptRegistrationInTransaction(ctx context.Context, tx transaction.Tx, token string, user auth.User) (auth.AcceptedMember, error) {
+	store, ok := service.Store.(transactionalInvitationStore)
+	if !ok {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	member, err := store.AcceptInvitationInTransaction(ctx, tx, hashInvitationToken(token), user.ID, user.Email, service.now())
 	if err != nil {
 		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
 	}
