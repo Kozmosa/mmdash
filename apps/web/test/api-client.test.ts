@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiClient } from "@/lib/api-client";
+import { ApiClient, shouldRedirectToLogin } from "@/lib/api-client";
 
 describe("ApiClient", () => {
   it("serializes JSON, query parameters, and browser credentials", async () => {
@@ -50,5 +50,12 @@ describe("ApiClient", () => {
       requestId: "request-1",
       status: 404,
     });
+  });
+
+  it("does not recursively redirect public authentication pages", () => {
+    expect(shouldRedirectToLogin(401, "/auth/me", "/login")).toBe(false);
+    expect(shouldRedirectToLogin(401, "/auth/me", "/register")).toBe(false);
+    expect(shouldRedirectToLogin(401, "/auth/me", "/invite")).toBe(false);
+    expect(shouldRedirectToLogin(401, "/projects", "/projects")).toBe(true);
   });
 });

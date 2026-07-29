@@ -2,6 +2,7 @@ import { createDoctorCommand } from "./commands/doctor.js";
 import { createHelpCommand } from "./commands/help.js";
 import { CommandRegistry, type CommandIo } from "./commands/registry.js";
 import { createVersionCommand } from "./commands/version.js";
+import { createMembersCommand } from "./commands/members.js";
 import { resolveCliPaths } from "./config/paths.js";
 import { normalizeCliError } from "./errors.js";
 import { CliLogger, parseLogLevel } from "./logging/logger.js";
@@ -80,6 +81,12 @@ export function createDefaultRegistry(options: {
     }),
   );
   registry.register(createVersionCommand(options.version));
+  registry.register(
+    createMembersCommand({
+      endpoint: options.endpoint,
+      token: options.environment.MMDASH_TOKEN,
+    }),
+  );
   registry.register(createHelpCommand(registry, options.version));
   return registry;
 }

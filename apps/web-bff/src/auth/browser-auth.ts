@@ -8,10 +8,10 @@ export const sessionCookieName = "mmdash_session";
 
 const sessionAssertionSchema = z.object({
   access_token: z.string().min(1),
-  created_at: z.string().datetime(),
+  created_at: z.string().datetime({ offset: true }),
   display_name: z.string().min(1).max(200),
   email: z.string().email(),
-  expires_at: z.string().datetime(),
+  expires_at: z.string().datetime({ offset: true }),
   session_id: z.string().min(1).max(200),
   status: z.enum(["active", "disabled"]),
   system_role: z.enum(["admin", "member"]),

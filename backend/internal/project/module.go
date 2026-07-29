@@ -88,6 +88,15 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 			module.handleMember(response, request, identity, projectID, segments[2])
 			return
 		}
+	case "invitations":
+		if len(segments) == 2 {
+			module.handleInvitations(response, request, identity, projectID)
+			return
+		}
+		if len(segments) == 3 {
+			module.handleInvitation(response, request, identity, projectID, segments[2])
+			return
+		}
 	case "permissions":
 		if len(segments) == 2 {
 			module.handlePermissions(response, request, identity, projectID)
@@ -200,6 +209,42 @@ func (module Module) handleMember(
 	}
 }
 
+func (module Module) handleInvitations(response http.ResponseWriter, request *http.Request, identity auth.Identity, projectID string) {
+	switch request.Method {
+	case http.MethodGet:
+		items, err := module.Service.ListInvitations(request.Context(), identity, projectID)
+		if err != nil {
+			writeProjectError(response, request, err)
+			return
+		}
+		httpx.WriteJSON(response, http.StatusOK, map[string]interface{}{"items": items})
+	case http.MethodPost:
+		var body createInvitationRequest
+		if !httpx.DecodeJSON(response, request, &body) {
+			return
+		}
+		issued, err := module.Service.CreateInvitation(request.Context(), identity, projectID, body.Email, Role(body.Role))
+		if err != nil {
+			writeProjectError(response, request, err)
+			return
+		}
+		httpx.WriteJSON(response, http.StatusCreated, issued)
+	default:
+		writeProjectError(response, request, apperror.New(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed"))
+	}
+}
+
+func (module Module) handleInvitation(response http.ResponseWriter, request *http.Request, identity auth.Identity, projectID string, invitationID string) {
+	if !httpx.RequireMethod(response, request, http.MethodDelete) {
+		return
+	}
+	if err := module.Service.RevokeInvitation(request.Context(), identity, projectID, invitationID); err != nil {
+		writeProjectError(response, request, err)
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
 func (module Module) handlePermissions(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -289,4 +334,9 @@ func sliceFrom(value *[]string) []string {
 		return nil
 	}
 	return *value
+}
+
+type createInvitationRequest struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
 }

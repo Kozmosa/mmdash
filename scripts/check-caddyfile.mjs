@@ -41,9 +41,8 @@ if (!caddy.error) {
   }
   process.stdout.write(caddy.stdout);
 } else if (caddy.error.code === "ENOENT") {
-  console.log(
-    "Caddy binary is unavailable; the required ingress invariants passed.",
-  );
+  console.error("Caddy binary is required to validate the Caddyfile.");
+  process.exit(1);
 } else {
   throw caddy.error;
 }

@@ -17,7 +17,7 @@ export default async function WorkspaceLayout({
   const { projectId } = await params;
   const project = {
     id: projectId,
-    name: `项目 ${projectId}`,
+    name: "加载项目…",
   };
 
   return (

@@ -9,6 +9,7 @@ export type ToolRegistrationContext = {
   audit: AuditSink;
   authorizer: GatewayAuthorizer;
   coreClient: CoreClient;
+  coreAccessToken?: string;
   now: () => number;
   principal: Principal;
   requestId: string;

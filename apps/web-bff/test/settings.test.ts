@@ -38,7 +38,41 @@ describe("settings routes", () => {
     expect(headers.get("x-mmdash-project-id")).toBe("project-1");
   });
 
-  it("forwards redacted setting updates without changing field names", async () => {
+  it("preserves a redacted secret placeholder when updating settings", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        scope: "project",
+        scope_id: "project-1",
+        type_key: "fixture.provider",
+        updated_at: "2026-07-28T00:00:00Z",
+        updated_by: "user-1",
+        values: { token: "********" },
+        version: 2,
+      }),
+    );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const response = await app.inject({
+      headers: { cookie },
+      method: "PATCH",
+      payload: { values: { token: "********" } },
+      url: "/api/projects/project-1/settings/fixture.provider",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [, options] = fetchImplementation.mock.calls[0]!;
+    expect(JSON.parse(String(options?.body))).toEqual({
+      values: { token: "********" },
+    });
+  });
+
+  it("replaces a redacted secret with a new secret", async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         scope: "project",

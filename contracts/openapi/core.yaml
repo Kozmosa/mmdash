@@ -130,6 +130,27 @@ paths:
                 $ref: "#/components/schemas/LoginResult"
         "401":
           $ref: "#/components/responses/Error"
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register an active user, optionally through an invitation
+      operationId: auth.register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User and browser session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "409":
+          $ref: "#/components/responses/Error"
   /v1/auth/logout:
     post:
       tags: [Auth]
@@ -154,6 +175,74 @@ paths:
                 $ref: "#/components/schemas/Identity"
         "401":
           $ref: "#/components/responses/Error"
+    patch:
+      tags: [Auth]
+      summary: Update the current user's profile
+      operationId: auth.me.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /v1/auth/me/password:
+    post:
+      tags: [Auth]
+      summary: Change the current user's password
+      operationId: auth.me.password.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "204":
+          description: Password changed and other sessions revoked.
+  /v1/auth/invitations/preview:
+    post:
+      tags: [Auth]
+      summary: Preview an invitation without consuming it
+      operationId: auth.invitations.preview
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationTokenRequest"
+      responses:
+        "200":
+          description: Valid invitation metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectInvitation"
+  /v1/auth/invitations/accept:
+    post:
+      tags: [Auth]
+      summary: Accept an invitation as the current user
+      operationId: auth.invitations.accept
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationTokenRequest"
+      responses:
+        "200":
+          description: Membership created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectMember"
   /v1/auth/tokens:
     get:
       tags: [Auth]
@@ -289,7 +378,7 @@ paths:
       - $ref: "#/components/parameters/UserId"
     put:
       tags: [Projects]
-      summary: Add a collaborator or change their role
+      summary: Change an existing collaborator's role
       operationId: projects.members.upsert
       requestBody:
         required: true
@@ -313,6 +402,55 @@ paths:
           description: Collaborator removed.
         "409":
           $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/invitations:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: List project invitations
+      operationId: projects.invitations.list
+      responses:
+        "200":
+          description: Project invitations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationList"
+    post:
+      tags: [Projects]
+      summary: Invite an email address to the project
+      operationId: projects.invitations.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvitationRequest"
+      responses:
+        "201":
+          description: Invitation created; token is returned once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedInvitation"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/invitations/{invitationId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [Projects]
+      summary: Revoke a pending invitation
+      operationId: projects.invitations.revoke
+      responses:
+        "204":
+          description: Invitation revoked.
   /v1/projects/{projectId}/permissions:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -1055,6 +1193,54 @@ components:
         password:
           type: string
           minLength: 1
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, display_name, password]
+      properties:
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        password:
+          type: string
+          minLength: 8
+        invitation_token:
+          type: string
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        email:
+          type: string
+          format: email
+        current_password:
+          type: string
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+    InvitationTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
     LoginResult:
       type: object
       additionalProperties: false
@@ -1261,6 +1447,77 @@ components:
         joined_at:
           type: string
           format: date-time
+    InvitationStatus:
+      type: string
+      enum: [pending, accepted, revoked, expired]
+    ProjectInvitation:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          project_id,
+          project_name,
+          email,
+          role,
+          status,
+          invited_by,
+          expires_at,
+          created_at,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+        status:
+          $ref: "#/components/schemas/InvitationStatus"
+        invited_by:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    CreateInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/ProjectRole"
+    IssuedInvitation:
+      type: object
+      additionalProperties: false
+      required: [invitation]
+      properties:
+        invitation:
+          $ref: "#/components/schemas/ProjectInvitation"
+        token:
+          type: string
+    InvitationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectInvitation"
     UpdateProjectMemberRequest:
       type: object
       additionalProperties: false
@@ -1447,7 +1704,7 @@ components:
           format: uuid
         job_type:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         payload:
           type: object
           additionalProperties: true
@@ -1512,7 +1769,7 @@ components:
           format: uuid
         job_type:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         payload:
           type: object
           additionalProperties: true
@@ -1548,7 +1805,7 @@ components:
           maxItems: 100
           items:
             type: string
-            pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+            pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         lease_seconds:
           type: integer
           minimum: 10
@@ -1700,7 +1957,7 @@ components:
           format: uuid
         event_type:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         schema_version:
           type: integer
           minimum: 1
@@ -1942,7 +2199,7 @@ components:
           maxLength: 100
         action:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
           maxLength: 200
         outcome:
           type: string

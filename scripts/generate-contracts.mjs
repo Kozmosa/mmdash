@@ -34,7 +34,7 @@ for (const [relativePath, content] of outputs) {
   const absolutePath = path.join(root, relativePath);
   if (checkOnly) {
     const existing = await readFile(absolutePath, "utf8").catch(() => "");
-    if (existing !== content) {
+    if (normalizeNewlines(existing) !== normalizeNewlines(content)) {
       console.error(`${relativePath} is stale; run pnpm contracts:generate.`);
       changed = true;
     }
@@ -346,7 +346,7 @@ import (
 
 var (
 \teventIDPattern = regexp.MustCompile(\`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$\`)
-\teventTypePattern = regexp.MustCompile(\`^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$\`)
+\teventTypePattern = regexp.MustCompile(\`^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$\`)
 )
 
 // EventEnvelope is the stable cross-process event transport.

@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -38,6 +40,23 @@ func main() {
 		logger.Error("core.failed", map[string]interface{}{"error": err.Error()})
 		os.Exit(1)
 	}
+}
+
+type registrationSettingsPolicy struct{ Store settings.Store }
+
+func (policy registrationSettingsPolicy) AllowOpenRegistration(ctx context.Context) (bool, error) {
+	stored, err := policy.Store.Get(ctx, settings.ScopeSystem, "system", "auth")
+	if err != nil {
+		if errors.Is(err, settings.ErrNotFound) {
+			return true, nil
+		}
+		return false, err
+	}
+	value, ok := stored.PublicValues["allow_open_registration"].(bool)
+	if !ok {
+		return true, nil
+	}
+	return value, nil
 }
 
 func run(logger *logging.Logger) error {
@@ -78,16 +97,12 @@ func run(logger *logging.Logger) error {
 		SessionTTL: processConfig.Auth.SessionTTL,
 		Store:      auth.PostgresStore{DB: db},
 	}
-	if err := authService.EnsureBootstrapUser(
-		startupContext,
-		processConfig.Auth.BootstrapEmail,
-		processConfig.Auth.BootstrapDisplayName,
-		processConfig.Auth.BootstrapPassword,
-	); err != nil {
-		return fmt.Errorf("ensure bootstrap user: %w", err)
-	}
 	transactionManager := transaction.Manager{DB: transaction.SQLBeginner{DB: db}}
 	outboxWriter := outbox.Writer{Clock: systemClock, Generator: idGenerator}
+	authService.Store = auth.PostgresStore{DB: db, Outbox: outboxWriter, Transaction: transactionManager}
+	if err := authService.EnsureBootstrapUser(startupContext, processConfig.Auth.BootstrapEmail, processConfig.Auth.BootstrapDisplayName, processConfig.Auth.BootstrapPassword); err != nil {
+		return fmt.Errorf("ensure bootstrap user: %w", err)
+	}
 	eventStore := outbox.PostgresStore{
 		Clock:       systemClock,
 		DB:          db,
@@ -113,7 +128,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	projectService := &project.Service{
-		Auth: authService,
+		Auth:          authService,
+		Clock:         systemClock,
+		InvitationTTL: 72 * time.Hour,
 		Store: project.PostgresStore{
 			Clock:       systemClock,
 			DB:          db,
@@ -169,6 +186,11 @@ func run(logger *logging.Logger) error {
 	); err != nil {
 		return err
 	}
+	for _, pattern := range []string{"project.member.joined", "project.member.role_changed", "project.member.removed"} {
+		if err := projections.Register(pattern, datahub.ProjectorFunc(dataStore.ProjectMemberChanged)); err != nil {
+			return err
+		}
+	}
 	if err := eventBus.Register(eventbus.Consumer{
 		Name:     "datahub.projections",
 		Patterns: projections.Patterns(),
@@ -188,6 +210,15 @@ func run(logger *logging.Logger) error {
 		return fmt.Errorf("initialize settings encryption: %w", err)
 	}
 	settingsRegistry := settings.NewRegistry()
+	if err := settingsRegistry.Register(settings.TypeDefinition{
+		Description: "Controls public account registration.",
+		Fields: []settings.FieldDefinition{
+			{Key: "allow_open_registration", Kind: settings.FieldBoolean, Label: "Allow open registration", Required: true},
+		},
+		Key: "auth", Order: 10, Owner: "auth", Scopes: []settings.Scope{settings.ScopeSystem}, Title: "Authentication",
+	}); err != nil {
+		return err
+	}
 	settingsService := settings.Service{
 		Access:   settings.AccessPolicy{Projects: projectService},
 		Clock:    systemClock,
@@ -201,6 +232,7 @@ func run(logger *logging.Logger) error {
 			Transaction: transactionManager,
 		},
 	}
+	authService.Policy = registrationSettingsPolicy{Store: settingsService.Store}
 	jobService := jobs.Service{
 		Auth:     authService,
 		Clock:    systemClock,
@@ -222,6 +254,7 @@ func run(logger *logging.Logger) error {
 	}
 	modules := module.NewRegistry()
 	authService.ProjectTokens = projectService
+	authService.Invitations = projectService
 	if err := modules.Register(auth.Module{Service: authService}); err != nil {
 		return err
 	}
