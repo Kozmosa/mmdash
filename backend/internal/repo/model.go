@@ -48,6 +48,7 @@ const (
 type Repository struct {
 	CanonicalRemoteURL string           `json:"-"`
 	CleanupAfter       *time.Time       `json:"-"`
+	ConnectedAt        *time.Time       `json:"-"`
 	CreatedAt          time.Time        `json:"created_at"`
 	CreatedBy          string           `json:"-"`
 	DefaultBranch      string           `json:"default_branch"`
@@ -115,6 +116,24 @@ type ConnectionSnapshot struct {
 type SyncClaim struct {
 	Repository Repository
 	Requested  time.Time
+	Source     string
+}
+
+// SyncedWorkspace is the immutable result of one fetched workspace.
+type SyncedWorkspace struct {
+	HeadCommitSHA    string
+	HistoryRewritten bool
+	Status           WorkspaceStatus
+	TreeSHA          string
+	Workspace        WorkspaceKind
+}
+
+// SyncResult is produced by Git outside a database transaction.
+type SyncResult struct {
+	Commits    []Commit
+	Initial    bool
+	Source     string
+	Workspaces []SyncedWorkspace
 }
 
 // Commit records immutable metadata observed by Core.

@@ -114,6 +114,18 @@ func (storage *Storage) Promote(staging, storageKey string) error {
 	return nil
 }
 
+// Discard removes only a verified staging directory created for one storage key.
+func (storage *Storage) Discard(staging, storageKey string) error {
+	canonicalStaging, err := filepath.EvalSymlinks(staging)
+	if err != nil || !contained(storage.root, canonicalStaging) {
+		return ErrStorageEscape
+	}
+	if !strings.HasPrefix(filepath.Base(canonicalStaging), ".stage-"+storageKey+"-") {
+		return ErrPathInvalid
+	}
+	return os.RemoveAll(canonicalStaging)
+}
+
 // ManagedPath joins a reviewed relative path and refuses symlink escapes.
 func (storage *Storage) ManagedPath(storageKey, relative string) (string, error) {
 	repository, err := storage.repositoryPath(storageKey)

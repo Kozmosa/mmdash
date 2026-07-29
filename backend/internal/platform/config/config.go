@@ -18,6 +18,7 @@ type Config struct {
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	Outbox          OutboxConfig
+	PublicURL       string
 	Repo            RepoConfig
 	Settings        SettingsConfig
 	Version         string
@@ -107,6 +108,7 @@ func Load(lookup LookupEnv) (Config, error) {
 			SecretKey: envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
 		},
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
+		PublicURL:   envOrDefault(lookup, "MMDASH_PUBLIC_URL", "http://localhost:3000"),
 		Outbox: OutboxConfig{
 			DeliveryLease: durationOrDefault(lookup, "OUTBOX_DELIVERY_LEASE", 30*time.Second),
 			EventLease:    durationOrDefault(lookup, "OUTBOX_EVENT_LEASE", 30*time.Second),
@@ -188,6 +190,11 @@ func (config Config) Validate() error {
 	}
 	if strings.TrimSpace(config.OpenAPIPath) == "" {
 		return fmt.Errorf("CORE_OPENAPI_PATH must not be empty")
+	}
+	publicURL, err := url.Parse(config.PublicURL)
+	if err != nil || publicURL.Host == "" ||
+		(publicURL.Scheme != "http" && publicURL.Scheme != "https") {
+		return fmt.Errorf("MMDASH_PUBLIC_URL must be an HTTP(S) URL")
 	}
 	if config.Outbox.DeliveryLease <= 0 ||
 		config.Outbox.EventLease <= 0 ||

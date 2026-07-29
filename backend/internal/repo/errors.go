@@ -14,6 +14,7 @@ var (
 	ErrLocked           = errors.New("repository locked")
 	ErrNotConfigured    = errors.New("repository not configured")
 	ErrNotReady         = errors.New("repository not ready")
+	ErrWorktreeDirty    = errors.New("repository worktree is dirty")
 )
 
 // SafeError carries a stable public code while retaining no provider details.
