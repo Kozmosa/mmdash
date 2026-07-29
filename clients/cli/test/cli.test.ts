@@ -31,6 +31,7 @@ describe("CLI shell", () => {
     });
 
     expect(all.stdout.join("\n")).toContain("doctor");
+    expect(all.stdout.join("\n")).toContain("members");
     expect(all.stdout.join("\n")).toContain("version");
     expect(doctor.stdout.join("\n")).toContain("mmdash doctor [--json]");
   });

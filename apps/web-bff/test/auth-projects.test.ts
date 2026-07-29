@@ -12,19 +12,26 @@ afterEach(async () => {
 
 describe("auth and collaborative project routes", () => {
   it("creates an HTTP-only signed browser session from Core timestamps with offsets", async () => {
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+    const loginResult = {
+      access_token: "core-session-token",
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      session_id: "session-1",
+      user: {
+        created_at: "2026-07-28T08:00:00+08:00",
+        display_name: "Team Owner",
+        email: "owner@example.com",
+        id: "user-1",
+        status: "active",
+        system_role: "admin",
+      },
+    };
+    const fetchImplementation = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(loginResult))
+      .mockResolvedValueOnce(
       Response.json({
-        access_token: "core-session-token",
-        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        kind: "session",
         session_id: "session-1",
-        user: {
-          created_at: "2026-07-28T08:00:00+08:00",
-          display_name: "Team Owner",
-          email: "owner@example.com",
-          id: "user-1",
-          status: "active",
-          system_role: "admin",
-        },
+        user: loginResult.user,
       }),
     );
     const app = buildApp({

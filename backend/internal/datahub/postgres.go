@@ -408,6 +408,55 @@ func (store PostgresStore) ProjectUpdated(
 	return store.projectEvent(ctx, event, name, status)
 }
 
+// ProjectMemberChanged projects membership lifecycle events into Data Hub.
+func (store PostgresStore) ProjectMemberChanged(ctx context.Context, event contract.EventEnvelope) error {
+	if event.ProjectID == nil {
+		return ErrInvalid
+	}
+	userID, ok := event.Payload["user_id"].(string)
+	if !ok || userID == "" {
+		return ErrInvalid
+	}
+	projectID := *event.ProjectID
+	role, _ := event.Payload["role"].(string)
+	title := userID
+	status := "active"
+	var displayName, currentRole string
+	if err := store.DB.QueryRowContext(ctx, `SELECT u.display_name,m.role FROM project_members m JOIN auth_users u USING(user_id) WHERE m.project_id=$1 AND m.user_id=$2`, projectID, userID).Scan(&displayName, &currentRole); err == nil {
+		title = displayName
+		role = currentRole
+	} else if event.EventType == "project.member.removed" {
+		status = "removed"
+	} else {
+		return err
+	}
+	objectID, err := store.Generator.New()
+	if err != nil {
+		return err
+	}
+	activityID, err := store.Generator.New()
+	if err != nil {
+		return err
+	}
+	sourceID := projectID + ":" + userID
+	actor := jsonBytes(event.Actor)
+	metadata := jsonBytes(map[string]interface{}{"role": role, "user_id": userID})
+	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var done bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM data_activity WHERE event_id=$1)`, event.EventID).Scan(&done); err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO data_objects(object_id,project_id,object_type,source_module,source_id,title,summary,status,metadata,occurred_at,created_at,updated_at) VALUES($1,$2,'project-member','project',$3,$4,$5,$6,$7,$8,$8,$8) ON CONFLICT(source_module,object_type,source_id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,status=EXCLUDED.status,metadata=EXCLUDED.metadata,version=data_objects.version+1,occurred_at=EXCLUDED.occurred_at,updated_at=EXCLUDED.updated_at`, objectID, projectID, sourceID, title, role, status, metadata, event.OccurredAt); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO data_activity(activity_id,project_id,object_id,event_id,activity_type,title,summary,actor,metadata,occurred_at,created_at) SELECT $1,$2,object_id,$3,$4,$5,$6,$7,$8,$9,$10 FROM data_objects WHERE source_module='project' AND object_type='project-member' AND source_id=$11 ON CONFLICT(event_id) WHERE event_id IS NOT NULL DO NOTHING`, activityID, projectID, event.EventID, event.EventType, title, role, actor, metadata, event.OccurredAt, store.Clock.Now().UTC(), sourceID)
+		return err
+	})
+}
+
 func (store PostgresStore) projectEvent(
 	ctx context.Context,
 	event contract.EventEnvelope,

@@ -141,6 +141,25 @@ type Member struct {
 	UserID      string    `json:"user_id"`
 }
 
+// Invitation is a pending or historical membership invitation.
+type Invitation struct {
+	CreatedAt   time.Time `json:"created_at"`
+	Email       string    `json:"email"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	ID          string    `json:"id"`
+	InvitedBy   string    `json:"invited_by"`
+	ProjectID   string    `json:"project_id"`
+	ProjectName string    `json:"project_name"`
+	Role        Role      `json:"role"`
+	Status      string    `json:"status"`
+}
+
+// IssuedInvitation returns the secret only when a new invitation is created.
+type IssuedInvitation struct {
+	Invitation Invitation `json:"invitation"`
+	Token      string     `json:"token,omitempty"`
+}
+
 // CreateInput contains project fields accepted at creation.
 type CreateInput struct {
 	Name               string   `json:"name"`
@@ -162,12 +181,17 @@ type UpdateInput struct {
 
 // Store is the project persistence boundary.
 type Store interface {
+	AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error)
+	CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error)
 	Create(context.Context, string, CreateInput) (Project, error)
 	FindRole(context.Context, string, string) (Role, error)
 	Get(context.Context, string, string) (Project, error)
 	List(context.Context, string, bool) ([]Project, error)
 	ListMembers(context.Context, string) ([]Member, error)
+	ListInvitations(context.Context, string, time.Time) ([]Invitation, error)
+	PreviewInvitation(context.Context, string, time.Time) (Invitation, error)
 	RemoveMember(context.Context, string, string, string) error
+	RevokeInvitation(context.Context, string, string, string, time.Time) error
 	Update(context.Context, string, string, UpdateInput) (Project, error)
 	UpsertMember(context.Context, string, string, string, Role) (Member, error)
 }
@@ -179,8 +203,10 @@ type Authenticator interface {
 
 // Service applies collaboration and RBAC policy.
 type Service struct {
-	Auth  Authenticator
-	Store Store
+	Auth          Authenticator
+	Clock         interface{ Now() time.Time }
+	Store         Store
+	InvitationTTL time.Duration
 }
 
 // Authenticate resolves an identity through the Auth module.
@@ -281,6 +307,17 @@ func (service Service) UpsertMember(
 	if _, ok := permissionsByRole[role]; !ok {
 		return Member{}, ErrInvalid
 	}
+	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
+	if err != nil {
+		return Member{}, ErrForbidden
+	}
+	targetRole, err := service.Store.FindRole(ctx, userID, projectID)
+	if err != nil {
+		return Member{}, ErrNotFound
+	}
+	if actorRole != RoleOwner && (role == RoleOwner || targetRole == RoleOwner) {
+		return Member{}, ErrForbidden
+	}
 	return service.Store.UpsertMember(ctx, identity.User.ID, projectID, userID, role)
 }
 
@@ -294,7 +331,94 @@ func (service Service) RemoveMember(
 	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
 		return err
 	}
+	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
+	if err != nil {
+		return ErrForbidden
+	}
+	targetRole, err := service.Store.FindRole(ctx, userID, projectID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if actorRole != RoleOwner && targetRole == RoleOwner {
+		return ErrForbidden
+	}
 	return service.Store.RemoveMember(ctx, identity.User.ID, projectID, userID)
+}
+
+// CreateInvitation creates an email-bound, single-use membership invitation.
+func (service Service) CreateInvitation(ctx context.Context, identity auth.Identity, projectID string, email string, role Role) (IssuedInvitation, error) {
+	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
+		return IssuedInvitation{}, err
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return IssuedInvitation{}, ErrInvalid
+	}
+	if _, ok := permissionsByRole[role]; !ok {
+		return IssuedInvitation{}, ErrInvalid
+	}
+	actorRole, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
+	if err != nil || (actorRole != RoleOwner && role == RoleOwner) {
+		return IssuedInvitation{}, ErrForbidden
+	}
+	ttl := service.InvitationTTL
+	if ttl <= 0 {
+		ttl = 72 * time.Hour
+	}
+	return service.Store.CreateInvitation(ctx, identity.User.ID, projectID, email, role, service.now().Add(ttl))
+}
+
+func (service Service) ListInvitations(ctx context.Context, identity auth.Identity, projectID string) ([]Invitation, error) {
+	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
+		return nil, err
+	}
+	return service.Store.ListInvitations(ctx, projectID, service.now())
+}
+
+func (service Service) RevokeInvitation(ctx context.Context, identity auth.Identity, projectID string, invitationID string) error {
+	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
+		return err
+	}
+	return service.Store.RevokeInvitation(ctx, identity.User.ID, projectID, invitationID, service.now())
+}
+
+func (service Service) PreviewInvitation(ctx context.Context, token string) (auth.Invitation, error) {
+	invitation, err := service.Store.PreviewInvitation(ctx, hashInvitationToken(token), service.now())
+	if err != nil {
+		return auth.Invitation{}, auth.ErrInvalidInvitation
+	}
+	return authInvitation(invitation), nil
+}
+
+func (service Service) AcceptInvitation(ctx context.Context, identity auth.Identity, token string) (auth.AcceptedMember, error) {
+	member, err := service.Store.AcceptInvitation(ctx, hashInvitationToken(token), identity.User.ID, identity.User.Email, service.now())
+	if err != nil {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	return acceptedMember(member), nil
+}
+
+func (service Service) AcceptRegistration(ctx context.Context, token string, user auth.User) (auth.AcceptedMember, error) {
+	member, err := service.Store.AcceptInvitation(ctx, hashInvitationToken(token), user.ID, user.Email, service.now())
+	if err != nil {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	return acceptedMember(member), nil
+}
+
+func (service Service) now() time.Time {
+	if service.Clock == nil {
+		return time.Now().UTC()
+	}
+	return service.Clock.Now().UTC()
+}
+
+func authInvitation(invitation Invitation) auth.Invitation {
+	return auth.Invitation{CreatedAt: invitation.CreatedAt, Email: invitation.Email, ExpiresAt: invitation.ExpiresAt, ID: invitation.ID, InvitedBy: invitation.InvitedBy, ProjectID: invitation.ProjectID, ProjectName: invitation.ProjectName, Role: string(invitation.Role), Status: invitation.Status}
+}
+
+func acceptedMember(member Member) auth.AcceptedMember {
+	return auth.AcceptedMember{DisplayName: member.DisplayName, Email: member.Email, JoinedAt: member.JoinedAt, Role: string(member.Role), UserID: member.UserID}
 }
 
 // Permissions returns the current role and effective permissions.

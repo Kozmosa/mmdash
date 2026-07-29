@@ -106,6 +106,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/auth/register": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Register an active user, optionally through an invitation */
+    post: operations["auth.register"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/auth/logout": {
     parameters: {
       query?: never;
@@ -134,6 +151,58 @@ export interface paths {
     get: operations["auth.me"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update the current user's profile */
+    patch: operations["auth.me.update"];
+    trace?: never;
+  };
+  "/v1/auth/me/password": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Change the current user's password */
+    post: operations["auth.me.password.update"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/invitations/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Preview an invitation without consuming it */
+    post: operations["auth.invitations.preview"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/invitations/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept an invitation as the current user */
+    post: operations["auth.invitations.accept"];
     delete?: never;
     options?: never;
     head?: never;
@@ -245,11 +314,51 @@ export interface paths {
       cookie?: never;
     };
     get?: never;
-    /** Add a collaborator or change their role */
+    /** Change an existing collaborator's role */
     put: operations["projects.members.upsert"];
     post?: never;
     /** Remove a collaborator */
     delete: operations["projects.members.remove"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/invitations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List project invitations */
+    get: operations["projects.invitations.list"];
+    put?: never;
+    /** Invite an email address to the project */
+    post: operations["projects.invitations.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/invitations/{invitationId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        invitationId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke a pending invitation */
+    delete: operations["projects.invitations.revoke"];
     options?: never;
     head?: never;
     patch?: never;
@@ -823,6 +932,26 @@ export interface components {
       email: string;
       password: string;
     };
+    RegisterRequest: {
+      /** Format: email */
+      email: string;
+      display_name: string;
+      password: string;
+      invitation_token?: string;
+    };
+    UpdateProfileRequest: {
+      display_name?: string;
+      /** Format: email */
+      email?: string;
+      current_password?: string;
+    };
+    ChangePasswordRequest: {
+      current_password: string;
+      new_password: string;
+    };
+    InvitationTokenRequest: {
+      token: string;
+    };
     LoginResult: {
       access_token: string;
       /** Format: date-time */
@@ -919,6 +1048,37 @@ export interface components {
       role: components["schemas"]["ProjectRole"];
       /** Format: date-time */
       joined_at: string;
+    };
+    /** @enum {string} */
+    InvitationStatus: "pending" | "accepted" | "revoked" | "expired";
+    ProjectInvitation: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      project_id: string;
+      project_name: string;
+      /** Format: email */
+      email: string;
+      role: components["schemas"]["ProjectRole"];
+      status: components["schemas"]["InvitationStatus"];
+      /** Format: uuid */
+      invited_by: string;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    CreateInvitationRequest: {
+      /** Format: email */
+      email: string;
+      role: components["schemas"]["ProjectRole"];
+    };
+    IssuedInvitation: {
+      invitation: components["schemas"]["ProjectInvitation"];
+      token?: string;
+    };
+    InvitationList: {
+      items: components["schemas"]["ProjectInvitation"][];
     };
     UpdateProjectMemberRequest: {
       role: components["schemas"]["ProjectRole"];
@@ -1606,6 +1766,31 @@ export interface operations {
       401: components["responses"]["Error"];
     };
   };
+  "auth.register": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RegisterRequest"];
+      };
+    };
+    responses: {
+      /** @description User and browser session created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LoginResult"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
   "auth.logout": {
     parameters: {
       query?: never;
@@ -1644,6 +1829,100 @@ export interface operations {
         };
       };
       401: components["responses"]["Error"];
+    };
+  };
+  "auth.me.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateProfileRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated user. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["User"];
+        };
+      };
+    };
+  };
+  "auth.me.password.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChangePasswordRequest"];
+      };
+    };
+    responses: {
+      /** @description Password changed and other sessions revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "auth.invitations.preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InvitationTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Valid invitation metadata. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectInvitation"];
+        };
+      };
+    };
+  };
+  "auth.invitations.accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InvitationTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Membership created. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectMember"];
+        };
+      };
     };
   };
   "auth.tokens.list": {
@@ -1877,6 +2156,84 @@ export interface operations {
         content?: never;
       };
       409: components["responses"]["Error"];
+    };
+  };
+  "projects.invitations.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project invitations. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InvitationList"];
+        };
+      };
+    };
+  };
+  "projects.invitations.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateInvitationRequest"];
+      };
+    };
+    responses: {
+      /** @description An active invitation already exists. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IssuedInvitation"];
+        };
+      };
+      /** @description Invitation created; token is returned once. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IssuedInvitation"];
+        };
+      };
+    };
+  };
+  "projects.invitations.revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        invitationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Invitation revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
     };
   };
   "projects.permissions.get": {

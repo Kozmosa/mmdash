@@ -45,12 +45,64 @@ export function registerProjectRoutes(
         .object({ userId: z.string().uuid() })
         .parse(request.params);
       const { role } = memberRoleSchema.parse(request.body);
-      return coreClient.upsertProjectMember(
+      return coreClient.updateProjectMember(
         request.currentProjectId!,
         parameters.userId,
         role,
         coreContext(request, request.currentProjectId),
       );
+    },
+  );
+
+  app.get(
+    "/api/projects/:projectId/invitations",
+    { config: { auth: "required", project: "required" } },
+    async (request) =>
+      coreClient.listProjectInvitations(
+        request.currentProjectId!,
+        coreContext(request, request.currentProjectId),
+      ),
+  );
+
+  app.post(
+    "/api/projects/:projectId/invitations",
+    { config: { auth: "required", project: "required" } },
+    async (request, reply) => {
+      const input = z
+        .object({
+          email: z.string().email(),
+          role: z.enum([
+            "owner",
+            "maintainer",
+            "editor",
+            "viewer",
+            "agent",
+            "box",
+          ]),
+        })
+        .parse(request.body);
+      const issued = await coreClient.createProjectInvitation(
+        request.currentProjectId!,
+        input,
+        coreContext(request, request.currentProjectId),
+      );
+      return reply.code(issued.token ? 201 : 200).send(issued);
+    },
+  );
+
+  app.delete(
+    "/api/projects/:projectId/invitations/:invitationId",
+    { config: { auth: "required", project: "required" } },
+    async (request, reply) => {
+      const { invitationId } = z
+        .object({ invitationId: z.string().uuid() })
+        .parse(request.params);
+      await coreClient.revokeProjectInvitation(
+        request.currentProjectId!,
+        invitationId,
+        coreContext(request, request.currentProjectId),
+      );
+      return reply.code(204).send();
     },
   );
 

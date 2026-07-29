@@ -5,20 +5,53 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
 // PostgresStore persists authentication state in module-owned tables.
 type PostgresStore struct {
-	DB *sql.DB
+	DB          *sql.DB
+	Outbox      outbox.Writer
+	Transaction transaction.Manager
 }
 
 func (store PostgresStore) CreateUser(ctx context.Context, user User, passwordHash string) error {
+	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO auth_users (user_id,email,display_name,password_hash,status,system_role,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`, user.ID, user.Email, user.DisplayName, passwordHash, user.Status, user.SystemRole, user.CreatedAt); err != nil {
+			return err
+		}
+		_, err := store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": user.ID}, EventType: "user.registered", Payload: map[string]interface{}{"display_name": user.DisplayName, "email": user.Email, "user_id": user.ID}, Producer: "auth"})
+		return err
+	})
+}
+
+func (store PostgresStore) DeleteUser(ctx context.Context, userID string) error {
+	_, err := store.DB.ExecContext(ctx, `DELETE FROM auth_users WHERE user_id = $1`, userID)
+	return err
+}
+
+func (store PostgresStore) UpdateUser(ctx context.Context, userID string, email string, displayName string, now time.Time) (User, error) {
+	var user User
+	err := store.DB.QueryRowContext(ctx, `
+		UPDATE auth_users SET email = $2, display_name = $3, updated_at = $4
+		WHERE user_id = $1
+		RETURNING user_id, email, display_name, status, system_role, created_at
+	`, userID, email, displayName, now).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Status, &user.SystemRole, &user.CreatedAt)
+	return user, err
+}
+
+func (store PostgresStore) UpdatePassword(ctx context.Context, userID string, passwordHash string, now time.Time) error {
+	result, err := store.DB.ExecContext(ctx, `UPDATE auth_users SET password_hash = $2, updated_at = $3 WHERE user_id = $1`, userID, passwordHash, now)
+	return requireAffected(result, err)
+}
+
+func (store PostgresStore) RevokeOtherSessions(ctx context.Context, userID string, currentSessionID string, now time.Time) error {
 	_, err := store.DB.ExecContext(ctx, `
-		INSERT INTO auth_users (
-			user_id, email, display_name, password_hash, status,
-			system_role, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-	`, user.ID, user.Email, user.DisplayName, passwordHash, user.Status, user.SystemRole, user.CreatedAt)
+		UPDATE auth_sessions SET revoked_at = $3
+		WHERE user_id = $1 AND session_id <> $2 AND revoked_at IS NULL
+	`, userID, currentSessionID, now)
 	return err
 }
 

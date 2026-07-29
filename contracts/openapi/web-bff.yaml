@@ -91,6 +91,29 @@ paths:
                     $ref: "./core.yaml#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Error"
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register and create a signed browser session
+      operationId: bff.auth.register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Account and browser session created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "./core.yaml#/components/schemas/User"
   /api/auth/me:
     get:
       tags: [Auth]
@@ -109,6 +132,62 @@ paths:
                     $ref: "./core.yaml#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Error"
+    patch:
+      tags: [Auth]
+      summary: Update the current browser user's profile
+      operationId: bff.auth.me.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated browser user.
+  /api/auth/me/password:
+    post:
+      tags: [Auth]
+      summary: Change the current browser user's password
+      operationId: bff.auth.me.password.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ChangePasswordRequest"
+      responses:
+        "204":
+          description: Password changed.
+  /api/auth/invitations/preview:
+    post:
+      tags: [Auth]
+      summary: Preview a project invitation
+      operationId: bff.auth.invitations.preview
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/InvitationTokenRequest"
+      responses:
+        "200":
+          description: Invitation metadata.
+  /api/auth/invitations/accept:
+    post:
+      tags: [Auth]
+      summary: Accept a project invitation
+      operationId: bff.auth.invitations.accept
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/InvitationTokenRequest"
+      responses:
+        "200":
+          description: Membership created.
   /api/auth/logout:
     post:
       tags: [Auth]
@@ -207,7 +286,7 @@ paths:
           format: uuid
     put:
       tags: [Projects]
-      summary: Add a collaborator or change their role
+      summary: Change an existing collaborator's role
       operationId: bff.projects.members.upsert
       requestBody:
         required: true
@@ -229,6 +308,45 @@ paths:
       responses:
         "204":
           description: Collaborator removed.
+  /api/projects/{projectId}/invitations:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      summary: List project invitations
+      operationId: bff.projects.invitations.list
+      responses:
+        "200":
+          description: Invitation list.
+    post:
+      tags: [Projects]
+      summary: Create a project invitation
+      operationId: bff.projects.invitations.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/CreateInvitationRequest"
+      responses:
+        "201":
+          description: Invitation created.
+  /api/projects/{projectId}/invitations/{invitationId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: invitationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [Projects]
+      summary: Revoke a project invitation
+      operationId: bff.projects.invitations.revoke
+      responses:
+        "204":
+          description: Invitation revoked.
   /api/projects/{projectId}/permissions:
     parameters:
       - $ref: "#/components/parameters/ProjectId"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 )
@@ -18,6 +19,22 @@ func (stub authStub) Authenticate(context.Context, string) (auth.Identity, error
 
 type storeStub struct {
 	role Role
+}
+
+func (stub *storeStub) AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error) {
+	return Member{UserID: "user-2", Role: RoleViewer}, nil
+}
+func (stub *storeStub) CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error) {
+	return IssuedInvitation{}, nil
+}
+func (stub *storeStub) ListInvitations(context.Context, string, time.Time) ([]Invitation, error) {
+	return []Invitation{}, nil
+}
+func (stub *storeStub) PreviewInvitation(context.Context, string, time.Time) (Invitation, error) {
+	return Invitation{}, nil
+}
+func (stub *storeStub) RevokeInvitation(context.Context, string, string, string, time.Time) error {
+	return nil
 }
 
 func (stub *storeStub) Create(_ context.Context, userID string, input CreateInput) (Project, error) {
@@ -120,4 +137,29 @@ func TestProjectScopedTokenCannotCrossProjects(t *testing.T) {
 	); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("expected cross-project token to be forbidden, got %v", err)
 	}
+}
+
+func TestMaintainerCannotGrantOrManageOwnerRole(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "maintainer"}}
+	store := &roleStoreStub{roles: map[string]Role{"maintainer": RoleMaintainer, "owner": RoleOwner, "member": RoleViewer}}
+	service := Service{Auth: authStub{identity: identity}, Store: store}
+	if _, err := service.UpsertMember(context.Background(), identity, "project-1", "member", RoleOwner); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("maintainer granted owner: %v", err)
+	}
+	if err := service.RemoveMember(context.Background(), identity, "project-1", "owner"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("maintainer removed owner: %v", err)
+	}
+}
+
+type roleStoreStub struct {
+	storeStub
+	roles map[string]Role
+}
+
+func (stub *roleStoreStub) FindRole(_ context.Context, userID string, _ string) (Role, error) {
+	role, ok := stub.roles[userID]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return role, nil
 }

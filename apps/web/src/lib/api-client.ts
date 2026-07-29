@@ -64,6 +64,18 @@ export class ApiClient {
 
     if (!response.ok) {
       const error = await parseErrorBody(response);
+      if (
+        response.status === 401 &&
+        typeof window !== "undefined" &&
+        !path.startsWith("/auth/login") &&
+        !path.startsWith("/auth/register") &&
+        !path.startsWith("/auth/invitations/preview")
+      ) {
+        const returnTo = `${window.location.pathname}${window.location.search}`;
+        window.location.assign(
+          `/login?returnTo=${encodeURIComponent(returnTo)}`,
+        );
+      }
       throw new ApiError({
         code: error.code,
         message: error.message ?? `Request failed with HTTP ${response.status}`,

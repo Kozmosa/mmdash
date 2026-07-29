@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, FolderKanban, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -18,6 +19,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useCurrentUser } from "@/components/providers/user-provider";
+import { UserAvatar } from "@/components/user-avatar";
 
 type Project = {
   archived_at?: string;
@@ -33,6 +36,7 @@ export default function ProjectsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const user = useCurrentUser();
   const projects = useQuery({
     queryFn: () => apiClient.request<{ items: Project[] }>("/projects"),
     queryKey: ["projects"],
@@ -97,10 +101,21 @@ export default function ProjectsPage() {
             创建项目、邀请成员并进入协作工作区
           </p>
         </div>
-        <Button onClick={() => setCreating((value) => !value)}>
-          <Plus aria-hidden="true" className="size-4" />
-          创建项目
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link
+            className="mr-2 hidden text-sm font-semibold sm:block"
+            href="/projects"
+          >
+            mmdash
+          </Link>
+          <Link aria-label="个人中心" href="/account">
+            <UserAvatar displayName={user?.displayName} email={user?.email} />
+          </Link>
+          <Button onClick={() => setCreating((value) => !value)}>
+            <Plus aria-hidden="true" className="size-4" />
+            创建项目
+          </Button>
+        </div>
       </header>
 
       {creating ? (

@@ -71,6 +71,43 @@ type LoginResult struct {
 	User        User      `json:"user"`
 }
 
+// RegisterInput contains public account registration fields.
+type RegisterInput struct {
+	DisplayName     string
+	Email           string
+	InvitationToken string
+	Password        string
+}
+
+// UpdateProfileInput contains mutable account fields.
+type UpdateProfileInput struct {
+	CurrentPassword string
+	DisplayName     *string
+	Email           *string
+}
+
+// Invitation is the public invitation projection needed by Auth.
+type Invitation struct {
+	CreatedAt   time.Time `json:"created_at"`
+	Email       string    `json:"email"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	ID          string    `json:"id"`
+	InvitedBy   string    `json:"invited_by"`
+	ProjectID   string    `json:"project_id"`
+	ProjectName string    `json:"project_name"`
+	Role        string    `json:"role"`
+	Status      string    `json:"status"`
+}
+
+// AcceptedMember is returned after invitation acceptance.
+type AcceptedMember struct {
+	DisplayName string    `json:"display_name"`
+	Email       string    `json:"email"`
+	JoinedAt    time.Time `json:"joined_at"`
+	Role        string    `json:"role"`
+	UserID      string    `json:"user_id"`
+}
+
 // IssuedToken returns the opaque secret only once.
 type IssuedToken struct {
 	Secret string `json:"token"`
@@ -87,7 +124,30 @@ type Store interface {
 	FindUserByEmail(context.Context, string) (User, string, error)
 	ListTokens(context.Context, string) ([]Token, error)
 	RevokeSession(context.Context, string, time.Time) error
+	RevokeOtherSessions(context.Context, string, string, time.Time) error
 	RevokeToken(context.Context, string, string, time.Time) error
+	UpdatePassword(context.Context, string, string, time.Time) error
+	UpdateUser(context.Context, string, string, string, time.Time) (User, error)
+	DeleteUser(context.Context, string) error
+}
+
+// RegistrationPolicy resolves whether users may register without an invitation.
+type RegistrationPolicy interface {
+	AllowOpenRegistration(context.Context) (bool, error)
+}
+
+// StaticRegistrationPolicy is the bootstrap/default registration policy.
+type StaticRegistrationPolicy bool
+
+func (policy StaticRegistrationPolicy) AllowOpenRegistration(context.Context) (bool, error) {
+	return bool(policy), nil
+}
+
+// InvitationService bridges Auth registration to Project-owned collaboration.
+type InvitationService interface {
+	AcceptInvitation(context.Context, Identity, string) (AcceptedMember, error)
+	AcceptRegistration(context.Context, string, User) (AcceptedMember, error)
+	PreviewInvitation(context.Context, string) (Invitation, error)
 }
 
 // ProjectTokenAuthorizer verifies project-scoped token management.
@@ -100,9 +160,126 @@ type Service struct {
 	Clock         clock.Clock
 	Generator     identity.Generator
 	JWTSecret     []byte
+	Invitations   InvitationService
+	Policy        RegistrationPolicy
 	ProjectTokens ProjectTokenAuthorizer
 	SessionTTL    time.Duration
 	Store         Store
+}
+
+// Register creates an active account and immediately creates a session.
+func (service Service) Register(ctx context.Context, input RegisterInput) (LoginResult, error) {
+	input.Email = normalizeEmail(input.Email)
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	if input.Email == "" || input.DisplayName == "" || len(input.Password) < 8 {
+		return LoginResult{}, ErrInvalid
+	}
+	if _, _, err := service.Store.FindUserByEmail(ctx, input.Email); err == nil {
+		return LoginResult{}, ErrConflict
+	} else if !errors.Is(err, ErrNotFound) {
+		return LoginResult{}, err
+	}
+	if input.InvitationToken == "" {
+		allowed := false
+		if service.Policy != nil {
+			var err error
+			allowed, err = service.Policy.AllowOpenRegistration(ctx)
+			if err != nil {
+				return LoginResult{}, err
+			}
+		}
+		if !allowed {
+			return LoginResult{}, ErrRegistrationClosed
+		}
+	} else {
+		if service.Invitations == nil {
+			return LoginResult{}, ErrInvalidInvitation
+		}
+		invitation, err := service.Invitations.PreviewInvitation(ctx, input.InvitationToken)
+		if err != nil || normalizeEmail(invitation.Email) != input.Email {
+			return LoginResult{}, ErrInvalidInvitation
+		}
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	userID, err := service.Generator.New()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	user := User{CreatedAt: service.Clock.Now().UTC(), DisplayName: input.DisplayName, Email: input.Email, ID: userID, Status: "active", SystemRole: "member"}
+	if err := service.Store.CreateUser(ctx, user, string(hash)); err != nil {
+		return LoginResult{}, ErrConflict
+	}
+	if input.InvitationToken != "" {
+		if _, err := service.Invitations.AcceptRegistration(ctx, input.InvitationToken, user); err != nil {
+			_ = service.Store.DeleteUser(ctx, user.ID)
+			return LoginResult{}, err
+		}
+	}
+	return service.Login(ctx, user.Email, input.Password)
+}
+
+// UpdateProfile changes display name or email after credential verification.
+func (service Service) UpdateProfile(ctx context.Context, identity Identity, input UpdateProfileInput) (User, error) {
+	user, passwordHash, err := service.Store.FindUserByEmail(ctx, identity.User.Email)
+	if err != nil {
+		return User{}, err
+	}
+	displayName := user.DisplayName
+	email := user.Email
+	if input.DisplayName != nil {
+		displayName = strings.TrimSpace(*input.DisplayName)
+		if displayName == "" {
+			return User{}, ErrInvalid
+		}
+	}
+	if input.Email != nil {
+		email = normalizeEmail(*input.Email)
+		if email == "" || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(input.CurrentPassword)) != nil {
+			return User{}, ErrInvalidCredentials
+		}
+	}
+	updated, err := service.Store.UpdateUser(ctx, user.ID, email, displayName, service.Clock.Now().UTC())
+	if err != nil {
+		return User{}, ErrConflict
+	}
+	return updated, nil
+}
+
+// ChangePassword verifies the old password and revokes other sessions.
+func (service Service) ChangePassword(ctx context.Context, identity Identity, currentPassword string, newPassword string) error {
+	if len(newPassword) < 8 {
+		return ErrInvalid
+	}
+	_, passwordHash, err := service.Store.FindUserByEmail(ctx, identity.User.Email)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(currentPassword)) != nil {
+		return ErrInvalidCredentials
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	now := service.Clock.Now().UTC()
+	if err := service.Store.UpdatePassword(ctx, identity.User.ID, string(hash), now); err != nil {
+		return err
+	}
+	return service.Store.RevokeOtherSessions(ctx, identity.User.ID, identity.SessionID, now)
+}
+
+func (service Service) PreviewInvitation(ctx context.Context, token string) (Invitation, error) {
+	if service.Invitations == nil || strings.TrimSpace(token) == "" {
+		return Invitation{}, ErrInvalidInvitation
+	}
+	return service.Invitations.PreviewInvitation(ctx, token)
+}
+
+func (service Service) AcceptInvitation(ctx context.Context, identity Identity, token string) (AcceptedMember, error) {
+	if service.Invitations == nil {
+		return AcceptedMember{}, ErrInvalidInvitation
+	}
+	return service.Invitations.AcceptInvitation(ctx, identity, token)
 }
 
 type jwtClaims struct {
@@ -354,9 +531,12 @@ func normalizeEmail(email string) string {
 
 // Domain errors are mapped to stable HTTP errors by the module.
 var (
+	ErrConflict           = fmt.Errorf("auth conflict")
 	ErrForbidden          = fmt.Errorf("forbidden")
 	ErrInvalidCredentials = fmt.Errorf("invalid credentials")
 	ErrInvalid            = fmt.Errorf("invalid auth input")
 	ErrNotFound           = fmt.Errorf("not found")
+	ErrInvalidInvitation  = fmt.Errorf("invalid invitation")
+	ErrRegistrationClosed = fmt.Errorf("registration closed")
 	ErrUnauthenticated    = fmt.Errorf("unauthenticated")
 )
