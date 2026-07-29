@@ -1,10 +1,12 @@
 package repo
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
@@ -75,6 +77,15 @@ func (module Module) handleProjectResource(
 			module.handleContent(response, request, identity, projectID)
 			return
 		}
+	case "checkouts":
+		if len(segments) == 3 {
+			module.handleCheckouts(response, request, identity, projectID)
+			return
+		}
+		module.handleCheckout(
+			response, request, identity, projectID, segments[3],
+		)
+		return
 	case "test":
 		if len(segments) == 3 {
 			module.handleTest(response, request, identity, projectID)
@@ -241,6 +252,10 @@ func (module Module) handleCommits(
 	identity auth.Identity,
 	projectID string,
 ) {
+	if request.Method == http.MethodPost {
+		module.handleCreateCommit(response, request, identity, projectID)
+		return
+	}
 	if !httpx.RequireMethod(response, request, http.MethodGet) {
 		return
 	}
@@ -261,6 +276,136 @@ func (module Module) handleCommits(
 		return
 	}
 	httpx.WriteJSON(response, http.StatusOK, page)
+}
+
+func (module Module) handleCreateCommit(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+) {
+	var body contract.RepoCreateCommitRequest
+	if !httpx.DecodeJSONLimit(
+		response, request, &body, 2*1024*1024,
+	) {
+		return
+	}
+	changes := make([]FileChange, 0, len(body.Changes))
+	for _, raw := range body.Changes {
+		if len(raw) < 2 || len(raw) > 3 {
+			writeRepoError(response, request, ErrInvalid)
+			return
+		}
+		for key := range raw {
+			if key != "operation" && key != "path" && key != "content_base64" {
+				writeRepoError(response, request, ErrInvalid)
+				return
+			}
+		}
+		operation, operationOK := raw["operation"].(string)
+		repositoryPath, pathOK := raw["path"].(string)
+		if !operationOK || !pathOK {
+			writeRepoError(response, request, ErrInvalid)
+			return
+		}
+		change := FileChange{Operation: operation, Path: repositoryPath}
+		encoded, hasContent := raw["content_base64"]
+		switch operation {
+		case "put":
+			value, ok := encoded.(string)
+			if !hasContent || !ok {
+				writeRepoError(response, request, ErrInvalid)
+				return
+			}
+			decoded, err := base64.StdEncoding.Strict().DecodeString(value)
+			if err != nil {
+				writeRepoError(response, request, ErrInvalid)
+				return
+			}
+			change.Content = decoded
+		case "delete":
+			if hasContent {
+				writeRepoError(response, request, ErrInvalid)
+				return
+			}
+		default:
+			writeRepoError(response, request, ErrInvalid)
+			return
+		}
+		changes = append(changes, change)
+	}
+	result, err := module.Service.Commit(
+		request.Context(), identity, WorkspaceCommitRequest{
+			Changes: changes, ExpectedHeadSHA: body.ExpectedHeadSha,
+			IdempotencyKey: body.IdempotencyKey, Message: body.Message,
+			ProjectID: projectID, Workspace: WorkspaceKind(body.Workspace),
+		},
+	)
+	if err != nil {
+		writeRepoError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusCreated, result)
+}
+
+func (module Module) handleCheckouts(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body contract.RepoCreateCheckoutRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	var ttl time.Duration
+	if body.TtlSeconds != nil {
+		ttl = time.Duration(*body.TtlSeconds) * time.Second
+	}
+	checkout, err := module.Service.CreateCheckout(
+		request.Context(), identity, projectID,
+		body.CommitSha, body.Purpose, ttl,
+	)
+	if err != nil {
+		writeRepoError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusCreated, checkout)
+}
+
+func (module Module) handleCheckout(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+	checkoutID string,
+) {
+	switch request.Method {
+	case http.MethodGet:
+		checkout, err := module.Service.GetCheckout(
+			request.Context(), identity, projectID, checkoutID,
+		)
+		if err != nil {
+			writeRepoError(response, request, err)
+			return
+		}
+		httpx.WriteJSON(response, http.StatusOK, checkout)
+	case http.MethodDelete:
+		if err := module.Service.ReleaseCheckout(
+			request.Context(), identity, projectID, checkoutID,
+		); err != nil {
+			writeRepoError(response, request, err)
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
+	default:
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed",
+		))
+	}
 }
 
 func (module Module) handleCommit(
@@ -422,6 +567,10 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusNotFound, "REPO_OBJECT_NOT_FOUND", "Repository object was not found",
 		))
+	case errors.Is(err, ErrCheckoutNotFound):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusNotFound, "REPO_CHECKOUT_NOT_FOUND", "Repository checkout was not found",
+		))
 	case errors.Is(err, ErrAlreadyConnected):
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusConflict, "REPOSITORY_ALREADY_CONNECTED", "Repository is already connected",
@@ -437,6 +586,14 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 	case errors.Is(err, ErrNotReady):
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusConflict, "REPOSITORY_NOT_READY", "Repository is not ready",
+		))
+	case errors.Is(err, ErrHeadChanged):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict, "REPO_HEAD_CHANGED", "Repository branch head changed",
+		))
+	case errors.Is(err, ErrNoChanges):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict, "REPO_NO_CHANGES", "Repository commit contains no changes",
 		))
 	case errors.Is(err, ErrBranchMapping), errors.Is(err, provider.ErrInvalidConfig):
 		httpx.WriteError(response, request, apperror.New(

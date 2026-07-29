@@ -104,11 +104,22 @@ func (store *serviceStore) GetByHook(context.Context, string) (Repository, error
 	return store.value, nil
 }
 
+func (store *serviceStore) GetByID(context.Context, string) (Repository, error) {
+	return store.value, nil
+}
+
 func (store *serviceStore) GetByProject(context.Context, string) (Repository, error) {
 	if store.value.ID == "" {
 		return Repository{}, ErrNotConfigured
 	}
 	return store.value, nil
+}
+
+func (store *serviceStore) ListRepositories(context.Context) ([]Repository, error) {
+	if store.value.ID == "" {
+		return []Repository{}, nil
+	}
+	return []Repository{store.value}, nil
 }
 
 func (*serviceStore) RenewSyncLease(context.Context, string, string, time.Time) error {
@@ -131,6 +142,125 @@ func (store *serviceStore) UpdateMappings(
 	context.Context, string, WorkspaceMappings, int64, time.Time,
 ) (Repository, error) {
 	return store.value, nil
+}
+
+func TestServiceCommitRejectsUnsafeWritesBeforeGit(t *testing.T) {
+	const head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testCases := []struct {
+		name   string
+		mutate func(*WorkspaceCommitRequest)
+	}{
+		{
+			name: "invalid workspace",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.Workspace = WorkspaceKind("unknown")
+			},
+		},
+		{
+			name: "symbolic head",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.ExpectedHeadSHA = "main"
+			},
+		},
+		{
+			name: "blank message",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.Message = " "
+			},
+		},
+		{
+			name: "duplicate path",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.Changes = append(
+					request.Changes, request.Changes[0],
+				)
+			},
+		},
+		{
+			name: "path traversal",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.Changes[0].Path = "../outside"
+			},
+		},
+		{
+			name: "delete with content",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.Changes[0].Operation = "delete"
+			},
+		},
+		{
+			name: "unsupported operation",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.Changes[0].Operation = "chmod"
+			},
+		},
+		{
+			name: "payload too large",
+			mutate: func(request *WorkspaceCommitRequest) {
+				request.Changes[0].Content = []byte("too large")
+			},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			access := &serviceAccess{}
+			service := Service{
+				Access: access, MaxWriteBytes: 4,
+			}
+			request := WorkspaceCommitRequest{
+				Changes: []FileChange{{
+					Content: []byte("safe"), Operation: "put", Path: "safe.txt",
+				}},
+				ExpectedHeadSHA: head, IdempotencyKey: "write-1",
+				Message: "test commit", ProjectID: "project-1",
+				Workspace: WorkspaceCode,
+			}
+			testCase.mutate(&request)
+			_, err := service.Commit(
+				context.Background(),
+				auth.Identity{User: auth.User{
+					DisplayName: "Writer", Email: "writer@example.test",
+					ID: "user-1",
+				}},
+				request,
+			)
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("expected invalid input, got %v", err)
+			}
+			if access.permission != project.PermissionRepoWrite {
+				t.Fatalf("unexpected permission: %s", access.permission)
+			}
+		})
+	}
+}
+
+func TestServiceCommitRequestHashBindsActorAndContents(t *testing.T) {
+	service := Service{MaxWriteBytes: 1024}
+	request := WorkspaceCommitRequest{
+		ActorID: "user-1",
+		Changes: []FileChange{{
+			Content: []byte("safe"), Operation: "put", Path: "safe.txt",
+		}},
+		ExpectedHeadSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		IdempotencyKey:  "write-1",
+		Message:         "test commit",
+		ProjectID:       "project-1",
+		Workspace:       WorkspaceCode,
+	}
+	if err := service.validateCommitRequest(&request); err != nil {
+		t.Fatalf("validate commit request: %v", err)
+	}
+	firstHash := request.RequestSHA256
+	if len(firstHash) != 64 {
+		t.Fatalf("unexpected request hash: %q", firstHash)
+	}
+	request.ActorID = "user-2"
+	if err := service.validateCommitRequest(&request); err != nil {
+		t.Fatalf("validate changed request: %v", err)
+	}
+	if request.RequestSHA256 == firstHash {
+		t.Fatal("request hash did not bind the authenticated actor")
+	}
 }
 
 func TestServiceConnectUsesTestedSettingsAndReturnsWebhookSecretOnce(t *testing.T) {

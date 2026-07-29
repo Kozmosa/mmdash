@@ -3,15 +3,20 @@ package repo
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 	"github.com/mmdash/mmdash/backend/internal/project"
+	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
 	"github.com/mmdash/mmdash/backend/internal/repo/provider"
 	"github.com/mmdash/mmdash/backend/internal/settings"
 )
@@ -44,13 +49,20 @@ type AuditRecorder interface {
 type Service struct {
 	Access          Access
 	Audit           AuditRecorder
+	Checkouts       CheckoutStore
+	CheckoutTTL     time.Duration
 	Clock           interface{ Now() time.Time }
+	Commits         CommitStore
 	DisconnectGrace time.Duration
+	Generator       identity.Generator
+	MaxWriteBytes   int64
 	Providers       *provider.Registry
 	PublicURL       string
 	Reads           *Reader
 	Settings        SettingAccess
 	Store           Store
+	WriteLease      time.Duration
+	Writer          *WorkspaceWriter
 }
 
 // ConnectionTestResult enriches shared checks with branches required by Repo UI.
@@ -162,6 +174,297 @@ func (service Service) ReadFile(
 	return service.Reads.ReadFile(
 		ctx, repository, workspace, revision, path,
 	)
+}
+
+func (service Service) CreateCheckout(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	commitSHA string,
+	purpose string,
+	ttl time.Duration,
+) (Checkout, error) {
+	repository, err := service.readRepository(ctx, identity, projectID)
+	if err != nil {
+		return Checkout{}, err
+	}
+	if service.Checkouts == nil || service.Writer == nil {
+		return Checkout{}, ErrNotReady
+	}
+	purpose = strings.TrimSpace(purpose)
+	if purpose == "" || len(purpose) > 100 {
+		return Checkout{}, ErrInvalid
+	}
+	if ttl <= 0 {
+		ttl = service.CheckoutTTL
+	}
+	if ttl < time.Minute || ttl > 24*time.Hour {
+		return Checkout{}, ErrInvalid
+	}
+	checkoutID, err := service.Generator.New()
+	if err != nil {
+		return Checkout{}, err
+	}
+	now := service.Clock.Now().UTC()
+	relative, err := service.Writer.Runtime.CreateCheckout(
+		ctx, repository, checkoutID, commitSHA,
+	)
+	if err != nil {
+		return Checkout{}, err
+	}
+	checkout := Checkout{
+		CheckoutID: checkoutID, CheckoutRelpath: relative,
+		CommitSHA: commitSHA, CreatedAt: now, CreatedBy: actorID(identity),
+		ExpiresAt: now.Add(ttl), Purpose: purpose,
+		RepositoryID: repository.ID, Status: "active",
+	}
+	if err := service.Checkouts.CreateCheckout(ctx, checkout); err != nil {
+		_ = service.Writer.Runtime.ReleaseCheckout(ctx, repository, relative)
+		return Checkout{}, err
+	}
+	service.record(
+		ctx, "repo.checkout.created", projectID, checkoutID, "success", "",
+	)
+	return checkout, nil
+}
+
+func (service Service) GetCheckout(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	checkoutID string,
+) (Checkout, error) {
+	if err := service.Access.Authorize(
+		ctx, identity, projectID, project.PermissionRepoRead,
+	); err != nil {
+		return Checkout{}, err
+	}
+	if service.Checkouts == nil {
+		return Checkout{}, ErrNotReady
+	}
+	return service.Checkouts.GetCheckout(ctx, projectID, checkoutID)
+}
+
+func (service Service) ReleaseCheckout(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	checkoutID string,
+) error {
+	if err := service.Access.Authorize(
+		ctx, identity, projectID, project.PermissionRepoRead,
+	); err != nil {
+		return err
+	}
+	if service.Checkouts == nil || service.Writer == nil {
+		return ErrNotReady
+	}
+	checkout, err := service.Checkouts.GetCheckout(ctx, projectID, checkoutID)
+	if err != nil {
+		return err
+	}
+	if checkout.Status == "active" {
+		repository, err := service.Store.GetByProject(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		if err := service.Writer.Runtime.ReleaseCheckout(
+			ctx, repository, checkout.CheckoutRelpath,
+		); err != nil {
+			_ = service.Checkouts.MarkCheckoutError(ctx, checkout.CheckoutID)
+			return err
+		}
+	}
+	if _, err := service.Checkouts.ReleaseCheckout(
+		ctx, projectID, checkoutID, service.Clock.Now().UTC(),
+	); err != nil {
+		return err
+	}
+	service.record(
+		ctx, "repo.checkout.released", projectID, checkoutID, "success", "",
+	)
+	return nil
+}
+
+func (service Service) Commit(
+	ctx context.Context,
+	caller auth.Identity,
+	request WorkspaceCommitRequest,
+) (CommitResult, error) {
+	if err := service.Access.Authorize(
+		ctx, caller, request.ProjectID, project.PermissionRepoWrite,
+	); err != nil {
+		return CommitResult{}, err
+	}
+	request.ActorID = actorID(caller)
+	request.ActorName = strings.TrimSpace(caller.User.DisplayName)
+	if request.ActorName == "" {
+		request.ActorName = "mmdash"
+	}
+	request.ActorEmail = strings.TrimSpace(caller.User.Email)
+	if request.ActorEmail == "" {
+		request.ActorEmail = request.ActorID + "@users.mmdash.local"
+	}
+	if err := service.validateCommitRequest(&request); err != nil {
+		return CommitResult{}, err
+	}
+	return service.commitTrusted(ctx, request)
+}
+
+func (service Service) commitTrusted(
+	ctx context.Context,
+	request WorkspaceCommitRequest,
+) (result CommitResult, err error) {
+	if service.Commits == nil || service.Writer == nil {
+		return CommitResult{}, ErrNotReady
+	}
+	ownerID, err := service.Generator.New()
+	if err != nil {
+		return CommitResult{}, err
+	}
+	lease := service.WriteLease
+	if lease <= 0 {
+		lease = 5 * time.Minute
+	}
+	claim, err := service.Commits.BeginCommit(
+		ctx, request, "write-"+ownerID, lease, service.Clock.Now().UTC(),
+	)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	result = CommitResult{
+		Branch:            claim.Workspace.RemoteBranch,
+		CommitSHA:         claim.PreparedCommitSHA,
+		PreviousCommitSHA: request.ExpectedHeadSHA,
+		RepositoryID:      claim.Repository.ID, Workspace: request.Workspace,
+	}
+	if claim.AlreadySucceeded {
+		return result, nil
+	}
+	fail := func(operationErr error, action string) {
+		code, _ := safeCommitFailure(operationErr)
+		_ = service.Commits.FailCommit(
+			ctx, claim, code, service.Clock.Now().UTC(),
+		)
+		service.record(
+			ctx, action, request.ProjectID,
+			claim.Repository.ID, "error", code,
+		)
+	}
+	resolved, err := service.Settings.Resolve(
+		ctx, settings.ScopeProject, request.ProjectID, SettingType,
+	)
+	if err != nil {
+		fail(err, "repo.commit.failed")
+		return CommitResult{}, err
+	}
+	config, err := providerConfig(resolved)
+	if err != nil {
+		fail(err, "repo.commit.failed")
+		return CommitResult{}, err
+	}
+	connection, err := service.Providers.Test(ctx, config)
+	if err != nil {
+		fail(err, "repo.commit.failed")
+		return CommitResult{}, err
+	}
+	prepared := claim.PreparedCommitSHA
+	if prepared == "" {
+		commit, prepareErr := service.Writer.Prepare(
+			ctx, claim, connection, request,
+		)
+		if prepareErr != nil {
+			fail(prepareErr, "repo.commit.failed")
+			return CommitResult{}, prepareErr
+		}
+		prepared = commit.CommitSHA
+		if err := service.Commits.SavePreparedCommit(
+			ctx, claim, prepared, service.Clock.Now().UTC(),
+		); err != nil {
+			fail(err, "repo.commit.failed")
+			return CommitResult{}, err
+		}
+		claim.PreparedCommitSHA = prepared
+	}
+	commit, err := service.Writer.PushPrepared(
+		ctx, claim, connection, prepared,
+	)
+	if err != nil {
+		fail(err, "repo.push.failed")
+		return CommitResult{}, err
+	}
+	result.CommitSHA = commit.CommitSHA
+	if err := service.Commits.CompleteCommit(
+		ctx, claim, commit, result, service.Clock.Now().UTC(),
+	); err != nil {
+		fail(err, "repo.commit.failed")
+		return CommitResult{}, err
+	}
+	service.record(
+		ctx, "repo.commit.created", request.ProjectID,
+		commit.CommitSHA, "success", "",
+	)
+	return result, nil
+}
+
+func (service Service) validateCommitRequest(
+	request *WorkspaceCommitRequest,
+) error {
+	if request.ProjectID == "" ||
+		(request.Workspace != WorkspaceCode &&
+			request.Workspace != WorkspaceArticle &&
+			request.Workspace != WorkspaceResult) ||
+		gitcli.ValidateFullSHA(request.ExpectedHeadSHA) != nil ||
+		strings.TrimSpace(request.Message) == "" ||
+		len(request.Message) > 10000 ||
+		strings.TrimSpace(request.IdempotencyKey) == "" ||
+		len(request.IdempotencyKey) > 200 ||
+		len(request.Changes) < 1 ||
+		len(request.Changes) > 100 {
+		return ErrInvalid
+	}
+	paths := map[string]bool{}
+	var total int64
+	for _, change := range request.Changes {
+		if gitcli.ValidateRepoPath(change.Path, false) != nil ||
+			paths[change.Path] ||
+			(change.Operation != "put" && change.Operation != "delete") {
+			return ErrInvalid
+		}
+		paths[change.Path] = true
+		if change.Operation == "delete" && len(change.Content) != 0 {
+			return ErrInvalid
+		}
+		total += int64(len(change.Content))
+	}
+	maxBytes := service.MaxWriteBytes
+	if maxBytes <= 0 {
+		maxBytes = 1024 * 1024
+	}
+	if total > maxBytes {
+		return ErrInvalid
+	}
+	hashInput := struct {
+		ActorID         string
+		Changes         []FileChange
+		ExpectedHeadSHA string
+		IdempotencyKey  string
+		Message         string
+		ProjectID       string
+		Workspace       WorkspaceKind
+	}{
+		ActorID: request.ActorID, Changes: request.Changes,
+		ExpectedHeadSHA: request.ExpectedHeadSHA,
+		IdempotencyKey:  request.IdempotencyKey, Message: request.Message,
+		ProjectID: request.ProjectID, Workspace: request.Workspace,
+	}
+	contents, err := json.Marshal(hashInput)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(contents)
+	request.RequestSHA256 = hex.EncodeToString(sum[:])
+	return nil
 }
 
 func (service Service) TestConnection(
@@ -466,4 +769,35 @@ func safeProviderCode(err error) string {
 	default:
 		return "REPO_CONNECTION_FAILED"
 	}
+}
+
+func safeCommitFailure(err error) (string, string) {
+	var safeError *SafeError
+	switch {
+	case errors.As(err, &safeError):
+		return safeError.Code, safeError.Message
+	case errors.Is(err, ErrHeadChanged):
+		return "REPO_HEAD_CHANGED", "Repository branch head changed"
+	case errors.Is(err, ErrNoChanges):
+		return "REPO_NO_CHANGES", "Repository commit contains no changes"
+	case errors.Is(err, ErrWorktreeDirty):
+		return "REPO_WORKTREE_DIRTY", "Managed repository worktree contains changes"
+	case errors.Is(err, ErrLocked):
+		return "REPO_WRITE_IN_PROGRESS", "Repository write is in progress"
+	case errors.Is(err, provider.ErrAuthentication):
+		return "REPO_AUTH_FAILED", "Repository authentication failed"
+	default:
+		return "REPO_COMMIT_FAILED", "Repository commit failed"
+	}
+}
+
+func actorID(identity auth.Identity) string {
+	for _, candidate := range []string{
+		identity.User.ID, identity.TokenID, identity.SessionID, identity.Kind,
+	} {
+		if strings.TrimSpace(candidate) != "" {
+			return candidate
+		}
+	}
+	return "system"
 }

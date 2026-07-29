@@ -149,8 +149,8 @@ CREATE TABLE repo_checkouts (
 );
 
 CREATE INDEX repo_checkouts_expiry_idx
-    ON repo_checkouts (expires_at)
-    WHERE status = 'active';
+    ON repo_checkouts (status, expires_at)
+    WHERE status IN ('active', 'error');
 
 CREATE TABLE repo_commit_requests (
     repository_id UUID NOT NULL,
@@ -162,6 +162,10 @@ CREATE TABLE repo_commit_requests (
         CHECK (commit_sha IS NULL OR commit_sha ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'),
     status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'failed')),
     error_code TEXT,
+    request_sha256 TEXT NOT NULL CHECK (request_sha256 ~ '^[0-9a-f]{64}$'),
+    actor_id TEXT NOT NULL CHECK (length(actor_id) > 0),
+    locked_by TEXT,
+    lease_expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (repository_id, workspace_kind, idempotency_key),

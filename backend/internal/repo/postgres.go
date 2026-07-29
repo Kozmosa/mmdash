@@ -140,6 +140,53 @@ func (store PostgresStore) GetByHook(ctx context.Context, hookID string) (Reposi
 	`, hookID)
 }
 
+func (store PostgresStore) GetByID(ctx context.Context, repositoryID string) (Repository, error) {
+	return store.get(ctx, `
+		SELECT repository_id, project_id, provider, canonical_remote_url,
+		       display_name, storage_key, default_branch, status,
+		       settings_version, webhook_id, connected_at, last_synced_at,
+		       last_error_code, last_error_message, sync_requested_at,
+		       sync_started_at, sync_locked_by, sync_lease_expires_at,
+		       sync_attempts, next_sync_at, cleanup_after, created_by,
+		       created_at, updated_at
+		FROM repo_repositories
+		WHERE repository_id = $1
+	`, repositoryID)
+}
+
+func (store PostgresStore) ListRepositories(ctx context.Context) ([]Repository, error) {
+	rows, err := store.DB.QueryContext(ctx, `
+		SELECT project_id
+		FROM repo_repositories
+		WHERE status <> 'disconnected'
+		ORDER BY repository_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	projectIDs := []string{}
+	for rows.Next() {
+		var projectID string
+		if err := rows.Scan(&projectID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		projectIDs = append(projectIDs, projectID)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	repositories := make([]Repository, 0, len(projectIDs))
+	for _, projectID := range projectIDs {
+		repository, err := store.GetByProject(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		repositories = append(repositories, repository)
+	}
+	return repositories, nil
+}
+
 func (store PostgresStore) get(ctx context.Context, query, value string) (Repository, error) {
 	repository, err := scanRepository(store.DB.QueryRowContext(ctx, query, value).Scan)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -245,6 +245,48 @@ type Checkout struct {
 	Status          string     `json:"status"`
 }
 
+// FileChange is one ordinary-file mutation in a controlled workspace commit.
+type FileChange struct {
+	Content   []byte
+	Operation string
+	Path      string
+}
+
+// WorkspaceCommitRequest is the authenticated internal write capability.
+type WorkspaceCommitRequest struct {
+	ActorEmail      string
+	ActorID         string
+	ActorName       string
+	Changes         []FileChange
+	ExpectedHeadSHA string
+	IdempotencyKey  string
+	Message         string
+	ProjectID       string
+	RequestSHA256   string
+	Workspace       WorkspaceKind
+}
+
+// CommitResult is returned only after the remote branch accepted the push.
+type CommitResult struct {
+	Branch            string        `json:"branch"`
+	CommitSHA         string        `json:"commit_sha"`
+	PreviousCommitSHA string        `json:"previous_commit_sha"`
+	RepositoryID      string        `json:"repository_id"`
+	Workspace         WorkspaceKind `json:"workspace"`
+}
+
+// CommitClaim owns one idempotent write lease.
+type CommitClaim struct {
+	ActorID           string
+	AlreadySucceeded  bool
+	IdempotencyKey    string
+	Owner             string
+	PreparedCommitSHA string
+	Repository        Repository
+	RequestSHA256     string
+	Workspace         Workspace
+}
+
 func localBranch(kind WorkspaceKind) string {
 	return "mmdash/" + string(kind)
 }
