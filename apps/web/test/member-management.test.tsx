@@ -155,6 +155,35 @@ describe("member management", () => {
     expect(mocks.success).toHaveBeenCalledWith("邀请链接已复制");
   });
 
+  it("does not allow the current user to invite themselves", async () => {
+    render(<MemberManagement />, { wrapper: Providers });
+    fireEvent.change(screen.getByPlaceholderText("member@example.com"), {
+      target: { value: " OWNER@EXAMPLE.COM " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送邀请" }));
+
+    expect(mocks.error).toHaveBeenCalledWith("不能邀请自己");
+    expect(mocks.request).not.toHaveBeenCalledWith(
+      "/projects/project-1/invitations",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("does not invite an existing project member", async () => {
+    render(<MemberManagement />, { wrapper: Providers });
+    await screen.findByText("Team Member");
+    fireEvent.change(screen.getByPlaceholderText("member@example.com"), {
+      target: { value: " MEMBER@EXAMPLE.COM " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送邀请" }));
+
+    expect(mocks.error).toHaveBeenCalledWith("该用户已是项目成员");
+    expect(mocks.request).not.toHaveBeenCalledWith(
+      "/projects/project-1/invitations",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("keeps the owner immutable and transfers ownership explicitly", async () => {
     mocks.confirm.mockReturnValue(true);
     render(<MemberManagement />, { wrapper: Providers });
