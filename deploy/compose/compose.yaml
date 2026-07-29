@@ -144,7 +144,7 @@ services:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health/live"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health/live"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -167,7 +167,7 @@ services:
       web-bff:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -210,7 +210,7 @@ services:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health/live"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3002/health/live"]
       interval: 3s
       timeout: 3s
       retries: 20
