@@ -69,6 +69,8 @@ services:
       CORE_OPENAPI_PATH: /app/contracts/openapi/core.yaml
       # 运行版本，写入 health 与 metrics；生产必须设置为实际发布版本/构建号。
       MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
+      # Webhook 公网基址；生产必须是能从 GitHub 到达的正式 HTTPS 地址。
+      MMDASH_PUBLIC_URL: ${MMDASH_PUBLIC_URL:-http://localhost:3000}
       # Session/API Token 签名密钥；生产必须替换为 Secret 管理器提供的高熵值。
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
       # 浏览器 Session 有效期；生产按安全策略调整。
@@ -95,6 +97,19 @@ services:
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
       # 权威 Artifact Bucket；生产应设置为环境专用 Bucket。
       OBJECT_STORAGE_BUCKET: mmdash
+      # Core 管理的 Git bare repo、长期 worktree 和临时 checkout 根目录。
+      REPO_STORAGE_ROOT: /var/lib/mmdash/repos
+      # Local Git Provider allowlist；空值默认禁用。容器路径用冒号分隔。
+      REPO_LOCAL_ALLOWED_ROOTS: ${REPO_LOCAL_ALLOWED_ROOTS:-}
+      REPO_MAX_CONCURRENT_GIT: ${REPO_MAX_CONCURRENT_GIT:-4}
+      REPO_COMMAND_TIMEOUT: ${REPO_COMMAND_TIMEOUT:-2m}
+      REPO_CLONE_TIMEOUT: ${REPO_CLONE_TIMEOUT:-15m}
+      REPO_SYNC_POLL_INTERVAL: ${REPO_SYNC_POLL_INTERVAL:-2s}
+      REPO_SYNC_LEASE: ${REPO_SYNC_LEASE:-20m}
+      REPO_CHECKOUT_TTL: ${REPO_CHECKOUT_TTL:-1h}
+      REPO_MAX_TEXT_BYTES: ${REPO_MAX_TEXT_BYTES:-1048576}
+      REPO_DISCONNECT_GRACE: ${REPO_DISCONNECT_GRACE:-24h}
+      REPO_ASKPASS_PATH: /usr/local/bin/mmdash-git-askpass
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -107,6 +122,8 @@ services:
       retries: 20
     ports:
       - "8080:8080"
+    volumes:
+      - repo-data:/var/lib/mmdash/repos
 
   web-bff:
     build:
@@ -127,7 +144,7 @@ services:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health/live"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health/live"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -150,7 +167,7 @@ services:
       web-bff:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -185,6 +202,7 @@ services:
       # MCP Gateway 监听端口；生产可保留或按平台端口策略调整。
       MCP_GATEWAY_PORT: 3002
       # 写入 Core Audit 的专用 Token；生产启用 MCP 审计时必须由 Core 签发并注入。
+      MCP_CORE_ACCESS_TOKEN: ${MCP_CORE_ACCESS_TOKEN:-}
       MCP_CORE_AUDIT_TOKEN: ${MCP_CORE_AUDIT_TOKEN:-}
       # MCP Gateway 版本；生产必须与发布版本/构建号保持一致。
       MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
@@ -192,7 +210,7 @@ services:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health/live"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3002/health/live"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -222,3 +240,4 @@ services:
 volumes:
   postgres-data:
   minio-data:
+  repo-data:

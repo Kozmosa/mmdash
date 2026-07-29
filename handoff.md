@@ -1,223 +1,261 @@
-# mmdash v0.1 foundation handoff
+# mmdash v0.1 Stage 1 Repo handoff
 
-更新时间：2026-07-28  
-当前分支：`main`
-
-## 下一个待开发模块
-3.16 登录、注册与成员邀请闭环
-
-## 观察到的问题
-具体项目页面顶部项目名为项目id而不是项目名
-
+更新时间：2026-07-29
+当前分支：`ModuleRepo`
+已合入基线：`b230bd0`（`origin/main`，PR #23）
 
 ## 当前结论
 
-阶段 0 的 3.8–3.15 已实现，并且每个 3.x 节点都有独立提交。设计文档、
-Dockerfile 修复、可检索 API 文档和 3.15 验收脚本均已纳入版本控制。
+Stage 1 Repo 已按 `docs/notion/GOrepo实现.md` 完成完整纵向切片，并通过
+Native、Contract、Docker E2E、Smoke 和 `pnpm check` 验收。Core 仍是唯一
+权威业务状态写入者；BFF、Web、MCP 和 Worker 均未绕过 Core 写业务表。
 
-| 节点 | 提交 | 主要交付 |
-| --- | --- | --- |
-| 3.8 | `5e55cb2` | Auth、团队项目、成员、RBAC、Token 与 Web 项目流程 |
-| 3.9 | `af315e0` | 类型化设置、AES-GCM Secret、连接测试与设置页插槽 |
-| 3.10 | `9bea2f6` | OpenAPI/Schema 生成、兼容性基线、Mock 与模块脚手架 |
-| 3.11 | `e548462` | PostgreSQL Job、租约、心跳、重试、取消与 Python Worker |
-| 3.12 | `81cbb00` | Transactional Outbox、消费者投递、幂等与显式重放 |
-| 3.13 | `940ddcd` | Data Hub 对象注册、时间线、上下文提案与 Home 聚合 |
-| 3.14 | `4d0199e` | 追加式 Audit、脱敏日志、Prometheus 指标与版本信息 |
-| 3.15 | `7b7d52f` | 全链路 smoke、Worker 容器、Compose 集成与静态验收 |
+本阶段的检查点提交：
 
-`docs/design/v0.1/README.md` 是当前设计文档索引。旧
-`mmdash设计文档v0_1.md` 已由作者提供的新版本替代/重命名。
+| 检查点 | 提交      | 主要交付                                                     |
+| ------ | --------- | ------------------------------------------------------------ |
+| 0      | `591c69b` | Repo OpenAPI、事件 Schema、生成客户端、ADR 与 API 目录       |
+| 1      | `ace5e7f` | Migration `000012_repo`、持久化、安全 Git CLI 与受管存储     |
+| 2      | `c9122f2` | GitHub/Local Provider、连接、三工作区映射、同步协调器与恢复  |
+| 3      | `9f1b424` | 固定完整 SHA 的 Commit、Tree、Content 只读接口               |
+| 4      | `ffd496c` | 临时 Checkout、受控 Commit/Push、`ArticleWorkspace` 能力接口 |
+| 5      | `f666a66` | 签名 Webhook、幂等投递、Outbox、Data Hub 投影                |
+| 6      | `337bccc` | BFF、Repo 设置页、只读浏览器与 MCP Data Hub 读取             |
+| 7      | `d83b05c` | 延迟清理、Repo 指标、Git 最低版本与 Go 1.17 镜像兼容         |
 
-## 已完成的开发环境验收
+## 完成范围
 
-- Node 语法检查
-- OpenAPI 与 JSON Schema 契约检查
-- 契约兼容性基线检查
-- API 目录覆盖检查：3 份契约、83 个 operation
-- Caddyfile 入口不变量检查
-- `go test ./...`
-- `go vet ./...`
-- Python Worker：10 个测试通过
-- Ruff lint 与 format check
+- 每个项目可绑定一个 GitHub HTTPS 或管理员允许目录中的 Local Git 仓库；
+- `code`、`article`、`result` 映射到三个互不相同的实际分支，已有 `main`
+  可映射为 `code`；
+- Core 管理 Bare Repository、三个长期 Worktree、同步队列、错误恢复、
+  并发租约和断开后的延迟清理；
+- Commit、Tree 和 Content 的所有读取均固定到 40 位 Commit SHA；
+- 文本、二进制、大文件、Git LFS pointer、symlink 和 submodule 使用安全、
+  明确的只读响应；
+- Core 内部支持固定 SHA Checkout、受控 Commit/Push 和
+  `ArticleWorkspace`，Web/BFF 不暴露写入入口；
+- GitHub Push Webhook 校验 HMAC，按 delivery 幂等处理，并覆盖删除分支和
+  force-push；
+- Repo 业务写入与 `repo.connected`、`repo.commit.detected`、
+  `repo.commit.created` Outbox 事件保持同一事务；
+- Data Hub 提供 Repository、Commit、Code File 投影，MCP `data.list` /
+  `data.read` 通过 Core 做项目权限和审计读取；
+- 设置页支持 Provider、PAT 脱敏、连接测试、工作区映射、状态、同步、
+  Webhook Secret 轮换和断开；
+- 求解记录页支持工作区切换、提交列表/详情、懒加载 ARIA 文件树、完整 SHA
+  URL 固定和只读 Monaco 预览；
+- readiness 检查 PostgreSQL、对象存储、Git `>= 2.20.0` 和 Repo 存储；
+- Prometheus 暴露低基数 Repo operation、duration、sync queue、checkout 和
+  storage 指标。
 
-本机 `node_modules` 曾因中断的 pnpm 安装出现 workspace link/二进制缺失。
-如需执行完整 TypeScript 测试，请先重新运行
-`pnpm install --frozen-lockfile`，不要继续复用损坏的安装目录。
+Stage 1 不实现 Artifact 大文件、Experiment 业务、Article 产品模块或另一套
+CLI Git 管理逻辑；这些边界按设计保留。
 
-## API 文档入口
+## 公共接口与运行配置
 
-从 `docs/api/README.md` 开始检索：
+API 与运行说明从以下文档进入：
 
-- `docs/api/endpoints.md`：全部 HTTP operation 的可搜索目录；
-- `docs/api/auth-projects.md`：Auth、Project、RBAC 与 Token；
-- `docs/api/settings.md`：类型化配置、Secret 和连接测试；
-- `docs/api/jobs.md`：Job/Worker 协议；
-- `docs/api/events.md`：Outbox、消费者和重放；
-- `docs/api/datahub.md`：Object Registry、Timeline、Context 与聚合；
-- `docs/api/audit-observability.md`：Audit、request ID、日志和指标；
-- `docs/api/mcp-tools.md`：MCP Tool；
-- `docs/api/contracts.md`：契约生成和兼容性规则。
+- `docs/api/repo.md`
+- `docs/development/repo.md`
+- `docs/api/endpoints.md`
+- `docs/api/events.md`
+- `docs/api/datahub.md`
+- `docs/api/mcp-tools.md`
 
-修改 API 后执行：
+新增 Migration：
 
-```powershell
-pnpm.cmd contracts:generate
-pnpm.cmd contracts:check
-pnpm.cmd api:check
+- `backend/migrations/000012_repo.up.sql`
+- `backend/migrations/000012_repo.down.sql`
+
+关键配置：
+
+- `REPO_STORAGE_ROOT`
+- `REPO_LOCAL_ALLOWED_ROOTS`
+- `REPO_MAX_CONCURRENT_GIT`
+- `REPO_GIT_TIMEOUT`
+- `REPO_SYNC_POLL_INTERVAL`
+- `REPO_SYNC_LEASE`
+- `REPO_CHECKOUT_TTL`
+- `REPO_CLEANUP_GRACE`
+- `MMDASH_SECRET_KEY`
+
+GitHub PAT 仅通过临时 askpass 环境注入 Git 子进程；API、日志、事件和 Data Hub
+不返回 Secret 或服务器内部检出路径。
+
+## 最终验证
+
+2026-07-29 的最终结果：
+
+- `pnpm contracts:generate`：通过，生成文件新鲜；
+- `pnpm contracts:check`：2 份 OpenAPI 与共享 Schema 通过，兼容性基线通过；
+- `pnpm api:check`：5 份契约、139 个 operation 全部有目录条目；
+- `pnpm lint`：ESLint、Go format、Ruff 全部通过；
+- `go test ./...`：全部通过，Repo 套件约 31 秒；
+- `pnpm check`：退出码 0；全部 lint、TS/Go/Python 测试、构建、契约、API
+  和 Caddyfile 校验通过；
+- Python Worker：13/13 通过，无跳过；仅有不可写 `.pytest_cache` 的非功能性
+  warning；
+- Caddy `v2.11.4`：官方 SHA512 校验后执行，`Valid configuration`；
+- `docker-compose ... config --quiet`：通过；
+- Core Dockerfile 使用实际 Go 1.17 基础镜像构建通过；Stage 1 没有提前处理
+  独立 Issue #19 的仓库级最低 Go 版本决策。
+
+Docker Compose 最终长期服务均为 `healthy`：
+
+- PostgreSQL 16
+- MinIO
+- Core
+- Web BFF
+- Web
+- MCP Gateway
+
+Migration 容器成功应用 `000012_repo` 并以状态 0 退出。Core readiness：
+
+```json
+{
+  "dependencies": {
+    "git": "ready",
+    "object_storage": "ready",
+    "postgres": "ready",
+    "repo_storage": "ready"
+  },
+  "status": "ready"
+}
 ```
 
-## Docker 验收结果
+近期 Core、BFF、Web、MCP 日志未发现 panic/fatal/error，也未发现 PAT、
+Webhook Secret、Git token 或 Authorization header 输出。
 
-3.15 提交之后执行了完整 Docker 测试，符合阶段约束。2026-07-28 的最终
-验收结果：
+## Docker Repo E2E 与 UI 验收
 
-- PostgreSQL、MinIO、Core、Web BFF、Web、MCP Gateway 均为
-  `running (healthy)`；
-- Migration 容器成功应用 `000001`–`000008` 并以状态 0 退出；
-- Worker 镜像通过 Compose 以一次性模式领取并完成 `system.test` Job；
-- 完整 smoke 通过，输出：
+最终命令：
+
+```powershell
+$env:REPO_LOCAL_ALLOWED_ROOTS = "/tmp"
+$env:MMDASH_SMOKE_WORKER_MODE = "docker"
+$env:MMDASH_SMOKE_REPO_MODE = "docker"
+$env:MMDASH_SMOKE_COMPOSE_COMMAND = "docker-compose"
+pnpm smoke
+```
+
+Smoke 使用 Core 容器内唯一 Local Git fixture，覆盖：
+
+- 浏览器登录与项目创建；
+- Local Repo 保存和连接测试；
+- `main/article/result` 三工作区绑定；
+- 首次同步和三工作区 HEAD；
+- 固定 SHA 的 Commit、Tree、Content；
+- 固定 SHA Checkout 创建与释放，且不泄露服务器路径；
+- 外部提交、手工同步、旧 SHA 不变和新 SHA 内容更新；
+- Repo Commit Data Hub 投影与权威读取；
+- Worker Job、Outbox、Audit、metrics、MCP health 和 CLI 启动。
+
+最终输出：
 
 ```json
 {
   "audit_events": 1,
-  "event_id": "ad927fa3-9c91-41f9-9aac-0d8ab83ac057",
-  "job_id": "ea10efbe-675b-4130-a7d8-7c306a18f2a1",
-  "project_id": "df96ef83-c7b2-4978-ac50-93a2092cf883",
+  "event_id": "4667797c-c7ee-4937-85b4-cf91e3b186bf",
+  "job_id": "3501a0bb-2d00-4fb5-a418-1e605bc66a26",
+  "project_id": "e44fb991-a7e7-4c3f-8d26-d115a13ca8e6",
+  "repo": {
+    "code_head": "621cb60729899701462ba1ce9a46e9b974b820aa",
+    "detected_head": "660d2198cc58750507c363b2b53ae409680b5099",
+    "project_id": "6c037298-f6bf-4506-8509-8ae07d24a816",
+    "repository_id": "95d9dc8f-b213-4423-8dae-2f5d108f5756"
+  },
   "status": "passed"
 }
 ```
 
-首次 smoke 暴露并已修复两个仅真实 PostgreSQL 能发现的问题：
+Local Provider 没有 GitHub Webhook，因此 Docker fixture 使用手工同步模拟远端
+推进；HMAC、幂等、分支删除、force-push 和 BFF 原始 body 转发由 Go/BFF 测试
+覆盖。
 
-- Data Hub Project projector 在同一 prepared statement 中将 `$2` 同时推断
-  为 UUID 和 text；现先固定为 UUID，再转换为 source ID text；
-- Outbox 重试 SQL 的 `CASE` 时间参数缺少显式 `timestamptz` 类型，导致失败
-  记录自身无法落库；
-- smoke 现要求 Outbox 至少有一个成功 delivery，避免空数组的 `every()`
-  产生假阳性。
+真实 Chrome 登录后的 UI 截图已目视复核：
 
-`.dockerignore` 同步改为递归排除各语言缓存、虚拟环境和
-`__pycache__`，避免这些本机目录进入 Docker build context。
+- `docs/screenshots/repo-settings.png`
+- `docs/screenshots/repo-browser.png`
 
-交割时整栈仍保持运行，便于继续检查；如不再使用，执行下文的 `down`。
+设置页、完整 SHA、提交列表、文件树和 Monaco 内容均正确，无加载残留、遮挡或
+水平溢出。
 
-## Docker 复验流程
+## 2026-07-29 Base 冲突解决复验
 
-### 1. 构建并启动整栈
+`ModuleRepo` 已合入 `origin/main` 的 `b230bd0`。Project 路由同时保留 Repo
+`/repository` 与基线新增的 `/restore`，测试同时覆盖 Repo 协作角色权限和项目
+回收站/恢复行为；开发文档保留新版基础说明并追加 Repo smoke 指引。
 
-从 `I:\Project\mmdash` 执行：
+基线新增 `000010_invitation_decline` 和 `000011_project_trash` 后，Repo Migration
+顺延为 `000012_repo`。为兼容已经运行过开发分支旧名 `000010_repo` 的保留数据卷，
+`000012_repo.up.sql` 对同一 Repo 表和索引使用幂等创建；验证结果：
 
-```powershell
-docker compose -f deploy/compose/compose.yaml build core migrate web-bff web mcp-gateway
-docker compose -f deploy/compose/compose.yaml build worker
-docker compose -f deploy/compose/compose.yaml up -d
-docker compose -f deploy/compose/compose.yaml ps
+- 保留数据卷成功补记 `000012_repo`，原 Repo 数据无需重建，Migration 容器退出 0；
+- 独立全新数据库依次成功应用 `000010_invitation_decline`、
+  `000011_project_trash`、`000012_repo`，随后删除该临时数据库；
+- `pnpm check` 完整退出 0：Web 36/36、Web BFF 25/25、MCP Gateway 10/10、
+  Python Worker 13/13，以及全部 Go/其他 TypeScript 测试、lint、构建、契约、
+  139 个 API operation 和 Caddy 校验均通过，无测试跳过；
+- Compose 常驻服务全部 `healthy`，Migration 容器退出 0；Core readiness 的 Git、
+  PostgreSQL、Object Storage 和 Repo Storage 均为 `ready`；
+- 最近服务日志未发现 panic、fatal、error 或凭据输出。
+
+合并后 Docker Repo smoke 再次通过：
+
+```json
+{
+  "audit_events": 1,
+  "event_id": "cb09867a-12dc-4119-8ba9-b291aa101ef8",
+  "job_id": "276f221a-82b9-4304-b2b9-0d924634bce8",
+  "project_id": "4f31ed5f-13d9-4bad-8873-d17ccc9b712f",
+  "repo": {
+    "code_head": "d4bcb10dd69e93a1bfbb3ef5c54afad093ca0f2e",
+    "detected_head": "d2a3233d53bfc1d3ee959f9ecad70fc4615ad7f5",
+    "project_id": "a33a445d-e479-42ce-a3ab-b7de7651ef04",
+    "repository_id": "115f2a34-b723-40e6-8625-a12093a6fa3e"
+  },
+  "status": "passed"
+}
 ```
 
-所有长期服务应为 `running`/`healthy`，`migrate` 应为成功退出。
+## 复验与停止
 
-### 2. 执行 3.15 全链路 smoke
+完整复验：
 
 ```powershell
+pnpm contracts:generate
+pnpm check
+
+$env:REPO_LOCAL_ALLOWED_ROOTS = "/tmp"
+docker-compose -f deploy/compose/compose.yaml up -d --build
 $env:MMDASH_SMOKE_WORKER_MODE = "docker"
-pnpm.cmd smoke
-```
-
-如果本机 pnpm 安装仍损坏，但 `clients/cli/dist/main.js` 已存在，可直接执行：
-
-```powershell
-$env:MMDASH_SMOKE_WORKER_MODE = "docker"
-node scripts/smoke.mjs
-```
-
-成功结果会输出 JSON，包含 `status: "passed"`、`project_id`、`job_id`、
-`event_id` 和 `audit_events`。该 smoke 覆盖：
-
-- Web → BFF → Core → PostgreSQL；
-- 浏览器登录、团队项目创建和 Home 聚合；
-- Core 签发 Worker Token，Worker 领取并完成 `system.test` Job；
-- Outbox 发布和消费者成功投递；
-- Data Hub Project 对象与权威内容读取；
-- 跨服务 `request_id` 及可查询 Audit；
-- Core metrics、MCP health 和 CLI shell。
-
-失败时收集：
-
-```powershell
-docker compose -f deploy/compose/compose.yaml ps
-docker compose -f deploy/compose/compose.yaml logs --tail 200 core web-bff web mcp-gateway migrate
+$env:MMDASH_SMOKE_REPO_MODE = "docker"
+$env:MMDASH_SMOKE_COMPOSE_COMMAND = "docker-compose"
+pnpm smoke
 ```
 
 测试后保留数据卷、只停止容器：
 
 ```powershell
-docker compose -f deploy/compose/compose.yaml down
-Remove-Item Env:MMDASH_SMOKE_WORKER_MODE -ErrorAction SilentlyContinue
+docker-compose -f deploy/compose/compose.yaml down
 ```
 
-不要执行 `down -v`，除非明确决定删除本地 PostgreSQL/MinIO 测试数据。
+不要执行 `down -v`，除非明确批准删除 PostgreSQL/MinIO 测试数据。
 
-## 拉起开发环境
+本地测试账号：
 
-### 工具和依赖
+- 账号：`admin@mmdash.local`
+- 密码：`mmdash-local-admin`
 
-- Node.js 24（仓库 `.node-version`）；
-- pnpm 11.9.0（根 `package.json#packageManager`）；
-- Go 1.18+（当前模块仍兼容 Go 1.17）；
-- Python 3.11+、uv；
-- Docker Compose。
+## 已知问题与下一阶段
 
-```powershell
-Set-Location I:\Project\mmdash
-corepack enable
-pnpm.cmd install --frozen-lockfile
-$env:UV_CACHE_DIR = "I:\Project\mmdash\.uv-cache"
-uv sync --all-packages
-```
+- Issue #22 仍跟踪 Worker 测试可靠性；本次完整 Python 套件实际通过，但该问题
+  不属于 Repo 范围；
+- Issue #19 仍跟踪 Go 最低版本统一；本次只保证新增 Repo 代码能在现有 Go 1.17
+  Core Docker 镜像中构建；
+- 当前没有 Redis；Job 继续使用 PostgreSQL `FOR UPDATE SKIP LOCKED`。
 
-只拉起开发依赖：
-
-```powershell
-docker compose -f deploy/compose/compose.yaml up -d postgres minio
-docker compose -f deploy/compose/compose.yaml run --rm migrate
-```
-
-然后按以下文档在独立终端启动进程：
-
-- Core：`docs/development/core.md`
-- Web BFF：`docs/development/web-bff.md`
-- Web：`docs/development/web.md`
-- MCP Gateway：`docs/development/mcp-gateway.md`
-- Worker：`docs/development/worker.md`
-- CLI：`docs/development/cli.md`
-
-常用入口：
-
-```powershell
-pnpm.cmd --filter @mmdash/web-bff dev
-pnpm.cmd --filter @mmdash/web dev
-pnpm.cmd --filter @mmdash/mcp-gateway dev
-pnpm.cmd --filter @mmdash/cli dev -- --version
-uv run --offline --package mmdash-worker mmdash-worker --status
-```
-
-本地进程使用 `localhost` 地址；`.env.example` 中的 `postgres`、`minio`、
-`core` 主机名是 Compose 网络内地址，直接本地运行时应分别改成
-`localhost:5432`、`localhost:9000`、`localhost:8080`。
-
-## 后续开发注意事项
-
-- 不要在下载等待上浪费token降低轮询频次，优先使用镜像而非代理
-- 在commit前再进行docker测试，其他时候进行开发环境测试，数据库和redis的容器可提前拉起用于测试
-- 当前阶段没有 Redis 服务；Job 使用 PostgreSQL
-  `FOR UPDATE SKIP LOCKED`。在后续模块正式声明 Redis 前，不要增加隐式依赖。
-- mmdash 是团队协作平台。项目成员、角色、权限和审计必须保持项目边界，
-  不要退化为单用户本地工具模型。
-- Core 是权威业务状态唯一所有者；BFF、MCP、Worker 不得直连业务表。
-- 业务写入与 Outbox 必须在同一事务内；Worker 结果通过 Core Job API 回传。
-- 新增/修改 HTTP API 时同步 OpenAPI、生成客户端、`docs/api/endpoints.md`
-  和专题 API 文档。
-- 务必告知开发者测试账号和密码
-  - 账号：admin@mmdash.local
-  - 密码：mmdash-local-admin
+单一推荐下一阶段：**Stage 2 Artifact**。先评审权威设计并冻结 Artifact
+OpenAPI/Schema，不要让后续模块各自创建文件表或绕过 Core/Object Storage
+边界。

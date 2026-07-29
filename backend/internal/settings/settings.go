@@ -227,6 +227,7 @@ type ResolvedSetting struct {
 	ScopeID string
 	TypeKey string
 	Values  map[string]interface{}
+	Version int64
 }
 
 // Store is the persistence boundary for encrypted settings.
@@ -475,6 +476,7 @@ func (service Service) Resolve(
 		ScopeID: stored.ScopeID,
 		TypeKey: stored.TypeKey,
 		Values:  values,
+		Version: stored.Version,
 	}, nil
 }
 

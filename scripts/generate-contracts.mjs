@@ -69,6 +69,10 @@ function renderGoHandlerTypes(document) {
     "CreateContextProposalRequest",
     "ReviewContextProposalRequest",
     "RecordAuditEventRequest",
+    "RepoConnectRequest",
+    "RepoUpdateWorkspacesRequest",
+    "RepoCreateCheckoutRequest",
+    "RepoCreateCommitRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {

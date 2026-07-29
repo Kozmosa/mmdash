@@ -30,6 +30,11 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	if config.Outbox.PollInterval != 500*time.Millisecond {
 		t.Fatalf("unexpected Outbox poll interval: %s", config.Outbox.PollInterval)
 	}
+	if config.Repo.MaxConcurrentGit != 4 ||
+		config.Repo.CommandTimeout != 2*time.Minute ||
+		config.Repo.MaxTextBytes != 1024*1024 {
+		t.Fatalf("unexpected Repo defaults: %+v", config.Repo)
+	}
 	if config.Version != "0.1.0" {
 		t.Fatalf("unexpected service version: %s", config.Version)
 	}
@@ -71,6 +76,17 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected invalid Outbox interval to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+		"REPO_MAX_CONCURRENT_GIT":   "0",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid Repo concurrency to fail")
 	}
 }
 

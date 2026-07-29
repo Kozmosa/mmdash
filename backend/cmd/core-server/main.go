@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -31,6 +32,9 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
+	"github.com/mmdash/mmdash/backend/internal/repo"
+	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
+	"github.com/mmdash/mmdash/backend/internal/repo/provider"
 	"github.com/mmdash/mmdash/backend/internal/settings"
 )
 
@@ -192,13 +196,6 @@ func run(logger *logging.Logger) error {
 			return err
 		}
 	}
-	if err := eventBus.Register(eventbus.Consumer{
-		Name:     "datahub.projections",
-		Patterns: projections.Patterns(),
-		Handler:  projections.Handle,
-	}); err != nil {
-		return err
-	}
 	dataService := datahub.Service{
 		Access: projectService, Adapters: dataAdapters,
 		Clock: systemClock, Store: dataStore,
@@ -220,6 +217,50 @@ func run(logger *logging.Logger) error {
 	}); err != nil {
 		return err
 	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return fmt.Errorf("find Git executable: %w", err)
+	}
+	askPassPath, err := exec.LookPath(processConfig.Repo.AskPassPath)
+	if err != nil {
+		return fmt.Errorf("find Repo AskPass executable: %w", err)
+	}
+	repoStorage, err := gitcli.NewStorage(processConfig.Repo.StorageRoot)
+	if err != nil {
+		return fmt.Errorf("initialize Repo storage: %w", err)
+	}
+	gitOutputBytes := int(processConfig.Repo.MaxTextBytes)
+	if gitOutputBytes < 16*1024*1024 {
+		gitOutputBytes = 16 * 1024 * 1024
+	}
+	gitClient, err := gitcli.NewClient(
+		gitPath,
+		askPassPath,
+		processConfig.Repo.CommandTimeout,
+		processConfig.Repo.MaxConcurrentGit,
+		gitOutputBytes,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Git runtime: %w", err)
+	}
+	repoProviders := provider.NewRegistry()
+	if err := repoProviders.Register("github", provider.GitHub{
+		Git: gitClient, RuntimeRoot: repoStorage.Root(),
+		UserAgent: "mmdash-core/" + processConfig.Version,
+	}); err != nil {
+		return err
+	}
+	if err := repoProviders.Register("local", provider.Local{
+		AllowedRoots: processConfig.Repo.LocalAllowedRoots,
+		Git:          gitClient,
+	}); err != nil {
+		return err
+	}
+	if err := settingsRegistry.Register(repo.SettingDefinition(
+		repo.ConnectionTester{Providers: repoProviders},
+	)); err != nil {
+		return err
+	}
 	settingsService := settings.Service{
 		Access:   settings.AccessPolicy{Projects: projectService},
 		Clock:    systemClock,
@@ -234,6 +275,99 @@ func run(logger *logging.Logger) error {
 		},
 	}
 	authService.Policy = registrationSettingsPolicy{Store: settingsService.Store}
+	repoStore := repo.PostgresStore{
+		Clock: systemClock, DB: db, Generator: idGenerator,
+		Outbox: outboxWriter, Transaction: transactionManager,
+	}
+	repoRuntime := repo.Runtime{
+		Clock: systemClock, CloneTimeout: processConfig.Repo.CloneTimeout,
+		Git: gitClient, Storage: repoStorage,
+	}
+	repoWriter := &repo.WorkspaceWriter{
+		Clock: systemClock, Git: gitClient,
+		Runtime: repoRuntime, Storage: repoStorage,
+	}
+	repoService := repo.Service{
+		Access: projectService, Audit: auditRecorder,
+		Checkouts: repoStore, CheckoutTTL: processConfig.Repo.CheckoutTTL,
+		Clock: systemClock, Commits: repoStore,
+		DisconnectGrace: processConfig.Repo.DisconnectGrace,
+		Generator:       idGenerator,
+		MaxWriteBytes:   processConfig.Repo.MaxTextBytes,
+		Providers:       repoProviders,
+		PublicURL:       processConfig.PublicURL,
+		Reads: &repo.Reader{
+			Clock: systemClock, Git: gitClient,
+			MaxTextBytes: processConfig.Repo.MaxTextBytes,
+			Storage:      repoStorage,
+		},
+		Settings: settingsService,
+		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
+		Webhooks: repoStore, Writer: repoWriter,
+	}
+	repoModule := repo.Module{Service: repoService}
+	repoDataReader := repo.DataHubReaderAdapter{Service: &repoService}
+	if err := dataAdapters.Register("repository", datahub.ReaderFunc(
+		func(
+			ctx context.Context,
+			caller auth.Identity,
+			object datahub.Object,
+		) (interface{}, error) {
+			return repoDataReader.Repository(
+				ctx, caller, object.ProjectID,
+			)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("repo_commit", datahub.ReaderFunc(
+		func(
+			ctx context.Context,
+			caller auth.Identity,
+			object datahub.Object,
+		) (interface{}, error) {
+			return repoDataReader.Commit(
+				ctx, caller, object.ProjectID, object.Metadata,
+			)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("repo_file", datahub.ReaderFunc(
+		func(
+			ctx context.Context,
+			caller auth.Identity,
+			object datahub.Object,
+		) (interface{}, error) {
+			return repoDataReader.File(
+				ctx, caller, object.ProjectID, object.Metadata,
+			)
+		},
+	)); err != nil {
+		return err
+	}
+	repoProjector := repo.DataHubProjector{
+		BatchSize:    200,
+		Reader:       repoService.Reads,
+		Repositories: repoStore,
+		Sink:         dataStore,
+	}
+	for _, eventType := range []string{
+		"repo.connected", "repo.commit.created", "repo.commit.detected",
+	} {
+		if err := projections.Register(
+			eventType, datahub.ProjectorFunc(repoProjector.Project),
+		); err != nil {
+			return err
+		}
+	}
+	if err := eventBus.Register(eventbus.Consumer{
+		Name:     "datahub.projections",
+		Patterns: projections.Patterns(),
+		Handler:  projections.Handle,
+	}); err != nil {
+		return err
+	}
 	jobService := jobs.Service{
 		Auth:     authService,
 		Clock:    systemClock,
@@ -262,7 +396,13 @@ func run(logger *logging.Logger) error {
 	if err := modules.Register(example.New(example.PostgresChecker{DB: db})); err != nil {
 		return err
 	}
-	if err := modules.Register(project.Module{Service: *projectService}); err != nil {
+	if err := modules.Register(project.Module{
+		Repository: repoModule.ProjectHandler(),
+		Service:    *projectService,
+	}); err != nil {
+		return err
+	}
+	if err := modules.Register(repoModule); err != nil {
 		return err
 	}
 	if err := modules.Register(jobs.Module{Service: jobService}); err != nil {
@@ -307,6 +447,8 @@ func run(logger *logging.Logger) error {
 			Checkers: []health.Checker{
 				database.Checker{DB: db},
 				storage,
+				repo.GitChecker{Client: gitClient, Directory: repoStorage.Root()},
+				repo.StorageChecker{Storage: repoStorage},
 			},
 			Version: processConfig.Version,
 		},
@@ -336,6 +478,62 @@ func run(logger *logging.Logger) error {
 			"error": processorErr.Error(),
 		})
 	})
+	syncOwnerID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Repo sync owner identity: %w", err)
+	}
+	if err := (repo.Reconciler{
+		Checkouts: repoStore, Clock: systemClock,
+		Repositories: repoStore, Runtime: repoRuntime,
+	}).Run(ctx); err != nil {
+		return fmt.Errorf("reconcile Repo worktrees: %w", err)
+	}
+	repoCoordinator := repo.Coordinator{
+		BatchSize: processConfig.Repo.MaxConcurrentGit,
+		Clock:     systemClock,
+		Lease:     processConfig.Repo.SyncLease,
+		Metrics:   metricRegistry,
+		OnError: func(syncErr error) {
+			logger.Error("repo.sync.failed", map[string]interface{}{
+				"error": syncErr.Error(),
+			})
+		},
+		Owner:     "core-" + syncOwnerID,
+		Poll:      processConfig.Repo.SyncPollInterval,
+		Providers: repoProviders,
+		Runtime:   repoRuntime,
+		Settings:  settingsService,
+		Store:     repoStore,
+	}
+	go repoCoordinator.Run(ctx)
+	go (repo.CheckoutReaper{
+		Clock: systemClock, Interval: time.Minute, Limit: 50,
+		OnError: func(checkoutErr error) {
+			logger.Error("repo.checkout.cleanup.failed", map[string]interface{}{
+				"error": checkoutErr.Error(),
+			})
+		},
+		Repositories: repoStore, Runtime: repoRuntime, Store: repoStore,
+	}).Run(ctx)
+	go (repo.CleanupReaper{
+		Clock: systemClock, Interval: time.Minute, Lease: 5 * time.Minute,
+		Limit: 10, Metrics: metricRegistry,
+		OnError: func(cleanupErr error) {
+			logger.Error("repo.storage.cleanup.failed", map[string]interface{}{
+				"error": cleanupErr.Error(),
+			})
+		},
+		Storage: repoStorage, Store: repoStore,
+	}).Run(ctx)
+	go (repo.MetricsCollector{
+		Clock: systemClock, Interval: time.Minute, Metrics: metricRegistry,
+		OnError: func(metricsErr error) {
+			logger.Error("repo.metrics.collection.failed", map[string]interface{}{
+				"error": metricsErr.Error(),
+			})
+		},
+		Storage: repoStorage, Store: repoStore,
+	}).Run(ctx)
 
 	return server.New(
 		processConfig.Addr,
