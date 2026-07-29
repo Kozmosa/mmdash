@@ -350,6 +350,113 @@ func (store PostgresStore) Disconnect(
 	return requireAffected(result, err)
 }
 
+// ClaimCleanup leases disconnected repositories whose grace period elapsed.
+func (store PostgresStore) ClaimCleanup(
+	ctx context.Context,
+	now time.Time,
+	lease time.Duration,
+	limit int,
+) ([]Repository, error) {
+	rows, err := store.DB.QueryContext(ctx, `
+		WITH candidates AS (
+			SELECT repository_id
+			FROM repo_repositories
+			WHERE status = 'disconnected'
+			  AND cleanup_after IS NOT NULL
+			  AND cleanup_after <= $1
+			ORDER BY cleanup_after, repository_id
+			FOR UPDATE SKIP LOCKED
+			LIMIT $2
+		)
+		UPDATE repo_repositories AS repository
+		SET cleanup_after = $3, updated_at = $1
+		FROM candidates
+		WHERE repository.repository_id = candidates.repository_id
+		RETURNING repository.repository_id
+	`, now.UTC(), limit, now.UTC().Add(lease))
+	if err != nil {
+		return nil, wrap("claim repository cleanup", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var repositoryID string
+		if err := rows.Scan(&repositoryID); err != nil {
+			return nil, wrap("scan repository cleanup claim", err)
+		}
+		ids = append(ids, repositoryID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrap("iterate repository cleanup claims", err)
+	}
+	repositories := make([]Repository, 0, len(ids))
+	for _, repositoryID := range ids {
+		repository, err := store.GetByID(ctx, repositoryID)
+		if err != nil {
+			return nil, err
+		}
+		repositories = append(repositories, repository)
+	}
+	return repositories, nil
+}
+
+// CompleteCleanup deletes metadata only after managed storage is absent.
+func (store PostgresStore) CompleteCleanup(
+	ctx context.Context,
+	repositoryID string,
+) error {
+	result, err := store.DB.ExecContext(ctx, `
+		DELETE FROM repo_repositories
+		WHERE repository_id = $1 AND status = 'disconnected'
+	`, repositoryID)
+	return requireAffected(result, err)
+}
+
+// RetryCleanup reschedules a failed managed-storage cleanup.
+func (store PostgresStore) RetryCleanup(
+	ctx context.Context,
+	repositoryID string,
+	retryAt time.Time,
+	now time.Time,
+) error {
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE repo_repositories
+		SET cleanup_after = $2, updated_at = $3
+		WHERE repository_id = $1 AND status = 'disconnected'
+	`, repositoryID, retryAt.UTC(), now.UTC())
+	return requireAffected(result, err)
+}
+
+// RepoGaugeSnapshot returns only aggregate queue and checkout counts.
+func (store PostgresStore) RepoGaugeSnapshot(
+	ctx context.Context,
+	now time.Time,
+) (RepoGaugeSnapshot, error) {
+	var snapshot RepoGaugeSnapshot
+	err := store.DB.QueryRowContext(ctx, `
+		SELECT
+			(
+				SELECT count(*)
+				FROM repo_repositories
+				WHERE status <> 'disconnected'
+				  AND sync_requested_at IS NOT NULL
+				  AND next_sync_at <= $1
+			),
+			(
+				SELECT count(*)
+				FROM repo_checkouts
+				WHERE status = 'active'
+			)
+	`, now.UTC()).Scan(
+		&snapshot.SyncQueueDepth,
+		&snapshot.CheckoutsActive,
+	)
+	if err != nil {
+		return RepoGaugeSnapshot{}, wrap("read repository metrics", err)
+	}
+	return snapshot, nil
+}
+
 func (store PostgresStore) ClaimSync(
 	ctx context.Context,
 	owner string,

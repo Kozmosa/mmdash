@@ -135,7 +135,7 @@ func parseRemoteHeads(contents []byte) (map[string]string, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		sha, ref, found := strings.Cut(strings.TrimSpace(line), "\t")
+		sha, ref, found := splitOnce(strings.TrimSpace(line), "\t")
 		if !found || !strings.HasPrefix(ref, "refs/heads/") ||
 			gitcli.ValidateFullSHA(sha) != nil {
 			return nil, fmt.Errorf("invalid ls-remote output")

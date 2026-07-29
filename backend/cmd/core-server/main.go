@@ -491,6 +491,7 @@ func run(logger *logging.Logger) error {
 		BatchSize: processConfig.Repo.MaxConcurrentGit,
 		Clock:     systemClock,
 		Lease:     processConfig.Repo.SyncLease,
+		Metrics:   metricRegistry,
 		OnError: func(syncErr error) {
 			logger.Error("repo.sync.failed", map[string]interface{}{
 				"error": syncErr.Error(),
@@ -512,6 +513,25 @@ func run(logger *logging.Logger) error {
 			})
 		},
 		Repositories: repoStore, Runtime: repoRuntime, Store: repoStore,
+	}).Run(ctx)
+	go (repo.CleanupReaper{
+		Clock: systemClock, Interval: time.Minute, Lease: 5 * time.Minute,
+		Limit: 10, Metrics: metricRegistry,
+		OnError: func(cleanupErr error) {
+			logger.Error("repo.storage.cleanup.failed", map[string]interface{}{
+				"error": cleanupErr.Error(),
+			})
+		},
+		Storage: repoStorage, Store: repoStore,
+	}).Run(ctx)
+	go (repo.MetricsCollector{
+		Clock: systemClock, Interval: time.Minute, Metrics: metricRegistry,
+		OnError: func(metricsErr error) {
+			logger.Error("repo.metrics.collection.failed", map[string]interface{}{
+				"error": metricsErr.Error(),
+			})
+		},
+		Storage: repoStorage, Store: repoStore,
 	}).Run(ctx)
 
 	return server.New(

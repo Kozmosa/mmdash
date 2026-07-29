@@ -121,3 +121,11 @@ func validateMappings(config Config) error {
 	}
 	return nil
 }
+
+func splitOnce(value, separator string) (string, string, bool) {
+	index := strings.Index(value, separator)
+	if index < 0 {
+		return value, "", false
+	}
+	return value[:index], value[index+len(separator):], true
+}

@@ -29,6 +29,7 @@ type Coordinator struct {
 	BatchSize  int
 	Clock      interface{ Now() time.Time }
 	Lease      time.Duration
+	Metrics    MetricSink
 	OnError    func(error)
 	Owner      string
 	Poll       time.Duration
@@ -107,6 +108,18 @@ func (coordinator Coordinator) RunOnce(ctx context.Context) error {
 }
 
 func (coordinator Coordinator) process(ctx context.Context, claim SyncClaim) error {
+	startedAt := time.Now()
+	outcome := "error"
+	defer func() {
+		if coordinator.Metrics != nil {
+			coordinator.Metrics.ObserveRepoOperation(
+				"sync",
+				outcome,
+				string(claim.Repository.Provider),
+				time.Since(startedAt),
+			)
+		}
+	}()
 	syncContext, cancel := context.WithCancel(ctx)
 	leaseDone := make(chan struct{})
 	go coordinator.renewLease(syncContext, cancel, claim.Repository.ID, leaseDone)
@@ -134,10 +147,14 @@ func (coordinator Coordinator) process(ctx context.Context, claim SyncClaim) err
 					result.Source = source
 					cancel()
 					<-leaseDone
-					return coordinator.Store.CompleteSync(
+					err = coordinator.Store.CompleteSync(
 						ctx, coordinator.Owner, claim, result,
 						coordinator.Clock.Now().UTC(),
 					)
+					if err == nil {
+						outcome = "success"
+					}
+					return err
 				}
 			}
 		}

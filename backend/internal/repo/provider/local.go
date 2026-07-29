@@ -61,7 +61,7 @@ func parseLocalBranches(contents []byte) (map[string]string, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		sha, name, found := strings.Cut(strings.TrimSpace(line), "\t")
+		sha, name, found := splitOnce(strings.TrimSpace(line), "\t")
 		if !found ||
 			gitcli.ValidateFullSHA(sha) != nil ||
 			gitcli.ValidateBranch(name) != nil {

@@ -121,7 +121,7 @@ func ParseTree(contents []byte) ([]TreeEntry, error) {
 		if record == "" {
 			continue
 		}
-		header, path, found := strings.Cut(record, "\t")
+		header, path, found := splitOnce(record, "\t")
 		if !found || path == "" {
 			return nil, fmt.Errorf("parse tree: missing path")
 		}
@@ -198,7 +198,7 @@ func ParseWorktrees(contents []byte) ([]Worktree, error) {
 			continue
 		}
 		hasCurrent = true
-		key, value, _ := strings.Cut(field, " ")
+		key, value, _ := splitOnce(field, " ")
 		switch key {
 		case "worktree":
 			current.Path = value
@@ -218,6 +218,14 @@ func ParseWorktrees(contents []byte) ([]Worktree, error) {
 		return nil, err
 	}
 	return worktrees, nil
+}
+
+func splitOnce(value, separator string) (string, string, bool) {
+	index := strings.Index(value, separator)
+	if index < 0 {
+		return value, "", false
+	}
+	return value[:index], value[index+len(separator):], true
 }
 
 func nulFields(contents []byte) []string {
