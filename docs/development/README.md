@@ -5,6 +5,7 @@
 - Node.js 24 or newer and pnpm 11
 - Go 1.18 or newer (the modules remain buildable with Go 1.17 during bootstrap)
 - Python 3.11 or newer and uv
+- Caddy 2.10 or newer
 - Docker Compose
 
 Copy `.env.example` to `.env`, then install and verify all workspaces:
@@ -35,8 +36,7 @@ Run the complete baseline on Windows or Linux without Docker with the
 global prerequisite and keeps service data and toolchains under `.testenv`.
 
 The production-shaped public entry is defined only in the repository-root
-`Caddyfile`, using `mmdash.com`. If Caddy 2.10 or newer is installed, validate
-it without starting services:
+`Caddyfile`, using `mmdash.com`. Validate it without starting services:
 
 ```bash
 caddy validate --config Caddyfile --adapter caddyfile
@@ -59,7 +59,7 @@ DATABASE_URL=postgres://mmdash:mmdash@localhost:5432/mmdash?sslmode=disable pnpm
 | `pnpm api:check`                              | Check OpenAPI operations against the API catalog   |
 | `pnpm contracts:generate`                     | Regenerate TypeScript and Go contract outputs      |
 | `pnpm contracts:check`                        | Validate schemas, mocks, generation, compatibility |
-| `pnpm foundation:check`                       | Validate stage-3.15 static and process foundations  |
+| `pnpm caddy:check`                            | Validate ingress invariants and Caddyfile syntax   |
 | `pnpm commit:check -- "feat(scope): summary"` | Validate a commit subject                          |
 
 ## Create a module

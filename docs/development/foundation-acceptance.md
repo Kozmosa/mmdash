@@ -1,6 +1,6 @@
 # Stage 3.15 technical-foundation acceptance
 
-Search terms: stage 3.15, foundation check, smoke, Docker Compose, login,
+Search terms: stage 3.15, smoke, Docker Compose, login,
 project creation, Worker, Job, Outbox, Data Hub, Audit, request ID, CI.
 
 Stage 3.15 proves that the technical foundation is integrated. It does not
@@ -11,7 +11,6 @@ claim that later product modules are implemented.
 Run without the full Docker stack while implementing a 3.x node:
 
 ```powershell
-node scripts/check-stage-3.15.mjs
 node scripts/check-contracts.mjs
 node scripts/check-contract-compat.mjs
 node scripts/check-api-docs.mjs
@@ -19,10 +18,6 @@ Set-Location backend
 go test ./...
 go vet ./...
 ```
-
-`foundation:check` verifies the top-level layout, declared Compose services,
-Node 24 CI contract, CLI shell, Worker shell, and that runtime smoke covers
-every stage-3.15 boundary.
 
 ## Start dependencies for development
 
@@ -80,17 +75,17 @@ docker compose -f deploy/compose/compose.yaml down
 
 ## Evidence matrix
 
-| Requirement | Runtime evidence in `pnpm smoke` |
-| --- | --- |
-| Services start | Web, Core, BFF, MCP health plus CLI/Worker process checks |
-| Login and empty project | Browser login and BFF project creation |
-| Web → BFF → Core → PostgreSQL | `/api/example`, project, and home aggregation |
-| MCP Gateway and CLI shell | MCP liveness and `mmdash --version` |
-| Worker claims test Job | Core-issued API token plus `system.test` one-shot Worker |
-| Outbox delivery | `system.test.emitted` reaches successful delivery |
-| Data Hub object | `project.created` projection plus `data.read` routing |
-| Request ID and Audit | BFF-preserved ID queried from append-only Core Audit |
-| CI | Node 24 workflow and `pnpm check`, including `foundation:check` |
+| Requirement                   | Runtime evidence in `pnpm smoke`                          |
+| ----------------------------- | --------------------------------------------------------- |
+| Services start                | Web, Core, BFF, MCP health plus CLI/Worker process checks |
+| Login and empty project       | Browser login and BFF project creation                    |
+| Web → BFF → Core → PostgreSQL | `/api/example`, project, and home aggregation             |
+| MCP Gateway and CLI shell     | MCP liveness and `mmdash --version`                       |
+| Worker claims test Job        | Core-issued API token plus `system.test` one-shot Worker  |
+| Outbox delivery               | `system.test.emitted` reaches successful delivery         |
+| Data Hub object               | `project.created` projection plus `data.read` routing     |
+| Request ID and Audit          | BFF-preserved ID queried from append-only Core Audit      |
+| CI                            | Node 24 workflow and `pnpm check`                         |
 
 Smoke creates isolated records with a timestamped name and idempotency key. It
 polls asynchronous state once per second and stops after 30 attempts.
