@@ -3,12 +3,90 @@
 ## Prerequisites
 
 - Node.js 24 or newer and pnpm 11
-- Go 1.18 or newer (the modules remain buildable with Go 1.17 during bootstrap)
+- Go 1.18 or newer (the backend module remains runnable with Go 1.17)
 - Python 3.11 or newer and uv
-- Caddy 2.10 or newer
 - Docker Compose
 
-Copy `.env.example` to `.env`, then install and verify all workspaces:
+Caddy 2.10 or newer is optional for validating the production-shaped public
+entry point.
+
+## One-command development environment
+
+The one-command environment runs PostgreSQL and MinIO in Docker, then runs the
+hot-reloading application services natively:
+
+| Component     | Runtime              | Local address           |
+| ------------- | -------------------- | ----------------------- |
+| Web           | Next.js              | `http://localhost:3000` |
+| Web BFF       | TypeScript / Node.js | `http://localhost:3001` |
+| Core          | Go                   | `http://localhost:8080` |
+| MCP Gateway   | TypeScript / Node.js | `http://localhost:3002` |
+| Worker        | Python / uv          | Core Job API            |
+| PostgreSQL    | Docker Compose       | `localhost:5432`        |
+| MinIO API     | Docker Compose       | `http://localhost:9000` |
+| MinIO Console | Docker Compose       | `http://localhost:9001` |
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\dev.ps1
+```
+
+If the local execution policy blocks scripts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1
+```
+
+On Linux, macOS, or WSL:
+
+```bash
+bash ./scripts/dev.sh
+```
+
+The script reads `.env` when present, installs the pnpm and uv workspaces,
+starts and waits for PostgreSQL and MinIO, applies Go migrations, starts every
+application process, and waits for their health endpoints. If
+`MMDASH_WORKER_API_TOKEN` is not configured, it logs in as the bootstrap admin
+and creates a temporary unscoped development API token for the Python Worker;
+that token is revoked when the script exits.
+
+Press `Ctrl+C` to stop the native application processes. PostgreSQL and MinIO
+remain available for fast restarts. Stop them and remove the Compose network
+with either wrapper:
+
+```powershell
+.\scripts\dev.ps1 --down
+```
+
+```bash
+bash ./scripts/dev.sh --down
+```
+
+Useful optional flags:
+
+- `--check` starts the full environment, verifies every health endpoint, and
+  then stops the native processes.
+- `--skip-install` skips `pnpm install` and `uv sync` when dependencies are
+  already current.
+- `--skip-worker` starts the stack without the Python Worker.
+- `--help` prints all supported options.
+
+Copy `.env.example` to `.env` only when you need to customize local
+credentials or settings. The native services always use the host-published
+PostgreSQL and MinIO ports; set `MMDASH_DEV_DATABASE_URL` or
+`MMDASH_DEV_OBJECT_STORAGE_ENDPOINT` to override those native endpoints.
+
+After the environment reports ready, verify the complete example path from a
+second terminal:
+
+```bash
+pnpm smoke
+```
+
+## Install and verify
+
+To install and verify all workspaces without starting services:
 
 ```bash
 pnpm install
@@ -16,7 +94,10 @@ uv sync --all-packages
 pnpm check
 ```
 
-## Run the baseline
+## Run the containerized baseline
+
+The existing package command builds and runs the application services as
+containers instead of native hot-reloading processes:
 
 ```bash
 pnpm dev

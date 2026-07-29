@@ -8,11 +8,13 @@ Stage 3.16 adds the following account and collaboration operations:
 
 - Core: `auth.register`, `auth.me.update`, `auth.me.password.update`,
   `auth.invitations.preview`, `auth.invitations.accept`,
+  `auth.invitations.reject`,
   `projects.members.upsert`, `projects.invitations.list`,
   `projects.invitations.create`, and `projects.invitations.revoke`.
 - Web BFF: `bff.auth.register`, `bff.auth.me.update`,
   `bff.auth.me.password.update`, `bff.auth.invitations.preview`,
-  `bff.auth.invitations.accept`, `bff.projects.members.upsert`,
+  `bff.auth.invitations.accept`, `bff.auth.invitations.reject`,
+  `bff.projects.members.upsert`,
   `bff.projects.invitations.list`, `bff.projects.invitations.create`, and
   `bff.projects.invitations.revoke`.
 
@@ -31,8 +33,11 @@ Stage 3.16 adds the following account and collaboration operations:
 | Core        | HTTP          | `DELETE`      | `/v1/auth/tokens/{tokenId}`                                           | `auth.tokens.revoke`               | auth                 | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects`                                                        | `projects.list`                    | project              | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/projects`                                                        | `projects.create`                  | project              | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/trash`                                                  | `projects.trash.list`              | project              | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}`                                            | `projects.get`                     | project              | `core.yaml`        |
 | Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}`                                            | `projects.update`                  | project              | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}`                                            | `projects.trash`                   | project              | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/restore`                                    | `projects.restore`                 | project              | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/members`                                    | `projects.members.list`            | project              | `core.yaml`        |
 | Core        | HTTP          | `PUT`         | `/v1/projects/{projectId}/members/{userId}`                           | `projects.members.upsert`          | project              | `core.yaml`        |
 | Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/members/{userId}`                           | `projects.members.remove`          | project              | `core.yaml`        |
@@ -78,8 +83,11 @@ Stage 3.16 adds the following account and collaboration operations:
 | Web BFF     | HTTP          | `POST`        | `/api/auth/logout`                                                    | `bff.auth.logout`                  | auth                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects`                                                       | `bff.projects.list`                | project              | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects`                                                       | `bff.projects.create`              | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/trash`                                                 | `bff.projects.trash.list`          | project              | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}`                                           | `bff.projects.get`                 | project              | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}`                                           | `bff.projects.update`              | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}`                                           | `bff.projects.trash`               | project              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/restore`                                   | `bff.projects.restore`             | project              | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/members`                                   | `bff.projects.members.list`        | project              | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `PUT`         | `/api/projects/{projectId}/members/{userId}`                          | `bff.projects.members.upsert`      | project              | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/members/{userId}`                          | `bff.projects.members.remove`      | project              | `web-bff.yaml`     |

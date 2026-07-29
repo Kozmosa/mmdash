@@ -2,7 +2,7 @@
 
 更新时间：2026-07-29
 当前分支：`ModuleRepo`
-基线：`fc79740`（`main` / `origin/main`）
+已合入基线：`b230bd0`（`origin/main`，PR #23）
 
 ## 当前结论
 
@@ -15,7 +15,7 @@ Native、Contract、Docker E2E、Smoke 和 `pnpm check` 验收。Core 仍是唯�
 | 检查点 | 提交      | 主要交付                                                     |
 | ------ | --------- | ------------------------------------------------------------ |
 | 0      | `591c69b` | Repo OpenAPI、事件 Schema、生成客户端、ADR 与 API 目录       |
-| 1      | `ace5e7f` | Migration `000010_repo`、持久化、安全 Git CLI 与受管存储     |
+| 1      | `ace5e7f` | Migration `000012_repo`、持久化、安全 Git CLI 与受管存储     |
 | 2      | `c9122f2` | GitHub/Local Provider、连接、三工作区映射、同步协调器与恢复  |
 | 3      | `9f1b424` | 固定完整 SHA 的 Commit、Tree、Content 只读接口               |
 | 4      | `ffd496c` | 临时 Checkout、受控 Commit/Push、`ArticleWorkspace` 能力接口 |
@@ -65,8 +65,8 @@ API 与运行说明从以下文档进入：
 
 新增 Migration：
 
-- `backend/migrations/000010_repo.up.sql`
-- `backend/migrations/000010_repo.down.sql`
+- `backend/migrations/000012_repo.up.sql`
+- `backend/migrations/000012_repo.down.sql`
 
 关键配置：
 
@@ -89,7 +89,7 @@ GitHub PAT 仅通过临时 askpass 环境注入 Git 子进程；API、日志、�
 
 - `pnpm contracts:generate`：通过，生成文件新鲜；
 - `pnpm contracts:check`：2 份 OpenAPI 与共享 Schema 通过，兼容性基线通过；
-- `pnpm api:check`：5 份契约、131 个 operation 全部有目录条目；
+- `pnpm api:check`：5 份契约、139 个 operation 全部有目录条目；
 - `pnpm lint`：ESLint、Go format、Ruff 全部通过；
 - `go test ./...`：全部通过，Repo 套件约 31 秒；
 - `pnpm check`：退出码 0；全部 lint、TS/Go/Python 测试、构建、契约、API
@@ -110,7 +110,7 @@ Docker Compose 最终长期服务均为 `healthy`：
 - Web
 - MCP Gateway
 
-Migration 容器成功应用 `000010_repo` 并以状态 0 退出。Core readiness：
+Migration 容器成功应用 `000012_repo` 并以状态 0 退出。Core readiness：
 
 ```json
 {
@@ -180,6 +180,44 @@ Local Provider 没有 GitHub Webhook，因此 Docker fixture 使用手工同步�
 
 设置页、完整 SHA、提交列表、文件树和 Monaco 内容均正确，无加载残留、遮挡或
 水平溢出。
+
+## 2026-07-29 Base 冲突解决复验
+
+`ModuleRepo` 已合入 `origin/main` 的 `b230bd0`。Project 路由同时保留 Repo
+`/repository` 与基线新增的 `/restore`，测试同时覆盖 Repo 协作角色权限和项目
+回收站/恢复行为；开发文档保留新版基础说明并追加 Repo smoke 指引。
+
+基线新增 `000010_invitation_decline` 和 `000011_project_trash` 后，Repo Migration
+顺延为 `000012_repo`。为兼容已经运行过开发分支旧名 `000010_repo` 的保留数据卷，
+`000012_repo.up.sql` 对同一 Repo 表和索引使用幂等创建；验证结果：
+
+- 保留数据卷成功补记 `000012_repo`，原 Repo 数据无需重建，Migration 容器退出 0；
+- 独立全新数据库依次成功应用 `000010_invitation_decline`、
+  `000011_project_trash`、`000012_repo`，随后删除该临时数据库；
+- `pnpm check` 完整退出 0：Web 36/36、Web BFF 25/25、MCP Gateway 10/10、
+  Python Worker 13/13，以及全部 Go/其他 TypeScript 测试、lint、构建、契约、
+  139 个 API operation 和 Caddy 校验均通过，无测试跳过；
+- Compose 常驻服务全部 `healthy`，Migration 容器退出 0；Core readiness 的 Git、
+  PostgreSQL、Object Storage 和 Repo Storage 均为 `ready`；
+- 最近服务日志未发现 panic、fatal、error 或凭据输出。
+
+合并后 Docker Repo smoke 再次通过：
+
+```json
+{
+  "audit_events": 1,
+  "event_id": "cb09867a-12dc-4119-8ba9-b291aa101ef8",
+  "job_id": "276f221a-82b9-4304-b2b9-0d924634bce8",
+  "project_id": "4f31ed5f-13d9-4bad-8873-d17ccc9b712f",
+  "repo": {
+    "code_head": "d4bcb10dd69e93a1bfbb3ef5c54afad093ca0f2e",
+    "detected_head": "d2a3233d53bfc1d3ee959f9ecad70fc4615ad7f5",
+    "project_id": "a33a445d-e479-42ce-a3ab-b7de7651ef04",
+    "repository_id": "115f2a34-b723-40e6-8625-a12093a6fa3e"
+  },
+  "status": "passed"
+}
+```
 
 ## 复验与停止
 

@@ -30,6 +30,7 @@ func (policy registrationPolicyStub) AllowOpenRegistration(context.Context) (boo
 type invitationStub struct {
 	invitation Invitation
 	accepted   bool
+	declined   bool
 	err        error
 }
 
@@ -39,6 +40,13 @@ func (stub *invitationStub) PreviewInvitation(context.Context, string) (Invitati
 func (stub *invitationStub) AcceptInvitation(context.Context, Identity, string) (AcceptedMember, error) {
 	stub.accepted = true
 	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
+}
+func (stub *invitationStub) DeclineInvitation(context.Context, string) error {
+	if stub.err != nil {
+		return stub.err
+	}
+	stub.declined = true
+	return nil
 }
 func (stub *invitationStub) AcceptRegistration(context.Context, string, User) (AcceptedMember, error) {
 	if stub.err != nil {
@@ -53,6 +61,18 @@ func (stub *invitationStub) AcceptRegistrationInTransaction(context.Context, tra
 	}
 	stub.accepted = true
 	return AcceptedMember{UserID: "user-1", Role: "viewer"}, nil
+}
+
+func TestDeclineInvitationDelegatesWithoutAuthentication(t *testing.T) {
+	invitations := &invitationStub{}
+	service := Service{Invitations: invitations}
+
+	if err := service.DeclineInvitation(context.Background(), "invitation-token"); err != nil {
+		t.Fatalf("decline invitation: %v", err)
+	}
+	if !invitations.declined {
+		t.Fatal("invitation service did not receive decline request")
+	}
 }
 
 func (projectAuthorizerStub) AuthorizeTokenManagement(

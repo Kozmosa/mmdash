@@ -16,7 +16,7 @@ const updateProjectSchema = createProjectSchema.partial().extend({
 });
 
 const memberRoleSchema = z.object({
-  role: z.enum(["owner", "maintainer", "editor", "viewer", "agent", "box"]),
+  role: z.enum(["owner", "maintainer", "editor", "viewer"]),
 });
 
 export function registerProjectRoutes(
@@ -35,6 +35,12 @@ export function registerProjectRoutes(
         query.include_archived,
       );
     },
+  );
+
+  app.get(
+    "/api/projects/trash",
+    { config: { auth: "required", project: "none" } },
+    async (request) => coreClient.listProjectTrash(coreContext(request)),
   );
 
   app.put(
@@ -71,14 +77,7 @@ export function registerProjectRoutes(
       const input = z
         .object({
           email: z.string().email(),
-          role: z.enum([
-            "owner",
-            "maintainer",
-            "editor",
-            "viewer",
-            "agent",
-            "box",
-          ]),
+          role: z.enum(["maintainer", "editor", "viewer"]),
         })
         .parse(request.body);
       const issued = await coreClient.createProjectInvitation(
@@ -143,6 +142,29 @@ export function registerProjectRoutes(
         request.currentProjectId!,
         coreContext(request, request.currentProjectId),
       ),
+  );
+
+  app.delete(
+    "/api/projects/:projectId",
+    { config: { auth: "required", project: "none" } },
+    async (request, reply) => {
+      const { projectId } = z
+        .object({ projectId: z.string().uuid() })
+        .parse(request.params);
+      await coreClient.trashProject(projectId, coreContext(request));
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    "/api/projects/:projectId/restore",
+    { config: { auth: "required", project: "none" } },
+    async (request) => {
+      const { projectId } = z
+        .object({ projectId: z.string().uuid() })
+        .parse(request.params);
+      return coreClient.restoreProject(projectId, coreContext(request));
+    },
   );
 
   app.patch(

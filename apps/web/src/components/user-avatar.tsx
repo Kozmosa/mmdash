@@ -15,10 +15,13 @@ export function UserAvatar({
 }) {
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let active = true;
+    setFailed(false);
+    setLoaded(false);
+    setUrl(undefined);
     if (!email) {
-      setUrl(undefined);
       return;
     }
     void crypto.subtle
@@ -36,20 +39,28 @@ export function UserAvatar({
   return (
     <span
       className={cn(
-        "flex size-7 items-center justify-center overflow-hidden rounded-lg bg-primary text-xs font-semibold text-primary-foreground",
+        "relative flex size-7 items-center justify-center overflow-hidden rounded-lg text-xs font-semibold text-foreground shadow-[0_3px_10px_rgba(0,0,0,0.10)]",
         className,
       )}
     >
+      <span aria-hidden="true">
+        {(displayName ?? "·").slice(0, 1).toUpperCase()}
+      </span>
       {url && !failed ? (
         <img
           alt=""
-          className="size-full object-cover"
-          onError={() => setFailed(true)}
+          className={cn(
+            "absolute inset-0 block size-full scale-[1.04] object-cover transition-opacity duration-150",
+            loaded ? "opacity-100" : "opacity-0",
+          )}
+          onError={() => {
+            setFailed(true);
+            setLoaded(false);
+          }}
+          onLoad={() => setLoaded(true)}
           src={url}
         />
-      ) : (
-        (displayName ?? "·").slice(0, 1).toUpperCase()
-      )}
+      ) : null}
     </span>
   );
 }

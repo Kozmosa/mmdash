@@ -6,7 +6,7 @@ helper. Native development must put both executables on `PATH`.
 
 ## Migration and storage
 
-Migration `000010_repo` creates:
+Migration `000012_repo` creates:
 
 - `repo_repositories` and three constrained `repo_workspaces`;
 - immutable `repo_commits` and idempotent `repo_commit_events`;
