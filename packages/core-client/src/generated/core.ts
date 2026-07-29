@@ -2070,6 +2070,7 @@ export interface components {
     RequiredRepoPath: string;
     Cursor: string;
     RepoLimit: number;
+    RepoCommitLimit: number;
     TokenId: string;
     UserId: string;
     TypeKey: string;
@@ -2877,7 +2878,7 @@ export interface operations {
       query: {
         workspace: components["parameters"]["RepoWorkspace"];
         cursor?: components["parameters"]["Cursor"];
-        limit?: components["parameters"]["RepoLimit"];
+        limit?: components["parameters"]["RepoCommitLimit"];
       };
       header?: never;
       path: {

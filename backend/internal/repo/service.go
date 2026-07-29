@@ -48,6 +48,7 @@ type Service struct {
 	DisconnectGrace time.Duration
 	Providers       *provider.Registry
 	PublicURL       string
+	Reads           *Reader
 	Settings        SettingAccess
 	Store           Store
 }
@@ -83,6 +84,84 @@ func (service Service) Get(
 		return Repository{}, err
 	}
 	return service.decorate(ctx, repository, ""), nil
+}
+
+func (service Service) ListBranches(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (BranchList, error) {
+	repository, err := service.readRepository(ctx, identity, projectID)
+	if err != nil {
+		return BranchList{}, err
+	}
+	return service.Reads.ListBranches(ctx, repository)
+}
+
+func (service Service) ListCommits(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	workspace WorkspaceKind,
+	cursor string,
+	limit int,
+) (CommitPage, error) {
+	repository, err := service.readRepository(ctx, identity, projectID)
+	if err != nil {
+		return CommitPage{}, err
+	}
+	return service.Reads.ListCommits(
+		ctx, repository, workspace, cursor, limit,
+	)
+}
+
+func (service Service) GetCommit(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	commitSHA string,
+) (Commit, error) {
+	repository, err := service.readRepository(ctx, identity, projectID)
+	if err != nil {
+		return Commit{}, err
+	}
+	return service.Reads.GetCommit(ctx, repository, commitSHA)
+}
+
+func (service Service) ListTree(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	workspace WorkspaceKind,
+	revision string,
+	path string,
+	cursor string,
+	limit int,
+) (TreePage, error) {
+	repository, err := service.readRepository(ctx, identity, projectID)
+	if err != nil {
+		return TreePage{}, err
+	}
+	return service.Reads.ListTree(
+		ctx, repository, workspace, revision, path, cursor, limit,
+	)
+}
+
+func (service Service) ReadFile(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	workspace WorkspaceKind,
+	revision string,
+	path string,
+) (FileContent, error) {
+	repository, err := service.readRepository(ctx, identity, projectID)
+	if err != nil {
+		return FileContent{}, err
+	}
+	return service.Reads.ReadFile(
+		ctx, repository, workspace, revision, path,
+	)
 }
 
 func (service Service) TestConnection(
@@ -326,6 +405,22 @@ func (service Service) decorate(
 	}
 	repository.Webhook.Secret = plainSecret
 	return repository
+}
+
+func (service Service) readRepository(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (Repository, error) {
+	if service.Reads == nil {
+		return Repository{}, ErrNotReady
+	}
+	if err := service.Access.Authorize(
+		ctx, identity, projectID, project.PermissionRepoRead,
+	); err != nil {
+		return Repository{}, err
+	}
+	return service.Store.GetByProject(ctx, projectID)
 }
 
 func (service Service) record(

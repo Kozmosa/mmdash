@@ -235,12 +235,16 @@ func run(logger *logging.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initialize Repo storage: %w", err)
 	}
+	gitOutputBytes := int(processConfig.Repo.MaxTextBytes)
+	if gitOutputBytes < 16*1024*1024 {
+		gitOutputBytes = 16 * 1024 * 1024
+	}
 	gitClient, err := gitcli.NewClient(
 		gitPath,
 		askPassPath,
 		processConfig.Repo.CommandTimeout,
 		processConfig.Repo.MaxConcurrentGit,
-		int(processConfig.Repo.MaxTextBytes),
+		gitOutputBytes,
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Git runtime: %w", err)
@@ -286,8 +290,13 @@ func run(logger *logging.Logger) error {
 		DisconnectGrace: processConfig.Repo.DisconnectGrace,
 		Providers:       repoProviders,
 		PublicURL:       processConfig.PublicURL,
-		Settings:        settingsService,
-		Store:           repoStore,
+		Reads: &repo.Reader{
+			Clock: systemClock, Git: gitClient,
+			MaxTextBytes: processConfig.Repo.MaxTextBytes,
+			Storage:      repoStorage,
+		},
+		Settings: settingsService,
+		Store:    repoStore,
 	}
 	repoModule := repo.Module{Service: repoService}
 	jobService := jobs.Service{
