@@ -1708,7 +1708,7 @@ components:
           format: uuid
         job_type:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         payload:
           type: object
           additionalProperties: true
@@ -1773,7 +1773,7 @@ components:
           format: uuid
         job_type:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         payload:
           type: object
           additionalProperties: true
@@ -1809,7 +1809,7 @@ components:
           maxItems: 100
           items:
             type: string
-            pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+            pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         lease_seconds:
           type: integer
           minimum: 10
@@ -1961,7 +1961,7 @@ components:
           format: uuid
         event_type:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
         schema_version:
           type: integer
           minimum: 1
@@ -2203,7 +2203,7 @@ components:
           maxLength: 100
         action:
           type: string
-          pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+          pattern: "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
           maxLength: 200
         outcome:
           type: string

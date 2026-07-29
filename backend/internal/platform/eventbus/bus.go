@@ -14,7 +14,7 @@ import (
 
 var (
 	consumerNamePattern = regexp.MustCompile(`^[a-z][a-z0-9.-]*$`)
-	eventTypePattern    = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$`)
+	eventTypePattern    = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 )
 
 // Handler consumes one stable event envelope.

@@ -19,6 +19,10 @@ func TestGeneratedEventEnvelopeValidation(t *testing.T) {
 	if err := event.Validate(); err != nil {
 		t.Fatalf("expected valid event envelope: %v", err)
 	}
+	event.EventType = "project.member.role_changed"
+	if err := event.Validate(); err != nil {
+		t.Fatalf("expected underscore event segment to be valid: %v", err)
+	}
 	event.EventType = "invalid"
 	if err := event.Validate(); err == nil {
 		t.Fatal("expected invalid event type to fail")

@@ -23,7 +23,7 @@
     },
     "event_type": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
     },
     "schema_version": {
       "type": "integer",
