@@ -21,6 +21,7 @@ func (Module) Name() string { return "project" }
 
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/projects", module.handleCollection)
+	mux.HandleFunc("/v1/projects/trash", module.handleTrash)
 	mux.HandleFunc("/v1/projects/", module.handleResource)
 }
 
@@ -85,6 +86,11 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 			module.Repository.ServeHTTP(response, request)
 			return
 		}
+	case "restore":
+		if len(segments) == 2 {
+			module.handleRestore(response, request, identity, projectID)
+			return
+		}
 	case "members":
 		if len(segments) == 2 {
 			module.handleMembers(response, request, identity, projectID)
@@ -144,6 +150,12 @@ func (module Module) handleProject(
 			return
 		}
 		httpx.WriteJSON(response, http.StatusOK, project)
+	case http.MethodDelete:
+		if _, err := module.Service.Trash(request.Context(), identity, projectID); err != nil {
+			writeProjectError(response, request, err)
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
 	default:
 		writeProjectError(response, request, apperror.New(
 			http.StatusMethodNotAllowed,
@@ -151,6 +163,42 @@ func (module Module) handleProject(
 			"Method not allowed",
 		))
 	}
+}
+
+func (module Module) handleTrash(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodGet) {
+		return
+	}
+	identity, ok := module.identity(response, request)
+	if !ok {
+		return
+	}
+	projects, err := module.Service.ListTrash(request.Context(), identity)
+	if err != nil {
+		writeProjectError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, map[string]interface{}{"items": projects})
+}
+
+func (module Module) handleRestore(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	project, err := module.Service.Restore(request.Context(), identity, projectID)
+	if err != nil {
+		writeProjectError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, project)
 }
 
 func (module Module) handleMembers(
@@ -310,6 +358,18 @@ func writeProjectError(response http.ResponseWriter, request *http.Request, err 
 			http.StatusBadRequest,
 			"INVALID_REQUEST",
 			"Project input is invalid",
+		))
+	case errors.Is(err, ErrSelfInvitation):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusBadRequest,
+			"SELF_INVITATION_NOT_ALLOWED",
+			"You cannot invite yourself to a project",
+		))
+	case errors.Is(err, ErrMemberExists):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict,
+			"PROJECT_MEMBER_EXISTS",
+			"This user is already a project member",
 		))
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(response, request, apperror.New(

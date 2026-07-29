@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, Suspense, useState } from "react";
@@ -19,24 +20,42 @@ import { apiClient } from "@/lib/api-client";
 
 function RegisterForm() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const search = useSearchParams();
   const [submitting, setSubmitting] = useState(false);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setSubmitting(true);
     try {
-      await apiClient.request("/auth/register", {
-        method: "POST",
+      const result = await apiClient.request<{
+        user: {
+          display_name: string;
+          email: string;
+          id: string;
+        };
+      }>("/auth/register", {
         body: {
           email: String(form.get("email") ?? ""),
           display_name: String(form.get("display_name") ?? ""),
           password: String(form.get("password") ?? ""),
           invitation_token: search.get("token") || undefined,
         },
+        method: "POST",
+      });
+      queryClient.setQueryData(["current-user"], {
+        displayName: result.user.display_name,
+        email: result.user.email,
+        id: result.user.id,
       });
       toast.success("注册成功");
-      router.replace(search.get("returnTo") || "/projects");
+      const returnTo = search.get("returnTo");
+      router.replace(
+        returnTo?.startsWith("/") && !returnTo.startsWith("//")
+          ? returnTo
+          : "/projects",
+      );
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "注册失败");
@@ -55,19 +74,30 @@ function RegisterForm() {
           <CardContent className="space-y-4">
             <label className="grid gap-2 text-sm font-medium">
               显示名称
-              <Input name="display_name" required />
+              <Input
+                autoComplete="name"
+                maxLength={120}
+                name="display_name"
+                required
+              />
             </label>
             <label className="grid gap-2 text-sm font-medium">
               邮箱
-              <Input name="email" type="email" required />
+              <Input autoComplete="email" name="email" required type="email" />
             </label>
             <label className="grid gap-2 text-sm font-medium">
               密码
-              <Input name="password" type="password" minLength={8} required />
+              <Input
+                autoComplete="new-password"
+                minLength={8}
+                name="password"
+                required
+                type="password"
+              />
             </label>
           </CardContent>
           <CardFooter className="flex-col gap-3">
-            <Button className="w-full" disabled={submitting}>
+            <Button className="w-full" disabled={submitting} type="submit">
               {submitting ? "注册中…" : "注册"}
             </Button>
             <Link
