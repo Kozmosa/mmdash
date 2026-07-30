@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,8 @@ type Config struct {
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	Outbox          OutboxConfig
+	PublicURL       string
+	Repo            RepoConfig
 	Settings        SettingsConfig
 	Version         string
 	ShutdownTimeout time.Duration
@@ -57,6 +60,21 @@ type OutboxConfig struct {
 	RetryDelay    time.Duration
 }
 
+// RepoConfig configures the managed Git runtime and synchronization loop.
+type RepoConfig struct {
+	AskPassPath       string
+	CheckoutTTL       time.Duration
+	CloneTimeout      time.Duration
+	CommandTimeout    time.Duration
+	DisconnectGrace   time.Duration
+	LocalAllowedRoots []string
+	MaxConcurrentGit  int
+	MaxTextBytes      int64
+	StorageRoot       string
+	SyncLease         time.Duration
+	SyncPollInterval  time.Duration
+}
+
 // SettingsConfig configures encryption for persisted module secrets.
 type SettingsConfig struct {
 	EncryptionKey string
@@ -90,11 +108,25 @@ func Load(lookup LookupEnv) (Config, error) {
 			SecretKey: envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
 		},
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
+		PublicURL:   envOrDefault(lookup, "MMDASH_PUBLIC_URL", "http://localhost:3000"),
 		Outbox: OutboxConfig{
 			DeliveryLease: durationOrDefault(lookup, "OUTBOX_DELIVERY_LEASE", 30*time.Second),
 			EventLease:    durationOrDefault(lookup, "OUTBOX_EVENT_LEASE", 30*time.Second),
 			PollInterval:  durationOrDefault(lookup, "OUTBOX_POLL_INTERVAL", 500*time.Millisecond),
 			RetryDelay:    durationOrDefault(lookup, "OUTBOX_RETRY_DELAY", 2*time.Second),
+		},
+		Repo: RepoConfig{
+			AskPassPath:       envOrDefault(lookup, "REPO_ASKPASS_PATH", "mmdash-git-askpass"),
+			CheckoutTTL:       durationOrDefault(lookup, "REPO_CHECKOUT_TTL", time.Hour),
+			CloneTimeout:      durationOrDefault(lookup, "REPO_CLONE_TIMEOUT", 15*time.Minute),
+			CommandTimeout:    durationOrDefault(lookup, "REPO_COMMAND_TIMEOUT", 2*time.Minute),
+			DisconnectGrace:   durationOrDefault(lookup, "REPO_DISCONNECT_GRACE", 24*time.Hour),
+			LocalAllowedRoots: pathList(lookup, "REPO_LOCAL_ALLOWED_ROOTS"),
+			MaxConcurrentGit:  intOrDefault(lookup, "REPO_MAX_CONCURRENT_GIT", 4),
+			MaxTextBytes:      int64OrDefault(lookup, "REPO_MAX_TEXT_BYTES", 1024*1024),
+			StorageRoot:       envOrDefault(lookup, "REPO_STORAGE_ROOT", "/var/lib/mmdash/repos"),
+			SyncLease:         durationOrDefault(lookup, "REPO_SYNC_LEASE", 20*time.Minute),
+			SyncPollInterval:  durationOrDefault(lookup, "REPO_SYNC_POLL_INTERVAL", 2*time.Second),
 		},
 		Settings: SettingsConfig{
 			EncryptionKey: envOrDefault(
@@ -159,11 +191,42 @@ func (config Config) Validate() error {
 	if strings.TrimSpace(config.OpenAPIPath) == "" {
 		return fmt.Errorf("CORE_OPENAPI_PATH must not be empty")
 	}
+	publicURL, err := url.Parse(config.PublicURL)
+	if err != nil || publicURL.Host == "" ||
+		(publicURL.Scheme != "http" && publicURL.Scheme != "https") {
+		return fmt.Errorf("MMDASH_PUBLIC_URL must be an HTTP(S) URL")
+	}
 	if config.Outbox.DeliveryLease <= 0 ||
 		config.Outbox.EventLease <= 0 ||
 		config.Outbox.PollInterval <= 0 ||
 		config.Outbox.RetryDelay <= 0 {
 		return fmt.Errorf("Outbox durations must be positive")
+	}
+	if strings.TrimSpace(config.Repo.StorageRoot) == "" {
+		return fmt.Errorf("REPO_STORAGE_ROOT must not be empty")
+	}
+	if strings.TrimSpace(config.Repo.AskPassPath) == "" {
+		return fmt.Errorf("REPO_ASKPASS_PATH must not be empty")
+	}
+	if config.Repo.MaxConcurrentGit < 1 {
+		return fmt.Errorf("REPO_MAX_CONCURRENT_GIT must be positive")
+	}
+	if config.Repo.MaxTextBytes < 1 ||
+		config.Repo.MaxTextBytes > 64*1024*1024 {
+		return fmt.Errorf("REPO_MAX_TEXT_BYTES must be between 1 byte and 64 MiB")
+	}
+	if config.Repo.CommandTimeout <= 0 ||
+		config.Repo.CloneTimeout <= 0 ||
+		config.Repo.SyncPollInterval <= 0 ||
+		config.Repo.SyncLease <= 0 ||
+		config.Repo.CheckoutTTL <= 0 ||
+		config.Repo.DisconnectGrace <= 0 {
+		return fmt.Errorf("Repo durations must be positive")
+	}
+	for _, root := range config.Repo.LocalAllowedRoots {
+		if strings.TrimSpace(root) == "" {
+			return fmt.Errorf("REPO_LOCAL_ALLOWED_ROOTS contains an empty path")
+		}
 	}
 	if len(config.Settings.EncryptionKey) < 32 {
 		return fmt.Errorf("SETTINGS_ENCRYPTION_KEY must contain at least 32 characters")
@@ -206,4 +269,33 @@ func intOrDefault(lookup LookupEnv, key string, fallback int) int {
 		return -1
 	}
 	return parsed
+}
+
+func int64OrDefault(lookup LookupEnv, key string, fallback int64) int64 {
+	value, ok := lookup(key)
+	if !ok || value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return -1
+	}
+	return parsed
+}
+
+func pathList(lookup LookupEnv, key string) []string {
+	value, ok := lookup(key)
+	if !ok || strings.TrimSpace(value) == "" {
+		return []string{}
+	}
+	parts := strings.FieldsFunc(value, func(character rune) bool {
+		return character == rune(os.PathListSeparator) || character == ','
+	})
+	roots := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			roots = append(roots, trimmed)
+		}
+	}
+	return roots
 }

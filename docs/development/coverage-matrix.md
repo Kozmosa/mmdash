@@ -19,3 +19,4 @@ evidence. It is expanded as product modules are implemented.
 | Generated contracts and compatibility gates | OpenAPI, JSON Schema, TS/Go generation, Mock Server    | contracts            | `pnpm contracts:check` and Go validation tests |
 | Durable asynchronous work                   | Core Job Queue and Python Worker HTTP runtime          | jobs/worker          | Go queue-policy and Python runtime tests       |
 | Reliable domain-event delivery              | Event Bus, Outbox Processor, delivery/replay tables    | events/outbox        | Go Bus, Processor, idempotency, and API tests  |
+| Managed project Git repositories            | Core Repo, BFF read/manage routes, read-only Web, MCP  | repo                 | Go real-Git tests, Web/BFF/MCP tests, Repo E2E |

@@ -136,6 +136,61 @@ describe("CoreClient", () => {
       url: "http://core.test/v1/audit/events?action=mcp.tool.called&limit=25&project_id=project-1",
     });
   });
+
+  it("uses immutable Repo read routes and omits browser write surfaces", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], has_more: false }), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    const client = new CoreClient("http://core.test", fetchImplementation);
+    const context = {
+      accessToken: "session-token",
+      projectId: "project-1",
+      requestId: "request-1",
+      userId: "user-1",
+    };
+    const revision = "a".repeat(40);
+
+    await client.listRepositoryCommits("project-1", "code", context, {
+      cursor: "next",
+      limit: 25,
+    });
+    await client.listRepositoryTree(
+      "project-1",
+      {
+        cursor: "tree-next",
+        limit: 100,
+        path: "src/lib",
+        revision,
+        workspace: "code",
+      },
+      context,
+    );
+    await client.getRepositoryContent(
+      "project-1",
+      { path: "src/a b.ts", revision, workspace: "code" },
+      context,
+    );
+
+    expectRequest(fetchImplementation.mock.calls[0], {
+      context,
+      method: "GET",
+      url: "http://core.test/v1/projects/project-1/repository/commits?workspace=code&cursor=next&limit=25",
+    });
+    expectRequest(fetchImplementation.mock.calls[1], {
+      context,
+      method: "GET",
+      url: `http://core.test/v1/projects/project-1/repository/tree?revision=${revision}&workspace=code&cursor=tree-next&limit=100&path=src%2Flib`,
+    });
+    expectRequest(fetchImplementation.mock.calls[2], {
+      context,
+      method: "GET",
+      url: `http://core.test/v1/projects/project-1/repository/content?path=src%2Fa+b.ts&revision=${revision}&workspace=code`,
+    });
+  });
 });
 
 function expectRequest(

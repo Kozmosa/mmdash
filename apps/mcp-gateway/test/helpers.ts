@@ -13,6 +13,7 @@ export const testConfig: McpGatewayConfig = {
   cliToken,
   cliTools: ["*"],
   coreBaseUrl: "http://core.test",
+  coreAccessToken: "test-core-access-token-that-is-at-least-32-characters",
   host: "127.0.0.1",
   nodeEnv: "test",
   port: 3002,

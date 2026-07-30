@@ -46,10 +46,17 @@ table read or whole-project dump is permitted. Current registrations are:
 | `project`          | `project.created`         | Project module     |
 | `context-proposal` | Context Proposal mutation | Data Hub           |
 | `project-context`  | Human acceptance          | Data Hub           |
+| `repository`       | `repo.connected`          | Repo module        |
+| `repo_commit`      | Repo commit events        | Repo module        |
+| `repo_file`        | Current Code head index   | Repo module        |
 
-The `datahub.projections` Event Bus consumer currently registers
-`project.created` and `project.updated`. Its activity insert is unique by
-`event_id`, making normal delivery and explicit replay idempotent.
+The `datahub.projections` Event Bus consumer registers Project and Repo
+events. Repo connection projects all three current workspace commits and the
+current Code tree. Later `repo.commit.created`/`repo.commit.detected` events
+project immutable commit metadata; only a current Code head replaces the file
+index. Batches and event-time guards prevent replay or out-of-order delivery
+from overwriting a newer tree. Activity insertion is unique by `event_id`,
+making normal delivery and explicit replay idempotent.
 
 ## Project Context safety boundary
 

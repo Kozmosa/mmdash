@@ -298,6 +298,170 @@ export class CoreClient {
     );
   }
 
+  async getRepository(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Repository"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async connectRepository(
+    projectId: string,
+    input: components["schemas"]["RepoConnectRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Repository"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository`,
+      { body: input, method: "PUT" },
+      context,
+    );
+  }
+
+  async disconnectRepository(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async testRepositoryConnection(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RepoConnectionTestResult"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/test`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async requestRepositorySync(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Repository"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/sync`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async rotateRepositoryWebhookSecret(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Repository"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/webhook-secret`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async updateRepositoryWorkspaces(
+    projectId: string,
+    input: components["schemas"]["RepoUpdateWorkspacesRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Repository"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/workspaces`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async listRepositoryBranches(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RepoBranchList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/branches`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listRepositoryCommits(
+    projectId: string,
+    workspace: components["schemas"]["RepoWorkspaceKind"],
+    context: CoreRequestContext,
+    options: { cursor?: string; limit?: number } = {},
+  ): Promise<components["schemas"]["RepoCommitPage"]> {
+    const query = new URLSearchParams({ workspace });
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/commits?${query.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getRepositoryCommit(
+    projectId: string,
+    commitSha: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RepoCommit"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/commits/${encodeURIComponent(commitSha)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listRepositoryTree(
+    projectId: string,
+    input: {
+      cursor?: string;
+      limit?: number;
+      path?: string;
+      revision: string;
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+    },
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RepoTreePage"]> {
+    const query = new URLSearchParams({
+      revision: input.revision,
+      workspace: input.workspace,
+    });
+    if (input.cursor) query.set("cursor", input.cursor);
+    if (input.limit) query.set("limit", String(input.limit));
+    if (input.path) query.set("path", input.path);
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/tree?${query.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getRepositoryContent(
+    projectId: string,
+    input: {
+      path: string;
+      revision: string;
+      workspace: components["schemas"]["RepoWorkspaceKind"];
+    },
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RepoFileContent"]> {
+    const query = new URLSearchParams({
+      path: input.path,
+      revision: input.revision,
+      workspace: input.workspace,
+    });
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/content?${query.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
   async listSettingTypes(
     scope: components["schemas"]["SettingScope"],
     context: CoreRequestContext,
@@ -610,6 +774,7 @@ function isJsonBody(
     body !== null &&
     typeof body === "object" &&
     !(body instanceof ArrayBuffer) &&
+    !ArrayBuffer.isView(body) &&
     !(body instanceof Blob) &&
     !(body instanceof FormData) &&
     !(body instanceof URLSearchParams)

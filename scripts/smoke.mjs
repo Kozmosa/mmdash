@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
+import { resolveComposeCommand } from "./compose-command.mjs";
+import { runRepoSmoke } from "./repo-smoke.mjs";
+
 const webUrl = trim(process.env.MMDASH_SMOKE_URL ?? "http://localhost:3000");
 const coreUrl = trim(
   process.env.MMDASH_SMOKE_CORE_URL ?? "http://localhost:8080",
@@ -8,16 +11,15 @@ const coreUrl = trim(
 const mcpUrl = trim(
   process.env.MMDASH_SMOKE_MCP_URL ?? "http://localhost:3002",
 );
-const email =
-  process.env.MMDASH_SMOKE_EMAIL ?? "admin@mmdash.local";
-const password =
-  process.env.MMDASH_SMOKE_PASSWORD ?? "mmdash-local-admin";
+const email = process.env.MMDASH_SMOKE_EMAIL ?? "admin@mmdash.local";
+const password = process.env.MMDASH_SMOKE_PASSWORD ?? "mmdash-local-admin";
 const runId = `${Date.now()}-${process.pid}`;
 
 const web = await fetchChecked(`${webUrl}/projects`);
 const html = await web.text();
 assert(
-  html.includes("团队项目") ||
+  new URL(web.url).pathname === "/login" ||
+    html.includes("团队项目") ||
     html.includes("创建团队项目") ||
     html.includes("登录 mmdash"),
   "Web smoke check did not find the authenticated project shell or login guard.",
@@ -28,7 +30,10 @@ assert(
   example.body.status === "ok" && example.body.storage === "postgres",
   `Unexpected BFF example response: ${JSON.stringify(example.body)}`,
 );
-assert(example.response.headers.get("x-request-id"), "BFF omitted x-request-id.");
+assert(
+  example.response.headers.get("x-request-id"),
+  "BFF omitted x-request-id.",
+);
 
 const browserLogin = await jsonChecked(`${webUrl}/api/auth/login`, {
   body: { email, password },
@@ -106,23 +111,26 @@ assert(jobId, "Core did not create the test Job.");
 if (process.env.MMDASH_SMOKE_SKIP_WORKER !== "1") {
   const worker =
     process.env.MMDASH_SMOKE_WORKER_MODE === "docker"
-      ? spawnSync(
-          "docker",
-          [
-            "compose",
-            "-f",
-            "deploy/compose/compose.yaml",
-            "run",
-            "--rm",
-            "-e",
-            `MMDASH_WORKER_API_TOKEN=${workerToken}`,
-            "-e",
-            `MMDASH_WORKER_ID=stage-3.15-${runId}`,
-            "worker",
-            "--once",
-          ],
-          { encoding: "utf8", env: process.env },
-        )
+      ? (() => {
+          const compose = resolveComposeCommand();
+          return spawnSync(
+            compose.command,
+            [
+              ...compose.args,
+              "-f",
+              "deploy/compose/compose.yaml",
+              "run",
+              "--rm",
+              "-e",
+              `MMDASH_WORKER_API_TOKEN=${workerToken}`,
+              "-e",
+              `MMDASH_WORKER_ID=stage-3.15-${runId}`,
+              "worker",
+              "--once",
+            ],
+            { encoding: "utf8", env: process.env },
+          );
+        })()
       : spawnSync(
           process.platform === "win32" ? "uv.exe" : "uv",
           [
@@ -142,8 +150,7 @@ if (process.env.MMDASH_SMOKE_SKIP_WORKER !== "1") {
               MMDASH_WORKER_ID: `stage-3.15-${runId}`,
               MMDASH_WORKER_LEASE_SECONDS: "60",
               MMDASH_WORKER_POLL_SECONDS: "1",
-              UV_CACHE_DIR:
-                process.env.UV_CACHE_DIR ?? resolve(".uv-cache"),
+              UV_CACHE_DIR: process.env.UV_CACHE_DIR ?? resolve(".uv-cache"),
             },
           },
         );
@@ -153,9 +160,12 @@ if (process.env.MMDASH_SMOKE_SKIP_WORKER !== "1") {
   );
 }
 const completedJob = await poll(
-  async () => (await jsonChecked(`${coreUrl}/v1/jobs/${jobId}`, {
-    headers: sessionHeaders,
-  })).body,
+  async () =>
+    (
+      await jsonChecked(`${coreUrl}/v1/jobs/${jobId}`, {
+        headers: sessionHeaders,
+      })
+    ).body,
   (job) => job.status === "succeeded",
   "Worker did not complete the system.test Job.",
 );
@@ -172,9 +182,12 @@ const eventResult = await jsonChecked(`${coreUrl}/v1/events/test`, {
 const eventId = eventResult.body.event_id;
 assert(eventId, "Core did not enqueue the Outbox test event.");
 await poll(
-  async () => (await jsonChecked(`${coreUrl}/v1/events/${eventId}`, {
-    headers: sessionHeaders,
-  })).body,
+  async () =>
+    (
+      await jsonChecked(`${coreUrl}/v1/events/${eventId}`, {
+        headers: sessionHeaders,
+      })
+    ).body,
   (state) =>
     state.record?.status === "published" &&
     state.deliveries?.length > 0 &&
@@ -183,10 +196,13 @@ await poll(
 );
 
 const objects = await poll(
-  async () => (await jsonChecked(
-    `${coreUrl}/v1/data/projects/${projectId}/objects?type=project`,
-    { headers: sessionHeaders },
-  )).body,
+  async () =>
+    (
+      await jsonChecked(
+        `${coreUrl}/v1/data/projects/${projectId}/objects?type=project`,
+        { headers: sessionHeaders },
+      )
+    ).body,
   (page) => page.items?.some((item) => item.source_id === projectId),
   "Data Hub did not project the created project object.",
 );
@@ -201,10 +217,13 @@ assert(
 );
 
 const audits = await poll(
-  async () => (await jsonChecked(
-    `${coreUrl}/v1/audit/events?request_id=${encodeURIComponent(projectRequestId)}`,
-    { headers: sessionHeaders },
-  )).body,
+  async () =>
+    (
+      await jsonChecked(
+        `${coreUrl}/v1/audit/events?request_id=${encodeURIComponent(projectRequestId)}`,
+        { headers: sessionHeaders },
+      )
+    ).body,
   (page) =>
     page.items?.some(
       (item) =>
@@ -225,8 +244,7 @@ assert(
 
 const mcpHealth = await jsonChecked(`${mcpUrl}/health/live`);
 assert(
-  mcpHealth.body.status === "ok" &&
-    mcpHealth.body.service === "mcp-gateway",
+  mcpHealth.body.status === "ok" && mcpHealth.body.service === "mcp-gateway",
   "MCP Gateway health check failed.",
 );
 
@@ -240,12 +258,24 @@ assert(
   `CLI shell failed:\n${cli.stdout}\n${cli.stderr}`,
 );
 
+const repo =
+  process.env.MMDASH_SMOKE_REPO_MODE === "docker"
+    ? await runRepoSmoke({
+        coreUrl,
+        email,
+        password,
+        runId,
+        webUrl,
+      })
+    : null;
+
 console.log(
   JSON.stringify({
     audit_events: audits.items.length,
     event_id: eventId,
     job_id: jobId,
     project_id: projectId,
+    repo,
     status: "passed",
   }),
 );
@@ -271,7 +301,9 @@ async function fetchChecked(url, options = {}) {
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`${options.method ?? "GET"} ${url}: HTTP ${response.status} ${text}`);
+    throw new Error(
+      `${options.method ?? "GET"} ${url}: HTTP ${response.status} ${text}`,
+    );
   }
   return response;
 }
