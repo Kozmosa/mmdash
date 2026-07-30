@@ -25,6 +25,9 @@ All entries currently use envelope schema version `1`.
 | `repo.connected`            | repo     | yes            | `repository_id`, `provider`, `workspaces`                                                                  | `datahub.projections`          |
 | `repo.commit.created`       | repo     | yes            | `repository_id`, `workspace`, `branch`, `commit_sha`, `previous_commit_sha`, `history_rewritten`, `source` | `datahub.projections`          |
 | `repo.commit.detected`      | repo     | yes            | `repository_id`, `workspace`, `branch`, `commit_sha`, `previous_commit_sha`, `history_rewritten`, `source` | `datahub.projections`          |
+| `artifact.created`          | artifact | yes            | `artifact_id`, `version_id`, `kind`, `source`, `name`, `filename`, `sha256`, `size_bytes`, `status`        | `datahub.projections`          |
+| `artifact.available`        | artifact | yes            | `artifact_id`, `version_id`, `version_no`, `sha256`, `size_bytes`, `mime_type`, `reason`, `available_at`   | `datahub.projections`          |
+| `artifact.deleted`          | artifact | yes            | `artifact_id`, `current_version_id`, `reason`, `trashed_at`                                                | `datahub.projections`          |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.
@@ -41,6 +44,13 @@ Repo payloads never contain credentials, file content, provider error bodies,
 commands, or server paths. `repo.connected` is emitted only after all three
 workspaces are ready. Commit events identify immutable full SHAs; consumers
 must not persist a branch name as the durable version reference.
+
+Artifact payloads never contain signed transfer URLs, provider upload IDs,
+object keys, credentials, file content, or preview output. `artifact.available`
+is emitted only after full size and SHA-256 verification, except
+`reason=restored`, which re-exposes an already verified immutable Version.
+`artifact.deleted` is a recoverable trash transition and does not imply that
+Version bytes were deleted.
 
 When adding an event:
 

@@ -443,6 +443,348 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/artifacts/uploads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Initialize the first immutable Version and its multipart upload */
+    post: operations["artifact.uploads.initialize"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/uploads/{uploadId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        uploadId: components["parameters"]["ArtifactUploadId"];
+      };
+      cookie?: never;
+    };
+    /** Recover an authorized upload session and its completed parts */
+    get: operations["artifact.uploads.get"];
+    put?: never;
+    post?: never;
+    /** Cancel and abort an unconfirmed multipart upload idempotently */
+    delete: operations["artifact.uploads.abort"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/uploads/{uploadId}/parts/sign": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        uploadId: components["parameters"]["ArtifactUploadId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Sign a bounded on-demand batch of multipart part PUTs */
+    post: operations["artifact.uploads.parts.sign"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/uploads/{uploadId}/confirm": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        uploadId: components["parameters"]["ArtifactUploadId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete multipart state and verify full size and SHA-256 */
+    post: operations["artifact.uploads.confirm"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/artifact-transfers/{signedToken}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        signedToken: components["parameters"]["ArtifactSignedToken"];
+      };
+      cookie?: never;
+    };
+    /** Stream one signed Local download or Worker input */
+    get: operations["artifact.transfers.get"];
+    /** Stream one signed Local multipart part or Worker preview output */
+    put: operations["artifact.transfers.put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List active Project Artifacts with fixed classification filters */
+    get: operations["artifact.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/trash": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List recoverable trashed Project Artifacts */
+    get: operations["artifact.trash.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    /** Read Artifact metadata and its current immutable Version */
+    get: operations["artifact.get"];
+    put?: never;
+    post?: never;
+    /** Move an active Artifact to recoverable trash */
+    delete: operations["artifact.trash"];
+    options?: never;
+    head?: never;
+    /** Update editable Artifact display metadata */
+    patch: operations["artifact.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/versions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    /** List every retained immutable Version */
+    get: operations["artifact.versions.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/versions/uploads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Initialize a new immutable Version and multipart upload */
+    post: operations["artifact.versions.uploads.initialize"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+        versionId: components["parameters"]["ArtifactVersionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Copy a retained Version into a new current immutable Version */
+    post: operations["artifact.versions.restore"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Authorize a short-lived download of the current Version */
+    post: operations["artifact.download"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+        versionId: components["parameters"]["ArtifactVersionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Authorize a short-lived download of one retained Version */
+    post: operations["artifact.versions.download"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+        versionId: components["parameters"]["ArtifactVersionId"];
+      };
+      cookie?: never;
+    };
+    /** List preview, thumbnail, and structural summary state */
+    get: operations["artifact.previews.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore a trashed Artifact and its current verified Version */
+    post: operations["artifact.restore"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/purge": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Permanently remove a trashed Artifact and unreferenced blobs */
+    delete: operations["artifact.purge"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/artifact-preview-jobs/{jobId}/transfers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Issue a one-time transfer bound to a claimed preview Job */
+    post: operations["artifact.preview-jobs.transfers.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/repository": {
     parameters: {
       query?: never;
@@ -1424,6 +1766,256 @@ export interface components {
       permissions: string[];
     };
     /** @enum {string} */
+    ArtifactKind:
+      | "problem"
+      | "attachment"
+      | "experiment_result"
+      | "model_file"
+      | "article_build"
+      | "other";
+    /** @enum {string} */
+    ArtifactErrorCode:
+      | "ARTIFACT_NOT_FOUND"
+      | "ARTIFACT_UPLOAD_EXPIRED"
+      | "ARTIFACT_UPLOAD_INCOMPLETE"
+      | "ARTIFACT_SIZE_MISMATCH"
+      | "ARTIFACT_HASH_MISMATCH"
+      | "ARTIFACT_TOO_LARGE"
+      | "ARTIFACT_PART_INVALID"
+      | "ARTIFACT_PART_MISSING"
+      | "ARTIFACT_UPLOAD_ABORTED"
+      | "ARTIFACT_UPLOAD_CONFLICT"
+      | "ARTIFACT_KIND_INVALID"
+      | "ARTIFACT_SOURCE_INVALID"
+      | "ARTIFACT_TAG_INVALID"
+      | "ARTIFACT_MIME_NOT_ALLOWED"
+      | "ARTIFACT_NOT_AVAILABLE"
+      | "ARTIFACT_PREVIEW_UNAVAILABLE"
+      | "ARTIFACT_STORAGE_UNAVAILABLE"
+      | "ARTIFACT_NOT_TRASHED"
+      | "ARTIFACT_PURGE_CONFLICT";
+    /** @enum {string} */
+    ArtifactPublicKind: "problem" | "attachment" | "other";
+    /** @enum {string} */
+    ArtifactSource:
+      "user_upload" | "experiment" | "model" | "article" | "system";
+    /** @enum {string} */
+    ArtifactStatus:
+      "pending_upload" | "verifying" | "available" | "failed" | "trashed";
+    /** @enum {string} */
+    ArtifactVersionStatus:
+      "pending_upload" | "verifying" | "available" | "failed";
+    /** @enum {string} */
+    ArtifactStorageClass: "object" | "git";
+    /** @enum {string} */
+    ArtifactUploadStatus:
+      | "initialized"
+      | "uploading"
+      | "completing"
+      | "verifying"
+      | "completed"
+      | "aborted"
+      | "expired"
+      | "failed";
+    /** @enum {string} */
+    ArtifactPreviewStatus:
+      "queued" | "processing" | "available" | "unsupported" | "failed";
+    /** @enum {string} */
+    ArtifactPreviewType:
+      "image" | "pdf" | "csv" | "json" | "text" | "thumbnail";
+    ArtifactInitializeUploadRequest: {
+      filename: string;
+      name?: string;
+      size_bytes: number;
+      sha256: string;
+      mime_type?: string;
+      kind: components["schemas"]["ArtifactPublicKind"];
+      tags?: string[];
+      description?: string;
+      idempotency_key: string;
+    };
+    ArtifactInitializeVersionUploadRequest: {
+      filename: string;
+      size_bytes: number;
+      sha256: string;
+      mime_type?: string;
+      idempotency_key: string;
+    };
+    ArtifactSignPartsRequest: {
+      part_numbers: number[];
+    };
+    ArtifactConfirmPart: {
+      part_number: number;
+      etag: string;
+    };
+    ArtifactConfirmUploadRequest: {
+      parts: components["schemas"]["ArtifactConfirmPart"][];
+    };
+    ArtifactUpdateRequest: {
+      name?: string;
+      kind?: components["schemas"]["ArtifactPublicKind"];
+      tags?: string[];
+      description?: string | null;
+    };
+    ArtifactRestoreVersionRequest: {
+      idempotency_key: string;
+    };
+    ArtifactPreviewJobTransferRequest: {
+      /** @enum {string} */
+      direction: "input" | "output";
+      /** Format: uuid */
+      version_id: string;
+      preview_type?: components["schemas"]["ArtifactPreviewType"];
+      filename?: string;
+      mime_type?: string;
+      size_bytes?: number;
+      sha256?: string;
+    };
+    ArtifactGitReference: {
+      /** Format: uuid */
+      repository_id: string;
+      /** @constant */
+      workspace: "result";
+      commit_sha: string;
+      path: string;
+    };
+    Artifact: {
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      project_id: string;
+      kind: components["schemas"]["ArtifactKind"];
+      source: components["schemas"]["ArtifactSource"];
+      source_object_id: string | null;
+      tags: string[];
+      name: string;
+      description: string | null;
+      recommended_usage: string[];
+      /** Format: uuid */
+      current_version_id: string | null;
+      status: components["schemas"]["ArtifactStatus"];
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      trashed_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArtifactVersion: {
+      /** Format: uuid */
+      version_id: string;
+      /** Format: uuid */
+      artifact_id: string;
+      version_no: number;
+      storage_class: components["schemas"]["ArtifactStorageClass"];
+      filename: string;
+      sha256: string;
+      mime_type: string;
+      size_bytes: number;
+      status: components["schemas"]["ArtifactVersionStatus"];
+      /** Format: date-time */
+      available_at: string | null;
+      git_reference: components["schemas"]["ArtifactGitReference"] | null;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    ArtifactDetail: {
+      artifact: components["schemas"]["Artifact"];
+      current_version: components["schemas"]["ArtifactVersion"] | null;
+    };
+    ArtifactPage: {
+      items: components["schemas"]["ArtifactDetail"][];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+    ArtifactVersionList: {
+      items: components["schemas"]["ArtifactVersion"][];
+    };
+    ArtifactUploadPart: {
+      part_number: number;
+      size_bytes: number;
+      etag: string;
+      /** Format: date-time */
+      completed_at: string;
+    };
+    ArtifactUploadSession: {
+      /** Format: uuid */
+      upload_id: string;
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      /** @enum {string} */
+      upload_mode: "multipart" | "deduplicated";
+      /** @enum {string} */
+      transfer_mode: "direct" | "local_proxy" | "none";
+      status: components["schemas"]["ArtifactUploadStatus"];
+      size_bytes: number;
+      sha256: string;
+      part_size_bytes: number;
+      part_count: number;
+      completed_parts: components["schemas"]["ArtifactUploadPart"][];
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArtifactTransferGrant: {
+      /** @enum {string} */
+      method: "GET" | "PUT";
+      /** Format: uri-reference */
+      url: string;
+      headers: {
+        [key: string]: string;
+      };
+      /** Format: date-time */
+      expires_at: string;
+    };
+    ArtifactPartGrant: {
+      part_number: number;
+      size_bytes: number;
+      transfer: components["schemas"]["ArtifactTransferGrant"];
+    };
+    ArtifactPartGrantList: {
+      items: components["schemas"]["ArtifactPartGrant"][];
+    };
+    ArtifactDownloadGrant: {
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      filename: string;
+      mime_type: string;
+      size_bytes: number;
+      transfer: components["schemas"]["ArtifactTransferGrant"];
+    };
+    ArtifactPreview: {
+      /** Format: uuid */
+      preview_id: string;
+      /** Format: uuid */
+      version_id: string;
+      preview_type: components["schemas"]["ArtifactPreviewType"];
+      status: components["schemas"]["ArtifactPreviewStatus"];
+      structural_summary: {
+        [key: string]: unknown;
+      } | null;
+      error_code: string | null;
+      transfer: components["schemas"]["ArtifactTransferGrant"] | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArtifactPreviewList: {
+      items: components["schemas"]["ArtifactPreview"][];
+    };
+    /** @enum {string} */
     RepoProvider: "github" | "local";
     /** @enum {string} */
     RepoWorkspaceKind: "code" | "article" | "result";
@@ -2156,6 +2748,15 @@ export interface components {
   };
   parameters: {
     ProjectId: string;
+    ArtifactId: string;
+    ArtifactUploadId: string;
+    ArtifactVersionId: string;
+    ArtifactSignedToken: string;
+    ArtifactKind: components["schemas"]["ArtifactKind"];
+    ArtifactSource: components["schemas"]["ArtifactSource"];
+    ArtifactStatus: components["schemas"]["ArtifactStatus"];
+    ArtifactTag: string;
+    ArtifactLimit: number;
     CommitSha: string;
     CheckoutId: string;
     HookId: string;
@@ -2891,6 +3492,554 @@ export interface operations {
           "application/json": components["schemas"]["ProjectPermissions"];
         };
       };
+    };
+  };
+  "artifact.uploads.initialize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactInitializeUploadRequest"];
+      };
+    };
+    responses: {
+      /** @description Artifact, pending Version, and upload session initialized. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactUploadSession"];
+        };
+      };
+      409: components["responses"]["Error"];
+      413: components["responses"]["Error"];
+    };
+  };
+  "artifact.uploads.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        uploadId: components["parameters"]["ArtifactUploadId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Application upload state without provider identifiers. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactUploadSession"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "artifact.uploads.abort": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        uploadId: components["parameters"]["ArtifactUploadId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Upload aborted or already in an aborted terminal state. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.uploads.parts.sign": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        uploadId: components["parameters"]["ArtifactUploadId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactSignPartsRequest"];
+      };
+    };
+    responses: {
+      /** @description Short-lived direct or Local proxy transfer grants. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactPartGrantList"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.uploads.confirm": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        uploadId: components["parameters"]["ArtifactUploadId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactConfirmUploadRequest"];
+      };
+    };
+    responses: {
+      /** @description Idempotent confirmation result for an already completed upload. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDetail"];
+        };
+      };
+      /** @description Verified immutable Version is now available. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDetail"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.transfers.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        signedToken: components["parameters"]["ArtifactSignedToken"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Bounded byte stream authorized by the short-lived token. */
+      200: {
+        headers: {
+          "Cache-Control"?: "no-store";
+          [name: string]: unknown;
+        };
+        content: {
+          "application/octet-stream": string;
+        };
+      };
+      404: components["responses"]["Error"];
+      410: components["responses"]["Error"];
+    };
+  };
+  "artifact.transfers.put": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        signedToken: components["parameters"]["ArtifactSignedToken"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/octet-stream": string;
+      };
+    };
+    responses: {
+      /** @description Stream consumed and verified without buffering the full body. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      410: components["responses"]["Error"];
+    };
+  };
+  "artifact.list": {
+    parameters: {
+      query?: {
+        kind?: components["parameters"]["ArtifactKind"];
+        source?: components["parameters"]["ArtifactSource"];
+        status?: components["parameters"]["ArtifactStatus"];
+        tag?: components["parameters"]["ArtifactTag"];
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["ArtifactLimit"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor page of active Artifacts. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactPage"];
+        };
+      };
+    };
+  };
+  "artifact.trash.list": {
+    parameters: {
+      query?: {
+        kind?: components["parameters"]["ArtifactKind"];
+        tag?: components["parameters"]["ArtifactTag"];
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["ArtifactLimit"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cursor page of trashed Artifacts. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactPage"];
+        };
+      };
+    };
+  };
+  "artifact.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Artifact detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDetail"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "artifact.trash": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Artifact moved to trash idempotently. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "artifact.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Artifact detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDetail"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.versions.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Versions ordered by descending version number. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactVersionList"];
+        };
+      };
+    };
+  };
+  "artifact.versions.uploads.initialize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactInitializeVersionUploadRequest"];
+      };
+    };
+    responses: {
+      /** @description Pending Version and upload session initialized. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactUploadSession"];
+        };
+      };
+      409: components["responses"]["Error"];
+      413: components["responses"]["Error"];
+    };
+  };
+  "artifact.versions.restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+        versionId: components["parameters"]["ArtifactVersionId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactRestoreVersionRequest"];
+      };
+    };
+    responses: {
+      /** @description New current Version created from retained bytes. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDetail"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Short-lived redirect or streaming proxy grant. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDownloadGrant"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.versions.download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+        versionId: components["parameters"]["ArtifactVersionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Short-lived redirect or streaming proxy grant. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDownloadGrant"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.previews.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+        versionId: components["parameters"]["ArtifactVersionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Bounded preview metadata and short-lived transfer grants. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactPreviewList"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "artifact.restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Artifact restored idempotently. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDetail"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.purge": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Artifact purged and unreferenced object bytes removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.preview-jobs.transfers.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactPreviewJobTransferRequest"];
+      };
+    };
+    responses: {
+      /** @description One-time Worker input or output transfer grant. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactTransferGrant"];
+        };
+      };
+      403: components["responses"]["Error"];
     };
   };
   "repo.get": {

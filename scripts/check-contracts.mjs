@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +78,20 @@ async function validateJSONSchemas() {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
   ajv.addSchema(common);
+  const eventFiles = (
+    await readdir(path.join(root, "contracts/events"))
+  ).filter(
+    (file) =>
+      file.endsWith(".schema.json") && file !== "event-envelope.schema.json",
+  );
+  for (const eventFile of eventFiles.sort()) {
+    const eventPayload = await readJSON(`contracts/events/${eventFile}`);
+    try {
+      ajv.compile(eventPayload);
+    } catch (error) {
+      fail(`${eventFile}: ${error}`);
+    }
+  }
   const validateEnvelope = ajv.compile(envelope);
   if (!validateEnvelope(eventExample)) {
     fail(`event-envelope example: ${ajv.errorsText(validateEnvelope.errors)}`);
