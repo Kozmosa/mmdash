@@ -13,16 +13,18 @@ import (
 
 // Registry records bounded-label Core platform metrics.
 type Registry struct {
-	http          map[httpKey]*httpMetric
-	mu            sync.RWMutex
-	repo          map[repoKey]*httpMetric
-	repoDurations map[repoDurationKey]*httpMetric
-	repoCheckouts int64
-	repoQueue     int64
-	repoStorage   int64
-	service       string
-	version       string
-	auditFailures uint64
+	http              map[httpKey]*httpMetric
+	mu                sync.RWMutex
+	repo              map[repoKey]*httpMetric
+	repoDurations     map[repoDurationKey]*httpMetric
+	repoCheckouts     int64
+	repoQueue         int64
+	repoStorage       int64
+	artifact          map[artifactKey]*httpMetric
+	artifactDurations map[artifactDurationKey]*httpMetric
+	service           string
+	version           string
+	auditFailures     uint64
 }
 
 type httpKey struct {
@@ -46,14 +48,74 @@ type repoDurationKey struct {
 	Provider  string
 }
 
+type artifactKey struct {
+	Backend   string
+	Operation string
+	Outcome   string
+}
+
+type artifactDurationKey struct {
+	Backend   string
+	Operation string
+}
+
 func New(service, version string) *Registry {
 	return &Registry{
-		http:          map[httpKey]*httpMetric{},
-		repo:          map[repoKey]*httpMetric{},
-		repoDurations: map[repoDurationKey]*httpMetric{},
-		service:       strings.TrimSpace(service),
-		version:       strings.TrimSpace(version),
+		http:              map[httpKey]*httpMetric{},
+		repo:              map[repoKey]*httpMetric{},
+		repoDurations:     map[repoDurationKey]*httpMetric{},
+		artifact:          map[artifactKey]*httpMetric{},
+		artifactDurations: map[artifactDurationKey]*httpMetric{},
+		service:           strings.TrimSpace(service),
+		version:           strings.TrimSpace(version),
 	}
+}
+
+// ObserveArtifactOperation records one bounded Artifact control or storage
+// operation. Identifiers, hashes, MIME types, filenames, and URLs are excluded.
+func (registry *Registry) ObserveArtifactOperation(
+	operation string,
+	outcome string,
+	backend string,
+	duration time.Duration,
+) {
+	if registry == nil {
+		return
+	}
+	key := artifactKey{
+		Operation: boundedLabel(operation, map[string]bool{
+			"abort": true, "confirm": true, "download_grant": true,
+			"expire": true, "initialize": true,
+			"initialize_version": true, "purge": true,
+			"sign_parts": true,
+		}, "other"),
+		Outcome: boundedLabel(
+			outcome, map[string]bool{"success": true, "error": true}, "error",
+		),
+		Backend: boundedLabel(
+			backend,
+			map[string]bool{"local": true, "minio": true, "s3": true},
+			"unknown",
+		),
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	metric := registry.artifact[key]
+	if metric == nil {
+		metric = &httpMetric{}
+		registry.artifact[key] = metric
+	}
+	metric.Count++
+	durationKey := artifactDurationKey{
+		Backend: key.Backend, Operation: key.Operation,
+	}
+	durationMetric := registry.artifactDurations[durationKey]
+	if durationMetric == nil {
+		durationMetric = &httpMetric{}
+		registry.artifactDurations[durationKey] = durationMetric
+	}
+	durationMetric.Count++
+	durationMetric.DurationSec += duration.Seconds()
 }
 
 // ObserveHTTP records one completed request without unbounded path labels.
@@ -280,6 +342,60 @@ func (registry *Registry) snapshot() string {
 	output.WriteString("# HELP mmdash_repo_storage_bytes Managed Repo storage bytes.\n")
 	output.WriteString("# TYPE mmdash_repo_storage_bytes gauge\n")
 	fmt.Fprintf(&output, "mmdash_repo_storage_bytes %d\n", registry.repoStorage)
+	output.WriteString("# HELP mmdash_artifact_operations_total Completed Artifact operations.\n")
+	output.WriteString("# TYPE mmdash_artifact_operations_total counter\n")
+	output.WriteString(
+		"# HELP mmdash_artifact_operation_duration_seconds Total Artifact operation duration.\n",
+	)
+	output.WriteString("# TYPE mmdash_artifact_operation_duration_seconds counter\n")
+	artifactKeys := make([]artifactKey, 0, len(registry.artifact))
+	for key := range registry.artifact {
+		artifactKeys = append(artifactKeys, key)
+	}
+	sort.Slice(artifactKeys, func(left, right int) bool {
+		leftValue := artifactKeys[left].Operation +
+			artifactKeys[left].Outcome + artifactKeys[left].Backend
+		rightValue := artifactKeys[right].Operation +
+			artifactKeys[right].Outcome + artifactKeys[right].Backend
+		return leftValue < rightValue
+	})
+	for _, key := range artifactKeys {
+		metric := registry.artifact[key]
+		labels := fmt.Sprintf(
+			"backend=%s,operation=%s,outcome=%s",
+			quote(key.Backend), quote(key.Operation), quote(key.Outcome),
+		)
+		fmt.Fprintf(
+			&output, "mmdash_artifact_operations_total{%s} %d\n",
+			labels, metric.Count,
+		)
+	}
+	artifactDurationKeys := make(
+		[]artifactDurationKey, 0, len(registry.artifactDurations),
+	)
+	for key := range registry.artifactDurations {
+		artifactDurationKeys = append(artifactDurationKeys, key)
+	}
+	sort.Slice(artifactDurationKeys, func(left, right int) bool {
+		leftValue := artifactDurationKeys[left].Operation +
+			artifactDurationKeys[left].Backend
+		rightValue := artifactDurationKeys[right].Operation +
+			artifactDurationKeys[right].Backend
+		return leftValue < rightValue
+	})
+	for _, key := range artifactDurationKeys {
+		metric := registry.artifactDurations[key]
+		labels := fmt.Sprintf(
+			"backend=%s,operation=%s",
+			quote(key.Backend), quote(key.Operation),
+		)
+		fmt.Fprintf(
+			&output,
+			"mmdash_artifact_operation_duration_seconds{%s} %s\n",
+			labels,
+			strconv.FormatFloat(metric.DurationSec, 'f', 6, 64),
+		)
+	}
 	return output.String()
 }
 

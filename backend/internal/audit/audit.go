@@ -14,6 +14,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/metrics"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
@@ -243,6 +244,36 @@ type Recorder struct {
 }
 
 func (recorder Recorder) Record(ctx context.Context, event Event) error {
+	if err := recorder.prepare(ctx, &event); err != nil {
+		return err
+	}
+	_, err := recorder.Store.Record(ctx, event)
+	recorder.reportFailure(ctx, event, err)
+	return err
+}
+
+// RecordInTransaction validates and appends an event through the caller's
+// business transaction.
+func (recorder Recorder) RecordInTransaction(
+	ctx context.Context,
+	tx transaction.Tx,
+	event Event,
+) error {
+	if err := recorder.prepare(ctx, &event); err != nil {
+		return err
+	}
+	store, ok := recorder.Store.(interface {
+		RecordInTransaction(context.Context, transaction.Tx, Event) (Event, error)
+	})
+	if !ok {
+		return errors.New("transactional audit store is not configured")
+	}
+	_, err := store.RecordInTransaction(ctx, tx, event)
+	recorder.reportFailure(ctx, event, err)
+	return err
+}
+
+func (recorder Recorder) prepare(ctx context.Context, event *Event) error {
 	if event.OccurredAt.IsZero() {
 		event.OccurredAt = recorder.Clock.Now().UTC()
 	}
@@ -258,20 +289,24 @@ func (recorder Recorder) Record(ctx context.Context, event Event) error {
 	if event.ActorKind == "" {
 		event.ActorKind = "anonymous"
 	}
-	if err := validate(&event); err != nil {
-		return err
+	return validate(event)
+}
+
+func (recorder Recorder) reportFailure(
+	ctx context.Context,
+	event Event,
+	err error,
+) {
+	if err == nil {
+		return
 	}
-	_, err := recorder.Store.Record(ctx, event)
-	if err != nil {
-		recorder.Metrics.IncrementAuditFailure()
-		if recorder.Logger != nil {
-			recorder.Logger.Error("audit.record.failed", map[string]interface{}{
-				"action": event.Action, "error": err.Error(),
-				"project_id": event.ProjectID, "request_id": event.RequestID,
-			})
-		}
+	recorder.Metrics.IncrementAuditFailure()
+	if recorder.Logger != nil {
+		recorder.Logger.Error("audit.record.failed", map[string]interface{}{
+			"action": event.Action, "error": err.Error(),
+			"project_id": event.ProjectID, "request_id": event.RequestID,
+		})
 	}
-	return err
 }
 
 func firstNonEmpty(preferred, fallback string) string {

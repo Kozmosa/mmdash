@@ -29,24 +29,28 @@ const (
 type Permission string
 
 const (
-	PermissionRead           Permission = "project.read"
-	PermissionUpdate         Permission = "project.update"
-	PermissionArchive        Permission = "project.archive"
-	PermissionMembersManage  Permission = "project.members.manage"
-	PermissionSettingsManage Permission = "project.settings.manage"
-	PermissionSettingsRead   Permission = "project.settings.read"
-	PermissionTokensManage   Permission = "project.tokens.manage"
-	PermissionJobsCreate     Permission = "project.jobs.create"
-	PermissionJobsRead       Permission = "project.jobs.read"
-	PermissionJobsCancel     Permission = "project.jobs.cancel"
-	PermissionDataRead       Permission = "project.data.read"
-	PermissionContextPropose Permission = "project.context.propose"
-	PermissionContextReview  Permission = "project.context.review"
-	PermissionAuditRead      Permission = "project.audit.read"
-	PermissionAuditWrite     Permission = "project.audit.write"
-	PermissionRepoRead       Permission = "project.repo.read"
-	PermissionRepoManage     Permission = "project.repo.manage"
-	PermissionRepoWrite      Permission = "project.repo.write"
+	PermissionRead             Permission = "project.read"
+	PermissionUpdate           Permission = "project.update"
+	PermissionArchive          Permission = "project.archive"
+	PermissionMembersManage    Permission = "project.members.manage"
+	PermissionSettingsManage   Permission = "project.settings.manage"
+	PermissionSettingsRead     Permission = "project.settings.read"
+	PermissionTokensManage     Permission = "project.tokens.manage"
+	PermissionJobsCreate       Permission = "project.jobs.create"
+	PermissionJobsRead         Permission = "project.jobs.read"
+	PermissionJobsCancel       Permission = "project.jobs.cancel"
+	PermissionDataRead         Permission = "project.data.read"
+	PermissionContextPropose   Permission = "project.context.propose"
+	PermissionContextReview    Permission = "project.context.review"
+	PermissionAuditRead        Permission = "project.audit.read"
+	PermissionAuditWrite       Permission = "project.audit.write"
+	PermissionRepoRead         Permission = "project.repo.read"
+	PermissionRepoManage       Permission = "project.repo.manage"
+	PermissionRepoWrite        Permission = "project.repo.write"
+	PermissionArtifactRead     Permission = "project.artifact.read"
+	PermissionArtifactUpload   Permission = "project.artifact.upload"
+	PermissionArtifactDownload Permission = "project.artifact.download"
+	PermissionArtifactDelete   Permission = "project.artifact.delete"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -69,6 +73,10 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionRepoRead,
 		PermissionRepoManage,
 		PermissionRepoWrite,
+		PermissionArtifactRead,
+		PermissionArtifactUpload,
+		PermissionArtifactDownload,
+		PermissionArtifactDelete,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -88,6 +96,10 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionRepoRead,
 		PermissionRepoManage,
 		PermissionRepoWrite,
+		PermissionArtifactRead,
+		PermissionArtifactUpload,
+		PermissionArtifactDownload,
+		PermissionArtifactDelete,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -102,6 +114,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionAuditWrite,
 		PermissionRepoRead,
 		PermissionRepoWrite,
+		PermissionArtifactRead,
+		PermissionArtifactUpload,
+		PermissionArtifactDownload,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -110,6 +125,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionAuditWrite,
 		PermissionRepoRead,
+		PermissionArtifactRead,
+		PermissionArtifactDownload,
 	},
 	RoleAgent: {
 		PermissionRead,

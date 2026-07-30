@@ -384,6 +384,35 @@ func TestRepositoryPermissionsMatchCollaborationRoles(t *testing.T) {
 	}
 }
 
+func TestArtifactPermissionsMatchCollaborationRoles(t *testing.T) {
+	cases := []struct {
+		role     Role
+		read     bool
+		upload   bool
+		download bool
+		delete   bool
+	}{
+		{RoleOwner, true, true, true, true},
+		{RoleMaintainer, true, true, true, true},
+		{RoleEditor, true, true, true, false},
+		{RoleViewer, true, false, true, false},
+		{RoleAgent, false, false, false, false},
+		{RoleBox, false, false, false, false},
+	}
+	for _, testCase := range cases {
+		permissions := permissionsByRole[testCase.role]
+		if hasPermission(permissions, PermissionArtifactRead) != testCase.read ||
+			hasPermission(permissions, PermissionArtifactUpload) != testCase.upload ||
+			hasPermission(permissions, PermissionArtifactDownload) != testCase.download ||
+			hasPermission(permissions, PermissionArtifactDelete) != testCase.delete {
+			t.Fatalf(
+				"unexpected Artifact permissions for %s: %#v",
+				testCase.role, permissions,
+			)
+		}
+	}
+}
+
 func hasPermission(permissions []Permission, expected Permission) bool {
 	for _, permission := range permissions {
 		if permission == expected {

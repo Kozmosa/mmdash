@@ -10,6 +10,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
 // PostgresStore writes and searches the append-only audit ledger.
@@ -20,6 +21,28 @@ type PostgresStore struct {
 }
 
 func (store PostgresStore) Record(ctx context.Context, event Event) (Event, error) {
+	return store.record(ctx, store.DB, event)
+}
+
+// RecordInTransaction appends an audit event in the caller's business
+// transaction.
+func (store PostgresStore) RecordInTransaction(
+	ctx context.Context,
+	tx transaction.Tx,
+	event Event,
+) (Event, error) {
+	return store.record(ctx, tx, event)
+}
+
+type auditExecutor interface {
+	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+}
+
+func (store PostgresStore) record(
+	ctx context.Context,
+	executor auditExecutor,
+	event Event,
+) (Event, error) {
 	if event.ID == "" {
 		generated, err := store.Generator.New()
 		if err != nil {
@@ -34,7 +57,7 @@ func (store PostgresStore) Record(ctx context.Context, event Event) (Event, erro
 	if err != nil {
 		return Event{}, fmt.Errorf("encode audit metadata: %w", err)
 	}
-	_, err = store.DB.ExecContext(ctx, `
+	_, err = executor.ExecContext(ctx, `
 		INSERT INTO audit_events (
 			audit_id, occurred_at, recorded_at, request_id,
 			actor_id, actor_kind, project_id, category, action, outcome,
