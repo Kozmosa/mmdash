@@ -60,7 +60,9 @@ export default function ProjectsPage() {
     onSuccess(project) {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("项目已创建");
-      router.push(`/projects/${encodeURIComponent(project.id)}`);
+      router.push(
+        `/projects/${encodeURIComponent(project.id)}/artifacts?setup=1`,
+      );
     },
   });
 

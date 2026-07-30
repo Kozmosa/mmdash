@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Bot,
   FilePenLine,
+  Files,
   FlaskConical,
   Gauge,
   ListChecks,
@@ -14,6 +15,7 @@ export type WorkspaceRoute = {
   icon: LucideIcon;
   id:
     | "home"
+    | "artifacts"
     | "agent"
     | "progress"
     | "models"
@@ -38,6 +40,13 @@ export const workspaceRoutes: readonly WorkspaceRoute[] = [
     description: "研究协作会话",
     segment: "agent",
     icon: Bot,
+  },
+  {
+    id: "artifacts",
+    label: "项目文件",
+    description: "上传、版本、预览与回收站",
+    segment: "artifacts",
+    icon: Files,
   },
   {
     id: "progress",

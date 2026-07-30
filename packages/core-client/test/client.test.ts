@@ -191,6 +191,86 @@ describe("CoreClient", () => {
       url: `http://core.test/v1/projects/project-1/repository/content?path=src%2Fa+b.ts&revision=${revision}&workspace=code`,
     });
   });
+
+  it("uses the frozen Artifact multipart and library routes", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], has_more: false }), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    const client = new CoreClient("http://core.test", fetchImplementation);
+    const context = {
+      accessToken: "session-token",
+      projectId: "project-1",
+      requestId: "request-1",
+      userId: "user-1",
+    };
+    const upload = {
+      filename: "problem.pdf",
+      idempotency_key: "upload-1",
+      kind: "problem" as const,
+      sha256: "a".repeat(64),
+      size_bytes: 42,
+    };
+
+    await client.initializeArtifactUpload("project-1", upload, context);
+    await client.signArtifactUploadParts(
+      "project-1",
+      "upload-1",
+      { part_numbers: [1, 2] },
+      context,
+    );
+    await client.confirmArtifactUpload(
+      "project-1",
+      "upload-1",
+      { parts: [{ etag: "etag-1", part_number: 1 }] },
+      context,
+    );
+    await client.listArtifacts("project-1", context, {
+      kind: "problem",
+      limit: 25,
+      source: "user_upload",
+      status: "available",
+      tag: "source",
+    });
+    await client.downloadArtifact(
+      "project-1",
+      "artifact-1",
+      context,
+      "version-1",
+    );
+
+    expectRequest(fetchImplementation.mock.calls[0], {
+      body: upload,
+      context,
+      method: "POST",
+      url: "http://core.test/v1/projects/project-1/artifacts/uploads",
+    });
+    expectRequest(fetchImplementation.mock.calls[1], {
+      body: { part_numbers: [1, 2] },
+      context,
+      method: "POST",
+      url: "http://core.test/v1/projects/project-1/artifacts/uploads/upload-1/parts/sign",
+    });
+    expectRequest(fetchImplementation.mock.calls[2], {
+      body: { parts: [{ etag: "etag-1", part_number: 1 }] },
+      context,
+      method: "POST",
+      url: "http://core.test/v1/projects/project-1/artifacts/uploads/upload-1/confirm",
+    });
+    expectRequest(fetchImplementation.mock.calls[3], {
+      context,
+      method: "GET",
+      url: "http://core.test/v1/projects/project-1/artifacts?kind=problem&limit=25&source=user_upload&status=available&tag=source",
+    });
+    expectRequest(fetchImplementation.mock.calls[4], {
+      context,
+      method: "POST",
+      url: "http://core.test/v1/projects/project-1/artifacts/artifact-1/versions/version-1/download",
+    });
+  });
 });
 
 function expectRequest(
