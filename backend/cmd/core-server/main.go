@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mmdash/mmdash/backend/internal/artifact"
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
@@ -27,7 +28,6 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/logging"
 	"github.com/mmdash/mmdash/backend/internal/platform/metrics"
 	"github.com/mmdash/mmdash/backend/internal/platform/module"
-	"github.com/mmdash/mmdash/backend/internal/platform/objectstorage"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
@@ -80,7 +80,10 @@ func run(logger *logging.Logger) error {
 	}
 	defer db.Close()
 
-	storage, err := objectstorage.NewMinIO(processConfig.ObjectStorage)
+	storage, err := artifact.NewBlobStore(
+		processConfig.Artifact,
+		processConfig.ObjectStorage,
+	)
 	if err != nil {
 		return err
 	}
