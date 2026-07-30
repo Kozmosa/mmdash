@@ -73,6 +73,13 @@ function renderGoHandlerTypes(document) {
     "RepoUpdateWorkspacesRequest",
     "RepoCreateCheckoutRequest",
     "RepoCreateCommitRequest",
+    "ArtifactInitializeUploadRequest",
+    "ArtifactInitializeVersionUploadRequest",
+    "ArtifactSignPartsRequest",
+    "ArtifactConfirmUploadRequest",
+    "ArtifactUpdateRequest",
+    "ArtifactRestoreVersionRequest",
+    "ArtifactPreviewJobTransferRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {
