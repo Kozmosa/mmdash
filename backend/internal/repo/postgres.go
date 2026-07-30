@@ -112,6 +112,81 @@ func (store PostgresStore) CreatePending(
 	return store.GetByProject(ctx, repository.ProjectID)
 }
 
+// ReconnectPending restores one disconnected repository in place while its
+// managed storage is still inside the recovery grace period.
+func (store PostgresStore) ReconnectPending(
+	ctx context.Context,
+	snapshot ConnectionSnapshot,
+	now time.Time,
+) (Repository, error) {
+	if err := validateSnapshot(snapshot); err != nil {
+		return Repository{}, err
+	}
+	now = now.UTC()
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var cleanupAfter sql.NullTime
+		var existingProvider Provider
+		var existingRemote string
+		var lockedBy sql.NullString
+		var repositoryID string
+		var status RepositoryStatus
+		if err := tx.QueryRowContext(ctx, `
+			SELECT repository_id, provider, canonical_remote_url, status,
+			       cleanup_after, sync_locked_by
+			FROM repo_repositories
+			WHERE project_id = $1
+			FOR UPDATE
+		`, snapshot.ProjectID).Scan(
+			&repositoryID, &existingProvider, &existingRemote, &status,
+			&cleanupAfter, &lockedBy,
+		); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotConfigured
+			}
+			return err
+		}
+		if status != StatusDisconnected {
+			return ErrAlreadyConnected
+		}
+		if existingProvider != snapshot.Provider ||
+			existingRemote != snapshot.CanonicalRemoteURL {
+			return ErrReconnectMismatch
+		}
+		if !cleanupAfter.Valid || !cleanupAfter.Time.After(now) || lockedBy.Valid {
+			return ErrReconnectExpired
+		}
+		for _, workspace := range mappingList(snapshot.Workspaces, now) {
+			result, err := tx.ExecContext(ctx, `
+				UPDATE repo_workspaces
+				SET remote_branch = $3, head_commit_sha = NULL, tree_sha = NULL,
+				    status = 'pending', updated_at = $4
+				WHERE repository_id = $1 AND workspace_kind = $2
+			`, repositoryID, workspace.Workspace, workspace.RemoteBranch, now)
+			if err := requireAffected(result, err); err != nil {
+				return err
+			}
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE repo_repositories
+			SET display_name = $2, default_branch = $3,
+			    settings_version = $4, status = 'pending',
+			    cleanup_after = NULL, sync_requested_at = $5,
+			    sync_started_at = NULL, sync_locked_by = NULL,
+			    sync_lease_expires_at = NULL, sync_attempts = 0,
+			    sync_source = 'manual', next_sync_at = $5,
+			    last_error_code = NULL, last_error_message = NULL,
+			    updated_at = $5
+			WHERE repository_id = $1 AND status = 'disconnected'
+		`, repositoryID, snapshot.DisplayName, snapshot.DefaultBranch,
+			snapshot.SettingsVersion, now)
+		return requireAffected(result, err)
+	})
+	if err != nil {
+		return Repository{}, wrap("reconnect pending repository", err)
+	}
+	return store.GetByProject(ctx, snapshot.ProjectID)
+}
+
 func (store PostgresStore) GetByProject(ctx context.Context, projectID string) (Repository, error) {
 	return store.get(ctx, `
 		SELECT repository_id, project_id, provider, canonical_remote_url,
@@ -369,7 +444,10 @@ func (store PostgresStore) ClaimCleanup(
 			LIMIT $2
 		)
 		UPDATE repo_repositories AS repository
-		SET cleanup_after = $3, updated_at = $1
+		SET cleanup_after = $3,
+		    sync_locked_by = 'repo-cleanup',
+		    sync_lease_expires_at = $3,
+		    updated_at = $1
 		FROM candidates
 		WHERE repository.repository_id = candidates.repository_id
 		RETURNING repository.repository_id
@@ -408,6 +486,7 @@ func (store PostgresStore) CompleteCleanup(
 	result, err := store.DB.ExecContext(ctx, `
 		DELETE FROM repo_repositories
 		WHERE repository_id = $1 AND status = 'disconnected'
+		  AND sync_locked_by = 'repo-cleanup'
 	`, repositoryID)
 	return requireAffected(result, err)
 }
@@ -421,7 +500,9 @@ func (store PostgresStore) RetryCleanup(
 ) error {
 	result, err := store.DB.ExecContext(ctx, `
 		UPDATE repo_repositories
-		SET cleanup_after = $2, updated_at = $3
+		SET cleanup_after = $2,
+		    sync_locked_by = NULL, sync_lease_expires_at = NULL,
+		    updated_at = $3
 		WHERE repository_id = $1 AND status = 'disconnected'
 	`, repositoryID, retryAt.UTC(), now.UTC())
 	return requireAffected(result, err)
