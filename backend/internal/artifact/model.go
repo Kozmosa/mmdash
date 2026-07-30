@@ -297,6 +297,22 @@ type PreviewList struct {
 	Items []Preview `json:"items"`
 }
 
+// AttachmentRegistryEntry is the authoritative, project-scoped attachment
+// registry row consumed through Data Hub.
+type AttachmentRegistryEntry struct {
+	ID               string    `json:"attachment_id"`
+	ProjectID        string    `json:"project_id"`
+	ArtifactID       string    `json:"artifact_id"`
+	VersionID        string    `json:"version_id"`
+	Source           string    `json:"source"`
+	Description      *string   `json:"description"`
+	RecommendedUsage []string  `json:"recommended_usage"`
+	Status           string    `json:"status"`
+	CreatedBy        string    `json:"created_by"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
 // PreviewTransfer is one job-bound, short-lived multipart output.
 type PreviewTransfer struct {
 	ID               string

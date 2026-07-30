@@ -14,6 +14,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
@@ -24,6 +25,7 @@ type PostgresStore struct {
 	DB          *sql.DB
 	Generator   identity.Generator
 	Jobs        jobs.TransactionalWriter
+	Outbox      *outbox.Writer
 	Transaction transaction.Manager
 }
 
@@ -47,6 +49,17 @@ func (store PostgresStore) CreateFirst(
 			if err := store.schedulePreviewInTransaction(
 				ctx, tx, artifact.ProjectID, artifact.ID, version.ID,
 				artifact.CreatedBy, version.CreatedAt,
+			); err != nil {
+				return err
+			}
+		}
+		if err := store.artifactCreated(ctx, tx, artifact, version); err != nil {
+			return err
+		}
+		if version.Status == StatusAvailable {
+			if err := store.artifactAvailable(
+				ctx, tx, artifact.ProjectID, artifact.ID, version,
+				"deduplicated",
 			); err != nil {
 				return err
 			}
@@ -78,6 +91,14 @@ func (store PostgresStore) CreateGit(
 		if err := store.schedulePreviewInTransaction(
 			ctx, tx, artifact.ProjectID, artifact.ID, version.ID,
 			artifact.CreatedBy, version.CreatedAt,
+		); err != nil {
+			return err
+		}
+		if err := store.artifactCreated(ctx, tx, artifact, version); err != nil {
+			return err
+		}
+		if err := store.artifactAvailable(
+			ctx, tx, artifact.ProjectID, artifact.ID, version, "uploaded",
 		); err != nil {
 			return err
 		}
@@ -154,6 +175,11 @@ func (store PostgresStore) CreateVersion(
 			if err := store.schedulePreviewInTransaction(
 				ctx, tx, projectID, artifactID, version.ID,
 				version.CreatedBy, version.CreatedAt,
+			); err != nil {
+				return err
+			}
+			if err := store.artifactAvailable(
+				ctx, tx, projectID, artifactID, version, "deduplicated",
 			); err != nil {
 				return err
 			}
@@ -620,6 +646,17 @@ func (store PostgresStore) FinalizeUpload(
 		); err != nil {
 			return err
 		}
+		available := Version{
+			ID: upload.VersionID, ArtifactID: upload.ArtifactID,
+			VersionNo: upload.VersionNo, SHA256: upload.ExpectedSHA256,
+			MIMEType: upload.MIMEType, SizeBytes: upload.ExpectedSize,
+			AvailableAt: &now, CreatedBy: upload.CreatedBy,
+		}
+		if err := store.artifactAvailable(
+			ctx, tx, upload.ProjectID, upload.ArtifactID, available, "uploaded",
+		); err != nil {
+			return err
+		}
 		return store.audit(
 			ctx, tx, "artifact.upload.confirmed", upload.ProjectID,
 			upload.ArtifactID, map[string]interface{}{
@@ -642,6 +679,15 @@ func (store PostgresStore) Trash(
 	now time.Time,
 ) error {
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var currentVersionID string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT current_version_id::text
+			FROM artifact_artifacts
+			WHERE project_id=$1 AND artifact_id=$2 AND status='available'
+			FOR UPDATE
+		`, projectID, artifactID).Scan(&currentVersionID); err != nil {
+			return mapNotFound(err)
+		}
 		result, err := tx.ExecContext(ctx, `
 			UPDATE artifact_artifacts AS artifact
 			SET status='trashed',trashed_by=$3,trashed_at=$4,updated_at=$4
@@ -664,6 +710,11 @@ func (store PostgresStore) Trash(
 		`, projectID, artifactID, now); err != nil {
 			return err
 		}
+		if err := store.artifactDeleted(
+			ctx, tx, projectID, artifactID, currentVersionID, actorID, now,
+		); err != nil {
+			return err
+		}
 		return store.audit(
 			ctx, tx, "artifact.trashed", projectID, artifactID,
 			map[string]interface{}{},
@@ -675,6 +726,7 @@ func (store PostgresStore) Restore(
 	ctx context.Context,
 	projectID string,
 	artifactID string,
+	actorID string,
 	now time.Time,
 ) (Detail, error) {
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
@@ -694,6 +746,20 @@ func (store PostgresStore) Restore(
 			  AND artifact.project_id=registry.project_id
 			  AND artifact.artifact_id=registry.artifact_id
 		`, projectID, artifactID, now); err != nil {
+			return err
+		}
+		version, err := scanVersion(tx.QueryRowContext(ctx, versionSelect+`
+			JOIN artifact_artifacts AS artifact
+			  ON artifact.current_version_id=version.version_id
+			WHERE artifact.project_id=$1 AND artifact.artifact_id=$2
+		`, projectID, artifactID).Scan)
+		if err != nil {
+			return err
+		}
+		version.CreatedBy = actorID
+		if err := store.artifactAvailable(
+			ctx, tx, projectID, artifactID, version, "restored",
+		); err != nil {
 			return err
 		}
 		return store.audit(
@@ -798,6 +864,11 @@ func (store PostgresStore) RestoreVersion(
 		}
 		if err := store.schedulePreviewInTransaction(
 			ctx, tx, projectID, artifactID, newVersionID, actorID, now,
+		); err != nil {
+			return err
+		}
+		if err := store.artifactAvailable(
+			ctx, tx, projectID, artifactID, restored, "restored",
 		); err != nil {
 			return err
 		}
@@ -1276,4 +1347,91 @@ func (store PostgresStore) audit(
 		Outcome: "success", ProjectID: projectID, ResourceID: artifactID,
 		ResourceType: "artifact", Source: "core",
 	})
+}
+
+func (store PostgresStore) artifactCreated(
+	ctx context.Context,
+	tx transaction.Tx,
+	item Artifact,
+	version Version,
+) error {
+	if store.Outbox == nil {
+		return nil
+	}
+	_, err := store.Outbox.Write(ctx, tx, outbox.Event{
+		Actor:     map[string]string{"user_id": item.CreatedBy},
+		EventType: "artifact.created",
+		Payload: map[string]interface{}{
+			"artifact_id": item.ID,
+			"version_id":  version.ID,
+			"kind":        item.Kind,
+			"source":      item.Source,
+			"name":        item.Name,
+			"filename":    version.Filename,
+			"sha256":      version.SHA256,
+			"size_bytes":  version.SizeBytes,
+			"status":      StatusPendingUpload,
+		},
+		Producer: "artifact", ProjectID: item.ProjectID,
+	})
+	return err
+}
+
+func (store PostgresStore) artifactAvailable(
+	ctx context.Context,
+	tx transaction.Tx,
+	projectID string,
+	artifactID string,
+	version Version,
+	reason string,
+) error {
+	if store.Outbox == nil {
+		return nil
+	}
+	availableAt := version.AvailableAt
+	if availableAt == nil {
+		return ErrInvalid
+	}
+	_, err := store.Outbox.Write(ctx, tx, outbox.Event{
+		Actor:     map[string]string{"user_id": version.CreatedBy},
+		EventType: "artifact.available",
+		Payload: map[string]interface{}{
+			"artifact_id":  artifactID,
+			"version_id":   version.ID,
+			"version_no":   version.VersionNo,
+			"sha256":       version.SHA256,
+			"size_bytes":   version.SizeBytes,
+			"mime_type":    version.MIMEType,
+			"reason":       reason,
+			"available_at": *availableAt,
+		},
+		Producer: "artifact", ProjectID: projectID,
+	})
+	return err
+}
+
+func (store PostgresStore) artifactDeleted(
+	ctx context.Context,
+	tx transaction.Tx,
+	projectID string,
+	artifactID string,
+	currentVersionID string,
+	actorID string,
+	trashedAt time.Time,
+) error {
+	if store.Outbox == nil {
+		return nil
+	}
+	_, err := store.Outbox.Write(ctx, tx, outbox.Event{
+		Actor:     map[string]string{"user_id": actorID},
+		EventType: "artifact.deleted",
+		Payload: map[string]interface{}{
+			"artifact_id":        artifactID,
+			"current_version_id": currentVersionID,
+			"reason":             "trashed",
+			"trashed_at":         trashedAt,
+		},
+		Producer: "artifact", ProjectID: projectID,
+	})
+	return err
 }

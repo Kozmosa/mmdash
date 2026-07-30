@@ -972,7 +972,7 @@ func (service Service) Restore(
 		return detail, nil
 	}
 	detail, err = service.Store.Restore(
-		ctx, projectID, artifactID, service.now(),
+		ctx, projectID, artifactID, identity.User.ID, service.now(),
 	)
 	return detail, err
 }

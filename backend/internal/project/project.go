@@ -245,9 +245,16 @@ type Authenticator interface {
 	Authenticate(context.Context, string) (auth.Identity, error)
 }
 
+// ArtifactReferenceValidator is the narrow boundary used to validate Project
+// source references without reading Artifact persistence directly.
+type ArtifactReferenceValidator interface {
+	ValidateProjectReferences(context.Context, string, []string) error
+}
+
 // Service applies collaboration and RBAC policy.
 type Service struct {
 	Auth           Authenticator
+	Artifacts      ArtifactReferenceValidator
 	Clock          interface{ Now() time.Time }
 	Store          Store
 	InvitationTTL  time.Duration
@@ -269,6 +276,11 @@ func (service Service) Create(
 	input.ProblemTitle = strings.TrimSpace(input.ProblemTitle)
 	input.ProblemSummary = strings.TrimSpace(input.ProblemSummary)
 	if input.Name == "" {
+		return Project{}, ErrInvalid
+	}
+	// Stage 2 uses an explicit two-step flow: create the Project, upload its
+	// source files inside that Project, then PATCH source_artifact_ids.
+	if len(input.SourceArtifactIDs) != 0 {
 		return Project{}, ErrInvalid
 	}
 	if identity.Kind != "session" && identity.Kind != "api" {
@@ -346,6 +358,17 @@ func (service Service) Update(
 			return Project{}, ErrInvalid
 		}
 		input.Name = &trimmed
+	}
+	if input.SourceArtifactIDs != nil {
+		if service.Artifacts == nil {
+			if len(*input.SourceArtifactIDs) != 0 {
+				return Project{}, ErrInvalid
+			}
+		} else if err := service.Artifacts.ValidateProjectReferences(
+			ctx, projectID, *input.SourceArtifactIDs,
+		); err != nil {
+			return Project{}, ErrInvalid
+		}
 	}
 	return service.Store.Update(ctx, identity.User.ID, projectID, input)
 }

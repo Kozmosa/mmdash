@@ -33,7 +33,7 @@ export const dataListTool: ToolModule = {
           title: "List project data",
         },
         description:
-          "List authorized Data Hub projections, including repository, repo_commit, and repo_file metadata.",
+          "List authorized Data Hub projections, including Artifact, attachment registry, repository, commit, and file metadata.",
         inputSchema: dataListInput,
       },
       async ({ cursor, limit, project_id, type }) =>
@@ -61,7 +61,7 @@ export const dataReadTool: ToolModule = {
           title: "Read project data",
         },
         description:
-          "Read one Data Hub object through its authoritative module adapter. Repo files remain revision-pinned.",
+          "Read one Data Hub object through its authoritative module adapter. Artifact reads issue only short-lived controlled transfers; Repo files remain revision-pinned.",
         inputSchema: dataReadInput,
       },
       async ({ object_id, project_id }) =>

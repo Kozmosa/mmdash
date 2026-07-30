@@ -168,6 +168,11 @@ func (reader ReaderFunc) Read(
 	return reader(ctx, identity, object)
 }
 
+// ProblemProvider resolves the Project's validated source Artifact cards.
+type ProblemProvider interface {
+	ProblemItems(context.Context, auth.Identity, string) ([]interface{}, error)
+}
+
 // AdapterRegistry maps stable object types to domain-owned readers.
 type AdapterRegistry struct {
 	mu      sync.RWMutex
@@ -222,6 +227,7 @@ type Service struct {
 	Access   Access
 	Adapters *AdapterRegistry
 	Clock    interface{ Now() time.Time }
+	Problem  ProblemProvider
 	Store    Store
 }
 
@@ -356,10 +362,25 @@ func (service Service) Home(
 	empty := func() HomeSection {
 		return HomeSection{Available: false, Items: []interface{}{}, Total: 0}
 	}
+	problem := empty()
+	if service.Problem != nil {
+		items, err := service.Problem.ProblemItems(
+			ctx, identity, projectID,
+		)
+		if err != nil {
+			return HomeAggregate{}, err
+		}
+		if items == nil {
+			items = []interface{}{}
+		}
+		problem = HomeSection{
+			Available: true, Items: items, Total: len(items),
+		}
+	}
 	return HomeAggregate{
 		Agent: empty(), Article: empty(), Experiments: empty(),
 		GeneratedAt: service.Clock.Now().UTC(), Milestones: empty(),
-		Models: empty(), Problem: empty(), ProjectID: projectID, Todos: empty(),
+		Models: empty(), Problem: problem, ProjectID: projectID, Todos: empty(),
 	}, nil
 }
 
