@@ -37,7 +37,7 @@ type Store interface {
 	UpsertParts(context.Context, string, []UploadPart) error
 	FinalizeUpload(context.Context, UploadSession, Blob, time.Time) (Detail, error)
 	Trash(context.Context, string, string, string, time.Time) error
-	Restore(context.Context, string, string, time.Time) (Detail, error)
+	Restore(context.Context, string, string, string, time.Time) (Detail, error)
 	RestoreVersion(context.Context, string, string, string, string, string, string, time.Time) (Detail, error)
 	Purge(context.Context, string, string, PurgeObject) error
 	ExpireUploads(context.Context, time.Time, int) ([]UploadSession, error)

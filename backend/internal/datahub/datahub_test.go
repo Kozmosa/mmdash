@@ -40,6 +40,18 @@ type storeStub struct {
 	reviewed bool
 }
 
+type problemProviderStub struct {
+	items []interface{}
+}
+
+func (stub problemProviderStub) ProblemItems(
+	context.Context,
+	auth.Identity,
+	string,
+) ([]interface{}, error) {
+	return stub.items, nil
+}
+
 func (stub *storeStub) CreateProposal(
 	context.Context, string, string, CreateProposalInput,
 ) (ContextProposal, error) {
@@ -193,6 +205,31 @@ func TestHomeAggregateIsTypedEmptyShell(t *testing.T) {
 	}
 	if home.ProjectID != "project-1" || !home.GeneratedAt.Equal(now) {
 		t.Fatalf("unexpected home shell: %#v", home)
+	}
+}
+
+func TestHomeAggregateIncludesValidatedProblemArtifacts(t *testing.T) {
+	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
+	service := Service{
+		Access: &accessStub{}, Clock: clock.Fixed{Time: now},
+		Problem: problemProviderStub{items: []interface{}{
+			map[string]interface{}{"artifact_id": "artifact-1"},
+		}},
+		Store: &storeStub{},
+	}
+	home, err := service.Home(
+		context.Background(), auth.Identity{}, "project-1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !home.Problem.Available ||
+		home.Problem.Total != 1 ||
+		len(home.Problem.Items) != 1 {
+		t.Fatalf("unexpected Problem section: %#v", home.Problem)
+	}
+	if home.Models.Available || home.Models.Items == nil {
+		t.Fatalf("future sections must remain typed empty shells: %#v", home.Models)
 	}
 }
 

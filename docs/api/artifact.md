@@ -139,9 +139,15 @@ Artifact writes authoritative state and their Outbox event in one transaction:
 
 Data Hub projects `artifact` and `attachment_registry_entry`. `data.list`
 returns metadata; `data.read` dispatches through the authorized Artifact reader
-and may issue a short-lived controlled download. Project
+and may issue a short-lived controlled download. Pending objects remain
+metadata-readable without a download capability. A trashed Artifact and its
+registry entry remain as hidden tombstones until restoration; signed URLs and
+storage identifiers are never persisted in either projection. Project
 `source_artifact_ids[]` must reference available, non-trashed Artifacts in the
-same Project.
+same Project. Project creation intentionally accepts no source IDs: the Web
+flow creates the Project first, uploads within it, then PATCHes the validated
+references. The Project-home Problem aggregate exposes those sources and their
+current preview state.
 
 Stage 2 adds no Artifact CLI command. Stage 3 reuses these Core contracts after
 CLI login and Project binding are implemented.

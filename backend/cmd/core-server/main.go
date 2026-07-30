@@ -170,7 +170,7 @@ func run(logger *logging.Logger) error {
 	}
 	artifactStore := artifact.PostgresStore{
 		Audit: auditRecorder, DB: db, Generator: idGenerator,
-		Jobs: jobStore, Transaction: transactionManager,
+		Jobs: jobStore, Outbox: &outboxWriter, Transaction: transactionManager,
 	}
 	artifactService := artifact.Service{
 		Access: projectService, Audit: auditRecorder,
@@ -357,7 +357,23 @@ func run(logger *logging.Logger) error {
 	}
 	artifactService.Git = artifact.RepoGitContentReader{Service: &repoService}
 	artifactModule.Service = artifactService
+	projectService.Artifacts = artifactService
+	dataService.Problem = artifact.ProjectHomeReader{
+		Projects: projectService, Service: &artifactService,
+	}
 	repoModule := repo.Module{Service: repoService}
+	artifactDataReader := artifact.DataHubReaderAdapter{
+		Registry: artifactStore, Service: &artifactService,
+	}
+	for _, objectType := range []string{
+		"artifact", "attachment_registry_entry",
+	} {
+		if err := dataAdapters.Register(
+			objectType, datahub.ReaderFunc(artifactDataReader.Read),
+		); err != nil {
+			return err
+		}
+	}
 	repoDataReader := repo.DataHubReaderAdapter{Service: &repoService}
 	if err := dataAdapters.Register("repository", datahub.ReaderFunc(
 		func(
@@ -409,6 +425,18 @@ func run(logger *logging.Logger) error {
 	} {
 		if err := projections.Register(
 			eventType, datahub.ProjectorFunc(repoProjector.Project),
+		); err != nil {
+			return err
+		}
+	}
+	artifactProjector := artifact.DataHubProjector{
+		Reader: artifactStore, Sink: dataStore,
+	}
+	for _, eventType := range []string{
+		"artifact.created", "artifact.available", "artifact.deleted",
+	} {
+		if err := projections.Register(
+			eventType, datahub.ProjectorFunc(artifactProjector.Project),
 		); err != nil {
 			return err
 		}

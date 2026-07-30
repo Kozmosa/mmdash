@@ -15,6 +15,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
@@ -87,6 +88,11 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		}
 		_, _ = tx.ExecContext(
 			context.Background(),
+			`DELETE FROM system_outbox WHERE project_id=$1`,
+			projectID,
+		)
+		_, _ = tx.ExecContext(
+			context.Background(),
 			`DELETE FROM artifact_artifacts WHERE project_id=$1`,
 			projectID,
 		)
@@ -119,7 +125,10 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		Store: project.PostgresStore{DB: db},
 	}
 	store := PostgresStore{
-		DB: db,
+		DB: db, Generator: generator,
+		Outbox: &outbox.Writer{
+			Clock: clock.Fixed{Time: now}, Generator: generator,
+		},
 		Transaction: transaction.Manager{
 			DB: transaction.SQLBeginner{DB: db},
 		},
@@ -305,6 +314,17 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	if err := service.Trash(ctx, owner, projectID, detail.Artifact.ID); err != nil {
 		t.Fatalf("trash first Artifact: %v", err)
 	}
+	restoredArtifact, err := service.Restore(
+		ctx, owner, projectID, detail.Artifact.ID,
+	)
+	if err != nil ||
+		restoredArtifact.Artifact.Status != StatusAvailable ||
+		restoredArtifact.CurrentVersion == nil {
+		t.Fatalf("restore trashed Artifact: %#v, %v", restoredArtifact, err)
+	}
+	if err := service.Trash(ctx, owner, projectID, detail.Artifact.ID); err != nil {
+		t.Fatalf("trash restored Artifact: %v", err)
+	}
 	if err := service.Purge(ctx, owner, projectID, detail.Artifact.ID); err != nil {
 		t.Fatalf("purge first Artifact: %v", err)
 	}
@@ -470,5 +490,21 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	if err != nil || expiredState.Status != UploadExpired ||
 		!strings.HasPrefix(expiredState.ProviderUploadID, "aborted:") {
 		t.Fatalf("expired upload state: %#v, %v", expiredState, err)
+	}
+	for eventType, minimum := range map[string]int{
+		"artifact.created":   6,
+		"artifact.available": 6,
+		"artifact.deleted":   4,
+	} {
+		var count int
+		if err := db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM system_outbox
+			WHERE project_id=$1 AND event_type=$2
+		`, projectID, eventType).Scan(&count); err != nil {
+			t.Fatalf("count %s events: %v", eventType, err)
+		}
+		if count < minimum {
+			t.Fatalf("expected at least %d %s events, got %d", minimum, eventType, count)
+		}
 	}
 }

@@ -158,6 +158,85 @@ describe("MCP Gateway", () => {
     ]);
   });
 
+  it("reads Artifact metadata and a short-lived controlled download through generic data tools", async () => {
+    const listDataObjects = vi.fn().mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          object_id: "00000000-0000-4000-8000-000000000092",
+          object_type: "artifact",
+        },
+      ],
+    });
+    const readDataObject = vi.fn().mockResolvedValue({
+      content: {
+        detail: {
+          artifact: {
+            artifact_id: "00000000-0000-4000-8000-000000000102",
+          },
+        },
+        download: {
+          transfer: {
+            expires_at: "2026-07-30T12:01:00Z",
+            method: "GET",
+            url: "http://core.local/v1/artifact-transfers/short-lived-token",
+          },
+        },
+      },
+      object: {
+        object_id: "00000000-0000-4000-8000-000000000092",
+        object_type: "artifact",
+      },
+    });
+    const gateway = buildGateway({
+      config: testConfig,
+      coreClient: { listDataObjects, readDataObject } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
+    const client = new Client(
+      { name: "mmdash-artifact-data-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const listed = await client.callTool({
+      arguments: { project_id: "project-1", type: "artifact" },
+      name: "data.list",
+    });
+    const read = await client.callTool({
+      arguments: {
+        object_id: "00000000-0000-4000-8000-000000000092",
+        project_id: "project-1",
+      },
+      name: "data.read",
+    });
+    await client.close();
+
+    expect(listed.structuredContent).toMatchObject({
+      items: [{ object_type: "artifact" }],
+    });
+    expect(read.structuredContent).toMatchObject({
+      content: {
+        download: {
+          transfer: {
+            expires_at: "2026-07-30T12:01:00Z",
+            method: "GET",
+          },
+        },
+      },
+    });
+    expect(listDataObjects).toHaveBeenCalledWith(
+      "project-1",
+      expect.any(Object),
+      expect.objectContaining({ type: "artifact" }),
+    );
+  });
+
   it("denies out-of-scope Data Hub reads before Core and audits the denial", async () => {
     const audit = new MemoryAuditSink();
     const listDataObjects = vi.fn();

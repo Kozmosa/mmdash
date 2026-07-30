@@ -120,6 +120,31 @@ mmdash_artifact_uploads_active
 Do not add Artifact IDs, Project IDs, filenames, MIME types, hashes, object
 keys, or URLs as metric labels.
 
+## Events, Data Hub, MCP, and Project references
+
+Artifact persistence writes the three frozen lifecycle events in the same
+transaction as authoritative state and Audit:
+
+- `artifact.created` for the stable Artifact and first pending Version;
+- `artifact.available` after upload verification, Project-local deduplication,
+  historical Version restoration, or trash restoration;
+- `artifact.deleted` when the Artifact enters recoverable trash.
+
+The `datahub.projections` consumer reloads authoritative Artifact and registry
+state, then idempotently upserts `artifact` and
+`attachment_registry_entry`. Trashed objects remain as hidden tombstones and
+reappear after restoration. Projection metadata contains no object key,
+provider upload ID, credential, or signed URL.
+
+Generic MCP `data.list/read` remains the only Stage 2 Agent surface.
+`data.list` reads projections; `data.read` passes through current Project RBAC
+to the Artifact reader and signs a short-lived download only for that call.
+Project creation remains step one of the source-file flow. After upload, PATCH
+`source_artifact_ids[]`; Project calls Artifact through a narrow validator that
+requires every ID to be unique, same-Project, available, and not trashed. Data
+Hub's Project-home `problem` section resolves those validated source files and
+their current preview state.
+
 ## Core verification
 
 Run focused native checks with a migrated PostgreSQL database:
@@ -151,6 +176,5 @@ expiry, full-size and SHA-256 mismatch, cross-role denial, version retention,
 trash restore, shared-Blob purge, and Local signed streaming. Inspect Core logs
 afterward for errors and secret-bearing values.
 
-Outbox/Data Hub/MCP/Project source integration and Web/BFF are added by the
-following Stage 2 checkpoints. Artifact CLI commands remain deferred to
-Stage 3.
+Web/BFF is added by the following Stage 2 checkpoint. Artifact CLI commands
+remain deferred to Stage 3.
