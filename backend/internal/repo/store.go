@@ -16,6 +16,7 @@ type Store interface {
 	GetByID(context.Context, string) (Repository, error)
 	GetByProject(context.Context, string) (Repository, error)
 	ListRepositories(context.Context) ([]Repository, error)
+	ReconnectPending(context.Context, ConnectionSnapshot, time.Time) (Repository, error)
 	RenewSyncLease(context.Context, string, string, time.Time) error
 	RequestSync(context.Context, string, time.Time) (Repository, error)
 	RequestSyncSource(context.Context, string, time.Time, string) (Repository, error)

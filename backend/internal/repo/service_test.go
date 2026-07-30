@@ -59,9 +59,11 @@ func (source *serviceSettings) Update(
 }
 
 type serviceStore struct {
-	created  int
-	snapshot ConnectionSnapshot
-	value    Repository
+	created      int
+	disconnected int
+	reconnected  int
+	snapshot     ConnectionSnapshot
+	value        Repository
 }
 
 func (*serviceStore) ClaimSync(
@@ -90,7 +92,16 @@ func (store *serviceStore) CreatePending(
 	return store.value, nil
 }
 
-func (*serviceStore) Disconnect(context.Context, string, time.Time, time.Time) error {
+func (store *serviceStore) Disconnect(
+	_ context.Context,
+	_ string,
+	cleanupAfter time.Time,
+	now time.Time,
+) error {
+	store.disconnected++
+	store.value.Status = StatusDisconnected
+	store.value.CleanupAfter = &cleanupAfter
+	store.value.UpdatedAt = now
 	return nil
 }
 
@@ -120,6 +131,36 @@ func (store *serviceStore) ListRepositories(context.Context) ([]Repository, erro
 		return []Repository{}, nil
 	}
 	return []Repository{store.value}, nil
+}
+
+func (store *serviceStore) ReconnectPending(
+	_ context.Context,
+	snapshot ConnectionSnapshot,
+	now time.Time,
+) (Repository, error) {
+	if store.value.Status != StatusDisconnected {
+		return Repository{}, ErrAlreadyConnected
+	}
+	if store.value.Provider != snapshot.Provider ||
+		store.value.CanonicalRemoteURL != snapshot.CanonicalRemoteURL {
+		return Repository{}, ErrReconnectMismatch
+	}
+	if store.value.CleanupAfter == nil ||
+		!store.value.CleanupAfter.After(now) ||
+		store.value.SyncLockedBy != nil {
+		return Repository{}, ErrReconnectExpired
+	}
+	store.reconnected++
+	store.snapshot = snapshot
+	store.value.DefaultBranch = snapshot.DefaultBranch
+	store.value.DisplayName = snapshot.DisplayName
+	store.value.SettingsVersion = snapshot.SettingsVersion
+	store.value.Status = StatusPending
+	store.value.CleanupAfter = nil
+	store.value.SyncRequestedAt = &now
+	store.value.UpdatedAt = now
+	store.value.Workspaces = mappingList(snapshot.Workspaces, now)
+	return store.value, nil
 }
 
 func (*serviceStore) RenewSyncLease(context.Context, string, string, time.Time) error {
@@ -335,6 +376,155 @@ func TestServiceConnectRejectsStaleSettingsVersion(t *testing.T) {
 	)
 	if !errors.Is(err, ErrConflict) || store.created != 0 {
 		t.Fatalf("expected stale version conflict, got %v", err)
+	}
+}
+
+func TestServiceConnectRestoresDisconnectedRepositoryInPlace(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	cleanupAfter := now.Add(time.Hour)
+	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
+	providers := provider.NewRegistry()
+	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	store := &serviceStore{value: Repository{
+		CanonicalRemoteURL: "C:/repositories/source",
+		CleanupAfter:       &cleanupAfter,
+		ID:                 "repository-1",
+		ProjectID:          "project-1",
+		Provider:           ProviderLocal,
+		Status:             StatusDisconnected,
+		StorageKey:         "storage-1",
+		Webhook:            Webhook{HookID: "hook-1"},
+	}}
+	service := Service{
+		Access: &serviceAccess{}, Clock: clock.Fixed{Time: now},
+		Providers: providers, Settings: settingSource, Store: store,
+	}
+
+	restored, err := service.Connect(
+		context.Background(),
+		auth.Identity{User: auth.User{ID: "user-1"}},
+		"project-1",
+		1,
+	)
+	if err != nil {
+		t.Fatalf("restore disconnected repository: %v", err)
+	}
+	if store.created != 0 || store.reconnected != 1 {
+		t.Fatalf(
+			"unexpected persistence path: created=%d reconnected=%d",
+			store.created, store.reconnected,
+		)
+	}
+	if restored.ID != "repository-1" ||
+		restored.StorageKey != "storage-1" ||
+		restored.Status != StatusPending ||
+		restored.CleanupAfter != nil {
+		t.Fatalf("repository was not restored in place: %#v", restored)
+	}
+	if len(restored.Workspaces) != 3 ||
+		restored.Workspaces[0].RemoteBranch != "main" {
+		t.Fatalf("workspace mappings were not restored: %#v", restored.Workspaces)
+	}
+}
+
+func TestServiceConnectRejectsDifferentRemoteDuringRecoveryGrace(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	cleanupAfter := now.Add(time.Hour)
+	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
+	settingSource.resolved.Values["remote_url"] = "C:/repositories/different"
+	providers := provider.NewRegistry()
+	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	store := &serviceStore{value: Repository{
+		CanonicalRemoteURL: "C:/repositories/source",
+		CleanupAfter:       &cleanupAfter,
+		ID:                 "repository-1",
+		ProjectID:          "project-1",
+		Provider:           ProviderLocal,
+		Status:             StatusDisconnected,
+	}}
+	service := Service{
+		Access: &serviceAccess{}, Clock: clock.Fixed{Time: now},
+		Providers: providers, Settings: settingSource, Store: store,
+	}
+
+	_, err := service.Connect(
+		context.Background(),
+		auth.Identity{User: auth.User{ID: "user-1"}},
+		"project-1",
+		1,
+	)
+	if !errors.Is(err, ErrReconnectMismatch) ||
+		store.created != 0 ||
+		store.reconnected != 0 {
+		t.Fatalf("expected reconnect remote mismatch, got %v", err)
+	}
+}
+
+func TestServiceConnectRejectsRecoveryAfterCleanupLease(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	cleanupAfter := now.Add(time.Hour)
+	cleanupOwner := "repo-cleanup"
+	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
+	providers := provider.NewRegistry()
+	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	store := &serviceStore{value: Repository{
+		CanonicalRemoteURL: "C:/repositories/source",
+		CleanupAfter:       &cleanupAfter,
+		ID:                 "repository-1",
+		ProjectID:          "project-1",
+		Provider:           ProviderLocal,
+		Status:             StatusDisconnected,
+		SyncLockedBy:       &cleanupOwner,
+	}}
+	service := Service{
+		Access: &serviceAccess{}, Clock: clock.Fixed{Time: now},
+		Providers: providers, Settings: settingSource, Store: store,
+	}
+
+	_, err := service.Connect(
+		context.Background(),
+		auth.Identity{User: auth.User{ID: "user-1"}},
+		"project-1",
+		1,
+	)
+	if !errors.Is(err, ErrReconnectExpired) ||
+		store.created != 0 ||
+		store.reconnected != 0 {
+		t.Fatalf("expected expired reconnect lease, got %v", err)
+	}
+}
+
+func TestServiceDisconnectIsIdempotent(t *testing.T) {
+	access := &serviceAccess{}
+	store := &serviceStore{value: Repository{
+		ID: "repository-1", ProjectID: "project-1",
+	}}
+	service := Service{
+		Access: access, Clock: clock.Fixed{Time: time.Now()}, Store: store,
+	}
+	identity := auth.Identity{User: auth.User{ID: "user-1"}}
+
+	if err := service.Disconnect(
+		context.Background(), identity, "project-1",
+	); err != nil {
+		t.Fatalf("disconnect repository: %v", err)
+	}
+	if err := service.Disconnect(
+		context.Background(), identity, "project-1",
+	); err != nil {
+		t.Fatalf("repeat disconnect repository: %v", err)
+	}
+	if store.disconnected != 1 {
+		t.Fatalf("expected one stored disconnect, got %d", store.disconnected)
+	}
+	if access.permission != project.PermissionRepoManage {
+		t.Fatalf("unexpected permission: %s", access.permission)
 	}
 }
 

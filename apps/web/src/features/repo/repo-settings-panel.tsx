@@ -92,21 +92,33 @@ export function RepoSettingsPanel() {
         : false,
     retry: false,
   });
+  const disconnectedRepository =
+    repository.data?.status === "disconnected" ? repository.data : null;
+  const activeRepository = disconnectedRepository
+    ? null
+    : (repository.data ?? null);
+  const recoveryMatchesForm = Boolean(
+    disconnectedRepository &&
+    disconnectedRepository.provider === form.provider &&
+    sameRepositoryRemote(
+      form.provider,
+      form.remoteUrl,
+      disconnectedRepository.remote_url,
+    ),
+  );
   const permissions = useQuery({
     queryFn: () => apiClient.request<ProjectPermissions>(`${base}/permissions`),
     queryKey: ["project-permissions", project.id],
   });
   const branches = useQuery({
-    enabled: Boolean(
-      repository.data && repository.data.status !== "disconnected",
-    ),
+    enabled: Boolean(activeRepository),
     queryFn: () =>
       apiClient.request<{ items: RepoBranch[] }>(`${repoPath}/branches`),
     queryKey: ["repository-branches", project.id],
     retry: false,
   });
   const recentCommits = useQuery({
-    enabled: repository.data?.status === "ready",
+    enabled: activeRepository?.status === "ready",
     queryFn: () =>
       apiClient.request<RepoCommitPage>(`${repoPath}/commits`, {
         query: { limit: 4, workspace: "code" },
@@ -137,7 +149,7 @@ export function RepoSettingsPanel() {
   }, [setting.data, setting.isPending]);
 
   useEffect(() => {
-    const current = repository.data;
+    const current = activeRepository;
     if (!current) {
       return;
     }
@@ -155,7 +167,7 @@ export function RepoSettingsPanel() {
       remoteUrl: current.remote_url ?? previous.remoteUrl,
       resultBranch: workspaces.result ?? previous.resultBranch,
     }));
-  }, [repository.data]);
+  }, [activeRepository]);
 
   const canManage =
     permissions.data?.permissions.includes("project.repo.manage") ?? false;
@@ -248,7 +260,11 @@ export function RepoSettingsPanel() {
     onSuccess: async (connected) => {
       setOneTimeSecret(connected.webhook.secret ?? "");
       await refresh();
-      toast.success("Repository 已绑定，首次同步已进入队列");
+      toast.success(
+        recoveryMatchesForm
+          ? "Repository 已从宽限期恢复，同步已进入队列"
+          : "Repository 已绑定，首次同步已进入队列",
+      );
     },
   });
   const applyMappings = useMutation({
@@ -287,9 +303,31 @@ export function RepoSettingsPanel() {
     },
   });
   const disconnect = useMutation({
-    mutationFn: () => apiClient.request<void>(repoPath, { method: "DELETE" }),
+    mutationFn: async () => {
+      try {
+        await apiClient.request<void>(repoPath, { method: "DELETE" });
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          error.code !== "REPOSITORY_NOT_CONFIGURED"
+        ) {
+          throw error;
+        }
+      }
+    },
     onSuccess: async () => {
       setOneTimeSecret("");
+      setTested(null);
+      queryClient.setQueryData<Repository | null>(
+        ["repository", project.id],
+        (current) => (current ? { ...current, status: "disconnected" } : null),
+      );
+      queryClient.removeQueries({
+        queryKey: ["repository-branches", project.id],
+      });
+      queryClient.removeQueries({
+        queryKey: ["repository-recent-commits", project.id],
+      });
       await refresh();
       toast.success("Repository 已断开并等待受管清理");
     },
@@ -313,7 +351,7 @@ export function RepoSettingsPanel() {
     rotate,
     disconnect,
   ].some((mutation) => mutation.isPending);
-  const connected = Boolean(repository.data);
+  const connected = Boolean(activeRepository);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -485,11 +523,25 @@ export function RepoSettingsPanel() {
               测试连接
             </Button>
             <Button disabled={!canManage || busy} type="submit">
-              {connected ? "应用分支映射" : "绑定 Repository"}
+              {recoveryMatchesForm
+                ? "恢复 Repository"
+                : connected
+                  ? "应用分支映射"
+                  : "绑定 Repository"}
             </Button>
           </CardFooter>
         </form>
       </Card>
+
+      {recoveryMatchesForm ? (
+        <div
+          className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+          role="status"
+        >
+          Repository 已断开，但旧的受管 Git 数据仍在恢复宽限期内。使用相同的
+          Provider 与仓库地址可以立即恢复并复用原记录；PAT 和分支映射可以更新。
+        </div>
+      ) : null}
 
       {tested ? (
         <Card>
@@ -518,7 +570,7 @@ export function RepoSettingsPanel() {
         </Card>
       ) : null}
 
-      {repository.data ? (
+      {activeRepository ? (
         <div className="grid gap-4 xl:grid-cols-2">
           <Card>
             <CardHeader>
@@ -527,17 +579,17 @@ export function RepoSettingsPanel() {
                 同步状态
               </CardTitle>
               <CardDescription>
-                {repository.data.display_name} · 默认分支{" "}
-                {repository.data.default_branch}
+                {activeRepository.display_name} · 默认分支{" "}
+                {activeRepository.default_branch}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <dl className="space-y-3">
                 <Definition
                   label="最近同步"
-                  value={formatDate(repository.data.last_synced_at)}
+                  value={formatDate(activeRepository.last_synced_at)}
                 />
-                {repository.data.workspaces.map((workspace) => (
+                {activeRepository.workspaces.map((workspace) => (
                   <Definition
                     key={workspace.workspace}
                     label={workspace.workspace}
@@ -545,10 +597,10 @@ export function RepoSettingsPanel() {
                   />
                 ))}
               </dl>
-              {repository.data.last_error_code ? (
+              {activeRepository.last_error_code ? (
                 <div className="rounded-md border border-red-300 bg-red-50 p-3 text-red-950">
-                  <strong>{repository.data.last_error_code}</strong>
-                  <p>{repository.data.last_error_message}</p>
+                  <strong>{activeRepository.last_error_code}</strong>
+                  <p>{activeRepository.last_error_message}</p>
                 </div>
               ) : null}
             </CardContent>
@@ -592,11 +644,11 @@ export function RepoSettingsPanel() {
             </CardHeader>
             <CardContent className="space-y-3">
               <Field label="Payload URL">
-                <Input readOnly value={repository.data.webhook.public_url} />
+                <Input readOnly value={activeRepository.webhook.public_url} />
               </Field>
               <p className="text-sm text-muted-foreground">
                 Secret 状态：{" "}
-                {repository.data.webhook.secret_configured
+                {activeRepository.webhook.secret_configured
                   ? "已配置"
                   : "未配置"}
               </p>
@@ -632,7 +684,7 @@ export function RepoSettingsPanel() {
             <CardFooter>
               <Button
                 disabled={
-                  !canManage || busy || repository.data.provider !== "github"
+                  !canManage || busy || activeRepository.provider !== "github"
                 }
                 onClick={() => rotate.mutate()}
                 variant="outline"
@@ -645,7 +697,7 @@ export function RepoSettingsPanel() {
         </div>
       ) : null}
 
-      {recentCommits.data?.items.length ? (
+      {activeRepository && recentCommits.data?.items.length ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">最近 Code commits</CardTitle>
@@ -766,6 +818,47 @@ function validateMappings(form: FormState) {
 
 function stringValue(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
+}
+
+function sameRepositoryRemote(
+  provider: FormState["provider"],
+  candidate: string,
+  disconnectedRemote: string | null,
+): boolean {
+  if (!disconnectedRemote) {
+    return false;
+  }
+  if (provider !== "github") {
+    return candidate.trim() === disconnectedRemote.trim();
+  }
+  return (
+    normalizeGitHubRemote(candidate) ===
+    normalizeGitHubRemote(disconnectedRemote)
+  );
+}
+
+function normalizeGitHubRemote(value: string): string {
+  const trimmed = value.trim();
+  try {
+    const parsed = new URL(trimmed);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.hostname.toLowerCase() !== "github.com" ||
+      parsed.port ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      segments.length !== 2
+    ) {
+      return trimmed;
+    }
+    const repository = segments[1].replace(/\.git$/u, "");
+    return `https://github.com/${segments[0]}/${repository}`;
+  } catch {
+    return trimmed;
+  }
 }
 
 function shortSha(value: string | null): string {

@@ -171,9 +171,15 @@ func ParseDiffNameStatus(contents []byte) ([]DiffEntry, error) {
 	return entries, nil
 }
 
-// ParseWorktrees parses `git worktree list --porcelain -z` output.
+// ParseWorktrees parses both legacy newline-delimited porcelain and the newer
+// NUL-delimited form. Git versions before `worktree list -z` still provide the
+// machine-readable newline format and C-quote unusual paths.
 func ParseWorktrees(contents []byte) ([]Worktree, error) {
-	fields := bytes.Split(contents, []byte{0})
+	separator := byte('\n')
+	if bytes.IndexByte(contents, 0) >= 0 {
+		separator = 0
+	}
+	fields := bytes.Split(contents, []byte{separator})
 	worktrees := []Worktree{}
 	current := Worktree{}
 	hasCurrent := false
@@ -190,7 +196,7 @@ func ParseWorktrees(contents []byte) ([]Worktree, error) {
 		return nil
 	}
 	for _, raw := range fields {
-		field := string(raw)
+		field := strings.TrimSuffix(string(raw), "\r")
 		if field == "" {
 			if err := flush(); err != nil {
 				return nil, err
@@ -201,7 +207,11 @@ func ParseWorktrees(contents []byte) ([]Worktree, error) {
 		key, value, _ := splitOnce(field, " ")
 		switch key {
 		case "worktree":
-			current.Path = value
+			parsedPath, err := parsePorcelainPath(value)
+			if err != nil {
+				return nil, err
+			}
+			current.Path = parsedPath
 		case "HEAD":
 			current.Head = value
 		case "branch":
@@ -218,6 +228,17 @@ func ParseWorktrees(contents []byte) ([]Worktree, error) {
 		return nil, err
 	}
 	return worktrees, nil
+}
+
+func parsePorcelainPath(value string) (string, error) {
+	if !strings.HasPrefix(value, `"`) {
+		return value, nil
+	}
+	decoded, err := strconv.Unquote(value)
+	if err != nil {
+		return "", fmt.Errorf("parse worktree path: %w", err)
+	}
+	return decoded, nil
 }
 
 func splitOnce(value, separator string) (string, string, bool) {

@@ -37,7 +37,7 @@ func (runtimeState Runtime) ReconcileWorktrees(
 	result, err := runtimeState.Git.Run(ctx, gitcli.Command{
 		Args: []string{
 			"--git-dir=" + layout.Bare,
-			"worktree", "list", "--porcelain", "-z",
+			"worktree", "list", "--porcelain",
 		},
 		Directory: layout.Repository, Operation: "repo.worktree.reconcile.list",
 	})

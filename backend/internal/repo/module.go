@@ -653,6 +653,18 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusConflict, "REPOSITORY_ALREADY_CONNECTED", "Repository is already connected",
 		))
+	case errors.Is(err, ErrReconnectMismatch):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict,
+			"REPOSITORY_RECONNECT_REMOTE_MISMATCH",
+			"Disconnected repository can only recover the same remote",
+		))
+	case errors.Is(err, ErrReconnectExpired):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict,
+			"REPOSITORY_RECONNECT_EXPIRED",
+			"Repository cleanup has started; wait for cleanup to finish",
+		))
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusConflict, "REPO_SETTINGS_CHANGED", "Repository settings changed; test them again",

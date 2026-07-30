@@ -56,4 +56,15 @@ func TestStatusAndWorktreeParsers(t *testing.T) {
 		worktrees[1].Branch != "refs/heads/mmdash/code" {
 		t.Fatalf("parse worktrees: %+v, %v", worktrees, err)
 	}
+
+	legacyWorktrees, err := ParseWorktrees([]byte(
+		"worktree C:/repo\r\nHEAD " + shaA + "\r\nbare\r\n\r\n" +
+			"worktree \"C:/repo/worktrees/line\\nname\"\r\nHEAD " + shaB +
+			"\r\nbranch refs/heads/mmdash/code\r\n\r\n",
+	))
+	if err != nil || len(legacyWorktrees) != 2 ||
+		legacyWorktrees[1].Path != "C:/repo/worktrees/line\nname" ||
+		legacyWorktrees[1].Branch != "refs/heads/mmdash/code" {
+		t.Fatalf("parse legacy worktrees: %+v, %v", legacyWorktrees, err)
+	}
 }
