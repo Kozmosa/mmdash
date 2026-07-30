@@ -36,10 +36,13 @@ SHA-256-derived principal ID, and never returned by tools.
 The gateway also validates Host and Origin using `MCP_ALLOWED_HOSTS` and
 `MCP_ALLOWED_ORIGINS` to prevent DNS rebinding.
 
-Set `MCP_CORE_AUDIT_TOKEN` to a Core-issued API token to persist tool audit
-events in Core's queryable Audit ledger. Without it, JSON audit logging remains
-enabled. The token is used only for Core audit ingestion and is never written
-to logs or tool output.
+Set `MCP_CORE_ACCESS_TOKEN` to a Core-issued, project-authorized API/Agent token
+for business reads such as `data.list` and `data.read`. Set
+`MCP_CORE_AUDIT_TOKEN` to a Core-issued API token to persist tool audit events
+in Core's queryable Audit ledger. If the access token is omitted, the audit
+token is used for Core reads as a compatibility fallback. Without an audit
+token, JSON audit logging remains enabled. Neither token is written to logs or
+tool output.
 
 ## Register a tool
 

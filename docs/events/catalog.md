@@ -3,25 +3,28 @@
 Search by event type, producer, consumer, payload field, or schema version.
 All entries currently use envelope schema version `1`.
 
-| Event type                  | Producer | Project-scoped | Payload keys                               | Current consumer               |
-| --------------------------- | -------- | -------------- | ------------------------------------------ | ------------------------------ |
-| `project.created`           | project  | yes            | `project_id`, `name`                       | `datahub.projections`          |
-| `project.updated`           | project  | yes            | `project_id`                               | `datahub.projections`          |
-| `project.member.updated`    | project  | yes            | `project_id`, `user_id`, `role`            | none                           |
-| `project.member.removed`    | project  | yes            | `project_id`, `user_id`                    | none                           |
-| `settings.updated`          | settings | conditional    | `scope`, `scope_id`, `type_key`, `version` | none                           |
-| `settings.deleted`          | settings | conditional    | `scope`, `scope_id`, `type_key`            | none                           |
-| `job.created`               | jobs     | yes            | `job_id`, `job_type`                       | none                           |
-| `job.cancel.requested`      | jobs     | yes            | `job_id`, `status`                         | none                           |
-| `job.queued`                | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts` | none                           |
-| `job.succeeded`             | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts` | none                           |
-| `job.failed`                | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts` | none                           |
-| `job.cancelled`             | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts` | none                           |
-| `job.timed.out`             | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts` | none                           |
-| `system.test.emitted`       | system   | no             | `message`, caller-provided fields          | `platform.system-test-receipt` |
-| `context.proposal.created`  | datahub  | yes            | `proposal_id`, `context_type`              | none                           |
-| `context.confirmed`         | datahub  | yes            | `proposal_id`, `context_id`                | none                           |
-| `context.proposal.rejected` | datahub  | yes            | `proposal_id`, empty `context_id`          | none                           |
+| Event type                  | Producer | Project-scoped | Payload keys                                                                                               | Current consumer               |
+| --------------------------- | -------- | -------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `project.created`           | project  | yes            | `project_id`, `name`                                                                                       | `datahub.projections`          |
+| `project.updated`           | project  | yes            | `project_id`                                                                                               | `datahub.projections`          |
+| `project.member.updated`    | project  | yes            | `project_id`, `user_id`, `role`                                                                            | none                           |
+| `project.member.removed`    | project  | yes            | `project_id`, `user_id`                                                                                    | none                           |
+| `settings.updated`          | settings | conditional    | `scope`, `scope_id`, `type_key`, `version`                                                                 | none                           |
+| `settings.deleted`          | settings | conditional    | `scope`, `scope_id`, `type_key`                                                                            | none                           |
+| `job.created`               | jobs     | yes            | `job_id`, `job_type`                                                                                       | none                           |
+| `job.cancel.requested`      | jobs     | yes            | `job_id`, `status`                                                                                         | none                           |
+| `job.queued`                | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts`                                                                 | none                           |
+| `job.succeeded`             | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts`                                                                 | none                           |
+| `job.failed`                | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts`                                                                 | none                           |
+| `job.cancelled`             | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts`                                                                 | none                           |
+| `job.timed.out`             | jobs     | yes            | `job_id`, `job_type`, `status`, `attempts`                                                                 | none                           |
+| `system.test.emitted`       | system   | no             | `message`, caller-provided fields                                                                          | `platform.system-test-receipt` |
+| `context.proposal.created`  | datahub  | yes            | `proposal_id`, `context_type`                                                                              | none                           |
+| `context.confirmed`         | datahub  | yes            | `proposal_id`, `context_id`                                                                                | none                           |
+| `context.proposal.rejected` | datahub  | yes            | `proposal_id`, empty `context_id`                                                                          | none                           |
+| `repo.connected`            | repo     | yes            | `repository_id`, `provider`, `workspaces`                                                                  | `datahub.projections`          |
+| `repo.commit.created`       | repo     | yes            | `repository_id`, `workspace`, `branch`, `commit_sha`, `previous_commit_sha`, `history_rewritten`, `source` | `datahub.projections`          |
+| `repo.commit.detected`      | repo     | yes            | `repository_id`, `workspace`, `branch`, `commit_sha`, `previous_commit_sha`, `history_rewritten`, `source` | `datahub.projections`          |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.
@@ -33,6 +36,11 @@ prove the Event Bus and Outbox path during stage-3.15 smoke checks.
 `datahub.projections` turns registered domain events into searchable Data Hub
 objects and activity. A projector must be idempotent by `event_id`; replaying
 `project.created` therefore does not duplicate its object or activity.
+
+Repo payloads never contain credentials, file content, provider error bodies,
+commands, or server paths. `repo.connected` is emitted only after all three
+workspaces are ready. Commit events identify immutable full SHAs; consumers
+must not persist a branch name as the durable version reference.
 
 When adding an event:
 

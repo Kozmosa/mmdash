@@ -564,3 +564,137 @@ func (request RecordAuditEventRequest) Validate() error {
 	}
 	return nil
 }
+
+// RepoConnectRequest is generated from the Core request-body schema.
+type RepoConnectRequest struct {
+	SettingsVersion int64 `json:"settings_version"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RepoConnectRequest) Validate() error {
+	if request.SettingsVersion < 1 {
+		return fmt.Errorf("settings_version is below its minimum")
+	}
+	return nil
+}
+
+// RepoUpdateWorkspacesRequest is generated from the Core request-body schema.
+type RepoUpdateWorkspacesRequest struct {
+	CodeBranch    string `json:"code_branch"`
+	ArticleBranch string `json:"article_branch"`
+	ResultBranch  string `json:"result_branch"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RepoUpdateWorkspacesRequest) Validate() error {
+	if request.CodeBranch == "" {
+		return fmt.Errorf("code_branch is required")
+	}
+	if len(request.CodeBranch) < 1 {
+		return fmt.Errorf("code_branch is too short")
+	}
+	if len(request.CodeBranch) > 255 {
+		return fmt.Errorf("code_branch is too long")
+	}
+	if request.ArticleBranch == "" {
+		return fmt.Errorf("article_branch is required")
+	}
+	if len(request.ArticleBranch) < 1 {
+		return fmt.Errorf("article_branch is too short")
+	}
+	if len(request.ArticleBranch) > 255 {
+		return fmt.Errorf("article_branch is too long")
+	}
+	if request.ResultBranch == "" {
+		return fmt.Errorf("result_branch is required")
+	}
+	if len(request.ResultBranch) < 1 {
+		return fmt.Errorf("result_branch is too short")
+	}
+	if len(request.ResultBranch) > 255 {
+		return fmt.Errorf("result_branch is too long")
+	}
+	return nil
+}
+
+// RepoCreateCheckoutRequest is generated from the Core request-body schema.
+type RepoCreateCheckoutRequest struct {
+	CommitSha  string `json:"commit_sha"`
+	Purpose    string `json:"purpose"`
+	TtlSeconds *int64 `json:"ttl_seconds,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RepoCreateCheckoutRequest) Validate() error {
+	if request.CommitSha == "" {
+		return fmt.Errorf("commit_sha is required")
+	}
+	if request.Purpose == "" {
+		return fmt.Errorf("purpose is required")
+	}
+	if len(request.Purpose) < 1 {
+		return fmt.Errorf("purpose is too short")
+	}
+	if len(request.Purpose) > 100 {
+		return fmt.Errorf("purpose is too long")
+	}
+	if request.TtlSeconds != nil {
+		if *request.TtlSeconds < 60 {
+			return fmt.Errorf("ttl_seconds is below its minimum")
+		}
+		if *request.TtlSeconds > 86400 {
+			return fmt.Errorf("ttl_seconds exceeds its maximum")
+		}
+	}
+	return nil
+}
+
+// RepoCreateCommitRequest is generated from the Core request-body schema.
+type RepoCreateCommitRequest struct {
+	Workspace       string                   `json:"workspace"`
+	ExpectedHeadSha string                   `json:"expected_head_sha"`
+	Message         string                   `json:"message"`
+	IdempotencyKey  string                   `json:"idempotency_key"`
+	Changes         []map[string]interface{} `json:"changes"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RepoCreateCommitRequest) Validate() error {
+	if request.Workspace == "" {
+		return fmt.Errorf("workspace is required")
+	}
+	if request.Workspace != "code" && request.Workspace != "article" && request.Workspace != "result" {
+		return fmt.Errorf("workspace has an unsupported value")
+	}
+	if request.ExpectedHeadSha == "" {
+		return fmt.Errorf("expected_head_sha is required")
+	}
+	if request.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if len(request.Message) < 1 {
+		return fmt.Errorf("message is too short")
+	}
+	if len(request.Message) > 10000 {
+		return fmt.Errorf("message is too long")
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	if request.Changes == nil {
+		return fmt.Errorf("changes is required")
+	}
+	if len(request.Changes) > 100 {
+		return fmt.Errorf("changes has too many items")
+	}
+	if len(request.Changes) < 1 {
+		return fmt.Errorf("changes has too few items")
+	}
+	return nil
+}

@@ -121,3 +121,9 @@ event type. An unknown or non-matching consumer returns
 
 See the [event catalog](../events/catalog.md) for producers, patterns, and
 current consumers.
+
+Repo emits `repo.connected`, `repo.commit.created`, and
+`repo.commit.detected`. Each is written with the authoritative Repo mutation.
+The Data Hub consumer uses the event ID as its idempotency boundary and
+resolves Git content only through Repo's fixed-SHA reader. Payload schemas live
+under `contracts/events/`.

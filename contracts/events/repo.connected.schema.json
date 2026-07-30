@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/repo.connected.schema.json",
+  "title": "repo.connected payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repository_id", "provider", "workspaces"],
+  "properties": {
+    "repository_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["github", "local"]
+    },
+    "workspaces": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["workspace", "branch", "commit_sha"],
+        "properties": {
+          "workspace": {
+            "type": "string",
+            "enum": ["code", "article", "result"]
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "commit_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          }
+        }
+      }
+    }
+  }
+}

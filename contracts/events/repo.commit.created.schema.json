@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/repo.commit.created.schema.json",
+  "title": "repo.commit.created payload",
+  "$ref": "#/$defs/commit",
+  "$defs": {
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_id",
+        "workspace",
+        "branch",
+        "commit_sha",
+        "previous_commit_sha",
+        "history_rewritten",
+        "source"
+      ],
+      "properties": {
+        "repository_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspace": {
+          "type": "string",
+          "enum": ["code", "article", "result"]
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "commit_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "previous_commit_sha": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "history_rewritten": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "const": "mmdash"
+        }
+      }
+    }
+  }
+}

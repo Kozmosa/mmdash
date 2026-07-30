@@ -16,6 +16,7 @@ tags:
   - name: Auth
   - name: Projects
   - name: Settings
+  - name: Repo
   - name: Pages
   - name: Streams
 paths:
@@ -550,6 +551,291 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ConnectionTestResult"
+  /api/projects/{projectId}/repository:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: Get browser-safe managed repository status
+      operationId: bff.repo.get
+      responses:
+        "200":
+          description: Managed repository and workspace status.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Repository"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Repo]
+      summary: Apply a tested repository setting
+      operationId: bff.repo.connect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/RepoConnectRequest"
+      responses:
+        "202":
+          description: Repository connection accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Repository"
+    delete:
+      tags: [Repo]
+      summary: Disconnect the managed repository
+      operationId: bff.repo.disconnect
+      responses:
+        "204":
+          description: Repository disconnected.
+  /api/projects/{projectId}/repository/test:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Repo]
+      summary: Test the saved repository connection
+      operationId: bff.repo.connection.test
+      responses:
+        "200":
+          description: Safe provider and branch checks.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoConnectionTestResult"
+  /api/projects/{projectId}/repository/sync:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Repo]
+      summary: Request repository synchronization
+      operationId: bff.repo.sync.request
+      responses:
+        "202":
+          description: Synchronization accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Repository"
+  /api/projects/{projectId}/repository/webhook-secret:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Repo]
+      summary: Rotate the GitHub webhook secret and return it once
+      operationId: bff.repo.webhook-secret.rotate
+      responses:
+        "200":
+          description: Repository status with the newly generated secret included once.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Repository"
+  /api/projects/{projectId}/repository/workspaces:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    patch:
+      tags: [Repo]
+      summary: Update logical workspace branch mappings
+      operationId: bff.repo.workspaces.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/RepoUpdateWorkspacesRequest"
+      responses:
+        "202":
+          description: Mapping update accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Repository"
+  /api/projects/{projectId}/repository/branches:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: List fetched remote branches
+      operationId: bff.repo.branches.list
+      responses:
+        "200":
+          description: Remote branches.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoBranchList"
+  /api/projects/{projectId}/repository/commits:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: List immutable commits for one workspace
+      operationId: bff.repo.commits.list
+      parameters:
+        - name: workspace
+          in: query
+          required: true
+          schema:
+            $ref: "./core.yaml#/components/schemas/RepoWorkspaceKind"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Commit page.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoCommitPage"
+  /api/projects/{projectId}/repository/commits/{commitSha}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: commitSha
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    get:
+      tags: [Repo]
+      summary: Get immutable commit detail
+      operationId: bff.repo.commits.get
+      responses:
+        "200":
+          description: Commit detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoCommit"
+  /api/projects/{projectId}/repository/tree:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: List one directory at a fixed commit SHA
+      operationId: bff.repo.tree.list
+      parameters:
+        - name: workspace
+          in: query
+          required: true
+          schema:
+            $ref: "./core.yaml#/components/schemas/RepoWorkspaceKind"
+        - name: revision
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        - name: path
+          in: query
+          schema:
+            type: string
+            maxLength: 4096
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: One directory page.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoTreePage"
+  /api/projects/{projectId}/repository/content:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: Read one path at a fixed commit SHA
+      operationId: bff.repo.content.get
+      parameters:
+        - name: workspace
+          in: query
+          required: true
+          schema:
+            $ref: "./core.yaml#/components/schemas/RepoWorkspaceKind"
+        - name: revision
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 4096
+      responses:
+        "200":
+          description: Text content or safe object metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoFileContent"
+  /api/webhooks/github/{hookId}:
+    parameters:
+      - name: hookId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [Repo]
+      summary: Proxy an unmodified GitHub webhook body and signature headers
+      operationId: bff.repo.webhooks.github
+      security: []
+      parameters:
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-GitHub-Delivery
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "202":
+          description: Delivery accepted by Core.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoWebhookAcceptance"
+        "401":
+          $ref: "#/components/responses/Error"
   /api/projects/{projectId}/pages/{pageId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
