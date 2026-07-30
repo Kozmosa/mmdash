@@ -88,9 +88,14 @@ Internal commits require:
 
 Prepared commits are persisted before push. A rejected push restores the
 managed worktree and leaves a safe retryable record. Disconnect marks the
-repository first. After `REPO_DISCONNECT_GRACE`, a leased cleanup worker
-validates and removes exactly the generated storage-key directory, then deletes
-metadata. Failure reschedules cleanup without deleting metadata.
+repository first. During `REPO_DISCONNECT_GRACE`, the same provider and
+canonical remote may restore that row in place, reusing its repository ID,
+storage key, Git objects, and metadata while allowing PAT and branch mapping
+updates. A different remote cannot replace recoverable data. After the grace
+period, a cleanup lease wins atomically over reconnect; the worker validates
+and removes exactly the generated storage-key directory, then deletes metadata.
+Failure releases the lease and reschedules cleanup without creating or deleting
+another repository row.
 
 ## Events, Data Hub, and MCP
 

@@ -532,6 +532,14 @@ func (service Service) Connect(
 	); err != nil {
 		return Repository{}, err
 	}
+	existing, existingErr := service.Store.GetByProject(ctx, projectID)
+	reconnecting := existingErr == nil
+	if existingErr == nil && existing.Status != StatusDisconnected {
+		return Repository{}, ErrAlreadyConnected
+	}
+	if existingErr != nil && !errors.Is(existingErr, ErrNotConfigured) {
+		return Repository{}, existingErr
+	}
 	resolved, err := service.Settings.Resolve(
 		ctx, settings.ScopeProject, projectID, SettingType,
 	)
@@ -548,6 +556,11 @@ func (service Service) Connect(
 	connection, err := service.Providers.Test(ctx, config)
 	if err != nil {
 		return Repository{}, err
+	}
+	if reconnecting &&
+		(existing.Provider != Provider(connection.Provider) ||
+			existing.CanonicalRemoteURL != connection.CanonicalRemoteURL) {
+		return Repository{}, ErrReconnectMismatch
 	}
 	plainSecret := ""
 	if current, _ := resolved.Values["webhook_secret"].(string); connection.Provider == "github" && current == "" {
@@ -568,7 +581,7 @@ func (service Service) Connect(
 			return Repository{}, err
 		}
 	}
-	repository, err := service.Store.CreatePending(ctx, identity.User.ID, ConnectionSnapshot{
+	snapshot := ConnectionSnapshot{
 		CanonicalRemoteURL: connection.CanonicalRemoteURL,
 		DefaultBranch:      connection.DefaultBranch,
 		DisplayName:        connection.DisplayName,
@@ -579,7 +592,17 @@ func (service Service) Connect(
 			CodeBranch: config.CodeBranch, ArticleBranch: config.ArticleBranch,
 			ResultBranch: config.ResultBranch,
 		},
-	})
+	}
+	var repository Repository
+	if reconnecting {
+		repository, err = service.Store.ReconnectPending(
+			ctx, snapshot, service.Clock.Now().UTC(),
+		)
+	} else {
+		repository, err = service.Store.CreatePending(
+			ctx, identity.User.ID, snapshot,
+		)
+	}
 	if err != nil {
 		return Repository{}, err
 	}
@@ -672,8 +695,14 @@ func (service Service) Disconnect(
 		return err
 	}
 	repository, err := service.Store.GetByProject(ctx, projectID)
+	if errors.Is(err, ErrNotConfigured) {
+		return nil
+	}
 	if err != nil {
 		return err
+	}
+	if repository.Status == StatusDisconnected {
+		return nil
 	}
 	now := service.Clock.Now().UTC()
 	grace := service.DisconnectGrace
