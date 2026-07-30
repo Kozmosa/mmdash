@@ -127,12 +127,26 @@ func accessLogMiddleware(
 		}
 		metricRegistry.ObserveHTTP(request.Method, recorder.statusCode(), duration)
 		if audit != nil && strings.HasPrefix(request.URL.Path, "/v1/") {
-			_ = audit(request.Context(), HTTPObservation{
+			auditContext, cancel := detachedAuditContext(request.Context())
+			defer cancel()
+			_ = audit(auditContext, HTTPObservation{
 				DurationMS: duration.Milliseconds(), Method: request.Method,
 				Path: path, Status: recorder.statusCode(),
 			})
 		}
 	})
+}
+
+func detachedAuditContext(requestContext context.Context) (context.Context, context.CancelFunc) {
+	values := requestctx.TrustedSnapshot(requestContext)
+	auditContext := requestctx.WithValues(context.Background(), values)
+	if values.ActorID != "" {
+		requestctx.SetActor(auditContext, values.ActorID, values.ActorKind)
+	}
+	if values.ProjectID != "" {
+		requestctx.SetProject(auditContext, values.ProjectID)
+	}
+	return context.WithTimeout(auditContext, 5*time.Second)
 }
 
 func observablePath(path string) string {

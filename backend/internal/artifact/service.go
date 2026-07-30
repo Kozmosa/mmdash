@@ -46,20 +46,23 @@ type IDGenerator interface {
 
 // Service owns Artifact authorization, state transitions, and verification.
 type Service struct {
-	Access               Access
-	Audit                AuditRecorder
-	Clock                interface{ Now() time.Time }
-	Generator            IDGenerator
-	Git                  GitContentReader
-	MaxUploadBytes       int64
-	Metrics              MetricRecorder
-	MultipartPartBytes   int64
-	Signer               *TransferSigner
-	Storage              BlobStore
-	TransferTTL          time.Duration
-	UploadSessionTTL     time.Duration
-	ConfirmRecoveryLease time.Duration
-	Store                Store
+	Access                Access
+	Audit                 AuditRecorder
+	Clock                 interface{ Now() time.Time }
+	Generator             IDGenerator
+	Git                   GitContentReader
+	Jobs                  PreviewJobAccess
+	MaxPreviewOutputBytes int64
+	MaxUploadBytes        int64
+	Metrics               MetricRecorder
+	MultipartPartBytes    int64
+	Signer                *TransferSigner
+	Storage               BlobStore
+	TransferTTL           time.Duration
+	UploadSessionTTL      time.Duration
+	ConfirmRecoveryLease  time.Duration
+	Store                 Store
+	WorkerSigner          *TransferSigner
 }
 
 // RegisterGit registers one small immutable Repo result without copying it to

@@ -24,6 +24,10 @@ func (Module) Name() string { return "artifact" }
 
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/artifact-transfers/", module.handleTransfer)
+	mux.HandleFunc(
+		"/v1/internal/artifact-preview-jobs/",
+		module.handlePreviewJobTransfer,
+	)
 }
 
 // ProjectHandler is mounted by Project because Go 1.17 ServeMux cannot
@@ -349,6 +353,20 @@ func (module Module) handleVersions(
 				response, request, identity, projectID, artifactID, versionID,
 			)
 			return
+		case "previews":
+			if !httpx.RequireMethod(response, request, http.MethodGet) {
+				return
+			}
+			previews, err := module.Service.ListPreviews(
+				request.Context(), identity, projectID, artifactID, versionID,
+			)
+			if err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			response.Header().Set("Cache-Control", "no-store")
+			httpx.WriteJSON(response, http.StatusOK, previews)
+			return
 		case "restore":
 			if !httpx.RequireMethod(response, request, http.MethodPost) {
 				return
@@ -440,7 +458,7 @@ func (module Module) handleTransfer(
 			writeArtifactError(response, request, ErrPartInvalid)
 			return
 		}
-		part, err := module.Service.PutSignedPart(
+		part, err := module.Service.PutSignedTransfer(
 			request.Context(), token, request.Body, contentLength,
 		)
 		if err != nil {
@@ -450,7 +468,7 @@ func (module Module) handleTransfer(
 		response.Header().Set("ETag", `"`+normalizeETag(part.ETag)+`"`)
 		response.WriteHeader(http.StatusNoContent)
 	case http.MethodGet:
-		reader, version, err := module.Service.OpenSignedDownload(
+		reader, content, err := module.Service.OpenSignedTransfer(
 			request.Context(), token,
 		)
 		if err != nil {
@@ -458,12 +476,12 @@ func (module Module) handleTransfer(
 			return
 		}
 		defer reader.Close()
-		response.Header().Set("Content-Type", version.MIMEType)
+		response.Header().Set("Content-Type", content.MIMEType)
 		response.Header().Set(
-			"Content-Disposition", contentDisposition(version.Filename),
+			"Content-Disposition", contentDisposition(content.Filename),
 		)
 		response.Header().Set(
-			"Content-Length", strconv.FormatInt(version.SizeBytes, 10),
+			"Content-Length", strconv.FormatInt(content.SizeBytes, 10),
 		)
 		response.WriteHeader(http.StatusOK)
 		buffer := make([]byte, 64*1024)
@@ -471,6 +489,53 @@ func (module Module) handleTransfer(
 	default:
 		writeArtifactError(response, request, methodNotAllowed("GET, PUT"))
 	}
+}
+
+func (module Module) handlePreviewJobTransfer(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	identity, ok := module.identity(response, request)
+	if !ok {
+		return
+	}
+	segments := strings.Split(
+		strings.Trim(
+			strings.TrimPrefix(
+				request.URL.Path,
+				"/v1/internal/artifact-preview-jobs/",
+			),
+			"/",
+		),
+		"/",
+	)
+	if len(segments) != 2 || segments[0] == "" || segments[1] != "transfers" {
+		writeArtifactError(response, request, ErrNotFound)
+		return
+	}
+	var body contract.ArtifactPreviewJobTransferRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	grant, err := module.Service.PreviewJobTransfer(
+		request.Context(), identity, segments[0], PreviewTransferInput{
+			Direction: body.Direction, VersionID: body.VersionID,
+			PreviewType: optionalString(body.PreviewType),
+			Filename:    optionalString(body.Filename),
+			MIMEType:    optionalString(body.MimeType),
+			SizeBytes:   optionalInt64(body.SizeBytes),
+			SHA256:      optionalString(body.Sha256),
+		},
+	)
+	if err != nil {
+		writeArtifactError(response, request, err)
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSON(response, http.StatusCreated, grant)
 }
 
 func (module Module) identity(
@@ -558,6 +623,13 @@ func queryArtifactLimit(request *http.Request) (int, error) {
 func optionalString(value *string) string {
 	if value == nil {
 		return ""
+	}
+	return *value
+}
+
+func optionalInt64(value *int64) int64 {
+	if value == nil {
+		return 0
 	}
 	return *value
 }

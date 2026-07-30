@@ -132,6 +132,13 @@ func run(logger *logging.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initialize Artifact transfer signer: %w", err)
 	}
+	artifactWorkerSigner, err := artifact.NewTransferSigner(
+		processConfig.Auth.JWTSecret,
+		processConfig.InternalURL,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Artifact Worker transfer signer: %w", err)
+	}
 	if err := eventBus.Register(eventbus.Consumer{
 		Name:     "platform.system-test-receipt",
 		Patterns: []string{"system.test.emitted"},
@@ -154,20 +161,38 @@ func run(logger *logging.Logger) error {
 			Transaction: transactionManager,
 		},
 	}
+	jobStore := jobs.PostgresStore{
+		Clock:       systemClock,
+		DB:          db,
+		Generator:   idGenerator,
+		Outbox:      outboxWriter,
+		Transaction: transactionManager,
+	}
 	artifactStore := artifact.PostgresStore{
-		Audit: auditRecorder, DB: db, Transaction: transactionManager,
+		Audit: auditRecorder, DB: db, Generator: idGenerator,
+		Jobs: jobStore, Transaction: transactionManager,
 	}
 	artifactService := artifact.Service{
 		Access: projectService, Audit: auditRecorder,
 		Clock: systemClock, Generator: idGenerator,
-		MaxUploadBytes:     processConfig.Artifact.UploadMaxBytes,
-		Metrics:            metricRegistry,
-		MultipartPartBytes: processConfig.Artifact.MultipartPartBytes,
-		Signer:             artifactSigner, Storage: storage,
+		MaxPreviewOutputBytes: processConfig.Artifact.PreviewOutputMaxBytes,
+		MaxUploadBytes:        processConfig.Artifact.UploadMaxBytes,
+		Metrics:               metricRegistry,
+		MultipartPartBytes:    processConfig.Artifact.MultipartPartBytes,
+		Signer:                artifactSigner, Storage: storage,
 		Store:            artifactStore,
 		TransferTTL:      processConfig.Artifact.MultipartURLTTL,
 		UploadSessionTTL: processConfig.Artifact.MultipartSessionTTL,
+		WorkerSigner:     artifactWorkerSigner,
 	}
+	previewHook := artifactService
+	jobStore.Hooks = []jobs.LifecycleHook{previewHook}
+	jobService := jobs.Service{
+		Auth: authService, Clock: systemClock,
+		Hooks:    []jobs.LifecycleHook{previewHook},
+		Projects: projectService, Store: jobStore,
+	}
+	artifactService.Jobs = jobService
 	artifactModule := artifact.Module{Service: artifactService}
 	dataStore := datahub.PostgresStore{
 		Clock:       systemClock,
@@ -394,18 +419,6 @@ func run(logger *logging.Logger) error {
 		Handler:  projections.Handle,
 	}); err != nil {
 		return err
-	}
-	jobService := jobs.Service{
-		Auth:     authService,
-		Clock:    systemClock,
-		Projects: projectService,
-		Store: jobs.PostgresStore{
-			Clock:       systemClock,
-			DB:          db,
-			Generator:   idGenerator,
-			Outbox:      outboxWriter,
-			Transaction: transactionManager,
-		},
 	}
 	eventService := events.Service{
 		Auth:        authService,
