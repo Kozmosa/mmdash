@@ -110,10 +110,11 @@ func accessLogMiddleware(
 		next.ServeHTTP(recorder, request)
 		duration := time.Since(startedAt)
 		values := requestctx.TrustedSnapshot(request.Context())
+		path := observablePath(request.URL.Path)
 		logFields := map[string]interface{}{
 			"duration_ms": duration.Milliseconds(),
 			"method":      request.Method,
-			"path":        request.URL.Path,
+			"path":        path,
 			"project_id":  values.ProjectID,
 			"request_id":  values.RequestID,
 			"status":      recorder.statusCode(),
@@ -128,10 +129,18 @@ func accessLogMiddleware(
 		if audit != nil && strings.HasPrefix(request.URL.Path, "/v1/") {
 			_ = audit(request.Context(), HTTPObservation{
 				DurationMS: duration.Milliseconds(), Method: request.Method,
-				Path: request.URL.Path, Status: recorder.statusCode(),
+				Path: path, Status: recorder.statusCode(),
 			})
 		}
 	})
+}
+
+func observablePath(path string) string {
+	const transferPrefix = "/v1/artifact-transfers/"
+	if strings.HasPrefix(path, transferPrefix) {
+		return transferPrefix + "{redacted}"
+	}
+	return path
 }
 
 type statusRecorder struct {

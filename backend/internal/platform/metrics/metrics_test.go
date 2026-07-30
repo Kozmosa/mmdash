@@ -14,6 +14,10 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 	registry.IncrementAuditFailure()
 	registry.ObserveRepoOperation("sync", "success", "local", 125*time.Millisecond)
 	registry.ObserveRepoOperation("unbounded-value", "other", "repository-id", time.Millisecond)
+	registry.ObserveArtifactOperation("confirm", "success", "minio", 250*time.Millisecond)
+	registry.ObserveArtifactOperation(
+		"artifact-id", "denied", "bucket-name", time.Millisecond,
+	)
 	registry.SetRepoGauges(3, 2, 4096)
 	mux := http.NewServeMux()
 	registry.RegisterRoutes(mux)
@@ -34,6 +38,9 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 		`mmdash_repo_sync_queue_depth 3`,
 		`mmdash_repo_checkouts_active 2`,
 		`mmdash_repo_storage_bytes 4096`,
+		`mmdash_artifact_operations_total{backend="minio",operation="confirm",outcome="success"} 1`,
+		`mmdash_artifact_operations_total{backend="unknown",operation="other",outcome="error"} 1`,
+		`mmdash_artifact_operation_duration_seconds{backend="minio",operation="confirm"} 0.250000`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q:\n%s", expected, body)

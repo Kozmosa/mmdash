@@ -125,6 +125,13 @@ func run(logger *logging.Logger) error {
 		Clock: systemClock, Logger: logger,
 		Metrics: metricRegistry, Store: auditStore,
 	}
+	artifactSigner, err := artifact.NewTransferSigner(
+		processConfig.Auth.JWTSecret,
+		processConfig.PublicURL,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Artifact transfer signer: %w", err)
+	}
 	if err := eventBus.Register(eventbus.Consumer{
 		Name:     "platform.system-test-receipt",
 		Patterns: []string{"system.test.emitted"},
@@ -147,6 +154,21 @@ func run(logger *logging.Logger) error {
 			Transaction: transactionManager,
 		},
 	}
+	artifactStore := artifact.PostgresStore{
+		Audit: auditRecorder, DB: db, Transaction: transactionManager,
+	}
+	artifactService := artifact.Service{
+		Access: projectService, Audit: auditRecorder,
+		Clock: systemClock, Generator: idGenerator,
+		MaxUploadBytes:     processConfig.Artifact.UploadMaxBytes,
+		Metrics:            metricRegistry,
+		MultipartPartBytes: processConfig.Artifact.MultipartPartBytes,
+		Signer:             artifactSigner, Storage: storage,
+		Store:            artifactStore,
+		TransferTTL:      processConfig.Artifact.MultipartURLTTL,
+		UploadSessionTTL: processConfig.Artifact.MultipartSessionTTL,
+	}
+	artifactModule := artifact.Module{Service: artifactService}
 	dataStore := datahub.PostgresStore{
 		Clock:       systemClock,
 		DB:          db,
@@ -308,6 +330,8 @@ func run(logger *logging.Logger) error {
 		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
 		Webhooks: repoStore, Writer: repoWriter,
 	}
+	artifactService.Git = artifact.RepoGitContentReader{Service: &repoService}
+	artifactModule.Service = artifactService
 	repoModule := repo.Module{Service: repoService}
 	repoDataReader := repo.DataHubReaderAdapter{Service: &repoService}
 	if err := dataAdapters.Register("repository", datahub.ReaderFunc(
@@ -400,9 +424,13 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(project.Module{
+		Artifact:   artifactModule.ProjectHandler(),
 		Repository: repoModule.ProjectHandler(),
 		Service:    *projectService,
 	}); err != nil {
+		return err
+	}
+	if err := modules.Register(artifactModule); err != nil {
 		return err
 	}
 	if err := modules.Register(repoModule); err != nil {
@@ -537,6 +565,17 @@ func run(logger *logging.Logger) error {
 		},
 		Storage: repoStorage, Store: repoStore,
 	}).Run(ctx)
+	go (artifact.UploadReaper{
+		Backend:  serviceBackend(storage),
+		Interval: processConfig.Artifact.StagingSweepInterval,
+		Limit:    50, Metrics: metricRegistry,
+		OnError: func(cleanupErr error) {
+			logger.Error("artifact.staging.cleanup.failed", map[string]interface{}{
+				"error": cleanupErr.Error(),
+			})
+		},
+		Service: artifactService,
+	}).Run(ctx)
 
 	return server.New(
 		processConfig.Addr,
@@ -544,4 +583,11 @@ func run(logger *logging.Logger) error {
 		logger,
 		processConfig.ShutdownTimeout,
 	).Run(ctx)
+}
+
+func serviceBackend(storage artifact.BlobStore) string {
+	if storage == nil {
+		return "unknown"
+	}
+	return storage.Backend()
 }
