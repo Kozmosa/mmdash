@@ -65,3 +65,32 @@ def test_core_error_envelope_becomes_stable_exception(
     assert caught.value.code == "JOB_LEASE_LOST"
     assert caught.value.status == 409
     assert str(caught.value) == "lease expired"
+
+
+def test_artifact_transfer_request_uses_worker_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeResponse:
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(
+            b'{"method":"GET","url":"http://core/transfer","headers":{},'
+            b'"expires_at":"2026-07-30T12:00:00Z"}'
+        )
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+    client = CoreJobClient("http://core:8080", "worker-token", timeout_seconds=4)
+    result = client.request_artifact_transfer(
+        "job-1",
+        {"direction": "input", "version_id": "version-1"},
+    )
+    request = captured["request"]
+    assert request.full_url.endswith("/v1/internal/artifact-preview-jobs/job-1/transfers")
+    assert request.headers["Authorization"] == "Bearer worker-token"
+    assert json.loads(request.data) == {
+        "direction": "input",
+        "version_id": "version-1",
+    }
+    assert result["method"] == "GET"

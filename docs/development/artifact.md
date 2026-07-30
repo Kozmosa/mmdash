@@ -7,7 +7,10 @@ authorization, and Audit state. Browser and Worker bytes cross only the
 
 The contract is documented in the [Artifact API guide](../api/artifact.md) and
 the storage decision in [ADR 0002](../adr/0002-artifact-multipart-storage.md).
-Migration `000013_artifact` must be applied through the normal migrator.
+Migration `000013_artifact` owns the domain tables. Migration
+`000014_artifact_preview_transfer` adds the internal, Job-bound preview-output
+transfer state without changing the frozen public Artifact schema. Both must
+be applied through the normal migrator.
 
 ## Storage backends
 
@@ -27,20 +30,22 @@ settings. Provider upload IDs, object keys, credentials, and signed transfer
 tokens are internal; access logs and HTTP audit observations replace Local
 transfer tokens with `/v1/artifact-transfers/{redacted}`.
 
-| Variable                              | Compose default                  | Purpose                                      |
-| ------------------------------------- | -------------------------------- | -------------------------------------------- |
-| `ARTIFACT_STORAGE_BACKEND`            | `minio`                          | `local`, `minio`, or `s3`                    |
-| `ARTIFACT_LOCAL_STORAGE_ROOT`         | `/var/lib/mmdash/artifacts`      | Durable Local adapter root                   |
-| `ARTIFACT_UPLOAD_MAX_BYTES`           | `10737418240`                    | Per-file system limit                        |
-| `ARTIFACT_MULTIPART_PART_BYTES`       | `16777216`                       | Preferred part size; Core increases as needed |
-| `ARTIFACT_MULTIPART_URL_TTL`          | `15m`                            | Direct or Core-stream transfer lifetime      |
-| `ARTIFACT_MULTIPART_SESSION_TTL`      | `24h`                            | Refresh-safe upload-session lifetime         |
-| `ARTIFACT_STAGING_TTL`                | `24h`                            | Earliest automatic staging cleanup           |
-| `ARTIFACT_STAGING_SWEEP_INTERVAL`     | `5m`                             | Expired-session reaper interval              |
-| `OBJECT_STORAGE_ENDPOINT`             | `http://minio:9000` in Compose   | MinIO/S3-compatible endpoint                 |
-| `OBJECT_STORAGE_BUCKET`               | `mmdash`                         | Artifact object bucket                       |
-| `OBJECT_STORAGE_REGION`               | `us-east-1`                      | Signing region                               |
-| `OBJECT_STORAGE_ACCESS_KEY` / secret  | local development values only    | Provider credentials                         |
+| Variable                             | Compose default                | Purpose                                       |
+| ------------------------------------ | ------------------------------ | --------------------------------------------- |
+| `ARTIFACT_STORAGE_BACKEND`           | `minio`                        | `local`, `minio`, or `s3`                     |
+| `ARTIFACT_LOCAL_STORAGE_ROOT`        | `/var/lib/mmdash/artifacts`    | Durable Local adapter root                    |
+| `ARTIFACT_UPLOAD_MAX_BYTES`          | `10737418240`                  | Per-file system limit                         |
+| `ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES`  | `4194304`                      | Generated preview-output limit                |
+| `ARTIFACT_MULTIPART_PART_BYTES`      | `16777216`                     | Preferred part size; Core increases as needed |
+| `ARTIFACT_MULTIPART_URL_TTL`         | `15m`                          | Direct or Core-stream transfer lifetime       |
+| `ARTIFACT_MULTIPART_SESSION_TTL`     | `24h`                          | Refresh-safe upload-session lifetime          |
+| `ARTIFACT_STAGING_TTL`               | `24h`                          | Earliest automatic staging cleanup            |
+| `ARTIFACT_STAGING_SWEEP_INTERVAL`    | `5m`                           | Expired-session reaper interval               |
+| `OBJECT_STORAGE_ENDPOINT`            | `http://minio:9000` in Compose | MinIO/S3-compatible endpoint                  |
+| `OBJECT_STORAGE_BUCKET`              | `mmdash`                       | Artifact object bucket                        |
+| `OBJECT_STORAGE_REGION`              | `us-east-1`                    | Signing region                                |
+| `OBJECT_STORAGE_ACCESS_KEY` / secret | local development values only  | Provider credentials                          |
+| `CORE_INTERNAL_URL`                  | `http://core:8080` in Compose  | Worker-reachable signed Core transfer base    |
 
 Compose mounts the Local root and MinIO data on named volumes. Preserve those
 volumes during ordinary shutdown. Automatic cleanup aborts only expired,
@@ -71,6 +76,36 @@ commit SHA, and Repo-relative path. It reads through the Repo service's
 immutable content API and records `source=git`; no public Artifact upload route
 can forge that source.
 
+## Worker preview lifecycle
+
+Making an immutable Version available creates one `artifact.preview` Job and a
+registry entry in the same Core transaction. The Worker claims the Job using
+its existing Project-scoped API token, then requests short-lived input and
+output capabilities from
+`/v1/internal/artifact-preview-jobs/{jobId}/transfers`. The Job payload and
+result contain only Project, Artifact, Version, preview target IDs, bounded
+summary data, and provider ETags—never object keys, provider handles,
+credentials, or signed URLs.
+
+Worker input and generated thumbnail output always stream through signed Core
+routes in 64 KiB chunks, including when the selected backend is MinIO or S3.
+The output is a one-part provider multipart upload. Core checks the Job target,
+expected size, provider part and ETag, streams full SHA-256 verification,
+promotes the content-addressed object, and updates Job plus preview state in one
+transaction. Local public thumbnail downloads use the same signed route;
+MinIO/S3 public thumbnails use short-lived presigned GET.
+
+The Worker limits image pixels, PDF pages and text pages, CSV rows and columns,
+JSON/text bytes, summary bytes, thumbnail dimensions/bytes, and elapsed
+processing time through `MMDASH_PREVIEW_*` system environment variables.
+Invalid supported formats fail the Job safely; unsupported/binary or
+over-limit inputs create a bounded `unsupported` projection without making the
+original unavailable. The reaper aborts expired preview staging and reconciles
+preview state with retry, cancellation, lease-timeout, and terminal Job state.
+
+`SemanticDescriptionGenerator` is a protocol only. No implementation or call
+site exists in Stage 2.
+
 ## Metrics and readiness
 
 Core readiness checks PostgreSQL plus the selected Artifact backend. Artifact
@@ -95,6 +130,7 @@ go test ./internal/artifact ./internal/audit ./internal/project \
 go test ./...
 go vet ./...
 go build ./...
+pnpm smoke:artifact-preview
 ```
 
 The real Artifact integration suite is opt-in:
@@ -104,6 +140,10 @@ The real Artifact integration suite is opt-in:
   presigned multipart coverage.
 - `MMDASH_TEST_CORE_URL` and `MMDASH_TEST_ADMIN_PASSWORD` run the public Core
   HTTP lifecycle against a healthy Compose Core.
+- `pnpm smoke:artifact-preview` performs a real MinIO presigned PUT, refresh
+  recovery, idempotent confirmation, container Worker preview, Core-streamed
+  thumbnail output, and signed thumbnail download; it cleans up its Artifact
+  and credential afterward.
 
 Acceptance must cover out-of-order and missing parts, refresh recovery,
 provider ETag mismatch, repeated and concurrent confirmation, cancellation,
@@ -111,6 +151,6 @@ expiry, full-size and SHA-256 mismatch, cross-role denial, version retention,
 trash restore, shared-Blob purge, and Local signed streaming. Inspect Core logs
 afterward for errors and secret-bearing values.
 
-Worker previews, Outbox/Data Hub/MCP/Project source integration, and Web/BFF
-are added by the following Stage 2 checkpoints. Artifact CLI commands remain
-deferred to Stage 3.
+Outbox/Data Hub/MCP/Project source integration and Web/BFF are added by the
+following Stage 2 checkpoints. Artifact CLI commands remain deferred to
+Stage 3.

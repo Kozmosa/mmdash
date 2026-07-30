@@ -8,6 +8,7 @@ import (
 // UploadExpirer aborts bounded batches of expired staging sessions.
 type UploadExpirer interface {
 	ExpireUploads(context.Context, int) (int, error)
+	ExpirePreviewTransfers(context.Context, int) (int, error)
 }
 
 // UploadReaper removes only unconfirmed staging state. It never scans or
@@ -60,5 +61,10 @@ func (reaper UploadReaper) RunOnce(ctx context.Context) (int, error) {
 	if limit < 1 {
 		limit = 50
 	}
-	return reaper.Service.ExpireUploads(ctx, limit)
+	uploads, uploadErr := reaper.Service.ExpireUploads(ctx, limit)
+	previews, previewErr := reaper.Service.ExpirePreviewTransfers(ctx, limit)
+	if uploadErr != nil {
+		return uploads + previews, uploadErr
+	}
+	return uploads + previews, previewErr
 }

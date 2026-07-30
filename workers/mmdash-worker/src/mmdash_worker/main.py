@@ -9,7 +9,7 @@ import os
 import socket
 
 from mmdash_worker import __version__
-from mmdash_worker.jobs import CoreJobClient, WorkerRuntime, baseline_registry
+from mmdash_worker.jobs import CoreJobClient, WorkerRuntime, worker_registry
 
 
 def status() -> dict[str, str]:
@@ -36,9 +36,13 @@ def main() -> None:
     )
     lease_seconds = int(os.environ.get("MMDASH_WORKER_LEASE_SECONDS", "60"))
     poll_seconds = float(os.environ.get("MMDASH_WORKER_POLL_SECONDS", "2"))
+    client = CoreJobClient(
+        os.environ.get("MMDASH_CORE_URL", "http://localhost:8080"),
+        token,
+    )
     runtime = WorkerRuntime(
-        CoreJobClient(os.environ.get("MMDASH_CORE_URL", "http://localhost:8080"), token),
-        baseline_registry(),
+        client,
+        worker_registry(client),
         worker_id=worker_id,
         version=__version__,
         lease_seconds=lease_seconds,

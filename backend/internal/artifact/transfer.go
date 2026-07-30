@@ -21,14 +21,17 @@ const (
 // TransferClaims identify application state only. Provider IDs, object keys,
 // credentials, and user content never enter the token.
 type TransferClaims struct {
-	Kind       string `json:"kind"`
-	ProjectID  string `json:"project_id"`
-	UploadID   string `json:"upload_id,omitempty"`
-	ArtifactID string `json:"artifact_id,omitempty"`
-	VersionID  string `json:"version_id,omitempty"`
-	PartNumber int    `json:"part_number,omitempty"`
-	SizeBytes  int64  `json:"size_bytes"`
-	ExpiresAt  int64  `json:"expires_at"`
+	Kind        string `json:"kind"`
+	ProjectID   string `json:"project_id"`
+	UploadID    string `json:"upload_id,omitempty"`
+	ArtifactID  string `json:"artifact_id,omitempty"`
+	VersionID   string `json:"version_id,omitempty"`
+	PreviewID   string `json:"preview_id,omitempty"`
+	PreviewType string `json:"preview_type,omitempty"`
+	JobID       string `json:"job_id,omitempty"`
+	PartNumber  int    `json:"part_number,omitempty"`
+	SizeBytes   int64  `json:"size_bytes"`
+	ExpiresAt   int64  `json:"expires_at"`
 }
 
 // TransferSigner creates and verifies short-lived Core streaming grants.
@@ -70,7 +73,7 @@ func (signer *TransferSigner) Sign(
 	_, _ = mac.Write([]byte(encoded))
 	token := encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	method := "GET"
-	if claims.Kind == transferUploadPart {
+	if claims.Kind == transferUploadPart || claims.Kind == transferPreviewOutput {
 		method = "PUT"
 	}
 	return TransferGrant{
@@ -125,6 +128,16 @@ func validTransferClaims(claims TransferClaims) bool {
 			claims.PartNumber <= MultipartMaxParts
 	case transferDownload:
 		return claims.ArtifactID != "" && claims.VersionID != ""
+	case transferPreviewInput:
+		return claims.ArtifactID != "" && claims.VersionID != "" &&
+			claims.PreviewID != "" && claims.JobID != ""
+	case transferPreviewOutput:
+		return claims.ArtifactID != "" && claims.VersionID != "" &&
+			claims.PreviewID != "" && claims.JobID != "" &&
+			claims.PreviewType == PreviewThumbnail
+	case transferPreviewDownload:
+		return claims.ArtifactID != "" && claims.VersionID != "" &&
+			claims.PreviewID != "" && claims.PreviewType == PreviewThumbnail
 	default:
 		return false
 	}

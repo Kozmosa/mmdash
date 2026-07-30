@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgconn"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
+	"github.com/mmdash/mmdash/backend/internal/jobs"
+	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
@@ -20,6 +22,8 @@ import (
 type PostgresStore struct {
 	Audit       TransactionalAuditRecorder
 	DB          *sql.DB
+	Generator   identity.Generator
+	Jobs        jobs.TransactionalWriter
 	Transaction transaction.Manager
 }
 
@@ -38,6 +42,14 @@ func (store PostgresStore) CreateFirst(
 		}
 		if err := insertUpload(ctx, tx, upload); err != nil {
 			return mapPostgresError(err)
+		}
+		if version.Status == StatusAvailable {
+			if err := store.schedulePreviewInTransaction(
+				ctx, tx, artifact.ProjectID, artifact.ID, version.ID,
+				artifact.CreatedBy, version.CreatedAt,
+			); err != nil {
+				return err
+			}
 		}
 		return store.audit(
 			ctx, tx, "artifact.upload.initialized", artifact.ProjectID,
@@ -62,6 +74,12 @@ func (store PostgresStore) CreateGit(
 		}
 		if err := insertVersion(ctx, tx, version); err != nil {
 			return mapPostgresError(err)
+		}
+		if err := store.schedulePreviewInTransaction(
+			ctx, tx, artifact.ProjectID, artifact.ID, version.ID,
+			artifact.CreatedBy, version.CreatedAt,
+		); err != nil {
+			return err
 		}
 		if artifact.Source == SourceSystem {
 			return store.audit(
@@ -131,6 +149,12 @@ func (store PostgresStore) CreateVersion(
 				WHERE project_id=$1 AND artifact_id=$2 AND status='available'
 			`, projectID, artifactID, version.ID, version.AvailableAt)
 			if err := requireAffected(result, err); err != nil {
+				return err
+			}
+			if err := store.schedulePreviewInTransaction(
+				ctx, tx, projectID, artifactID, version.ID,
+				version.CreatedBy, version.CreatedAt,
+			); err != nil {
 				return err
 			}
 		}
@@ -390,6 +414,16 @@ func (store PostgresStore) Update(
 		if err := requireAffected(result, err); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE artifact_registry_entries AS registry
+			SET description=artifact.description,updated_at=$3
+			FROM artifact_artifacts AS artifact
+			WHERE registry.project_id=$1 AND registry.artifact_id=$2
+			  AND artifact.project_id=registry.project_id
+			  AND artifact.artifact_id=registry.artifact_id
+		`, projectID, artifactID, now); err != nil {
+			return err
+		}
 		return store.audit(
 			ctx, tx, "artifact.updated", projectID, artifactID,
 			map[string]interface{}{},
@@ -580,6 +614,12 @@ func (store PostgresStore) FinalizeUpload(
 		if err := requireAffected(result, err); err != nil {
 			return err
 		}
+		if err := store.schedulePreviewInTransaction(
+			ctx, tx, upload.ProjectID, upload.ArtifactID, upload.VersionID,
+			upload.CreatedBy, now,
+		); err != nil {
+			return err
+		}
 		return store.audit(
 			ctx, tx, "artifact.upload.confirmed", upload.ProjectID,
 			upload.ArtifactID, map[string]interface{}{
@@ -617,6 +657,13 @@ func (store PostgresStore) Trash(
 		if err := requireAffected(result, err); err != nil {
 			return mapPostgresError(err)
 		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE artifact_registry_entries
+			SET status='hidden',updated_at=$3
+			WHERE project_id=$1 AND artifact_id=$2
+		`, projectID, artifactID, now); err != nil {
+			return err
+		}
 		return store.audit(
 			ctx, tx, "artifact.trashed", projectID, artifactID,
 			map[string]interface{}{},
@@ -637,6 +684,16 @@ func (store PostgresStore) Restore(
 			WHERE project_id=$1 AND artifact_id=$2 AND status='trashed'
 		`, projectID, artifactID, now)
 		if err := requireAffected(result, err); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE artifact_registry_entries AS registry
+			SET description=artifact.description,status='active',updated_at=$3
+			FROM artifact_artifacts AS artifact
+			WHERE registry.project_id=$1 AND registry.artifact_id=$2
+			  AND artifact.project_id=registry.project_id
+			  AND artifact.artifact_id=registry.artifact_id
+		`, projectID, artifactID, now); err != nil {
 			return err
 		}
 		return store.audit(
@@ -737,6 +794,11 @@ func (store PostgresStore) RestoreVersion(
 			WHERE project_id=$1 AND artifact_id=$2 AND status='available'
 		`, projectID, artifactID, newVersionID, now)
 		if err := requireAffected(result, err); err != nil {
+			return err
+		}
+		if err := store.schedulePreviewInTransaction(
+			ctx, tx, projectID, artifactID, newVersionID, actorID, now,
+		); err != nil {
 			return err
 		}
 		return store.audit(

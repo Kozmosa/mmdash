@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
+	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
@@ -41,4 +42,31 @@ type Store interface {
 	Purge(context.Context, string, string, PurgeObject) error
 	ExpireUploads(context.Context, time.Time, int) ([]UploadSession, error)
 	MarkProviderAborted(context.Context, string, time.Time) error
+	ListPreviews(context.Context, string, string, string) (PreviewList, error)
+	GetPreview(context.Context, string, string, string, string) (Preview, error)
+	GetPreviewByJob(context.Context, string) (Preview, error)
+	CreatePreviewTransfer(
+		context.Context,
+		PreviewTransfer,
+	) (PreviewTransfer, bool, error)
+	GetPreviewTransfer(context.Context, string, string) (PreviewTransfer, error)
+	MarkPreviewTransferUploaded(context.Context, string, string, time.Time) error
+	ExpirePreviewTransfers(context.Context, time.Time, int) ([]PreviewTransfer, error)
+	MarkPreviewTransferAborted(context.Context, string, time.Time) error
+	CompletePreviewInTransaction(
+		context.Context,
+		transaction.Tx,
+		jobs.Job,
+		previewResult,
+		time.Time,
+	) error
+	UpdatePreviewJobInTransaction(
+		context.Context,
+		transaction.Tx,
+		jobs.Job,
+		string,
+		string,
+		time.Time,
+	) error
+	ReconcilePreviewJobs(context.Context, time.Time) error
 }

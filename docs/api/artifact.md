@@ -70,7 +70,8 @@ Worker job `artifact.preview` produces bounded:
 
 - image dimensions/format and a safe thumbnail;
 - PDF page count, first-page thumbnail, and bounded extracted text;
-- CSV columns, row/column counts, and a bounded sample;
+- CSV columns, row/column counts, bounded numeric statistics, and a bounded
+  sample;
 - JSON top-level structure and a bounded sample;
 - text encoding validation and bounded text.
 
@@ -79,6 +80,13 @@ Unsupported or failed preview does not make the original unavailable.
 not call an LLM or multimodal model and does not automatically generate
 description or `recommended_usage`; those capabilities are deferred to Article.
 
+The Worker receives only target IDs in the `artifact.preview` payload. It uses
+its existing API token to obtain Job-bound short-lived Core GET/PUT grants.
+Generated thumbnails are completed through provider multipart state and must
+pass full size and SHA-256 verification before the Job and preview projection
+become available atomically. The additional internal persistence migration is
+`000014_artifact_preview_transfer`.
+
 ## RBAC
 
 | Role               | Artifact capability                                                          |
@@ -86,7 +94,7 @@ description or `recommended_usage`; those capabilities are deferred to Article.
 | owner / maintainer | read, upload, download, create Version, edit metadata, trash, restore, purge |
 | editor             | read, upload, download, create Version, edit metadata                        |
 | viewer             | read, preview, download                                                      |
-| Worker             | one-time transfer grants bound to a claimed preview Job                      |
+| Worker             | short-lived retry-safe grants bound to a claimed preview Job                 |
 | MCP                | caller's current Project role; no bypass                                     |
 
 Every upload control call, metadata mutation, download grant, download, trash,

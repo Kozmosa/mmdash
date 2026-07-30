@@ -17,6 +17,7 @@ type Config struct {
 	Artifact        ArtifactConfig
 	Auth            AuthConfig
 	Database        DatabaseConfig
+	InternalURL     string
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	Outbox          OutboxConfig
@@ -30,14 +31,15 @@ type Config struct {
 
 // ArtifactConfig configures multipart limits and local storage behavior.
 type ArtifactConfig struct {
-	LocalStorageRoot     string
-	MultipartPartBytes   int64
-	MultipartSessionTTL  time.Duration
-	MultipartURLTTL      time.Duration
-	StagingSweepInterval time.Duration
-	StagingTTL           time.Duration
-	StorageBackend       string
-	UploadMaxBytes       int64
+	LocalStorageRoot      string
+	MultipartPartBytes    int64
+	MultipartSessionTTL   time.Duration
+	MultipartURLTTL       time.Duration
+	PreviewOutputMaxBytes int64
+	StagingSweepInterval  time.Duration
+	StagingTTL            time.Duration
+	StorageBackend        string
+	UploadMaxBytes        int64
 }
 
 // AuthConfig configures bootstrap login and session signing.
@@ -124,6 +126,11 @@ func Load(lookup LookupEnv) (Config, error) {
 				"ARTIFACT_MULTIPART_URL_TTL",
 				15*time.Minute,
 			),
+			PreviewOutputMaxBytes: int64OrDefault(
+				lookup,
+				"ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES",
+				4*1024*1024,
+			),
 			StagingSweepInterval: durationOrDefault(
 				lookup,
 				"ARTIFACT_STAGING_SWEEP_INTERVAL",
@@ -168,6 +175,7 @@ func Load(lookup LookupEnv) (Config, error) {
 			SecretKey:      envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
 		},
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
+		InternalURL: envOrDefault(lookup, "CORE_INTERNAL_URL", "http://localhost:8080"),
 		PublicURL:   envOrDefault(lookup, "MMDASH_PUBLIC_URL", "http://localhost:3000"),
 		Outbox: OutboxConfig{
 			DeliveryLease: durationOrDefault(lookup, "OUTBOX_DELIVERY_LEASE", 30*time.Second),
@@ -223,6 +231,12 @@ func (config Config) Validate() error {
 	if config.Artifact.UploadMaxBytes < 1 ||
 		config.Artifact.UploadMaxBytes > 5*1024*1024*1024*1024 {
 		return fmt.Errorf("ARTIFACT_UPLOAD_MAX_BYTES must be between 1 byte and 5 TiB")
+	}
+	if config.Artifact.PreviewOutputMaxBytes < 1 ||
+		config.Artifact.PreviewOutputMaxBytes > 64*1024*1024 {
+		return fmt.Errorf(
+			"ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES must be between 1 byte and 64 MiB",
+		)
 	}
 	if config.Artifact.MultipartPartBytes < 5*1024*1024 ||
 		config.Artifact.MultipartPartBytes > 5*1024*1024*1024 {
@@ -309,6 +323,11 @@ func (config Config) Validate() error {
 	if err != nil || publicURL.Host == "" ||
 		(publicURL.Scheme != "http" && publicURL.Scheme != "https") {
 		return fmt.Errorf("MMDASH_PUBLIC_URL must be an HTTP(S) URL")
+	}
+	internalURL, err := url.Parse(config.InternalURL)
+	if err != nil || internalURL.Host == "" ||
+		(internalURL.Scheme != "http" && internalURL.Scheme != "https") {
+		return fmt.Errorf("CORE_INTERNAL_URL must be an HTTP(S) URL")
 	}
 	if config.Outbox.DeliveryLease <= 0 ||
 		config.Outbox.EventLease <= 0 ||

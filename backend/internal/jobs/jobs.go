@@ -11,6 +11,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
@@ -105,6 +106,32 @@ type Failure struct {
 	WorkerID          string
 }
 
+// LifecycleHook lets a domain validate result bytes before Job completion and
+// update its authoritative state in the same transaction as the Job state.
+// Implementations must ignore Job types they do not own.
+type LifecycleHook interface {
+	PrepareComplete(context.Context, Job, map[string]interface{}) error
+	ClaimInTransaction(context.Context, transaction.Tx, Job) error
+	CompleteInTransaction(
+		context.Context,
+		transaction.Tx,
+		Job,
+		map[string]interface{},
+	) error
+	FailInTransaction(context.Context, transaction.Tx, Job, Failure) error
+}
+
+// TransactionalWriter creates domain-owned Jobs inside an existing Core
+// business transaction.
+type TransactionalWriter interface {
+	CreateInTransaction(
+		context.Context,
+		transaction.Tx,
+		string,
+		CreateInput,
+	) (Job, bool, error)
+}
+
 // Store is the durable queue boundary.
 type Store interface {
 	AppendLog(context.Context, string, string, string, string, map[string]interface{}) (Log, error)
@@ -133,6 +160,7 @@ type ProjectAuthorizer interface {
 type Service struct {
 	Auth     Authenticator
 	Clock    clock.Clock
+	Hooks    []LifecycleHook
 	Projects ProjectAuthorizer
 	Store    Store
 }
@@ -295,7 +323,7 @@ func (service Service) Renew(
 	workerID string,
 	leaseSeconds int,
 ) (Job, error) {
-	if err := service.authorizeWorkerJob(ctx, identity, jobID, workerID); err != nil {
+	if _, err := service.authorizeWorkerJob(ctx, identity, jobID, workerID); err != nil {
 		return Job{}, err
 	}
 	if leaseSeconds < 10 || leaseSeconds > 900 {
@@ -314,7 +342,7 @@ func (service Service) AppendLog(
 	message string,
 	fields map[string]interface{},
 ) (Log, error) {
-	if err := service.authorizeWorkerJob(ctx, identity, jobID, workerID); err != nil {
+	if _, err := service.authorizeWorkerJob(ctx, identity, jobID, workerID); err != nil {
 		return Log{}, err
 	}
 	level = strings.TrimSpace(level)
@@ -337,11 +365,17 @@ func (service Service) Complete(
 	workerID string,
 	result map[string]interface{},
 ) (Job, error) {
-	if err := service.authorizeWorkerJob(ctx, identity, jobID, workerID); err != nil {
+	job, err := service.authorizeWorkerJob(ctx, identity, jobID, workerID)
+	if err != nil {
 		return Job{}, err
 	}
 	if result == nil {
 		result = map[string]interface{}{}
+	}
+	for _, hook := range service.Hooks {
+		if err := hook.PrepareComplete(ctx, job, result); err != nil {
+			return Job{}, err
+		}
 	}
 	return service.Store.Complete(ctx, jobID, workerID, result)
 }
@@ -353,7 +387,7 @@ func (service Service) Fail(
 	jobID string,
 	failure Failure,
 ) (Job, error) {
-	if err := service.authorizeWorkerJob(
+	if _, err := service.authorizeWorkerJob(
 		ctx,
 		identity,
 		jobID,
@@ -370,25 +404,62 @@ func (service Service) Fail(
 	return service.Store.Fail(ctx, jobID, failure)
 }
 
+// ClaimedWorkerJob returns one actively leased Job to an authenticated API
+// token. It is used by job-bound internal capability routes.
+func (service Service) ClaimedWorkerJob(
+	ctx context.Context,
+	identity auth.Identity,
+	jobID string,
+) (Job, error) {
+	if identity.Kind != "api" {
+		return Job{}, ErrWorkerToken
+	}
+	job, err := service.Store.Get(ctx, jobID)
+	if err != nil {
+		return Job{}, err
+	}
+	if err := service.authorize(
+		ctx,
+		identity,
+		job.ProjectID,
+		project.PermissionJobsRead,
+	); err != nil {
+		return Job{}, err
+	}
+	now := service.Clock.Now().UTC()
+	if job.Status != StatusRunning ||
+		job.LockedBy == "" ||
+		job.LeaseExpiresAt == nil ||
+		!job.LeaseExpiresAt.After(now) ||
+		job.CancelRequestedAt != nil ||
+		(job.TimeoutAt != nil && !job.TimeoutAt.After(now)) {
+		return Job{}, ErrLeaseLost
+	}
+	return job, nil
+}
+
 func (service Service) authorizeWorkerJob(
 	ctx context.Context,
 	identity auth.Identity,
 	jobID string,
 	workerID string,
-) error {
+) (Job, error) {
 	if err := validateWorker(identity, workerID); err != nil {
-		return err
+		return Job{}, err
 	}
 	job, err := service.Store.Get(ctx, jobID)
 	if err != nil {
-		return err
+		return Job{}, err
 	}
-	return service.authorize(
+	if err := service.authorize(
 		ctx,
 		identity,
 		job.ProjectID,
 		project.PermissionJobsRead,
-	)
+	); err != nil {
+		return Job{}, err
+	}
+	return job, nil
 }
 
 func (service Service) authorize(

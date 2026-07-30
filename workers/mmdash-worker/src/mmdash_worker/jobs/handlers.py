@@ -102,3 +102,19 @@ def baseline_registry() -> HandlerRegistry:
 
     registry.register("system.test", system_test)
     return registry
+
+
+def worker_registry(artifact_client: Any) -> HandlerRegistry:
+    """Return the production registry with Stage 2 Artifact preview support."""
+
+    from mmdash_worker.preview import ArtifactPreviewHandler, PreviewConfig, PreviewProcessor
+
+    registry = baseline_registry()
+    registry.register(
+        "artifact.preview",
+        ArtifactPreviewHandler(
+            artifact_client,
+            PreviewProcessor(PreviewConfig.from_environment()),
+        ),
+    )
+    return registry

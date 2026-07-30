@@ -30,6 +30,19 @@ const (
 	UploadAborted     = "aborted"
 	UploadExpired     = "expired"
 	UploadFailed      = "failed"
+
+	PreviewQueued      = "queued"
+	PreviewProcessing  = "processing"
+	PreviewAvailable   = "available"
+	PreviewUnsupported = "unsupported"
+	PreviewFailed      = "failed"
+
+	PreviewImage     = "image"
+	PreviewPDF       = "pdf"
+	PreviewCSV       = "csv"
+	PreviewJSON      = "json"
+	PreviewText      = "text"
+	PreviewThumbnail = "thumbnail"
 )
 
 // Artifact is the stable, project-scoped file identity.
@@ -254,4 +267,84 @@ type Blob struct {
 	Backend        string
 	ObjectKey      string
 	ReferenceCount int64
+}
+
+// Preview is a bounded, regenerable projection for one immutable Version.
+type Preview struct {
+	ID                string                 `json:"preview_id"`
+	ProjectID         string                 `json:"-"`
+	ArtifactID        string                 `json:"-"`
+	VersionID         string                 `json:"version_id"`
+	PreviewType       string                 `json:"preview_type"`
+	Status            string                 `json:"status"`
+	StructuralSummary map[string]interface{} `json:"structural_summary"`
+	ErrorCode         *string                `json:"error_code"`
+	Transfer          *TransferGrant         `json:"transfer"`
+	CreatedAt         time.Time              `json:"created_at"`
+	UpdatedAt         time.Time              `json:"updated_at"`
+
+	JobID     string `json:"-"`
+	BlobID    string `json:"-"`
+	ObjectKey string `json:"-"`
+	Backend   string `json:"-"`
+	MIMEType  string `json:"-"`
+	SizeBytes int64  `json:"-"`
+	Filename  string `json:"-"`
+}
+
+// PreviewList contains every preview projection for one immutable Version.
+type PreviewList struct {
+	Items []Preview `json:"items"`
+}
+
+// PreviewTransfer is one job-bound, short-lived multipart output.
+type PreviewTransfer struct {
+	ID               string
+	JobID            string
+	ProjectID        string
+	ArtifactID       string
+	VersionID        string
+	PreviewType      string
+	Backend          string
+	ProviderUploadID string
+	StagingKey       string
+	Filename         string
+	MIMEType         string
+	ExpectedSize     int64
+	ExpectedSHA256   string
+	Status           string
+	ProviderETag     string
+	ExpiresAt        time.Time
+	CompletedAt      *time.Time
+	AbortedAt        *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// PreviewTransferInput is the validated internal Worker capability request.
+type PreviewTransferInput struct {
+	Direction   string
+	VersionID   string
+	PreviewType string
+	Filename    string
+	MIMEType    string
+	SizeBytes   int64
+	SHA256      string
+}
+
+type previewResult struct {
+	ProjectID         string                 `json:"project_id"`
+	ArtifactID        string                 `json:"artifact_id"`
+	VersionID         string                 `json:"version_id"`
+	PreviewID         string                 `json:"preview_id"`
+	PreviewType       string                 `json:"preview_type"`
+	Status            string                 `json:"status"`
+	StructuralSummary map[string]interface{} `json:"structural_summary"`
+	ErrorCode         string                 `json:"error_code"`
+	Outputs           []previewResultOutput  `json:"outputs"`
+}
+
+type previewResultOutput struct {
+	PreviewType string `json:"preview_type"`
+	ETag        string `json:"etag"`
 }

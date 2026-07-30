@@ -33,6 +33,7 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	if config.Artifact.StorageBackend != "minio" ||
 		config.Artifact.MultipartPartBytes != 16*1024*1024 ||
 		config.Artifact.UploadMaxBytes != 10*1024*1024*1024 ||
+		config.Artifact.PreviewOutputMaxBytes != 4*1024*1024 ||
 		config.Artifact.MultipartURLTTL != 15*time.Minute ||
 		config.ObjectStorage.PublicEndpoint != "" {
 		t.Fatalf("unexpected Artifact defaults: %+v %+v", config.Artifact, config.ObjectStorage)
@@ -44,6 +45,9 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	}
 	if config.Version != "0.1.0" {
 		t.Fatalf("unexpected service version: %s", config.Version)
+	}
+	if config.InternalURL != "http://localhost:8080" {
+		t.Fatalf("unexpected internal Core URL: %s", config.InternalURL)
 	}
 }
 
@@ -137,6 +141,28 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected staging TTL shorter than session TTL to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES": "0",
+		"DATABASE_URL":                      "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY":         "access",
+		"OBJECT_STORAGE_ENDPOINT":           "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":         "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid preview output limit to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"CORE_INTERNAL_URL":         "ftp://core:8080",
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid internal Core URL to fail")
 	}
 }
 

@@ -214,6 +214,40 @@ func TestWorkerOperationsRequireAPITokenAndAdminCanClaimGlobally(t *testing.T) {
 	}
 }
 
+func TestClaimedWorkerJobRequiresLiveUncancelledLease(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	lease := now.Add(time.Minute)
+	store := &memoryStore{job: Job{
+		ID: "job-1", ProjectID: "project-1", Status: StatusRunning,
+		LockedBy: "worker-1", LeaseExpiresAt: &lease,
+	}}
+	service := Service{
+		Clock: clock.Fixed{Time: now}, Projects: &projectAccessStub{}, Store: store,
+	}
+	identity := auth.Identity{Kind: "api", User: auth.User{ID: "user-1"}}
+	if _, err := service.ClaimedWorkerJob(
+		context.Background(), identity, "job-1",
+	); err != nil {
+		t.Fatalf("live claimed Job: %v", err)
+	}
+
+	expired := now
+	store.job.LeaseExpiresAt = &expired
+	if _, err := service.ClaimedWorkerJob(
+		context.Background(), identity, "job-1",
+	); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("expired lease must be rejected: %v", err)
+	}
+
+	store.job.LeaseExpiresAt = &lease
+	store.job.CancelRequestedAt = &now
+	if _, err := service.ClaimedWorkerJob(
+		context.Background(), identity, "job-1",
+	); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("cancelled lease must be rejected: %v", err)
+	}
+}
+
 func TestClaimQueryUsesSkipLockedAndDeterministicTypeParameters(t *testing.T) {
 	query, args := buildClaimQuery(time.Unix(0, 0), ClaimInput{
 		JobTypes: []string{"system.test", "article.build"},
