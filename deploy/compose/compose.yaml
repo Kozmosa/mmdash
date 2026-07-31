@@ -32,6 +32,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mmdash}
       # MinIO 管理账号密码；生产必须使用 Secret 管理器注入的强随机值。
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${ARTIFACT_WEB_ORIGIN:-http://localhost:3000}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 3s
@@ -42,6 +43,25 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
+
+  minio-init:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    command: artifact-storage-init
+    environment:
+      ARTIFACT_STORAGE_BACKEND: minio
+      ARTIFACT_WEB_ORIGIN: ${ARTIFACT_WEB_ORIGIN:-http://localhost:3000}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-mmdash}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-mmdash}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: http://localhost:9000
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
 
   migrate:
     build:
@@ -71,6 +91,7 @@ services:
       MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
       # Webhook 公网基址；生产必须是能从 GitHub 到达的正式 HTTPS 地址。
       MMDASH_PUBLIC_URL: ${MMDASH_PUBLIC_URL:-http://localhost:3000}
+      CORE_INTERNAL_URL: http://core:8080
       # Session/API Token 签名密钥；生产必须替换为 Secret 管理器提供的高熵值。
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
       # 浏览器 Session 有效期；生产按安全策略调整。
@@ -91,12 +112,23 @@ services:
       DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
       # S3/MinIO 服务地址；生产必须替换为受控对象存储的内部 HTTPS 地址。
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
       # 对象存储访问账号；生产必须使用最小权限的应用账号，不使用 root 账号。
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-mmdash}
       # 对象存储访问密钥；生产必须使用 Secret 管理器注入。
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-me}
       # 权威 Artifact Bucket；生产应设置为环境专用 Bucket。
-      OBJECT_STORAGE_BUCKET: mmdash
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-mmdash}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      ARTIFACT_STORAGE_BACKEND: ${ARTIFACT_STORAGE_BACKEND:-minio}
+      ARTIFACT_LOCAL_STORAGE_ROOT: /var/lib/mmdash/artifacts
+      ARTIFACT_UPLOAD_MAX_BYTES: ${ARTIFACT_UPLOAD_MAX_BYTES:-10737418240}
+      ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES: ${ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES:-4194304}
+      ARTIFACT_MULTIPART_PART_BYTES: ${ARTIFACT_MULTIPART_PART_BYTES:-16777216}
+      ARTIFACT_MULTIPART_URL_TTL: ${ARTIFACT_MULTIPART_URL_TTL:-15m}
+      ARTIFACT_MULTIPART_SESSION_TTL: ${ARTIFACT_MULTIPART_SESSION_TTL:-24h}
+      ARTIFACT_STAGING_TTL: ${ARTIFACT_STAGING_TTL:-24h}
+      ARTIFACT_STAGING_SWEEP_INTERVAL: ${ARTIFACT_STAGING_SWEEP_INTERVAL:-5m}
       # Core 管理的 Git bare repo、长期 worktree 和临时 checkout 根目录。
       REPO_STORAGE_ROOT: /var/lib/mmdash/repos
       # Local Git Provider allowlist；空值默认禁用。容器路径用冒号分隔。
@@ -113,8 +145,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      minio:
-        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
       interval: 3s
@@ -123,6 +155,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      - artifact-data:/var/lib/mmdash/artifacts
       - repo-data:/var/lib/mmdash/repos
 
   web-bff:
@@ -233,11 +266,26 @@ services:
       MMDASH_WORKER_LEASE_SECONDS: ${MMDASH_WORKER_LEASE_SECONDS:-60}
       # 无任务时的轮询间隔秒数；生产按吞吐、延迟与数据库负载调优。
       MMDASH_WORKER_POLL_SECONDS: ${MMDASH_WORKER_POLL_SECONDS:-2}
+      MMDASH_PREVIEW_MAX_INPUT_BYTES: ${MMDASH_PREVIEW_MAX_INPUT_BYTES:-134217728}
+      MMDASH_PREVIEW_MAX_IMAGE_PIXELS: ${MMDASH_PREVIEW_MAX_IMAGE_PIXELS:-40000000}
+      MMDASH_PREVIEW_MAX_PDF_PAGES: ${MMDASH_PREVIEW_MAX_PDF_PAGES:-1000}
+      MMDASH_PREVIEW_MAX_PDF_TEXT_PAGES: ${MMDASH_PREVIEW_MAX_PDF_TEXT_PAGES:-20}
+      MMDASH_PREVIEW_MAX_CSV_ROWS: ${MMDASH_PREVIEW_MAX_CSV_ROWS:-10000}
+      MMDASH_PREVIEW_MAX_CSV_COLUMNS: ${MMDASH_PREVIEW_MAX_CSV_COLUMNS:-256}
+      MMDASH_PREVIEW_MAX_SAMPLE_ROWS: ${MMDASH_PREVIEW_MAX_SAMPLE_ROWS:-20}
+      MMDASH_PREVIEW_MAX_JSON_BYTES: ${MMDASH_PREVIEW_MAX_JSON_BYTES:-8388608}
+      MMDASH_PREVIEW_MAX_TEXT_BYTES: ${MMDASH_PREVIEW_MAX_TEXT_BYTES:-2097152}
+      MMDASH_PREVIEW_MAX_TEXT_CHARS: ${MMDASH_PREVIEW_MAX_TEXT_CHARS:-32768}
+      MMDASH_PREVIEW_MAX_SUMMARY_BYTES: ${MMDASH_PREVIEW_MAX_SUMMARY_BYTES:-65536}
+      MMDASH_PREVIEW_MAX_THUMBNAIL_BYTES: ${MMDASH_PREVIEW_MAX_THUMBNAIL_BYTES:-4194304}
+      MMDASH_PREVIEW_THUMBNAIL_DIMENSION: ${MMDASH_PREVIEW_THUMBNAIL_DIMENSION:-512}
+      MMDASH_PREVIEW_TIMEOUT_SECONDS: ${MMDASH_PREVIEW_TIMEOUT_SECONDS:-60}
     depends_on:
       core:
         condition: service_healthy
 
 volumes:
+  artifact-data:
   postgres-data:
   minio-data:
   repo-data:

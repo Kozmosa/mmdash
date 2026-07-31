@@ -33,6 +33,22 @@ type storeStub struct {
 	role               Role
 }
 
+type artifactValidatorStub struct {
+	err       error
+	projectID string
+	ids       []string
+}
+
+func (stub *artifactValidatorStub) ValidateProjectReferences(
+	_ context.Context,
+	projectID string,
+	ids []string,
+) error {
+	stub.projectID = projectID
+	stub.ids = append([]string{}, ids...)
+	return stub.err
+}
+
 func (stub *storeStub) AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error) {
 	return Member{UserID: "user-2", Role: RoleViewer}, nil
 }
@@ -155,6 +171,45 @@ func TestSettingsPermissionsFollowCollaborationRoles(t *testing.T) {
 		true,
 	); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("viewer should not manage settings, got %v", err)
+	}
+}
+
+func TestProjectSourceArtifactsUseTwoStepValidatedReferences(t *testing.T) {
+	identity := auth.Identity{
+		Kind: "session", User: auth.User{ID: "user-1"},
+	}
+	store := &storeStub{role: RoleOwner}
+	validator := &artifactValidatorStub{}
+	service := Service{
+		Artifacts: validator, Auth: authStub{identity: identity}, Store: store,
+	}
+	if _, err := service.Create(
+		context.Background(), identity,
+		CreateInput{Name: "Project", SourceArtifactIDs: []string{"artifact-1"}},
+	); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("project create must remain the first step, got %v", err)
+	}
+	sourceIDs := []string{
+		"00000000-0000-4000-8000-000000000101",
+		"00000000-0000-4000-8000-000000000102",
+	}
+	if _, err := service.Update(
+		context.Background(), identity, "project-1",
+		UpdateInput{SourceArtifactIDs: &sourceIDs},
+	); err != nil {
+		t.Fatalf("validated source update: %v", err)
+	}
+	if !store.projectUpdated ||
+		validator.projectID != "project-1" ||
+		len(validator.ids) != 2 {
+		t.Fatalf("source references did not cross the narrow boundary: %#v", validator)
+	}
+	validator.err = errors.New("cross-project or unavailable")
+	if _, err := service.Update(
+		context.Background(), identity, "project-1",
+		UpdateInput{SourceArtifactIDs: &sourceIDs},
+	); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid Artifact references must be rejected, got %v", err)
 	}
 }
 
@@ -378,6 +433,35 @@ func TestRepositoryPermissionsMatchCollaborationRoles(t *testing.T) {
 			hasPermission(permissions, PermissionRepoWrite) != testCase.write {
 			t.Fatalf(
 				"unexpected Repo permissions for %s: %#v",
+				testCase.role, permissions,
+			)
+		}
+	}
+}
+
+func TestArtifactPermissionsMatchCollaborationRoles(t *testing.T) {
+	cases := []struct {
+		role     Role
+		read     bool
+		upload   bool
+		download bool
+		delete   bool
+	}{
+		{RoleOwner, true, true, true, true},
+		{RoleMaintainer, true, true, true, true},
+		{RoleEditor, true, true, true, false},
+		{RoleViewer, true, false, true, false},
+		{RoleAgent, false, false, false, false},
+		{RoleBox, false, false, false, false},
+	}
+	for _, testCase := range cases {
+		permissions := permissionsByRole[testCase.role]
+		if hasPermission(permissions, PermissionArtifactRead) != testCase.read ||
+			hasPermission(permissions, PermissionArtifactUpload) != testCase.upload ||
+			hasPermission(permissions, PermissionArtifactDownload) != testCase.download ||
+			hasPermission(permissions, PermissionArtifactDelete) != testCase.delete {
+			t.Fatalf(
+				"unexpected Artifact permissions for %s: %#v",
 				testCase.role, permissions,
 			)
 		}

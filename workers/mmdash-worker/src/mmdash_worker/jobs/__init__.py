@@ -6,6 +6,7 @@ from mmdash_worker.jobs.handlers import (
     HandlerError,
     HandlerRegistry,
     baseline_registry,
+    worker_registry,
 )
 from mmdash_worker.jobs.runtime import WorkerRuntime
 
@@ -17,4 +18,5 @@ __all__ = [
     "JobAPIError",
     "WorkerRuntime",
     "baseline_registry",
+    "worker_registry",
 ]

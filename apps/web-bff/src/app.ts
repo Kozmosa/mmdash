@@ -14,6 +14,7 @@ import { registerErrorHandler } from "./errors/error-handler.js";
 import { registerHttpStreamRoutes } from "./proxy/http-streams.js";
 import { registerWebSocketRoutes } from "./proxy/websocket.js";
 import { registerExampleRoutes } from "./routes/example.js";
+import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPageRoutes } from "./routes/pages.js";
@@ -42,6 +43,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         : randomUUID();
     },
     logger: options.logger ?? true,
+    routerOptions: { maxParamLength: 4_096 },
   });
   const coreClient =
     options.coreClient ??
@@ -72,6 +74,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerHealthRoutes(app, coreClient, config.version);
   registerAuthRoutes(app, coreClient, config);
   registerExampleRoutes(app, coreClient);
+  registerArtifactRoutes(app, coreClient);
   registerProjectRoutes(app, coreClient);
   registerRepoRoutes(app, coreClient);
   registerRepoWebhookRoutes(app, coreClient);

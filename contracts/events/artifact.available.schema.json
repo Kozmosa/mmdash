@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/artifact.available.schema.json",
+  "title": "artifact.available payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact_id",
+    "version_id",
+    "version_no",
+    "sha256",
+    "size_bytes",
+    "mime_type",
+    "reason",
+    "available_at"
+  ],
+  "properties": {
+    "artifact_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "version_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "version_no": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mime_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["uploaded", "deduplicated", "restored"]
+    },
+    "available_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

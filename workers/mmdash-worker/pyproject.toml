@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Asynchronous worker runtime for mmdash"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "pillow>=11.3.0,<13",
+  "pymupdf>=1.26.3,<2",
+]
 
 [project.scripts]
 mmdash-worker = "mmdash_worker.main:main"

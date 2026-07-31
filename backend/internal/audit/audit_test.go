@@ -11,6 +11,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
@@ -39,6 +40,15 @@ type storeStub struct {
 }
 
 func (stub *storeStub) Record(_ context.Context, event Event) (Event, error) {
+	stub.event = event
+	return event, stub.err
+}
+
+func (stub *storeStub) RecordInTransaction(
+	_ context.Context,
+	_ transaction.Tx,
+	event Event,
+) (Event, error) {
 	stub.event = event
 	return event, stub.err
 }
@@ -156,5 +166,34 @@ func TestRecorderUsesTrustedRequestContext(t *testing.T) {
 		"00000000-0000-4000-8000-000000000002", "request-1",
 	}) {
 		t.Fatalf("unexpected recorded context: %#v", store.event)
+	}
+}
+
+func TestRecorderWritesThroughBusinessTransaction(t *testing.T) {
+	store := &storeStub{}
+	recorder := Recorder{
+		Clock: clock.Fixed{
+			Time: time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC),
+		},
+		Store: store,
+	}
+	ctx := requestctx.WithValues(context.Background(), requestctx.Values{
+		RequestID: "artifact-request",
+	})
+	requestctx.SetActor(
+		ctx, "00000000-0000-4000-8000-000000000001", "session",
+	)
+	requestctx.SetProject(ctx, "00000000-0000-4000-8000-000000000002")
+	if err := recorder.RecordInTransaction(ctx, nil, Event{
+		Action: "artifact.upload.confirmed", Category: "artifact",
+		Metadata: map[string]interface{}{"version_id": "version-1"},
+		Outcome:  "success", Source: "core",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if store.event.RequestID != "artifact-request" ||
+		store.event.ActorKind != "session" ||
+		store.event.ProjectID != "00000000-0000-4000-8000-000000000002" {
+		t.Fatalf("unexpected transactional audit context: %#v", store.event)
 	}
 }

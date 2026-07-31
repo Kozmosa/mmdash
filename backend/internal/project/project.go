@@ -29,24 +29,28 @@ const (
 type Permission string
 
 const (
-	PermissionRead           Permission = "project.read"
-	PermissionUpdate         Permission = "project.update"
-	PermissionArchive        Permission = "project.archive"
-	PermissionMembersManage  Permission = "project.members.manage"
-	PermissionSettingsManage Permission = "project.settings.manage"
-	PermissionSettingsRead   Permission = "project.settings.read"
-	PermissionTokensManage   Permission = "project.tokens.manage"
-	PermissionJobsCreate     Permission = "project.jobs.create"
-	PermissionJobsRead       Permission = "project.jobs.read"
-	PermissionJobsCancel     Permission = "project.jobs.cancel"
-	PermissionDataRead       Permission = "project.data.read"
-	PermissionContextPropose Permission = "project.context.propose"
-	PermissionContextReview  Permission = "project.context.review"
-	PermissionAuditRead      Permission = "project.audit.read"
-	PermissionAuditWrite     Permission = "project.audit.write"
-	PermissionRepoRead       Permission = "project.repo.read"
-	PermissionRepoManage     Permission = "project.repo.manage"
-	PermissionRepoWrite      Permission = "project.repo.write"
+	PermissionRead             Permission = "project.read"
+	PermissionUpdate           Permission = "project.update"
+	PermissionArchive          Permission = "project.archive"
+	PermissionMembersManage    Permission = "project.members.manage"
+	PermissionSettingsManage   Permission = "project.settings.manage"
+	PermissionSettingsRead     Permission = "project.settings.read"
+	PermissionTokensManage     Permission = "project.tokens.manage"
+	PermissionJobsCreate       Permission = "project.jobs.create"
+	PermissionJobsRead         Permission = "project.jobs.read"
+	PermissionJobsCancel       Permission = "project.jobs.cancel"
+	PermissionDataRead         Permission = "project.data.read"
+	PermissionContextPropose   Permission = "project.context.propose"
+	PermissionContextReview    Permission = "project.context.review"
+	PermissionAuditRead        Permission = "project.audit.read"
+	PermissionAuditWrite       Permission = "project.audit.write"
+	PermissionRepoRead         Permission = "project.repo.read"
+	PermissionRepoManage       Permission = "project.repo.manage"
+	PermissionRepoWrite        Permission = "project.repo.write"
+	PermissionArtifactRead     Permission = "project.artifact.read"
+	PermissionArtifactUpload   Permission = "project.artifact.upload"
+	PermissionArtifactDownload Permission = "project.artifact.download"
+	PermissionArtifactDelete   Permission = "project.artifact.delete"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -69,6 +73,10 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionRepoRead,
 		PermissionRepoManage,
 		PermissionRepoWrite,
+		PermissionArtifactRead,
+		PermissionArtifactUpload,
+		PermissionArtifactDownload,
+		PermissionArtifactDelete,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -88,6 +96,10 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionRepoRead,
 		PermissionRepoManage,
 		PermissionRepoWrite,
+		PermissionArtifactRead,
+		PermissionArtifactUpload,
+		PermissionArtifactDownload,
+		PermissionArtifactDelete,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -102,6 +114,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionAuditWrite,
 		PermissionRepoRead,
 		PermissionRepoWrite,
+		PermissionArtifactRead,
+		PermissionArtifactUpload,
+		PermissionArtifactDownload,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -110,6 +125,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionAuditWrite,
 		PermissionRepoRead,
+		PermissionArtifactRead,
+		PermissionArtifactDownload,
 	},
 	RoleAgent: {
 		PermissionRead,
@@ -228,9 +245,16 @@ type Authenticator interface {
 	Authenticate(context.Context, string) (auth.Identity, error)
 }
 
+// ArtifactReferenceValidator is the narrow boundary used to validate Project
+// source references without reading Artifact persistence directly.
+type ArtifactReferenceValidator interface {
+	ValidateProjectReferences(context.Context, string, []string) error
+}
+
 // Service applies collaboration and RBAC policy.
 type Service struct {
 	Auth           Authenticator
+	Artifacts      ArtifactReferenceValidator
 	Clock          interface{ Now() time.Time }
 	Store          Store
 	InvitationTTL  time.Duration
@@ -252,6 +276,11 @@ func (service Service) Create(
 	input.ProblemTitle = strings.TrimSpace(input.ProblemTitle)
 	input.ProblemSummary = strings.TrimSpace(input.ProblemSummary)
 	if input.Name == "" {
+		return Project{}, ErrInvalid
+	}
+	// Stage 2 uses an explicit two-step flow: create the Project, upload its
+	// source files inside that Project, then PATCH source_artifact_ids.
+	if len(input.SourceArtifactIDs) != 0 {
 		return Project{}, ErrInvalid
 	}
 	if identity.Kind != "session" && identity.Kind != "api" {
@@ -329,6 +358,17 @@ func (service Service) Update(
 			return Project{}, ErrInvalid
 		}
 		input.Name = &trimmed
+	}
+	if input.SourceArtifactIDs != nil {
+		if service.Artifacts == nil {
+			if len(*input.SourceArtifactIDs) != 0 {
+				return Project{}, ErrInvalid
+			}
+		} else if err := service.Artifacts.ValidateProjectReferences(
+			ctx, projectID, *input.SourceArtifactIDs,
+		); err != nil {
+			return Project{}, ErrInvalid
+		}
 	}
 	return service.Store.Update(ctx, identity.User.ID, projectID, input)
 }

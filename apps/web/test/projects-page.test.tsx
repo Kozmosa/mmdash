@@ -90,6 +90,42 @@ describe("projects recycle bin", () => {
     );
   });
 
+  it("routes a newly created Project to Artifact source setup", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000007";
+    mocks.request.mockImplementation(
+      (path: string, options?: { method?: string }) => {
+        if (path === "/projects" && !options?.method) {
+          return Promise.resolve({ items: [] });
+        }
+        if (path === "/projects" && options?.method === "POST") {
+          return Promise.resolve({ id: projectId });
+        }
+        throw new Error(`Unexpected request: ${path}`);
+      },
+    );
+    render(<ProjectsPage />, { wrapper: Providers });
+
+    fireEvent.click(await screen.findByRole("button", { name: "创建项目" }));
+    fireEvent.change(screen.getByLabelText("项目名称"), {
+      target: { value: "Artifact Project" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    await waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith("/projects", {
+        body: {
+          name: "Artifact Project",
+          problem_summary: "",
+          problem_title: "",
+        },
+        method: "POST",
+      }),
+    );
+    expect(mocks.push).toHaveBeenCalledWith(
+      `/projects/${projectId}/artifacts?setup=1`,
+    );
+  });
+
   it("moves an owned project to the recycle bin", async () => {
     render(<ProjectsPage />, { wrapper: Providers });
 

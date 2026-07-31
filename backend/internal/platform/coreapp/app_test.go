@@ -3,6 +3,7 @@ package coreapp
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,9 @@ func (observedModule) RegisterRoutes(mux *http.ServeMux) {
 		requestctx.SetActor(request.Context(), "verified-user", "session")
 		requestctx.SetProject(request.Context(), "verified-project")
 		response.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/v1/artifact-transfers/", func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusNoContent)
 	})
 }
 
@@ -83,6 +87,84 @@ func TestApplicationRecordsMetricsLogsAndAuditContext(t *testing.T) {
 		`mmdash_http_requests_total{method="POST",status="201"} 1`,
 	) {
 		t.Fatalf("request metric missing: %s", metricsResponse.Body.String())
+	}
+}
+
+func TestApplicationRedactsArtifactTransferTokensFromLogsAndAudit(t *testing.T) {
+	var logOutput bytes.Buffer
+	modules := module.NewRegistry()
+	if err := modules.Register(observedModule{}); err != nil {
+		t.Fatal(err)
+	}
+	var observation HTTPObservation
+	handler := NewHandler(Options{
+		Audit: func(_ context.Context, value HTTPObservation) error {
+			observation = value
+			return nil
+		},
+		Health: health.Handler{},
+		IDGenerator: identity.Generator{
+			Reader: bytes.NewReader(make([]byte, 32)),
+		},
+		Logger: logging.New(
+			&logOutput,
+			clock.Fixed{Time: time.Date(2026, time.July, 28, 0, 0, 0, 0, time.UTC)},
+		),
+		Metrics: metrics.New("core", "test"),
+		Modules: modules,
+	})
+
+	const secretToken = "signed-transfer-token"
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodPut, "/v1/artifact-transfers/"+secretToken, nil),
+	)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected transfer response, got %d", response.Code)
+	}
+	if strings.Contains(logOutput.String(), secretToken) {
+		t.Fatalf("transfer token leaked to log: %s", logOutput.String())
+	}
+	if observation.Path != "/v1/artifact-transfers/{redacted}" {
+		t.Fatalf("unexpected redacted audit path: %#v", observation)
+	}
+}
+
+func TestApplicationAuditFinishesAfterRequestCancellation(t *testing.T) {
+	modules := module.NewRegistry()
+	if err := modules.Register(observedModule{}); err != nil {
+		t.Fatal(err)
+	}
+	var auditValues requestctx.Values
+	handler := NewHandler(Options{
+		Audit: func(ctx context.Context, _ HTTPObservation) error {
+			if err := ctx.Err(); err != nil {
+				t.Fatalf("audit context inherited request cancellation: %v", err)
+			}
+			auditValues = requestctx.TrustedSnapshot(ctx)
+			return nil
+		},
+		Health: health.Handler{},
+		IDGenerator: identity.Generator{
+			Reader: bytes.NewReader(make([]byte, 32)),
+		},
+		Logger: logging.New(
+			io.Discard,
+			clock.Fixed{Time: time.Date(2026, time.July, 28, 0, 0, 0, 0, time.UTC)},
+		),
+		Metrics: metrics.New("core", "test"),
+		Modules: modules,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodPost, "/v1/observed", nil).WithContext(ctx)
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	if auditValues.ActorID != "verified-user" ||
+		auditValues.ProjectID != "verified-project" ||
+		auditValues.RequestID == "" {
+		t.Fatalf("detached audit lost trusted request values: %#v", auditValues)
 	}
 }
 

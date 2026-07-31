@@ -94,3 +94,5 @@ layer only when their module documentation explains why.
 - [Stage 3.15 foundation acceptance](foundation-acceptance.md)
 - [Contract development](contracts.md)
 - [Repo development, deployment, and acceptance](repo.md)
+- [Artifact development, deployment, and Core acceptance](artifact.md)
+- [Artifact Web, BFF, and resumable upload behavior](artifact-web.md)

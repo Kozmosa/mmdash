@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,8 +14,10 @@ import (
 // Config contains the complete Core Server process configuration.
 type Config struct {
 	Addr            string
+	Artifact        ArtifactConfig
 	Auth            AuthConfig
 	Database        DatabaseConfig
+	InternalURL     string
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	Outbox          OutboxConfig
@@ -24,6 +27,19 @@ type Config struct {
 	Version         string
 	ShutdownTimeout time.Duration
 	StartupTimeout  time.Duration
+}
+
+// ArtifactConfig configures multipart limits and local storage behavior.
+type ArtifactConfig struct {
+	LocalStorageRoot      string
+	MultipartPartBytes    int64
+	MultipartSessionTTL   time.Duration
+	MultipartURLTTL       time.Duration
+	PreviewOutputMaxBytes int64
+	StagingSweepInterval  time.Duration
+	StagingTTL            time.Duration
+	StorageBackend        string
+	UploadMaxBytes        int64
 }
 
 // AuthConfig configures bootstrap login and session signing.
@@ -46,10 +62,12 @@ type DatabaseConfig struct {
 
 // ObjectStorageConfig configures the S3-compatible object storage boundary.
 type ObjectStorageConfig struct {
-	AccessKey string
-	Bucket    string
-	Endpoint  string
-	SecretKey string
+	AccessKey      string
+	Bucket         string
+	Endpoint       string
+	PublicEndpoint string
+	Region         string
+	SecretKey      string
 }
 
 // OutboxConfig configures durable event publication and delivery.
@@ -87,6 +105,53 @@ type LookupEnv func(string) (string, bool)
 func Load(lookup LookupEnv) (Config, error) {
 	config := Config{
 		Addr: envOrDefault(lookup, "CORE_ADDR", ":8080"),
+		Artifact: ArtifactConfig{
+			LocalStorageRoot: envOrDefault(
+				lookup,
+				"ARTIFACT_LOCAL_STORAGE_ROOT",
+				"/var/lib/mmdash/artifacts",
+			),
+			MultipartPartBytes: int64OrDefault(
+				lookup,
+				"ARTIFACT_MULTIPART_PART_BYTES",
+				16*1024*1024,
+			),
+			MultipartSessionTTL: durationOrDefault(
+				lookup,
+				"ARTIFACT_MULTIPART_SESSION_TTL",
+				24*time.Hour,
+			),
+			MultipartURLTTL: durationOrDefault(
+				lookup,
+				"ARTIFACT_MULTIPART_URL_TTL",
+				15*time.Minute,
+			),
+			PreviewOutputMaxBytes: int64OrDefault(
+				lookup,
+				"ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES",
+				4*1024*1024,
+			),
+			StagingSweepInterval: durationOrDefault(
+				lookup,
+				"ARTIFACT_STAGING_SWEEP_INTERVAL",
+				5*time.Minute,
+			),
+			StagingTTL: durationOrDefault(
+				lookup,
+				"ARTIFACT_STAGING_TTL",
+				24*time.Hour,
+			),
+			StorageBackend: envOrDefault(
+				lookup,
+				"ARTIFACT_STORAGE_BACKEND",
+				"minio",
+			),
+			UploadMaxBytes: int64OrDefault(
+				lookup,
+				"ARTIFACT_UPLOAD_MAX_BYTES",
+				10*1024*1024*1024,
+			),
+		},
 		Auth: AuthConfig{
 			BootstrapDisplayName: envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
 			BootstrapEmail:       envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
@@ -102,12 +167,15 @@ func Load(lookup LookupEnv) (Config, error) {
 			URL:             envOrDefault(lookup, "DATABASE_URL", ""),
 		},
 		ObjectStorage: ObjectStorageConfig{
-			AccessKey: envOrDefault(lookup, "OBJECT_STORAGE_ACCESS_KEY", ""),
-			Bucket:    envOrDefault(lookup, "OBJECT_STORAGE_BUCKET", "mmdash"),
-			Endpoint:  envOrDefault(lookup, "OBJECT_STORAGE_ENDPOINT", ""),
-			SecretKey: envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
+			AccessKey:      envOrDefault(lookup, "OBJECT_STORAGE_ACCESS_KEY", ""),
+			Bucket:         envOrDefault(lookup, "OBJECT_STORAGE_BUCKET", "mmdash"),
+			Endpoint:       envOrDefault(lookup, "OBJECT_STORAGE_ENDPOINT", ""),
+			PublicEndpoint: envOrDefault(lookup, "OBJECT_STORAGE_PUBLIC_ENDPOINT", ""),
+			Region:         envOrDefault(lookup, "OBJECT_STORAGE_REGION", "us-east-1"),
+			SecretKey:      envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
 		},
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
+		InternalURL: envOrDefault(lookup, "CORE_INTERNAL_URL", "http://localhost:8080"),
 		PublicURL:   envOrDefault(lookup, "MMDASH_PUBLIC_URL", "http://localhost:3000"),
 		Outbox: OutboxConfig{
 			DeliveryLease: durationOrDefault(lookup, "OUTBOX_DELIVERY_LEASE", 30*time.Second),
@@ -151,6 +219,41 @@ func (config Config) Validate() error {
 	if strings.TrimSpace(config.Addr) == "" {
 		return fmt.Errorf("CORE_ADDR must not be empty")
 	}
+	if config.Artifact.StorageBackend != "local" &&
+		config.Artifact.StorageBackend != "minio" &&
+		config.Artifact.StorageBackend != "s3" {
+		return fmt.Errorf("ARTIFACT_STORAGE_BACKEND must be local, minio, or s3")
+	}
+	if !filepath.IsAbs(config.Artifact.LocalStorageRoot) &&
+		!strings.HasPrefix(config.Artifact.LocalStorageRoot, "/") {
+		return fmt.Errorf("ARTIFACT_LOCAL_STORAGE_ROOT must be absolute")
+	}
+	if config.Artifact.UploadMaxBytes < 1 ||
+		config.Artifact.UploadMaxBytes > 5*1024*1024*1024*1024 {
+		return fmt.Errorf("ARTIFACT_UPLOAD_MAX_BYTES must be between 1 byte and 5 TiB")
+	}
+	if config.Artifact.PreviewOutputMaxBytes < 1 ||
+		config.Artifact.PreviewOutputMaxBytes > 64*1024*1024 {
+		return fmt.Errorf(
+			"ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES must be between 1 byte and 64 MiB",
+		)
+	}
+	if config.Artifact.MultipartPartBytes < 5*1024*1024 ||
+		config.Artifact.MultipartPartBytes > 5*1024*1024*1024 {
+		return fmt.Errorf("ARTIFACT_MULTIPART_PART_BYTES must be between 5 MiB and 5 GiB")
+	}
+	if config.Artifact.MultipartURLTTL < time.Second ||
+		config.Artifact.MultipartURLTTL > 7*24*time.Hour {
+		return fmt.Errorf("ARTIFACT_MULTIPART_URL_TTL must be between one second and seven days")
+	}
+	if config.Artifact.MultipartSessionTTL <= 0 ||
+		config.Artifact.StagingTTL <= 0 ||
+		config.Artifact.StagingSweepInterval <= 0 {
+		return fmt.Errorf("Artifact multipart and staging durations must be positive")
+	}
+	if config.Artifact.StagingTTL < config.Artifact.MultipartSessionTTL {
+		return fmt.Errorf("ARTIFACT_STAGING_TTL must not be shorter than the upload session TTL")
+	}
 	if strings.TrimSpace(config.Database.URL) == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
@@ -175,18 +278,43 @@ func (config Config) Validate() error {
 	if config.Database.ConnMaxIdleTime <= 0 || config.Database.ConnMaxLifetime <= 0 {
 		return fmt.Errorf("database connection lifetimes must be positive")
 	}
-	endpoint, err := url.Parse(config.ObjectStorage.Endpoint)
-	if err != nil || endpoint.Host == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
-		return fmt.Errorf("OBJECT_STORAGE_ENDPOINT must be an HTTP(S) URL")
-	}
-	if strings.TrimSpace(config.ObjectStorage.AccessKey) == "" {
-		return fmt.Errorf("OBJECT_STORAGE_ACCESS_KEY is required")
-	}
-	if strings.TrimSpace(config.ObjectStorage.SecretKey) == "" {
-		return fmt.Errorf("OBJECT_STORAGE_SECRET_KEY is required")
-	}
-	if strings.TrimSpace(config.ObjectStorage.Bucket) == "" {
-		return fmt.Errorf("OBJECT_STORAGE_BUCKET is required")
+	if config.Artifact.StorageBackend != "local" {
+		endpoint, err := url.Parse(config.ObjectStorage.Endpoint)
+		if err != nil ||
+			endpoint.Host == "" ||
+			endpoint.User != nil ||
+			(endpoint.Path != "" && endpoint.Path != "/") ||
+			endpoint.RawQuery != "" ||
+			endpoint.Fragment != "" ||
+			(endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+			return fmt.Errorf("OBJECT_STORAGE_ENDPOINT must be an HTTP(S) origin")
+		}
+		publicEndpoint := config.ObjectStorage.PublicEndpoint
+		if publicEndpoint == "" {
+			publicEndpoint = config.ObjectStorage.Endpoint
+		}
+		publicURL, err := url.Parse(publicEndpoint)
+		if err != nil ||
+			publicURL.Host == "" ||
+			publicURL.User != nil ||
+			(publicURL.Path != "" && publicURL.Path != "/") ||
+			publicURL.RawQuery != "" ||
+			publicURL.Fragment != "" ||
+			(publicURL.Scheme != "http" && publicURL.Scheme != "https") {
+			return fmt.Errorf("OBJECT_STORAGE_PUBLIC_ENDPOINT must be an HTTP(S) origin")
+		}
+		if strings.TrimSpace(config.ObjectStorage.AccessKey) == "" {
+			return fmt.Errorf("OBJECT_STORAGE_ACCESS_KEY is required")
+		}
+		if strings.TrimSpace(config.ObjectStorage.SecretKey) == "" {
+			return fmt.Errorf("OBJECT_STORAGE_SECRET_KEY is required")
+		}
+		if strings.TrimSpace(config.ObjectStorage.Bucket) == "" {
+			return fmt.Errorf("OBJECT_STORAGE_BUCKET is required")
+		}
+		if strings.TrimSpace(config.ObjectStorage.Region) == "" {
+			return fmt.Errorf("OBJECT_STORAGE_REGION is required")
+		}
 	}
 	if strings.TrimSpace(config.OpenAPIPath) == "" {
 		return fmt.Errorf("CORE_OPENAPI_PATH must not be empty")
@@ -195,6 +323,11 @@ func (config Config) Validate() error {
 	if err != nil || publicURL.Host == "" ||
 		(publicURL.Scheme != "http" && publicURL.Scheme != "https") {
 		return fmt.Errorf("MMDASH_PUBLIC_URL must be an HTTP(S) URL")
+	}
+	internalURL, err := url.Parse(config.InternalURL)
+	if err != nil || internalURL.Host == "" ||
+		(internalURL.Scheme != "http" && internalURL.Scheme != "https") {
+		return fmt.Errorf("CORE_INTERNAL_URL must be an HTTP(S) URL")
 	}
 	if config.Outbox.DeliveryLease <= 0 ||
 		config.Outbox.EventLease <= 0 ||

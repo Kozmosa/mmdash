@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 
@@ -135,6 +138,133 @@ class CoreJobClient:
             },
         )
 
+    def request_artifact_transfer(
+        self,
+        job_id: str,
+        request: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/internal/artifact-preview-jobs/{job_id}/transfers",
+            request,
+        )
+
+    def download_transfer(
+        self,
+        grant: Mapping[str, Any],
+        destination: Path,
+        *,
+        max_bytes: int,
+    ) -> dict[str, Any]:
+        method, url, headers = self._validated_transfer(grant, "GET")
+        del method
+        request = Request(url, method="GET", headers=headers)
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                declared = response.headers.get("Content-Length", "").strip()
+                if declared:
+                    try:
+                        declared_size = int(declared)
+                    except ValueError as error:
+                        raise JobAPIError(
+                            "INVALID_TRANSFER_RESPONSE",
+                            "Artifact transfer returned an invalid size",
+                        ) from error
+                    if declared_size < 0 or declared_size > max_bytes:
+                        raise JobAPIError(
+                            "ARTIFACT_PREVIEW_INPUT_TOO_LARGE",
+                            "Artifact exceeds the Worker preview input limit",
+                        )
+                total = 0
+                with destination.open("wb") as target:
+                    while True:
+                        chunk = response.read(64 * 1024)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise JobAPIError(
+                                "ARTIFACT_PREVIEW_INPUT_TOO_LARGE",
+                                "Artifact exceeds the Worker preview input limit",
+                            )
+                        target.write(chunk)
+                return {
+                    "size_bytes": total,
+                    "content_type": response.headers.get(
+                        "Content-Type", "application/octet-stream"
+                    ),
+                }
+        except HTTPError as error:
+            self._raise_transfer_error(error.code, error.read())
+        except URLError as error:
+            raise JobAPIError("CORE_UNAVAILABLE", str(error.reason)) from error
+        raise AssertionError("transfer error handler must raise")
+
+    def upload_transfer(
+        self,
+        grant: Mapping[str, Any],
+        source: Path,
+        *,
+        size_bytes: int,
+    ) -> str:
+        method, url, headers = self._validated_transfer(grant, "PUT")
+        del method
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username:
+            raise JobAPIError("INVALID_TRANSFER_GRANT", "Artifact transfer URL is invalid")
+        connection_type = (
+            http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        )
+        port = parsed.port
+        connection = connection_type(
+            parsed.hostname,
+            port=port,
+            timeout=self.timeout_seconds,
+        )
+        target = parsed.path or "/"
+        if parsed.query:
+            target += "?" + parsed.query
+        try:
+            connection.putrequest("PUT", target)
+            for name, value in headers.items():
+                connection.putheader(name, value)
+            connection.putheader("Content-Length", str(size_bytes))
+            connection.endheaders()
+            sent = 0
+            with source.open("rb") as contents:
+                while True:
+                    chunk = contents.read(64 * 1024)
+                    if not chunk:
+                        break
+                    sent += len(chunk)
+                    if sent > size_bytes:
+                        raise JobAPIError(
+                            "ARTIFACT_PREVIEW_OUTPUT_CHANGED",
+                            "Preview output changed during transfer",
+                        )
+                    connection.send(chunk)
+            if sent != size_bytes:
+                raise JobAPIError(
+                    "ARTIFACT_PREVIEW_OUTPUT_CHANGED",
+                    "Preview output changed during transfer",
+                )
+            response = connection.getresponse()
+            payload = response.read(4096)
+            if response.status < 200 or response.status >= 300:
+                self._raise_transfer_error(response.status, payload)
+            etag = response.getheader("ETag", "").strip().strip('"')
+            if not etag or len(etag) > 1024:
+                raise JobAPIError(
+                    "INVALID_TRANSFER_RESPONSE",
+                    "Artifact transfer did not return a valid ETag",
+                    response.status,
+                )
+            return etag
+        except OSError as error:
+            raise JobAPIError("CORE_UNAVAILABLE", str(error)) from error
+        finally:
+            connection.close()
+
     def _request(
         self,
         method: str,
@@ -182,3 +312,40 @@ class CoreJobClient:
         if not isinstance(decoded, dict):
             raise JobAPIError("INVALID_RESPONSE", "Core returned a non-object response")
         return decoded
+
+    @staticmethod
+    def _validated_transfer(
+        grant: Mapping[str, Any],
+        expected_method: str,
+    ) -> tuple[str, str, dict[str, str]]:
+        method = grant.get("method")
+        url = grant.get("url")
+        raw_headers = grant.get("headers")
+        if (
+            method != expected_method
+            or not isinstance(url, str)
+            or not url
+            or not isinstance(raw_headers, Mapping)
+        ):
+            raise JobAPIError("INVALID_TRANSFER_GRANT", "Artifact transfer grant is invalid")
+        headers: dict[str, str] = {}
+        for name, value in raw_headers.items():
+            if not isinstance(name, str) or not isinstance(value, str):
+                raise JobAPIError(
+                    "INVALID_TRANSFER_GRANT",
+                    "Artifact transfer headers are invalid",
+                )
+            headers[name] = value
+        return method, url, headers
+
+    @staticmethod
+    def _raise_transfer_error(status: int, payload: bytes) -> None:
+        try:
+            decoded = json.loads(payload)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            decoded = {}
+        raise JobAPIError(
+            str(decoded.get("code", "ARTIFACT_TRANSFER_FAILED")),
+            str(decoded.get("message", f"Artifact transfer returned HTTP {status}")),
+            status,
+        )

@@ -20,6 +20,7 @@ type PostgresStore struct {
 	Clock       clock.Clock
 	DB          *sql.DB
 	Generator   identity.Generator
+	Hooks       []LifecycleHook
 	Outbox      outbox.Writer
 	Transaction transaction.Manager
 }
@@ -27,6 +28,24 @@ type PostgresStore struct {
 // Create inserts a queued job or returns the existing idempotent job.
 func (store PostgresStore) Create(
 	ctx context.Context,
+	actorID string,
+	input CreateInput,
+) (Job, bool, error) {
+	var job Job
+	var created bool
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var err error
+		job, created, err = store.CreateInTransaction(ctx, tx, actorID, input)
+		return err
+	})
+	return job, created, wrap("create job", err)
+}
+
+// CreateInTransaction inserts a Job and job.created event in the caller's
+// business transaction.
+func (store PostgresStore) CreateInTransaction(
+	ctx context.Context,
+	tx transaction.Tx,
 	actorID string,
 	input CreateInput,
 ) (Job, bool, error) {
@@ -45,46 +64,43 @@ func (store PostgresStore) Create(
 	}
 	var job Job
 	created := false
-	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+	job, err = scanJob(tx.QueryRowContext(ctx, `
+		INSERT INTO jobs (
+			job_id, project_id, job_type, payload, priority, idempotency_key,
+			max_attempts, available_at, timeout_seconds, created_by,
+			created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $11
+		)
+		ON CONFLICT (project_id, job_type, idempotency_key)
+			WHERE idempotency_key IS NOT NULL
+		DO NOTHING
+		RETURNING `+jobColumns, jobID, input.ProjectID, input.JobType, payload,
+		input.Priority, input.IdempotencyKey, input.MaxAttempts, availableAt,
+		input.TimeoutSeconds, actorID, now).Scan)
+	if errors.Is(err, sql.ErrNoRows) && input.IdempotencyKey != "" {
 		job, err = scanJob(tx.QueryRowContext(ctx, `
-			INSERT INTO jobs (
-				job_id, project_id, job_type, payload, priority, idempotency_key,
-				max_attempts, available_at, timeout_seconds, created_by,
-				created_at, updated_at
-			) VALUES (
-				$1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $11
-			)
-			ON CONFLICT (project_id, job_type, idempotency_key)
-				WHERE idempotency_key IS NOT NULL
-			DO NOTHING
-			RETURNING `+jobColumns, jobID, input.ProjectID, input.JobType, payload,
-			input.Priority, input.IdempotencyKey, input.MaxAttempts, availableAt,
-			input.TimeoutSeconds, actorID, now).Scan)
-		if errors.Is(err, sql.ErrNoRows) && input.IdempotencyKey != "" {
-			job, err = scanJob(tx.QueryRowContext(ctx, `
-				SELECT `+jobColumns+`
-				FROM jobs
-				WHERE project_id = $1 AND job_type = $2 AND idempotency_key = $3
-			`, input.ProjectID, input.JobType, input.IdempotencyKey).Scan)
-			return err
-		}
-		if err != nil {
-			return err
-		}
-		created = true
-		_, err = store.Outbox.Write(ctx, tx, outbox.Event{
-			Actor:     map[string]string{"user_id": actorID},
-			EventType: "job.created",
-			Payload: map[string]interface{}{
-				"job_id":   job.ID,
-				"job_type": job.JobType,
-			},
-			Producer:  "jobs",
-			ProjectID: job.ProjectID,
-		})
-		return err
+			SELECT `+jobColumns+`
+			FROM jobs
+			WHERE project_id = $1 AND job_type = $2 AND idempotency_key = $3
+		`, input.ProjectID, input.JobType, input.IdempotencyKey).Scan)
+		return job, false, err
+	}
+	if err != nil {
+		return Job{}, false, err
+	}
+	created = true
+	_, err = store.Outbox.Write(ctx, tx, outbox.Event{
+		Actor:     map[string]string{"user_id": actorID},
+		EventType: "job.created",
+		Payload: map[string]interface{}{
+			"job_id":   job.ID,
+			"job_type": job.JobType,
+		},
+		Producer:  "jobs",
+		ProjectID: job.ProjectID,
 	})
-	return job, created, wrap("create job", err)
+	return job, created, err
 }
 
 // Get returns one authoritative job.
@@ -137,6 +153,11 @@ func (store PostgresStore) Claim(ctx context.Context, input ClaimInput) (*Job, e
 			job.ID, input.WorkerID, leaseExpiresAt, now).Scan)
 		if err != nil {
 			return err
+		}
+		for _, hook := range store.Hooks {
+			if err := hook.ClaimInTransaction(ctx, tx, updated); err != nil {
+				return err
+			}
 		}
 		claimed = &updated
 		return nil
@@ -362,6 +383,11 @@ func (store PostgresStore) Complete(
 		if err != nil {
 			return err
 		}
+		for _, hook := range store.Hooks {
+			if err := hook.CompleteInTransaction(ctx, tx, job, result); err != nil {
+				return err
+			}
+		}
 		return store.writeStateEvent(ctx, tx, job, workerID)
 	})
 	return job, wrap("complete job", err)
@@ -416,6 +442,11 @@ func (store PostgresStore) Fail(
 		}
 		if err != nil {
 			return err
+		}
+		for _, hook := range store.Hooks {
+			if err := hook.FailInTransaction(ctx, tx, job, failure); err != nil {
+				return err
+			}
 		}
 		return store.writeStateEvent(ctx, tx, job, failure.WorkerID)
 	})
