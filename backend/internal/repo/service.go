@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -47,23 +48,32 @@ type AuditRecorder interface {
 
 // Service applies Repo RBAC, settings, provider, and persistence policy.
 type Service struct {
-	Access          Access
-	Audit           AuditRecorder
-	Checkouts       CheckoutStore
-	CheckoutTTL     time.Duration
-	Clock           interface{ Now() time.Time }
-	Commits         CommitStore
-	DisconnectGrace time.Duration
-	Generator       identity.Generator
-	MaxWriteBytes   int64
-	Providers       *provider.Registry
-	PublicURL       string
-	Reads           *Reader
-	Settings        SettingAccess
-	Store           Store
-	WriteLease      time.Duration
-	Writer          *WorkspaceWriter
-	Webhooks        WebhookStore
+	Access           Access
+	Audit            AuditRecorder
+	Checkouts        CheckoutStore
+	CheckoutTTL      time.Duration
+	Clock            interface{ Now() time.Time }
+	Commits          CommitStore
+	DisconnectGrace  time.Duration
+	Generator        identity.Generator
+	MaxWriteBytes    int64
+	Providers        *provider.Registry
+	PublicURL        string
+	Reads            *Reader
+	ReplacementLease time.Duration
+	Settings         SettingAccess
+	Storage          RepositoryStorage
+	Store            Store
+	WriteLease       time.Duration
+	Writer           *WorkspaceWriter
+	Webhooks         WebhookStore
+}
+
+// ConnectRequest carries the tested settings version and explicit authority
+// to remove a different disconnected repository's managed local data.
+type ConnectRequest struct {
+	ReplaceDisconnected bool
+	SettingsVersion     int64
 }
 
 // ConnectionTestResult enriches shared checks with branches required by Repo UI.
@@ -525,7 +535,7 @@ func (service Service) Connect(
 	ctx context.Context,
 	identity auth.Identity,
 	projectID string,
-	settingsVersion int64,
+	request ConnectRequest,
 ) (Repository, error) {
 	if err := service.Access.Authorize(
 		ctx, identity, projectID, project.PermissionRepoManage,
@@ -546,7 +556,8 @@ func (service Service) Connect(
 	if err != nil {
 		return Repository{}, err
 	}
-	if settingsVersion < 1 || resolved.Version != settingsVersion {
+	if request.SettingsVersion < 1 ||
+		resolved.Version != request.SettingsVersion {
 		return Repository{}, ErrConflict
 	}
 	config, err := providerConfig(resolved)
@@ -557,9 +568,10 @@ func (service Service) Connect(
 	if err != nil {
 		return Repository{}, err
 	}
-	if reconnecting &&
+	replacing := reconnecting &&
 		(existing.Provider != Provider(connection.Provider) ||
-			existing.CanonicalRemoteURL != connection.CanonicalRemoteURL) {
+			existing.CanonicalRemoteURL != connection.CanonicalRemoteURL)
+	if replacing && !request.ReplaceDisconnected {
 		return Repository{}, ErrReconnectMismatch
 	}
 	plainSecret := ""
@@ -594,7 +606,11 @@ func (service Service) Connect(
 		},
 	}
 	var repository Repository
-	if reconnecting {
+	if replacing {
+		repository, err = service.replaceDisconnected(
+			ctx, identity.User.ID, existing, snapshot,
+		)
+	} else if reconnecting {
 		repository, err = service.Store.ReconnectPending(
 			ctx, snapshot, service.Clock.Now().UTC(),
 		)
@@ -606,8 +622,59 @@ func (service Service) Connect(
 	if err != nil {
 		return Repository{}, err
 	}
+	if replacing {
+		service.record(
+			ctx, "repo.replaced", projectID, repository.ID, "success", "",
+		)
+	}
 	service.record(ctx, "repo.sync.requested", projectID, repository.ID, "success", "")
 	return service.decorate(ctx, repository, plainSecret), nil
+}
+
+func (service Service) replaceDisconnected(
+	ctx context.Context,
+	actorID string,
+	existing Repository,
+	snapshot ConnectionSnapshot,
+) (Repository, error) {
+	if service.Storage == nil || existing.CleanupAfter == nil {
+		return Repository{}, ErrNotReady
+	}
+	lease := service.ReplacementLease
+	if lease <= 0 {
+		lease = 5 * time.Minute
+	}
+	now := service.Clock.Now().UTC()
+	claimed, err := service.Store.ClaimReplacement(
+		ctx, existing.ProjectID, now, lease,
+	)
+	if err != nil {
+		return Repository{}, err
+	}
+	release := func() {
+		_ = service.Store.ReleaseReplacement(
+			ctx, claimed.ID, *existing.CleanupAfter, service.Clock.Now().UTC(),
+		)
+	}
+	if claimed.ID != existing.ID ||
+		claimed.Provider != existing.Provider ||
+		claimed.CanonicalRemoteURL != existing.CanonicalRemoteURL {
+		release()
+		return Repository{}, ErrConflict
+	}
+	if err := service.Storage.RemoveRepository(claimed.StorageKey); err != nil {
+		release()
+		return Repository{}, fmt.Errorf(
+			"%w: %v", ErrReplacementCleanup, err,
+		)
+	}
+	if err := service.Store.CompleteReplacement(ctx, claimed.ID); err != nil {
+		release()
+		return Repository{}, fmt.Errorf(
+			"%w: %v", ErrReplacementCleanup, err,
+		)
+	}
+	return service.Store.CreatePending(ctx, actorID, snapshot)
 }
 
 func (service Service) RequestSync(

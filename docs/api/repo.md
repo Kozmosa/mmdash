@@ -35,21 +35,21 @@ absolute paths, PATs, AskPass state, or checkout paths.
 
 The browser-safe BFF surface is:
 
-| Method   | Path                                                       | Purpose                       |
-| -------- | ---------------------------------------------------------- | ----------------------------- |
-| `GET`    | `/api/projects/{projectId}/repository`                     | Status and workspace heads    |
-| `PUT`    | `/api/projects/{projectId}/repository`                     | Connect tested settings       |
-| `DELETE` | `/api/projects/{projectId}/repository`                     | Delayed managed disconnect    |
-| `POST`   | `/api/projects/{projectId}/repository/test`                | Safe provider/branch checks   |
-| `POST`   | `/api/projects/{projectId}/repository/sync`                | Coalesced synchronization     |
-| `POST`   | `/api/projects/{projectId}/repository/webhook-secret`      | Rotate one-time secret        |
-| `PATCH`  | `/api/projects/{projectId}/repository/workspaces`          | Replace distinct mappings     |
-| `GET`    | `/api/projects/{projectId}/repository/branches`            | Remote branch heads           |
-| `GET`    | `/api/projects/{projectId}/repository/commits`             | Workspace commit page         |
-| `GET`    | `/api/projects/{projectId}/repository/commits/{commitSha}` | Commit detail                 |
-| `GET`    | `/api/projects/{projectId}/repository/tree`                | One directory level           |
-| `GET`    | `/api/projects/{projectId}/repository/content`             | Safe immutable content        |
-| `POST`   | `/api/webhooks/github/{hookId}`                            | Exact raw GitHub webhook body |
+| Method   | Path                                                       | Purpose                                      |
+| -------- | ---------------------------------------------------------- | -------------------------------------------- |
+| `GET`    | `/api/projects/{projectId}/repository`                     | Status and workspace heads                   |
+| `PUT`    | `/api/projects/{projectId}/repository`                     | Connect, recover, or replace tested settings |
+| `DELETE` | `/api/projects/{projectId}/repository`                     | Delayed managed disconnect                   |
+| `POST`   | `/api/projects/{projectId}/repository/test`                | Safe provider/branch checks                  |
+| `POST`   | `/api/projects/{projectId}/repository/sync`                | Coalesced synchronization                    |
+| `POST`   | `/api/projects/{projectId}/repository/webhook-secret`      | Rotate one-time secret                       |
+| `PATCH`  | `/api/projects/{projectId}/repository/workspaces`          | Replace distinct mappings                    |
+| `GET`    | `/api/projects/{projectId}/repository/branches`            | Remote branch heads                          |
+| `GET`    | `/api/projects/{projectId}/repository/commits`             | Workspace commit page                        |
+| `GET`    | `/api/projects/{projectId}/repository/commits/{commitSha}` | Commit detail                                |
+| `GET`    | `/api/projects/{projectId}/repository/tree`                | One directory level                          |
+| `GET`    | `/api/projects/{projectId}/repository/content`             | Safe immutable content                       |
+| `POST`   | `/api/webhooks/github/{hookId}`                            | Exact raw GitHub webhook body                |
 
 Core additionally exposes fixed-SHA detached checkout and controlled
 commit/push operations for trusted internal callers. They are intentionally
@@ -67,9 +67,15 @@ Git objects, not filesystem traversal, and return UTF-8 text only within
 
 Binary, oversized, LFS pointer, symlink, and submodule objects return bounded
 metadata with a `preview_status`; Core does not follow links, materialize LFS,
-or recurse into submodules. The Web solving-record browser keeps
-`workspace/revision/path` in the URL, cancels stale requests, and never offers
-Save, Commit, Push, Delete, or an editor callback.
+or recurse into submodules. The independent Web Repository browser is reached
+from Repo settings rather than the workspace sidebar. It keeps
+`workspace/revision/path` in the URL and isolates every response with a query
+key containing the pinned workspace, revision, and path. In-flight immutable
+reads may finish into cache when a view unmounts, avoiding development-mode
+abort noise without allowing an old response to replace the active location.
+The browser never offers Save, Commit, Push, Delete, or an editor callback. The
+solving-record route is reserved for future experiment records that bind a
+commit and compose its file tree, preview, and result analysis.
 
 ## Synchronization, writes, and cleanup
 
@@ -91,11 +97,17 @@ managed worktree and leaves a safe retryable record. Disconnect marks the
 repository first. During `REPO_DISCONNECT_GRACE`, the same provider and
 canonical remote may restore that row in place, reusing its repository ID,
 storage key, Git objects, and metadata while allowing PAT and branch mapping
-updates. A different remote cannot replace recoverable data. After the grace
-period, a cleanup lease wins atomically over reconnect; the worker validates
-and removes exactly the generated storage-key directory, then deletes metadata.
-Failure releases the lease and reschedules cleanup without creating or deleting
-another repository row.
+updates. A different remote requires explicit user confirmation through
+`RepoConnectRequest.replace_disconnected=true`. Core tests the new connection
+before taking a replacement lease, removes exactly the old generated
+storage-key directory and metadata, and then creates the new pending binding.
+It never deletes or modifies the remote Git
+repository. If managed cleanup fails, Core releases the replacement lease and
+preserves the old disconnected binding. Without that flag, the mismatch remains
+a conflict. After the grace period, a cleanup lease wins atomically over
+reconnect; the worker validates and removes exactly the generated storage-key
+directory, then deletes metadata. Failure releases the lease and reschedules
+cleanup without creating or deleting another repository row.
 
 ## Events, Data Hub, and MCP
 

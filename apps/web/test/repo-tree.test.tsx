@@ -84,9 +84,12 @@ describe("Repo ARIA tree", () => {
           revision,
           workspace: "code",
         }),
-        signal: expect.any(AbortSignal),
       }),
     );
+    const treeCall = request.mock.calls.find(([path]) =>
+      path.endsWith("/tree"),
+    );
+    expect(treeCall?.[1]).not.toHaveProperty("signal");
 
     directory.focus();
     fireEvent.keyDown(directory, { key: "ArrowDown" });

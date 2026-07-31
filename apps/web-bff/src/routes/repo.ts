@@ -7,6 +7,7 @@ const workspaceSchema = z.enum(["code", "article", "result"]);
 const fullShaSchema = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
 const branchSchema = z.string().trim().min(1).max(255);
 const connectSchema = z.object({
+  replace_disconnected: z.boolean().optional(),
   settings_version: z.number().int().min(1),
 });
 const mappingsSchema = z.object({
