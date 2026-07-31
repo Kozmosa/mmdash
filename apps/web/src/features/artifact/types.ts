@@ -120,8 +120,8 @@ export type DownloadGrant = {
 export type ArtifactPreview = {
   preview_id: string;
   version_id: string;
-  preview_type: "thumbnail" | "preview" | "structure";
-  status: "pending" | "processing" | "available" | "failed" | "unsupported";
+  preview_type: "image" | "pdf" | "csv" | "json" | "text" | "thumbnail";
+  status: "queued" | "processing" | "available" | "failed" | "unsupported";
   structural_summary: Record<string, unknown> | null;
   error_code: string | null;
   transfer: TransferGrant | null;

@@ -75,6 +75,13 @@ Worker job `artifact.preview` produces bounded:
 - JSON top-level structure and a bounded sample;
 - text encoding validation and bounded text.
 
+Preview reads are explicitly Version-scoped through
+`GET /v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews`.
+The Project file drawer lets callers select any retained available Version and
+renders that Version's independent preview state. PDF rendering combines the
+first-page thumbnail, page count, and bounded extracted text; it does not
+depend on a permanent object URL.
+
 Unsupported or failed preview does not make the original unavailable.
 `SemanticDescriptionGenerator` is reserved as an interface only. Stage 2 does
 not call an LLM or multimodal model and does not automatically generate

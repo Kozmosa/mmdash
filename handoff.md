@@ -22,7 +22,8 @@ Checkpoint commits:
 | 4          | `948e8f6`   | Bounded Worker image/PDF/CSV/JSON/text previews, thumbnails, registry, and semantic interface placeholder |
 | 5          | `2da9678`   | Outbox, Data Hub, MCP `data.list/read`, and validated Project source references                           |
 | 6          | `b302734`   | Web BFF and Project file library, uploader, filters, detail, versions, preview, selector, and trash       |
-| 7          | this commit | Real-service acceptance, browser screenshots, download hardening, documentation, and handoff              |
+| 7          | `fb63feb`   | Real-service acceptance, browser screenshots, download hardening, documentation, and handoff              |
+| Follow-up  | this commit | Per-Version preview selection plus explicit PDF first-page, page-count, and bounded-text rendering        |
 
 ## Delivered behavior
 
@@ -53,8 +54,9 @@ Checkpoint commits:
 - Project `source_artifact_ids[]` validation, two-step Project creation flow,
   source selector, and Project-home aggregate.
 - Project file library with multipart uploader, kind/source/status/tag filters,
-  metadata detail, secure preview, immutable Version history, controlled
-  download, selector, and trash.
+  metadata detail, independently selectable preview for every immutable
+  Version, explicit image/PDF rendering, controlled download, selector, and
+  trash.
 - Direct object-storage downloads sign attachment disposition and MIME response
   headers. Preview URLs remain inline.
 
@@ -91,9 +93,12 @@ The following passed on 2026-07-31:
   `status: passed`.
 - `pnpm smoke:artifact-preview`: real MinIO upload and one-shot Docker Worker
   produced `image` and `thumbnail`.
+- A second real MinIO multipart upload and one-shot Docker Worker produced a
+  two-page PDF preview, a valid first-page PNG, and bounded extracted text from
+  both pages.
 - `pnpm check`: exit 0.
   - script tests: 9/9;
-  - Web: 54/54;
+  - Web: 56/56;
   - Core client: 6/6;
   - CLI shell: 7/7;
   - validation: 1/1;
@@ -121,8 +126,9 @@ containers successfully; this is not a product failure.
 
 Real Chrome exercised Project creation, source-file setup, multipart upload,
 filters, tags, metadata, preview, thumbnail, download, new Version upload,
-historical Version restore, source binding, Project home, trash, permanent
-purge controls, and trash restore with no console errors.
+historical Version preview selection and restore, a real two-page PDF upload
+and preview, source binding, Project home, trash, permanent purge controls, and
+trash restore with no console errors.
 
 Observed results:
 
@@ -132,9 +138,11 @@ Observed results:
   safe;
 - immutable history after restore: v1 original, v2 new upload, v3 restored
   copy;
-- Version-scoped asynchronous preview jobs for v2 and v3 were both processed;
-  the current v3 screenshot shows its decoded thumbnail and structure summary
-  together with v1/v2/v3 history;
+- every v1/v2/v3 row exposes an independent preview action. Real Chrome
+  switched from current v3 to historical v1 and rendered the preview belonging
+  to v1;
+- real PDF preview: 2 pages, 362 x 512 decoded first-page thumbnail, 5,805-byte
+  signed PNG, and bounded text from both pages;
 - trash retained v1/v2/v3 and exposed restore plus confirmation-gated
   permanent purge.
 
@@ -144,6 +152,7 @@ Reviewed screenshots:
 - [`artifact-library.png`](docs/screenshots/artifact-library.png)
 - [`artifact-detail-preview.png`](docs/screenshots/artifact-detail-preview.png)
 - [`artifact-versions.png`](docs/screenshots/artifact-versions.png)
+- [`artifact-pdf-preview.png`](docs/screenshots/artifact-pdf-preview.png)
 - [`artifact-trash.png`](docs/screenshots/artifact-trash.png)
 - [`artifact-project-home.png`](docs/screenshots/artifact-project-home.png)
 

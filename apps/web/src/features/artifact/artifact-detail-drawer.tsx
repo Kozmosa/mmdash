@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
+  Eye,
   ExternalLink,
   FileClock,
   FilePlus2,
@@ -42,6 +43,8 @@ export function ArtifactDetailDrawer({
   const project = useCurrentProject();
   const queryClient = useQueryClient();
   const [versionUploaderOpen, setVersionUploaderOpen] = useState(false);
+  const [selectedPreviewVersionId, setSelectedPreviewVersionId] =
+    useState<string>();
   const detailQueryKey = [
     "artifact",
     projectId,
@@ -59,26 +62,36 @@ export function ArtifactDetailDrawer({
     queryFn: () => artifactApi.listVersions(projectId, artifactId!),
     queryKey: ["artifact-versions", projectId, artifactId],
   });
+  const currentVersion = detail.data?.current_version;
+  const currentVersionId = currentVersion?.version_id;
+  useEffect(() => {
+    setSelectedPreviewVersionId(currentVersionId);
+  }, [artifactId, currentVersionId]);
+  const selectedPreviewVersion =
+    versions.data?.items.find(
+      (version) => version.version_id === selectedPreviewVersionId,
+    ) ??
+    (currentVersion?.version_id === selectedPreviewVersionId
+      ? currentVersion
+      : undefined);
   const previews = useQuery({
-    enabled: Boolean(
-      artifactId && !trashView && detail.data?.current_version?.version_id,
-    ),
+    enabled: Boolean(artifactId && !trashView && selectedPreviewVersionId),
     queryFn: () =>
       artifactApi.listPreviews(
         projectId,
         artifactId!,
-        detail.data!.current_version!.version_id,
+        selectedPreviewVersionId!,
       ),
     queryKey: [
       "artifact-previews",
       projectId,
       artifactId,
-      detail.data?.current_version?.version_id,
+      selectedPreviewVersionId,
     ],
     refetchInterval(query) {
       const items = query.state.data?.items ?? [];
       return items.some((item) =>
-        ["pending", "processing"].includes(item.status),
+        ["queued", "processing"].includes(item.status),
       )
         ? 2_000
         : false;
@@ -174,18 +187,12 @@ export function ArtifactDetailDrawer({
                 onSaved={(updated) => void refresh(updated)}
                 projectId={projectId}
               />
-              <PreviewPanel
-                artifactId={artifactId}
-                items={previews.data?.items ?? []}
-                loading={previews.isLoading}
-              />
               <VersionPanel
                 artifactId={artifactId}
                 allowDownload={!trashView}
+                allowPreview={!trashView}
                 canEdit={canEdit && !trashView}
-                currentVersionId={
-                  detail.data.current_version?.version_id ?? undefined
-                }
+                currentVersionId={currentVersionId}
                 onDownload={async (versionId) => {
                   const grant = await artifactApi.download(
                     projectId,
@@ -204,9 +211,19 @@ export function ArtifactDetailDrawer({
                   toast.success("历史版本已复制为新的当前版本");
                   await refresh(updated);
                 }}
+                onPreview={setSelectedPreviewVersionId}
                 onUpload={() => setVersionUploaderOpen(true)}
+                selectedPreviewVersionId={selectedPreviewVersionId}
                 versions={versions.data?.items ?? []}
               />
+              {!trashView && selectedPreviewVersion ? (
+                <PreviewPanel
+                  artifactId={artifactId}
+                  items={previews.data?.items ?? []}
+                  loading={previews.isLoading}
+                  version={selectedPreviewVersion}
+                />
+              ) : null}
               <ArtifactActions
                 artifactId={artifactId}
                 canManage={canManageTrash}
@@ -407,10 +424,14 @@ function PreviewPanel({
   artifactId,
   items,
   loading,
+  version,
 }: Readonly<{
   artifactId: string;
   items: Awaited<ReturnType<typeof artifactApi.listPreviews>>["items"];
   loading: boolean;
+  version: Awaited<
+    ReturnType<typeof artifactApi.listVersions>
+  >["items"][number];
 }>) {
   const thumbnail = items.find(
     (item) =>
@@ -418,24 +439,67 @@ function PreviewPanel({
       item.status === "available" &&
       item.transfer,
   );
-  const preview = items.find(
-    (item) =>
-      item.preview_type !== "thumbnail" &&
-      item.status === "available" &&
-      item.transfer,
+  const primary = items.find(
+    (item) => item.preview_type !== "thumbnail" && item.status === "available",
   );
-  const structure = items.find(
-    (item) =>
-      item.preview_type !== "thumbnail" &&
-      item.status === "available" &&
-      item.structural_summary &&
-      Object.keys(item.structural_summary).length > 0,
-  );
+  const preview = primary?.transfer ? primary : undefined;
+  const structure =
+    primary?.structural_summary &&
+    Object.keys(primary.structural_summary).length > 0
+      ? primary
+      : undefined;
+  const pdfSummary =
+    primary?.preview_type === "pdf" ? primary.structural_summary : undefined;
+  const pdfPageCount =
+    typeof pdfSummary?.page_count === "number"
+      ? pdfSummary.page_count
+      : undefined;
+  const pdfText =
+    typeof pdfSummary?.text === "string" ? pdfSummary.text : undefined;
+  const pdfTextPages =
+    typeof pdfSummary?.text_pages_scanned === "number"
+      ? pdfSummary.text_pages_scanned
+      : undefined;
+  const displayedStructure =
+    pdfSummary && pdfText
+      ? Object.fromEntries(
+          Object.entries(pdfSummary).filter(([key]) => key !== "text"),
+        )
+      : structure?.structural_summary;
+  const previewLabel =
+    primary?.preview_type === "pdf"
+      ? `PDF${pdfPageCount === undefined ? "" : ` · ${pdfPageCount} 页`}`
+      : primary?.preview_type === "image"
+        ? "图片预览"
+        : primary
+          ? `${primary.preview_type.toUpperCase()} 预览`
+          : undefined;
+  const thumbnailLabel =
+    primary?.preview_type === "pdf" ? "PDF 首页预览" : "缩略图";
+  const previewStatus =
+    items.find((item) => item.preview_type !== "thumbnail")?.status ??
+    items[0]?.status;
+  const statusMessage =
+    previewStatus === "queued"
+      ? "该版本的预览已排队，Worker 将异步生成。"
+      : previewStatus === "processing"
+        ? "Worker 正在生成该版本的预览。"
+        : previewStatus === "unsupported"
+          ? "此格式不支持预览，原文件仍可下载。"
+          : previewStatus === "failed"
+            ? "预览生成失败，原文件仍可下载。"
+            : undefined;
   return (
     <section aria-labelledby="artifact-preview-title">
       <h3 className="text-sm font-semibold" id="artifact-preview-title">
         预览与结构摘要
       </h3>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>
+          正在查看 v{version.version_no} · {version.filename}
+        </span>
+        {previewLabel ? <Badge>{previewLabel}</Badge> : null}
+      </div>
       {loading ? (
         <p className="mt-3 text-sm text-muted-foreground">正在读取预览状态…</p>
       ) : null}
@@ -447,7 +511,7 @@ function PreviewPanel({
       {thumbnail?.transfer ? (
         <div className="mt-3 overflow-hidden rounded-xl border border-border bg-muted/20">
           <Image
-            alt={`${artifactId} 缩略图`}
+            alt={`${artifactId} v${version.version_no} ${thumbnailLabel}`}
             className="h-auto max-h-80 w-full object-contain"
             height={600}
             src={thumbnail.transfer.url}
@@ -468,19 +532,25 @@ function PreviewPanel({
             打开安全预览
           </a>
         ) : null}
-        {items.some((item) => item.status === "processing") ? (
-          <Badge>Worker 正在生成</Badge>
-        ) : null}
-        {items.some((item) => item.status === "unsupported") ? (
-          <Badge>此格式不支持预览</Badge>
-        ) : null}
-        {items.some((item) => item.status === "failed") ? (
-          <Badge>预览生成失败，原文件仍可下载</Badge>
-        ) : null}
+        {statusMessage ? <Badge>{statusMessage}</Badge> : null}
       </div>
-      {structure?.structural_summary ? (
+      {pdfText ? (
+        <div
+          aria-label={`PDF v${version.version_no} 提取文本`}
+          className="mt-3 rounded-lg border border-border bg-muted/20 p-4"
+        >
+          <p className="text-xs font-medium text-muted-foreground">
+            有界提取文本
+            {pdfTextPages === undefined ? "" : ` · 已扫描前 ${pdfTextPages} 页`}
+          </p>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+            {pdfText}
+          </p>
+        </div>
+      ) : null}
+      {displayedStructure && Object.keys(displayedStructure).length > 0 ? (
         <pre className="mt-3 max-h-64 overflow-auto rounded-lg bg-muted p-4 text-xs">
-          {JSON.stringify(structure.structural_summary, null, 2)}
+          {JSON.stringify(displayedStructure, null, 2)}
         </pre>
       ) : null}
     </section>
@@ -489,21 +559,27 @@ function PreviewPanel({
 
 function VersionPanel({
   allowDownload,
+  allowPreview,
   artifactId,
   canEdit,
   currentVersionId,
   onDownload,
+  onPreview,
   onRestore,
   onUpload,
+  selectedPreviewVersionId,
   versions,
 }: Readonly<{
   allowDownload: boolean;
+  allowPreview: boolean;
   artifactId: string;
   canEdit: boolean;
   currentVersionId?: string;
   onDownload: (versionId: string) => Promise<void>;
+  onPreview: (versionId: string) => void;
   onRestore: (versionId: string) => Promise<void>;
   onUpload: () => void;
+  selectedPreviewVersionId?: string;
   versions: Awaited<ReturnType<typeof artifactApi.listVersions>>["items"];
 }>) {
   const [pendingAction, setPendingAction] = useState<string>();
@@ -541,6 +617,24 @@ function VersionPanel({
                 {version.version_id === currentVersionId ? " · 当前版本" : ""}
               </p>
             </div>
+            {allowPreview && version.status === "available" ? (
+              <Button
+                aria-label={`预览版本 ${version.version_no}`}
+                aria-pressed={version.version_id === selectedPreviewVersionId}
+                onClick={() => onPreview(version.version_id)}
+                size="sm"
+                variant={
+                  version.version_id === selectedPreviewVersionId
+                    ? "secondary"
+                    : "outline"
+                }
+              >
+                <Eye aria-hidden="true" className="size-4" />
+                {version.version_id === selectedPreviewVersionId
+                  ? "正在预览"
+                  : "预览"}
+              </Button>
+            ) : null}
             {allowDownload && version.status === "available" ? (
               <Button
                 aria-label={`下载版本 ${version.version_no}`}
