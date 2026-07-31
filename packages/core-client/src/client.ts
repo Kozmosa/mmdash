@@ -572,6 +572,247 @@ export class CoreClient {
     );
   }
 
+  async initializeArtifactUpload(
+    projectId: string,
+    input: components["schemas"]["ArtifactInitializeUploadRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactUploadSession"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/uploads`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async initializeArtifactVersionUpload(
+    projectId: string,
+    artifactId: string,
+    input: components["schemas"]["ArtifactInitializeVersionUploadRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactUploadSession"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/versions/uploads`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async getArtifactUpload(
+    projectId: string,
+    uploadId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactUploadSession"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/uploads/${encodeURIComponent(uploadId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async signArtifactUploadParts(
+    projectId: string,
+    uploadId: string,
+    input: components["schemas"]["ArtifactSignPartsRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactPartGrantList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/uploads/${encodeURIComponent(uploadId)}/parts/sign`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async confirmArtifactUpload(
+    projectId: string,
+    uploadId: string,
+    input: components["schemas"]["ArtifactConfirmUploadRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactDetail"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/uploads/${encodeURIComponent(uploadId)}/confirm`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async abortArtifactUpload(
+    projectId: string,
+    uploadId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/uploads/${encodeURIComponent(uploadId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async listArtifacts(
+    projectId: string,
+    context: CoreRequestContext,
+    options: {
+      cursor?: string;
+      kind?: components["schemas"]["ArtifactKind"];
+      limit?: number;
+      source?: components["schemas"]["ArtifactSource"];
+      status?: components["schemas"]["ArtifactStatus"];
+      tag?: string;
+    } = {},
+  ): Promise<components["schemas"]["ArtifactPage"]> {
+    const query = new URLSearchParams();
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.kind) query.set("kind", options.kind);
+    if (options.limit) query.set("limit", String(options.limit));
+    if (options.source) query.set("source", options.source);
+    if (options.status) query.set("status", options.status);
+    if (options.tag) query.set("tag", options.tag);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listArtifactTrash(
+    projectId: string,
+    context: CoreRequestContext,
+    options: {
+      cursor?: string;
+      kind?: components["schemas"]["ArtifactKind"];
+      limit?: number;
+      tag?: string;
+    } = {},
+  ): Promise<components["schemas"]["ArtifactPage"]> {
+    const query = new URLSearchParams();
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.kind) query.set("kind", options.kind);
+    if (options.limit) query.set("limit", String(options.limit));
+    if (options.tag) query.set("tag", options.tag);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/trash${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getArtifact(
+    projectId: string,
+    artifactId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactDetail"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateArtifact(
+    projectId: string,
+    artifactId: string,
+    input: components["schemas"]["ArtifactUpdateRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactDetail"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async listArtifactVersions(
+    projectId: string,
+    artifactId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactVersionList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/versions`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async restoreArtifactVersion(
+    projectId: string,
+    artifactId: string,
+    versionId: string,
+    input: components["schemas"]["ArtifactRestoreVersionRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactDetail"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${encodeURIComponent(versionId)}/restore`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async downloadArtifact(
+    projectId: string,
+    artifactId: string,
+    context: CoreRequestContext,
+    versionId?: string,
+  ): Promise<components["schemas"]["ArtifactDownloadGrant"]> {
+    const versionSegment = versionId
+      ? `/versions/${encodeURIComponent(versionId)}`
+      : "";
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}${versionSegment}/download`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async listArtifactPreviews(
+    projectId: string,
+    artifactId: string,
+    versionId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactPreviewList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${encodeURIComponent(versionId)}/previews`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async trashArtifact(
+    projectId: string,
+    artifactId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async restoreArtifact(
+    projectId: string,
+    artifactId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactDetail"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/restore`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async purgeArtifact(
+    projectId: string,
+    artifactId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/purge`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
   async listDataObjects(
     projectId: string,
     context: CoreRequestContext,

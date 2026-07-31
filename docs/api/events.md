@@ -127,3 +127,12 @@ Repo emits `repo.connected`, `repo.commit.created`, and
 The Data Hub consumer uses the event ID as its idempotency boundary and
 resolves Git content only through Repo's fixed-SHA reader. Payload schemas live
 under `contracts/events/`.
+
+Artifact emits `artifact.created`, `artifact.available`, and
+`artifact.deleted`. The created event records the pending stable identity;
+available is committed only after complete size and SHA-256 verification (or
+with `reason=restored` for an already verified Version); deleted is the
+recoverable trash transition. Purge does not publish another public lifecycle
+event because Data Hub already owns the deleted tombstone. Artifact payload
+schemas live under `contracts/events/` and never include signed URLs, provider
+upload IDs, object keys, credentials, or file content.

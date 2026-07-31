@@ -110,10 +110,11 @@ func accessLogMiddleware(
 		next.ServeHTTP(recorder, request)
 		duration := time.Since(startedAt)
 		values := requestctx.TrustedSnapshot(request.Context())
+		path := observablePath(request.URL.Path)
 		logFields := map[string]interface{}{
 			"duration_ms": duration.Milliseconds(),
 			"method":      request.Method,
-			"path":        request.URL.Path,
+			"path":        path,
 			"project_id":  values.ProjectID,
 			"request_id":  values.RequestID,
 			"status":      recorder.statusCode(),
@@ -126,12 +127,34 @@ func accessLogMiddleware(
 		}
 		metricRegistry.ObserveHTTP(request.Method, recorder.statusCode(), duration)
 		if audit != nil && strings.HasPrefix(request.URL.Path, "/v1/") {
-			_ = audit(request.Context(), HTTPObservation{
+			auditContext, cancel := detachedAuditContext(request.Context())
+			defer cancel()
+			_ = audit(auditContext, HTTPObservation{
 				DurationMS: duration.Milliseconds(), Method: request.Method,
-				Path: request.URL.Path, Status: recorder.statusCode(),
+				Path: path, Status: recorder.statusCode(),
 			})
 		}
 	})
+}
+
+func detachedAuditContext(requestContext context.Context) (context.Context, context.CancelFunc) {
+	values := requestctx.TrustedSnapshot(requestContext)
+	auditContext := requestctx.WithValues(context.Background(), values)
+	if values.ActorID != "" {
+		requestctx.SetActor(auditContext, values.ActorID, values.ActorKind)
+	}
+	if values.ProjectID != "" {
+		requestctx.SetProject(auditContext, values.ProjectID)
+	}
+	return context.WithTimeout(auditContext, 5*time.Second)
+}
+
+func observablePath(path string) string {
+	const transferPrefix = "/v1/artifact-transfers/"
+	if strings.HasPrefix(path, transferPrefix) {
+		return transferPrefix + "{redacted}"
+	}
+	return path
 }
 
 type statusRecorder struct {

@@ -42,6 +42,7 @@ func (store PostgresStore) ListObjects(
 		FROM data_objects
 		WHERE project_id = $1
 		  AND ($2 = '' OR object_type = $2)
+		  AND status <> 'hidden'
 		  AND (
 		    NULLIF($3, '') IS NULL
 		    OR (updated_at, object_id) <

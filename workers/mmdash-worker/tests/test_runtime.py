@@ -231,9 +231,7 @@ def test_renewal_failure_submits_a_retryable_failure_without_completion() -> Non
         renew_error=RuntimeError("Core unavailable"),
     )
 
-    async def lease_aware_handler(
-        context: HandlerContext, _payload: object
-    ) -> dict[str, Any]:
+    async def lease_aware_handler(context: HandlerContext, _payload: object) -> dict[str, Any]:
         while not context.lease_renewal_failed:
             await asyncio.sleep(0)
         return {"status": "lease-lost"}

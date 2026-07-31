@@ -698,3 +698,265 @@ func (request RepoCreateCommitRequest) Validate() error {
 	}
 	return nil
 }
+
+// ArtifactInitializeUploadRequest is generated from the Core request-body schema.
+type ArtifactInitializeUploadRequest struct {
+	Filename       string    `json:"filename"`
+	Name           *string   `json:"name,omitempty"`
+	SizeBytes      int64     `json:"size_bytes"`
+	Sha256         string    `json:"sha256"`
+	MimeType       *string   `json:"mime_type,omitempty"`
+	Kind           string    `json:"kind"`
+	Tags           *[]string `json:"tags,omitempty"`
+	Description    *string   `json:"description,omitempty"`
+	IdempotencyKey string    `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArtifactInitializeUploadRequest) Validate() error {
+	if request.Filename == "" {
+		return fmt.Errorf("filename is required")
+	}
+	if len(request.Filename) < 1 {
+		return fmt.Errorf("filename is too short")
+	}
+	if len(request.Filename) > 255 {
+		return fmt.Errorf("filename is too long")
+	}
+	if request.Name != nil {
+		if len(*request.Name) < 1 {
+			return fmt.Errorf("name is too short")
+		}
+		if len(*request.Name) > 255 {
+			return fmt.Errorf("name is too long")
+		}
+	}
+	if request.SizeBytes < 0 {
+		return fmt.Errorf("size_bytes is below its minimum")
+	}
+	if request.Sha256 == "" {
+		return fmt.Errorf("sha256 is required")
+	}
+	if request.MimeType != nil {
+		if len(*request.MimeType) < 1 {
+			return fmt.Errorf("mime_type is too short")
+		}
+		if len(*request.MimeType) > 255 {
+			return fmt.Errorf("mime_type is too long")
+		}
+	}
+	if request.Kind == "" {
+		return fmt.Errorf("kind is required")
+	}
+	if request.Kind != "problem" && request.Kind != "attachment" && request.Kind != "other" {
+		return fmt.Errorf("kind has an unsupported value")
+	}
+	if request.Tags != nil {
+		if len(*request.Tags) > 32 {
+			return fmt.Errorf("tags has too many items")
+		}
+	}
+	if request.Description != nil {
+		if len(*request.Description) > 4000 {
+			return fmt.Errorf("description is too long")
+		}
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// ArtifactInitializeVersionUploadRequest is generated from the Core request-body schema.
+type ArtifactInitializeVersionUploadRequest struct {
+	Filename       string  `json:"filename"`
+	SizeBytes      int64   `json:"size_bytes"`
+	Sha256         string  `json:"sha256"`
+	MimeType       *string `json:"mime_type,omitempty"`
+	IdempotencyKey string  `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArtifactInitializeVersionUploadRequest) Validate() error {
+	if request.Filename == "" {
+		return fmt.Errorf("filename is required")
+	}
+	if len(request.Filename) < 1 {
+		return fmt.Errorf("filename is too short")
+	}
+	if len(request.Filename) > 255 {
+		return fmt.Errorf("filename is too long")
+	}
+	if request.SizeBytes < 0 {
+		return fmt.Errorf("size_bytes is below its minimum")
+	}
+	if request.Sha256 == "" {
+		return fmt.Errorf("sha256 is required")
+	}
+	if request.MimeType != nil {
+		if len(*request.MimeType) < 1 {
+			return fmt.Errorf("mime_type is too short")
+		}
+		if len(*request.MimeType) > 255 {
+			return fmt.Errorf("mime_type is too long")
+		}
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// ArtifactSignPartsRequest is generated from the Core request-body schema.
+type ArtifactSignPartsRequest struct {
+	PartNumbers []int64 `json:"part_numbers"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArtifactSignPartsRequest) Validate() error {
+	if request.PartNumbers == nil {
+		return fmt.Errorf("part_numbers is required")
+	}
+	if len(request.PartNumbers) > 100 {
+		return fmt.Errorf("part_numbers has too many items")
+	}
+	if len(request.PartNumbers) < 1 {
+		return fmt.Errorf("part_numbers has too few items")
+	}
+	return nil
+}
+
+// ArtifactConfirmUploadRequest is generated from the Core request-body schema.
+type ArtifactConfirmUploadRequest struct {
+	Parts []map[string]interface{} `json:"parts"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArtifactConfirmUploadRequest) Validate() error {
+	if request.Parts == nil {
+		return fmt.Errorf("parts is required")
+	}
+	if len(request.Parts) > 10000 {
+		return fmt.Errorf("parts has too many items")
+	}
+	if len(request.Parts) < 1 {
+		return fmt.Errorf("parts has too few items")
+	}
+	return nil
+}
+
+// ArtifactUpdateRequest is generated from the Core request-body schema.
+type ArtifactUpdateRequest struct {
+	Name        *string      `json:"name,omitempty"`
+	Kind        *string      `json:"kind,omitempty"`
+	Tags        *[]string    `json:"tags,omitempty"`
+	Description *interface{} `json:"description,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArtifactUpdateRequest) Validate() error {
+	if request.Name == nil && request.Kind == nil && request.Tags == nil && request.Description == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.Name != nil {
+		if len(*request.Name) < 1 {
+			return fmt.Errorf("name is too short")
+		}
+		if len(*request.Name) > 255 {
+			return fmt.Errorf("name is too long")
+		}
+	}
+	if request.Kind != nil {
+		if *request.Kind != "problem" && *request.Kind != "attachment" && *request.Kind != "other" {
+			return fmt.Errorf("kind has an unsupported value")
+		}
+	}
+	if request.Tags != nil {
+		if len(*request.Tags) > 32 {
+			return fmt.Errorf("tags has too many items")
+		}
+	}
+	return nil
+}
+
+// ArtifactRestoreVersionRequest is generated from the Core request-body schema.
+type ArtifactRestoreVersionRequest struct {
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArtifactRestoreVersionRequest) Validate() error {
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// ArtifactPreviewJobTransferRequest is generated from the Core request-body schema.
+type ArtifactPreviewJobTransferRequest struct {
+	Direction   string  `json:"direction"`
+	VersionID   string  `json:"version_id"`
+	PreviewType *string `json:"preview_type,omitempty"`
+	Filename    *string `json:"filename,omitempty"`
+	MimeType    *string `json:"mime_type,omitempty"`
+	SizeBytes   *int64  `json:"size_bytes,omitempty"`
+	Sha256      *string `json:"sha256,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArtifactPreviewJobTransferRequest) Validate() error {
+	if request.Direction == "" {
+		return fmt.Errorf("direction is required")
+	}
+	if request.Direction != "input" && request.Direction != "output" {
+		return fmt.Errorf("direction has an unsupported value")
+	}
+	if request.VersionID == "" {
+		return fmt.Errorf("version_id is required")
+	}
+	if request.PreviewType != nil {
+		if *request.PreviewType != "image" && *request.PreviewType != "pdf" && *request.PreviewType != "csv" && *request.PreviewType != "json" && *request.PreviewType != "text" && *request.PreviewType != "thumbnail" {
+			return fmt.Errorf("preview_type has an unsupported value")
+		}
+	}
+	if request.Filename != nil {
+		if len(*request.Filename) < 1 {
+			return fmt.Errorf("filename is too short")
+		}
+		if len(*request.Filename) > 255 {
+			return fmt.Errorf("filename is too long")
+		}
+	}
+	if request.MimeType != nil {
+		if len(*request.MimeType) < 1 {
+			return fmt.Errorf("mime_type is too short")
+		}
+		if len(*request.MimeType) > 255 {
+			return fmt.Errorf("mime_type is too long")
+		}
+	}
+	if request.SizeBytes != nil {
+		if *request.SizeBytes < 0 {
+			return fmt.Errorf("size_bytes is below its minimum")
+		}
+	}
+	return nil
+}

@@ -21,6 +21,28 @@ tags:
     description: Collaborative projects, membership, roles, and permissions.
   - name: Repo
     description: Managed Git repositories, immutable object reads, synchronization, and internal writes.
+  - name: Artifact
+    description: Project-scoped immutable file versions, multipart transfer, preview, and trash.
+    x-error-codes:
+      - ARTIFACT_NOT_FOUND
+      - ARTIFACT_UPLOAD_EXPIRED
+      - ARTIFACT_UPLOAD_INCOMPLETE
+      - ARTIFACT_SIZE_MISMATCH
+      - ARTIFACT_HASH_MISMATCH
+      - ARTIFACT_TOO_LARGE
+      - ARTIFACT_PART_INVALID
+      - ARTIFACT_PART_MISSING
+      - ARTIFACT_UPLOAD_ABORTED
+      - ARTIFACT_UPLOAD_CONFLICT
+      - ARTIFACT_KIND_INVALID
+      - ARTIFACT_SOURCE_INVALID
+      - ARTIFACT_TAG_INVALID
+      - ARTIFACT_MIME_NOT_ALLOWED
+      - ARTIFACT_NOT_AVAILABLE
+      - ARTIFACT_PREVIEW_UNAVAILABLE
+      - ARTIFACT_STORAGE_UNAVAILABLE
+      - ARTIFACT_NOT_TRASHED
+      - ARTIFACT_PURGE_CONFLICT
   - name: Settings
     description: Typed system/project configuration, redacted secrets, and connection tests.
   - name: Jobs
@@ -526,6 +548,406 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectPermissions"
+  /v1/projects/{projectId}/artifacts/uploads:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Artifact]
+      summary: Initialize the first immutable Version and its multipart upload
+      operationId: artifact.uploads.initialize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactInitializeUploadRequest"
+      responses:
+        "201":
+          description: Artifact, pending Version, and upload session initialized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactUploadSession"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/uploads/{uploadId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactUploadId"
+    get:
+      tags: [Artifact]
+      summary: Recover an authorized upload session and its completed parts
+      operationId: artifact.uploads.get
+      responses:
+        "200":
+          description: Application upload state without provider identifiers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactUploadSession"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Artifact]
+      summary: Cancel and abort an unconfirmed multipart upload idempotently
+      operationId: artifact.uploads.abort
+      responses:
+        "204":
+          description: Upload aborted or already in an aborted terminal state.
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/uploads/{uploadId}/parts/sign:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactUploadId"
+    post:
+      tags: [Artifact]
+      summary: Sign a bounded on-demand batch of multipart part PUTs
+      operationId: artifact.uploads.parts.sign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactSignPartsRequest"
+      responses:
+        "200":
+          description: Short-lived direct or Local proxy transfer grants.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactPartGrantList"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/uploads/{uploadId}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactUploadId"
+    post:
+      tags: [Artifact]
+      summary: Complete multipart state and verify full size and SHA-256
+      operationId: artifact.uploads.confirm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactConfirmUploadRequest"
+      responses:
+        "200":
+          description: Idempotent confirmation result for an already completed upload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDetail"
+        "201":
+          description: Verified immutable Version is now available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDetail"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/artifact-transfers/{signedToken}:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactSignedToken"
+    get:
+      tags: [Artifact]
+      summary: Stream one signed Local download or Worker input
+      operationId: artifact.transfers.get
+      security: []
+      responses:
+        "200":
+          description: Bounded byte stream authorized by the short-lived token.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Artifact]
+      summary: Stream one signed Local multipart part or Worker preview output
+      operationId: artifact.transfers.put
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: Stream consumed and verified without buffering the full body.
+        "400":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Artifact]
+      summary: List active Project Artifacts with fixed classification filters
+      operationId: artifact.list
+      parameters:
+        - $ref: "#/components/parameters/ArtifactKind"
+        - $ref: "#/components/parameters/ArtifactSource"
+        - $ref: "#/components/parameters/ArtifactStatus"
+        - $ref: "#/components/parameters/ArtifactTag"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/ArtifactLimit"
+      responses:
+        "200":
+          description: Cursor page of active Artifacts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactPage"
+  /v1/projects/{projectId}/artifacts/trash:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Artifact]
+      summary: List recoverable trashed Project Artifacts
+      operationId: artifact.trash.list
+      parameters:
+        - $ref: "#/components/parameters/ArtifactKind"
+        - $ref: "#/components/parameters/ArtifactTag"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/ArtifactLimit"
+      responses:
+        "200":
+          description: Cursor page of trashed Artifacts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactPage"
+  /v1/projects/{projectId}/artifacts/{artifactId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [Artifact]
+      summary: Read Artifact metadata and its current immutable Version
+      operationId: artifact.get
+      responses:
+        "200":
+          description: Artifact detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Artifact]
+      summary: Update editable Artifact display metadata
+      operationId: artifact.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactUpdateRequest"
+      responses:
+        "200":
+          description: Updated Artifact detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDetail"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Artifact]
+      summary: Move an active Artifact to recoverable trash
+      operationId: artifact.trash
+      responses:
+        "204":
+          description: Artifact moved to trash idempotently.
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/versions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [Artifact]
+      summary: List every retained immutable Version
+      operationId: artifact.versions.list
+      responses:
+        "200":
+          description: Versions ordered by descending version number.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactVersionList"
+  /v1/projects/{projectId}/artifacts/{artifactId}/versions/uploads:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Artifact]
+      summary: Initialize a new immutable Version and multipart upload
+      operationId: artifact.versions.uploads.initialize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactInitializeVersionUploadRequest"
+      responses:
+        "201":
+          description: Pending Version and upload session initialized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactUploadSession"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+      - $ref: "#/components/parameters/ArtifactVersionId"
+    post:
+      tags: [Artifact]
+      summary: Copy a retained Version into a new current immutable Version
+      operationId: artifact.versions.restore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactRestoreVersionRequest"
+      responses:
+        "201":
+          description: New current Version created from retained bytes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDetail"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/download:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Artifact]
+      summary: Authorize a short-lived download of the current Version
+      operationId: artifact.download
+      responses:
+        "200":
+          description: Short-lived redirect or streaming proxy grant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDownloadGrant"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/download:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+      - $ref: "#/components/parameters/ArtifactVersionId"
+    post:
+      tags: [Artifact]
+      summary: Authorize a short-lived download of one retained Version
+      operationId: artifact.versions.download
+      responses:
+        "200":
+          description: Short-lived redirect or streaming proxy grant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDownloadGrant"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+      - $ref: "#/components/parameters/ArtifactVersionId"
+    get:
+      tags: [Artifact]
+      summary: List preview, thumbnail, and structural summary state
+      operationId: artifact.previews.list
+      responses:
+        "200":
+          description: Bounded preview metadata and short-lived transfer grants.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactPreviewList"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Artifact]
+      summary: Restore a trashed Artifact and its current verified Version
+      operationId: artifact.restore
+      responses:
+        "200":
+          description: Artifact restored idempotently.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDetail"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/purge:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    delete:
+      tags: [Artifact]
+      summary: Permanently remove a trashed Artifact and unreferenced blobs
+      operationId: artifact.purge
+      responses:
+        "204":
+          description: Artifact purged and unreferenced object bytes removed.
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/internal/artifact-preview-jobs/{jobId}/transfers:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [Artifact]
+      summary: Issue a one-time transfer bound to a claimed preview Job
+      operationId: artifact.preview-jobs.transfers.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactPreviewJobTransferRequest"
+      responses:
+        "201":
+          description: One-time Worker input or output transfer grant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactTransferGrant"
+        "403":
+          $ref: "#/components/responses/Error"
   /v1/projects/{projectId}/repository:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -1477,6 +1899,69 @@ components:
       schema:
         type: string
         format: uuid
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactUploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactVersionId:
+      name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactSignedToken:
+      name: signedToken
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 4096
+    ArtifactKind:
+      name: kind
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/ArtifactKind"
+    ArtifactSource:
+      name: source
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/ArtifactSource"
+    ArtifactStatus:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/ArtifactStatus"
+    ArtifactTag:
+      name: tag
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    ArtifactLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
     CommitSha:
       name: commitSha
       in: path
@@ -1993,6 +2478,598 @@ components:
           type: array
           items:
             type: string
+    ArtifactKind:
+      type: string
+      enum:
+        [
+          problem,
+          attachment,
+          experiment_result,
+          model_file,
+          article_build,
+          other,
+        ]
+    ArtifactErrorCode:
+      type: string
+      enum:
+        [
+          ARTIFACT_NOT_FOUND,
+          ARTIFACT_UPLOAD_EXPIRED,
+          ARTIFACT_UPLOAD_INCOMPLETE,
+          ARTIFACT_SIZE_MISMATCH,
+          ARTIFACT_HASH_MISMATCH,
+          ARTIFACT_TOO_LARGE,
+          ARTIFACT_PART_INVALID,
+          ARTIFACT_PART_MISSING,
+          ARTIFACT_UPLOAD_ABORTED,
+          ARTIFACT_UPLOAD_CONFLICT,
+          ARTIFACT_KIND_INVALID,
+          ARTIFACT_SOURCE_INVALID,
+          ARTIFACT_TAG_INVALID,
+          ARTIFACT_MIME_NOT_ALLOWED,
+          ARTIFACT_NOT_AVAILABLE,
+          ARTIFACT_PREVIEW_UNAVAILABLE,
+          ARTIFACT_STORAGE_UNAVAILABLE,
+          ARTIFACT_NOT_TRASHED,
+          ARTIFACT_PURGE_CONFLICT,
+        ]
+    ArtifactPublicKind:
+      type: string
+      enum: [problem, attachment, other]
+    ArtifactSource:
+      type: string
+      enum: [user_upload, experiment, model, article, system]
+    ArtifactStatus:
+      type: string
+      enum: [pending_upload, verifying, available, failed, trashed]
+    ArtifactVersionStatus:
+      type: string
+      enum: [pending_upload, verifying, available, failed]
+    ArtifactStorageClass:
+      type: string
+      enum: [object, git]
+    ArtifactUploadStatus:
+      type: string
+      enum:
+        [
+          initialized,
+          uploading,
+          completing,
+          verifying,
+          completed,
+          aborted,
+          expired,
+          failed,
+        ]
+    ArtifactPreviewStatus:
+      type: string
+      enum: [queued, processing, available, unsupported, failed]
+    ArtifactPreviewType:
+      type: string
+      enum: [image, pdf, csv, json, text, thumbnail]
+    ArtifactInitializeUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, size_bytes, sha256, kind, idempotency_key]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        size_bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        mime_type:
+          type: string
+          minLength: 1
+          maxLength: 255
+        kind:
+          $ref: "#/components/schemas/ArtifactPublicKind"
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        description:
+          type: string
+          maxLength: 4000
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+    ArtifactInitializeVersionUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, size_bytes, sha256, idempotency_key]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        size_bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        mime_type:
+          type: string
+          minLength: 1
+          maxLength: 255
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+    ArtifactSignPartsRequest:
+      type: object
+      additionalProperties: false
+      required: [part_numbers]
+      properties:
+        part_numbers:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+            maximum: 10000
+    ArtifactConfirmPart:
+      type: object
+      additionalProperties: false
+      required: [part_number, etag]
+      properties:
+        part_number:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        etag:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    ArtifactConfirmUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [parts]
+      properties:
+        parts:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/ArtifactConfirmPart"
+    ArtifactUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        kind:
+          $ref: "#/components/schemas/ArtifactPublicKind"
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        description:
+          type: [string, "null"]
+          maxLength: 4000
+    ArtifactRestoreVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+    ArtifactPreviewJobTransferRequest:
+      type: object
+      additionalProperties: false
+      required: [direction, version_id]
+      properties:
+        direction:
+          type: string
+          enum: [input, output]
+        version_id:
+          type: string
+          format: uuid
+        preview_type:
+          $ref: "#/components/schemas/ArtifactPreviewType"
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mime_type:
+          type: string
+          minLength: 1
+          maxLength: 255
+        size_bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+    ArtifactGitReference:
+      type: object
+      additionalProperties: false
+      required: [repository_id, workspace, commit_sha, path]
+      properties:
+        repository_id:
+          type: string
+          format: uuid
+        workspace:
+          type: string
+          const: result
+        commit_sha:
+          type: string
+          pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+    Artifact:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          artifact_id,
+          project_id,
+          kind,
+          source,
+          source_object_id,
+          tags,
+          name,
+          description,
+          recommended_usage,
+          current_version_id,
+          status,
+          created_by,
+          trashed_at,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/ArtifactKind"
+        source:
+          $ref: "#/components/schemas/ArtifactSource"
+        source_object_id:
+          type: [string, "null"]
+        tags:
+          type: array
+          items:
+            type: string
+        name:
+          type: string
+        description:
+          type: [string, "null"]
+        recommended_usage:
+          type: array
+          items:
+            type: string
+        current_version_id:
+          type: [string, "null"]
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ArtifactStatus"
+        created_by:
+          type: string
+          format: uuid
+        trashed_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ArtifactVersion:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          version_id,
+          artifact_id,
+          version_no,
+          storage_class,
+          filename,
+          sha256,
+          mime_type,
+          size_bytes,
+          status,
+          available_at,
+          git_reference,
+          created_by,
+          created_at,
+        ]
+      properties:
+        version_id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+          minimum: 1
+        storage_class:
+          $ref: "#/components/schemas/ArtifactStorageClass"
+        filename:
+          type: string
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 0
+        status:
+          $ref: "#/components/schemas/ArtifactVersionStatus"
+        available_at:
+          type: [string, "null"]
+          format: date-time
+        git_reference:
+          oneOf:
+            - $ref: "#/components/schemas/ArtifactGitReference"
+            - type: "null"
+        created_by:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    ArtifactDetail:
+      type: object
+      additionalProperties: false
+      required: [artifact, current_version]
+      properties:
+        artifact:
+          $ref: "#/components/schemas/Artifact"
+        current_version:
+          oneOf:
+            - $ref: "#/components/schemas/ArtifactVersion"
+            - type: "null"
+    ArtifactPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactDetail"
+        has_more:
+          type: boolean
+        next_cursor:
+          type: [string, "null"]
+    ArtifactVersionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactVersion"
+    ArtifactUploadPart:
+      type: object
+      additionalProperties: false
+      required: [part_number, size_bytes, etag, completed_at]
+      properties:
+        part_number:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        size_bytes:
+          type: integer
+          minimum: 0
+        etag:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+    ArtifactUploadSession:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          upload_id,
+          artifact_id,
+          version_id,
+          upload_mode,
+          transfer_mode,
+          status,
+          size_bytes,
+          sha256,
+          part_size_bytes,
+          part_count,
+          completed_parts,
+          expires_at,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        artifact_id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          format: uuid
+        upload_mode:
+          type: string
+          enum: [multipart, deduplicated]
+        transfer_mode:
+          type: string
+          enum: [direct, local_proxy, none]
+        status:
+          $ref: "#/components/schemas/ArtifactUploadStatus"
+        size_bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        part_size_bytes:
+          type: integer
+          minimum: 1
+        part_count:
+          type: integer
+          minimum: 0
+          maximum: 10000
+        completed_parts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactUploadPart"
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ArtifactTransferGrant:
+      type: object
+      additionalProperties: false
+      required: [method, url, headers, expires_at]
+      properties:
+        method:
+          type: string
+          enum: [GET, PUT]
+        url:
+          type: string
+          format: uri-reference
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+    ArtifactPartGrant:
+      type: object
+      additionalProperties: false
+      required: [part_number, size_bytes, transfer]
+      properties:
+        part_number:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        size_bytes:
+          type: integer
+          minimum: 0
+        transfer:
+          $ref: "#/components/schemas/ArtifactTransferGrant"
+    ArtifactPartGrantList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ArtifactPartGrant"
+    ArtifactDownloadGrant:
+      type: object
+      additionalProperties: false
+      required:
+        [artifact_id, version_id, filename, mime_type, size_bytes, transfer]
+      properties:
+        artifact_id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 0
+        transfer:
+          $ref: "#/components/schemas/ArtifactTransferGrant"
+    ArtifactPreview:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          preview_id,
+          version_id,
+          preview_type,
+          status,
+          structural_summary,
+          error_code,
+          transfer,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        preview_id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          format: uuid
+        preview_type:
+          $ref: "#/components/schemas/ArtifactPreviewType"
+        status:
+          $ref: "#/components/schemas/ArtifactPreviewStatus"
+        structural_summary:
+          type: [object, "null"]
+          additionalProperties: true
+        error_code:
+          type: [string, "null"]
+        transfer:
+          oneOf:
+            - $ref: "#/components/schemas/ArtifactTransferGrant"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ArtifactPreviewList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactPreview"
     RepoProvider:
       type: string
       enum: [github, local]

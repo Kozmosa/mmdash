@@ -33,6 +33,7 @@
     "dev:down": "docker compose -f deploy/compose/compose.yaml down",
     "migrate": "go run ./backend/cmd/migrate",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:artifact-preview": "node scripts/artifact-preview-smoke.mjs",
     "scaffold:module": "node scripts/create-module.mjs"
   },
   "devDependencies": {

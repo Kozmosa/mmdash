@@ -68,6 +68,7 @@ pnpm --filter @mmdash/core-client generate
 - [Auth, Project, and RBAC](auth-projects.md)
 - [Settings and secret management](settings.md)
 - [Repo API and safety contract](repo.md)
+- [Artifact API, multipart, and retention](artifact.md)
 - [Jobs and Worker protocol](jobs.md)
 - [Events, Outbox, and replay](events.md)
 - [Data Hub, object routing, and Project Context](datahub.md)

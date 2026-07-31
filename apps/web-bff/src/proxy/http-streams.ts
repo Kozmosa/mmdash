@@ -12,6 +12,12 @@ const fileParamsSchema = z.object({
   "*": z.string().min(1),
   projectId: z.string(),
 });
+const artifactTransferParamsSchema = z.object({
+  signedToken: z
+    .string()
+    .max(4_096)
+    .regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
+});
 
 const forwardedResponseHeaders = [
   "accept-ranges",
@@ -56,6 +62,47 @@ export function registerHttpStreamRoutes(
   );
 
   app.route({
+    config: { auth: "required", project: "none" },
+    handler: async (request, reply) => {
+      const { signedToken } = artifactTransferParamsSchema.parse(
+        request.params,
+      );
+      const headers = new Headers();
+      for (const name of ["content-length", "content-type"]) {
+        const value = readHeader(request, name);
+        if (value) {
+          headers.set(name, value);
+        }
+      }
+      const response = await coreClient.fetch(
+        `/v1/artifact-transfers/${encodeURIComponent(signedToken)}`,
+        {
+          body:
+            request.method === "PUT" ? (request.body as BodyInit) : undefined,
+          duplex: request.method === "PUT" ? "half" : undefined,
+          headers,
+          method: request.method,
+        },
+        {
+          accessToken: request.browserIdentity!.accessToken,
+          requestId: request.id,
+          userId: request.browserIdentity!.userId,
+        },
+      );
+      if (!response.ok) {
+        throw await proxyError(response);
+      }
+      reply.code(response.status);
+      copyResponseHeaders(response, reply);
+      return request.method === "PUT"
+        ? reply.send()
+        : sendBody(reply, response);
+    },
+    method: ["GET", "PUT"],
+    url: "/api/artifact-transfers/:signedToken",
+  });
+
+  app.route({
     config: { auth: "required", project: "required" },
     handler: async (request, reply) => {
       const params = fileParamsSchema.parse(request.params);
@@ -79,9 +126,7 @@ export function registerHttpStreamRoutes(
         `/v1/projects/${encodeURIComponent(params.projectId)}/files/${filePath}`,
         {
           body:
-            request.method === "PUT"
-              ? (request.body as BodyInit)
-              : undefined,
+            request.method === "PUT" ? (request.body as BodyInit) : undefined,
           duplex: request.method === "PUT" ? "half" : undefined,
           headers,
           method: request.method,
@@ -93,7 +138,9 @@ export function registerHttpStreamRoutes(
       }
       reply.code(response.status);
       copyResponseHeaders(response, reply);
-      return request.method === "HEAD" ? reply.send() : sendBody(reply, response);
+      return request.method === "HEAD"
+        ? reply.send()
+        : sendBody(reply, response);
     },
     method: ["GET", "HEAD", "PUT"],
     url: "/api/projects/:projectId/files/*",
@@ -120,10 +167,7 @@ function normalizeFilePath(filePath: string): string {
   return segments.map((segment) => encodeURIComponent(segment)).join("/");
 }
 
-function readHeader(
-  request: FastifyRequest,
-  name: string,
-): string | undefined {
+function readHeader(request: FastifyRequest, name: string): string | undefined {
   const value = request.headers[name];
   return typeof value === "string" ? value : undefined;
 }
@@ -142,9 +186,7 @@ function sendBody(reply: FastifyReply, response: Response) {
     return reply.send();
   }
   return reply.send(
-    Readable.from(
-      response.body as unknown as AsyncIterable<Uint8Array>,
-    ),
+    Readable.from(response.body as unknown as AsyncIterable<Uint8Array>),
   );
 }
 

@@ -17,6 +17,7 @@ tags:
   - name: Projects
   - name: Settings
   - name: Repo
+  - name: Artifact
   - name: Pages
   - name: Streams
 paths:
@@ -551,6 +552,395 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ConnectionTestResult"
+  /api/projects/{projectId}/artifacts/uploads:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Artifact]
+      summary: Initialize a browser multipart Artifact upload
+      operationId: bff.artifact.uploads.initialize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactInitializeUploadRequest"
+      responses:
+        "201":
+          description: Upload session initialized.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactUploadSession"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/artifacts/uploads/{uploadId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactUploadId"
+    get:
+      tags: [Artifact]
+      summary: Recover a browser upload session
+      operationId: bff.artifact.uploads.get
+      responses:
+        "200":
+          description: Authorized upload session.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactUploadSession"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Artifact]
+      summary: Cancel a browser multipart upload
+      operationId: bff.artifact.uploads.abort
+      responses:
+        "204":
+          description: Upload aborted idempotently.
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/artifacts/uploads/{uploadId}/parts/sign:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactUploadId"
+    post:
+      tags: [Artifact]
+      summary: Sign a bounded batch of multipart parts
+      operationId: bff.artifact.uploads.parts.sign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactSignPartsRequest"
+      responses:
+        "200":
+          description: Direct or Local proxy transfer grants.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactPartGrantList"
+  /api/projects/{projectId}/artifacts/uploads/{uploadId}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactUploadId"
+    post:
+      tags: [Artifact]
+      summary: Confirm multipart state and wait for full verification
+      operationId: bff.artifact.uploads.confirm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactConfirmUploadRequest"
+      responses:
+        "200":
+          description: Already-confirmed Artifact detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDetail"
+        "201":
+          description: Verified Artifact detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDetail"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/artifact-transfers/{signedToken}:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactSignedToken"
+    get:
+      tags: [Artifact]
+      summary: Stream a signed Local Artifact download without buffering
+      operationId: bff.artifact.transfers.get
+      security: []
+      responses:
+        "200":
+          description: No-store byte stream.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "410":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Artifact]
+      summary: Stream a signed Local multipart part without buffering
+      operationId: bff.artifact.transfers.put
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: Stream forwarded and consumed.
+        "410":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Artifact]
+      summary: List active Project Artifacts
+      operationId: bff.artifact.list
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            $ref: "./core.yaml#/components/schemas/ArtifactKind"
+        - name: source
+          in: query
+          schema:
+            $ref: "./core.yaml#/components/schemas/ArtifactSource"
+        - name: status
+          in: query
+          schema:
+            $ref: "./core.yaml#/components/schemas/ArtifactStatus"
+        - name: tag
+          in: query
+          schema:
+            type: string
+            maxLength: 64
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Cursor page of active Artifacts.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactPage"
+  /api/projects/{projectId}/artifacts/trash:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Artifact]
+      summary: List recoverable trashed Artifacts
+      operationId: bff.artifact.trash.list
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            $ref: "./core.yaml#/components/schemas/ArtifactKind"
+        - name: tag
+          in: query
+          schema:
+            type: string
+            maxLength: 64
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Cursor page of trashed Artifacts.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactPage"
+  /api/projects/{projectId}/artifacts/{artifactId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [Artifact]
+      summary: Read Artifact detail
+      operationId: bff.artifact.get
+      responses:
+        "200":
+          description: Artifact and current Version.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Artifact]
+      summary: Update editable Artifact metadata
+      operationId: bff.artifact.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactUpdateRequest"
+      responses:
+        "200":
+          description: Updated Artifact detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDetail"
+    delete:
+      tags: [Artifact]
+      summary: Move an Artifact to recoverable trash
+      operationId: bff.artifact.trash
+      responses:
+        "204":
+          description: Artifact moved to trash.
+  /api/projects/{projectId}/artifacts/{artifactId}/versions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [Artifact]
+      summary: List retained immutable Versions
+      operationId: bff.artifact.versions.list
+      responses:
+        "200":
+          description: All immutable Versions.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactVersionList"
+  /api/projects/{projectId}/artifacts/{artifactId}/versions/uploads:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Artifact]
+      summary: Initialize a new immutable Version upload
+      operationId: bff.artifact.versions.uploads.initialize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactInitializeVersionUploadRequest"
+      responses:
+        "201":
+          description: Pending Version upload session.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactUploadSession"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+      - $ref: "#/components/parameters/ArtifactVersionId"
+    post:
+      tags: [Artifact]
+      summary: Restore retained bytes as a new immutable Version
+      operationId: bff.artifact.versions.restore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactRestoreVersionRequest"
+      responses:
+        "201":
+          description: New current Version created.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDetail"
+  /api/projects/{projectId}/artifacts/{artifactId}/download:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Artifact]
+      summary: Authorize current Version download
+      operationId: bff.artifact.download
+      responses:
+        "200":
+          description: Short-lived redirect or Local proxy grant.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDownloadGrant"
+  /api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/download:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+      - $ref: "#/components/parameters/ArtifactVersionId"
+    post:
+      tags: [Artifact]
+      summary: Authorize one retained Version download
+      operationId: bff.artifact.versions.download
+      responses:
+        "200":
+          description: Short-lived redirect or Local proxy grant.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDownloadGrant"
+  /api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+      - $ref: "#/components/parameters/ArtifactVersionId"
+    get:
+      tags: [Artifact]
+      summary: List preview and structural-summary state
+      operationId: bff.artifact.previews.list
+      responses:
+        "200":
+          description: Preview state and short-lived transfers.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactPreviewList"
+  /api/projects/{projectId}/artifacts/{artifactId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    post:
+      tags: [Artifact]
+      summary: Restore a trashed Artifact
+      operationId: bff.artifact.restore
+      responses:
+        "200":
+          description: Restored Artifact detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDetail"
+  /api/projects/{projectId}/artifacts/{artifactId}/purge:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    delete:
+      tags: [Artifact]
+      summary: Permanently purge a trashed Artifact
+      operationId: bff.artifact.purge
+      responses:
+        "204":
+          description: Purged and unreferenced bytes removed.
+        "409":
+          $ref: "#/components/responses/Error"
   /api/projects/{projectId}/repository:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -970,6 +1360,35 @@ components:
       schema:
         type: string
         pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactUploadId:
+      name: uploadId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactVersionId:
+      name: versionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactSignedToken:
+      name: signedToken
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 4096
     TypeKey:
       name: typeKey
       in: path
