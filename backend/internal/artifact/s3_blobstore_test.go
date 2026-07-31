@@ -56,6 +56,10 @@ func TestS3BlobStoreSignsPublicMultipartAndDownloadURLs(t *testing.T) {
 		context.Background(),
 		"projects/project/blobs/sha256/00/hash",
 		time.Minute,
+		GetObjectOptions{
+			ContentDisposition: `attachment; filename="download"; filename*=UTF-8''report.png`,
+			ContentType:        "image/png",
+		},
 	)
 	if err != nil {
 		t.Fatalf("sign download: %v", err)
@@ -63,6 +67,11 @@ func TestS3BlobStoreSignsPublicMultipartAndDownloadURLs(t *testing.T) {
 	downloadURL, _ := url.Parse(download.URL)
 	if download.Method != http.MethodGet || downloadURL.Host != publicURL.Host {
 		t.Fatalf("unexpected signed download URL: %s", download.URL)
+	}
+	if downloadURL.Query().Get("response-content-disposition") !=
+		`attachment; filename="download"; filename*=UTF-8''report.png` ||
+		downloadURL.Query().Get("response-content-type") != "image/png" {
+		t.Fatalf("download response headers were not signed: %s", download.URL)
 	}
 }
 
@@ -110,6 +119,7 @@ func TestS3BlobStoreRejectsInvalidBackendKeyPartAndTTL(t *testing.T) {
 		context.Background(),
 		"../escape",
 		time.Minute,
+		GetObjectOptions{},
 	); err == nil {
 		t.Fatal("expected invalid object key rejection")
 	}

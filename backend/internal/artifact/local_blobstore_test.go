@@ -137,7 +137,12 @@ func TestLocalBlobStoreAbortAndUnsupportedSigningAreIdempotent(t *testing.T) {
 	) {
 		t.Fatalf("unexpected local part signing result: %v", err)
 	}
-	if _, err := store.PresignGet(ctx, upload.ObjectKey, time.Minute); !errors.Is(
+	if _, err := store.PresignGet(
+		ctx,
+		upload.ObjectKey,
+		time.Minute,
+		GetObjectOptions{},
+	); !errors.Is(
 		err,
 		ErrDirectTransferUnsupported,
 	) {

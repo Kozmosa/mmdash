@@ -420,15 +420,16 @@ function PreviewPanel({
   );
   const preview = items.find(
     (item) =>
-      item.preview_type === "preview" &&
+      item.preview_type !== "thumbnail" &&
       item.status === "available" &&
       item.transfer,
   );
   const structure = items.find(
     (item) =>
-      item.preview_type === "structure" &&
+      item.preview_type !== "thumbnail" &&
       item.status === "available" &&
-      item.structural_summary,
+      item.structural_summary &&
+      Object.keys(item.structural_summary).length > 0,
   );
   return (
     <section aria-labelledby="artifact-preview-title">

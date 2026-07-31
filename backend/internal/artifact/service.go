@@ -1534,7 +1534,13 @@ func (service Service) downloadTransfer(
 		}, service.now(), service.transferTTL())
 	}
 	signed, err := service.Storage.PresignGet(
-		ctx, version.ObjectKey, service.transferTTL(),
+		ctx,
+		version.ObjectKey,
+		service.transferTTL(),
+		GetObjectOptions{
+			ContentDisposition: contentDisposition(version.Filename),
+			ContentType:        version.MIMEType,
+		},
 	)
 	if err != nil {
 		return TransferGrant{}, service.storageError(err)

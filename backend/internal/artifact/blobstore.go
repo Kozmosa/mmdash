@@ -75,6 +75,13 @@ type SignedRequest struct {
 	URL       string
 }
 
+// GetObjectOptions controls whether an object is rendered inline or offered as
+// a named download. Empty fields preserve the provider's default response.
+type GetObjectOptions struct {
+	ContentDisposition string
+	ContentType        string
+}
+
 // BlobStore is the multipart contract shared by Local, MinIO, and S3.
 //
 // Provider upload IDs and object keys stay inside Core. Local PutPart/Open
@@ -90,7 +97,12 @@ type BlobStore interface {
 	ListParts(context.Context, MultipartUpload) ([]CompletedPart, error)
 	Name() string
 	Open(context.Context, string) (io.ReadCloser, error)
-	PresignGet(context.Context, string, time.Duration) (SignedRequest, error)
+	PresignGet(
+		context.Context,
+		string,
+		time.Duration,
+		GetObjectOptions,
+	) (SignedRequest, error)
 	PresignPart(context.Context, MultipartUpload, int, time.Duration) (SignedRequest, error)
 	Promote(context.Context, string, string) error
 	PutPart(context.Context, MultipartUpload, int, io.Reader, int64) (CompletedPart, error)

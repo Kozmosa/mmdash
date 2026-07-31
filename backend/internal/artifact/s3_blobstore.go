@@ -418,6 +418,7 @@ func (store *S3BlobStore) PresignGet(
 	ctx context.Context,
 	objectKey string,
 	ttl time.Duration,
+	options GetObjectOptions,
 ) (SignedRequest, error) {
 	if err := ValidateObjectKey(objectKey); err != nil {
 		return SignedRequest{}, err
@@ -425,12 +426,22 @@ func (store *S3BlobStore) PresignGet(
 	if err := validateSignedURLTTL(ttl); err != nil {
 		return SignedRequest{}, err
 	}
+	responseHeaders := make(url.Values)
+	if options.ContentDisposition != "" {
+		responseHeaders.Set(
+			"response-content-disposition",
+			options.ContentDisposition,
+		)
+	}
+	if options.ContentType != "" {
+		responseHeaders.Set("response-content-type", options.ContentType)
+	}
 	signed, err := store.public.PresignedGetObject(
 		ctx,
 		store.bucket,
 		objectKey,
 		ttl,
-		nil,
+		responseHeaders,
 	)
 	if err != nil {
 		return SignedRequest{}, fmt.Errorf("sign S3 download: %w", err)

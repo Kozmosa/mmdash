@@ -446,7 +446,10 @@ func (service Service) previewDownloadTransfer(
 	}
 	if service.Storage.Backend() != "local" {
 		signed, err := service.Storage.PresignGet(
-			ctx, preview.ObjectKey, service.transferTTL(),
+			ctx,
+			preview.ObjectKey,
+			service.transferTTL(),
+			GetObjectOptions{},
 		)
 		if err != nil {
 			return TransferGrant{}, service.storageError(err)
