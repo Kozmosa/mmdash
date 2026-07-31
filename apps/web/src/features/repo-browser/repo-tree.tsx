@@ -53,7 +53,7 @@ function DirectoryLevel({
     getNextPageParam: (lastPage: RepoTreePage) =>
       lastPage.has_more ? lastPage.next_cursor : undefined,
     initialPageParam: "",
-    queryFn: ({ pageParam, signal }) =>
+    queryFn: ({ pageParam }) =>
       apiClient.request<RepoTreePage>(
         `/projects/${encodeURIComponent(projectId)}/repository/tree`,
         {
@@ -64,7 +64,6 @@ function DirectoryLevel({
             revision,
             workspace,
           },
-          signal,
         },
       ),
     queryKey: ["repo-tree", projectId, workspace, revision, path],

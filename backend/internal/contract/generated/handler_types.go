@@ -567,7 +567,8 @@ func (request RecordAuditEventRequest) Validate() error {
 
 // RepoConnectRequest is generated from the Core request-body schema.
 type RepoConnectRequest struct {
-	SettingsVersion int64 `json:"settings_version"`
+	SettingsVersion     int64 `json:"settings_version"`
+	ReplaceDisconnected *bool `json:"replace_disconnected,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.

@@ -212,7 +212,11 @@ func (module Module) handleRepository(
 			return
 		}
 		repository, err := module.Service.Connect(
-			request.Context(), identity, projectID, body.SettingsVersion,
+			request.Context(), identity, projectID, ConnectRequest{
+				ReplaceDisconnected: body.ReplaceDisconnected != nil &&
+					*body.ReplaceDisconnected,
+				SettingsVersion: body.SettingsVersion,
+			},
 		)
 		if err != nil {
 			writeRepoError(response, request, err)
@@ -664,6 +668,12 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 			http.StatusConflict,
 			"REPOSITORY_RECONNECT_EXPIRED",
 			"Repository cleanup has started; wait for cleanup to finish",
+		))
+	case errors.Is(err, ErrReplacementCleanup):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusServiceUnavailable,
+			"REPOSITORY_REPLACEMENT_CLEANUP_FAILED",
+			"Disconnected repository cleanup failed; the old binding was preserved",
 		))
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(response, request, apperror.New(

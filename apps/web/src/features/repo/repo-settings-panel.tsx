@@ -5,6 +5,7 @@ import {
   Cable,
   CheckCircle2,
   Copy,
+  FileCode2,
   GitBranch,
   KeyRound,
   RefreshCw,
@@ -12,6 +13,7 @@ import {
   ShieldAlert,
   Unplug,
 } from "lucide-react";
+import Link from "next/link";
 import {
   type FormEvent,
   type ReactNode,
@@ -105,6 +107,9 @@ export function RepoSettingsPanel() {
       form.remoteUrl,
       disconnectedRepository.remote_url,
     ),
+  );
+  const replacingDisconnectedRepository = Boolean(
+    disconnectedRepository && form.remoteUrl.trim() && !recoveryMatchesForm,
   );
   const permissions = useQuery({
     queryFn: () => apiClient.request<ProjectPermissions>(`${base}/permissions`),
@@ -242,7 +247,11 @@ export function RepoSettingsPanel() {
     },
   });
   const connect = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({
+      replaceDisconnected,
+    }: {
+      replaceDisconnected: boolean;
+    }) => {
       const saved = await saveSetting();
       const check = await apiClient.request<RepoConnectionTestResult>(
         `${repoPath}/test`,
@@ -253,17 +262,22 @@ export function RepoSettingsPanel() {
         throw new Error("Repository connection test failed");
       }
       return apiClient.request<Repository>(repoPath, {
-        body: { settings_version: saved.version },
+        body: {
+          settings_version: saved.version,
+          ...(replaceDisconnected ? { replace_disconnected: true } : {}),
+        },
         method: "PUT",
       });
     },
-    onSuccess: async (connected) => {
+    onSuccess: async (connected, { replaceDisconnected }) => {
       setOneTimeSecret(connected.webhook.secret ?? "");
       await refresh();
       toast.success(
-        recoveryMatchesForm
-          ? "Repository 已从宽限期恢复，同步已进入队列"
-          : "Repository 已绑定，首次同步已进入队列",
+        replaceDisconnected
+          ? "旧绑定已清理，新的 Repository 已绑定并进入首次同步队列"
+          : recoveryMatchesForm
+            ? "Repository 已从宽限期恢复，同步已进入队列"
+            : "Repository 已绑定，首次同步已进入队列",
       );
     },
   });
@@ -358,7 +372,17 @@ export function RepoSettingsPanel() {
     if (connected) {
       applyMappings.mutate();
     } else {
-      connect.mutate();
+      if (
+        replacingDisconnectedRepository &&
+        !window.confirm(
+          `将立即删除旧绑定 ${disconnectedRepository?.display_name ?? ""} 的 Core 托管本地 Git 数据与元数据，并改绑到新仓库。GitHub 远程仓库不会被删除。确认继续？`,
+        )
+      ) {
+        return;
+      }
+      connect.mutate({
+        replaceDisconnected: replacingDisconnectedRepository,
+      });
     }
   }
 
@@ -527,7 +551,9 @@ export function RepoSettingsPanel() {
                 ? "恢复 Repository"
                 : connected
                   ? "应用分支映射"
-                  : "绑定 Repository"}
+                  : replacingDisconnectedRepository
+                    ? "立即清理旧绑定并改绑"
+                    : "绑定 Repository"}
             </Button>
           </CardFooter>
         </form>
@@ -540,6 +566,17 @@ export function RepoSettingsPanel() {
         >
           Repository 已断开，但旧的受管 Git 数据仍在恢复宽限期内。使用相同的
           Provider 与仓库地址可以立即恢复并复用原记录；PAT 和分支映射可以更新。
+        </div>
+      ) : null}
+
+      {replacingDisconnectedRepository ? (
+        <div
+          className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-950"
+          role="status"
+        >
+          当前地址与已断开的 {disconnectedRepository?.display_name}{" "}
+          不同。继续后将立即删除旧绑定的 Core 托管本地 Git
+          数据与元数据，再绑定新仓库；不会删除或修改 GitHub 远程仓库。
         </div>
       ) : null}
 
@@ -605,6 +642,13 @@ export function RepoSettingsPanel() {
               ) : null}
             </CardContent>
             <CardFooter className="flex-wrap">
+              <Link
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium shadow-xs transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                href={`${base}/repository`}
+              >
+                <FileCode2 aria-hidden="true" className="size-4" />
+                查看 Repository
+              </Link>
               <Button
                 disabled={!canManage || busy}
                 onClick={() => sync.mutate()}
@@ -702,7 +746,7 @@ export function RepoSettingsPanel() {
           <CardHeader>
             <CardTitle className="text-base">最近 Code commits</CardTitle>
             <CardDescription>
-              仅用于验证连接；完整只读浏览位于求解记录页。
+              仅用于验证连接；完整只读浏览位于独立的 Repository 页面。
             </CardDescription>
           </CardHeader>
           <CardContent>
