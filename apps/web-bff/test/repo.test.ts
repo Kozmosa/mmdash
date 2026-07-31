@@ -120,13 +120,17 @@ describe("Repo browser routes", () => {
     const connected = await app.inject({
       headers: { cookie },
       method: "PUT",
-      payload: { settings_version: 1 },
+      payload: { replace_disconnected: true, settings_version: 1 },
       url: "/api/projects/project-1/repository",
     });
     expect(connected.statusCode).toBe(202);
     const [url, options] = fetchImplementation.mock.calls[0]!;
     expect(url).toBe("http://core.test/v1/projects/project-1/repository");
     expect(options?.method).toBe("PUT");
+    expect(JSON.parse(String(options?.body))).toEqual({
+      replace_disconnected: true,
+      settings_version: 1,
+    });
 
     for (const path of [
       "/api/projects/project-1/repository/commits",

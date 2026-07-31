@@ -81,36 +81,33 @@ export function RepoBrowser() {
     getNextPageParam: (lastPage: RepoCommitPage) =>
       lastPage.has_more ? lastPage.next_cursor : undefined,
     initialPageParam: "",
-    queryFn: ({ pageParam, signal }) =>
+    queryFn: ({ pageParam }) =>
       apiClient.request<RepoCommitPage>(`${repoPath}/commits`, {
         query: {
           cursor: pageParam || undefined,
           limit: 40,
           workspace: location.workspace,
         },
-        signal,
       }),
     queryKey: ["repo-commits", project.id, location.workspace],
   });
   const commit = useQuery({
     enabled: Boolean(revision),
-    queryFn: ({ signal }) =>
+    queryFn: () =>
       apiClient.request<RepoCommit>(
         `${repoPath}/commits/${encodeURIComponent(revision!)}`,
-        { signal },
       ),
     queryKey: ["repo-commit", project.id, revision],
   });
   const content = useQuery({
     enabled: Boolean(revision && location.path),
-    queryFn: ({ signal }) =>
+    queryFn: () =>
       apiClient.request<RepoFileContent>(`${repoPath}/content`, {
         query: {
           path: location.path,
           revision: revision!,
           workspace: location.workspace,
         },
-        signal,
       }),
     queryKey: [
       "repo-content",
@@ -164,7 +161,7 @@ export function RepoBrowser() {
             className="text-2xl font-semibold tracking-tight"
             id="repo-browser-title"
           >
-            求解记录 · Repository
+            Repository 浏览
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             只读浏览受管 Git 对象；目录和内容始终固定到完整 commit SHA。

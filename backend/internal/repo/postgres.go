@@ -187,6 +187,90 @@ func (store PostgresStore) ReconnectPending(
 	return store.GetByProject(ctx, snapshot.ProjectID)
 }
 
+// ClaimReplacement leases one disconnected Project repository so an explicit
+// replacement cannot race recovery or the delayed cleanup reaper.
+func (store PostgresStore) ClaimReplacement(
+	ctx context.Context,
+	projectID string,
+	now time.Time,
+	lease time.Duration,
+) (Repository, error) {
+	if projectID == "" || lease <= 0 {
+		return Repository{}, ErrInvalid
+	}
+	now = now.UTC()
+	var repositoryID string
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var leaseExpiresAt sql.NullTime
+		var lockedBy sql.NullString
+		var status RepositoryStatus
+		if err := tx.QueryRowContext(ctx, `
+			SELECT repository_id, status, sync_locked_by,
+			       sync_lease_expires_at
+			FROM repo_repositories
+			WHERE project_id = $1
+			FOR UPDATE
+		`, projectID).Scan(
+			&repositoryID, &status, &lockedBy, &leaseExpiresAt,
+		); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotConfigured
+			}
+			return err
+		}
+		if status != StatusDisconnected {
+			return ErrAlreadyConnected
+		}
+		if lockedBy.Valid &&
+			(!leaseExpiresAt.Valid || leaseExpiresAt.Time.After(now)) {
+			return ErrReconnectExpired
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE repo_repositories
+			SET cleanup_after = $2, sync_locked_by = 'repo-replace',
+			    sync_lease_expires_at = $2, updated_at = $1
+			WHERE repository_id = $3 AND status = 'disconnected'
+		`, now, now.Add(lease), repositoryID)
+		return requireAffected(result, err)
+	})
+	if err != nil {
+		return Repository{}, wrap("claim repository replacement", err)
+	}
+	return store.GetByID(ctx, repositoryID)
+}
+
+// CompleteReplacement removes metadata after the leased managed directory is
+// absent. Foreign-key cascades remove only state owned by the old repository.
+func (store PostgresStore) CompleteReplacement(
+	ctx context.Context,
+	repositoryID string,
+) error {
+	result, err := store.DB.ExecContext(ctx, `
+		DELETE FROM repo_repositories
+		WHERE repository_id = $1 AND status = 'disconnected'
+		  AND sync_locked_by = 'repo-replace'
+	`, repositoryID)
+	return requireAffected(result, err)
+}
+
+// ReleaseReplacement preserves the old disconnected binding when managed
+// storage cleanup fails before metadata deletion.
+func (store PostgresStore) ReleaseReplacement(
+	ctx context.Context,
+	repositoryID string,
+	cleanupAfter time.Time,
+	now time.Time,
+) error {
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE repo_repositories
+		SET cleanup_after = $2, sync_locked_by = NULL,
+		    sync_lease_expires_at = NULL, updated_at = $3
+		WHERE repository_id = $1 AND status = 'disconnected'
+		  AND sync_locked_by = 'repo-replace'
+	`, repositoryID, cleanupAfter.UTC(), now.UTC())
+	return requireAffected(result, err)
+}
+
 func (store PostgresStore) GetByProject(ctx context.Context, projectID string) (Repository, error) {
 	return store.get(ctx, `
 		SELECT repository_id, project_id, provider, canonical_remote_url,

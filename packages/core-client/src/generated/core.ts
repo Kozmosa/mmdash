@@ -2074,6 +2074,8 @@ export interface components {
     };
     RepoConnectRequest: {
       settings_version: number;
+      /** @description After explicit user confirmation, remove a disconnected repository's managed local data and metadata when the tested provider or canonical remote differs, then bind the tested repository. This never deletes remote Git data. */
+      replace_disconnected?: boolean;
     };
     RepoUpdateWorkspacesRequest: {
       code_branch: string;

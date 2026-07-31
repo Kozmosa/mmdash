@@ -4,6 +4,11 @@ Search this file by `operationId`, method/name, path, service, or module. The
 catalog is the human-readable lookup index; the linked OpenAPI contract is the
 machine-readable source of truth.
 
+`repo.connect` and `bff.repo.connect` accept the optional, explicitly confirmed
+`replace_disconnected` request flag. It authorizes removal of a different
+disconnected binding's Core-managed local data and metadata before creating the
+new binding; remote Git data is never deleted.
+
 Stage 3.16 adds the following account and collaboration operations:
 
 - Core: `auth.register`, `auth.me.update`, `auth.me.password.update`,

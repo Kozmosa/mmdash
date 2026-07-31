@@ -9,7 +9,7 @@ const navigation = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/projects/project-1/experiments",
+  usePathname: () => "/projects/project-1/repository",
   useRouter: () => ({ replace: navigation.replace }),
   useSearchParams: () => navigation.search,
 }));
@@ -107,9 +107,9 @@ describe("read-only Repo browser", () => {
           revision,
           workspace: "code",
         }),
-        signal: expect.any(AbortSignal),
       }),
     );
+    expect(contentCall?.[1]).not.toHaveProperty("signal");
     await waitFor(() => {
       expect(
         request.mock.calls.every(([, options]) =>
