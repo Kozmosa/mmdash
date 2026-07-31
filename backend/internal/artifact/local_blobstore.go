@@ -423,6 +423,7 @@ func (*LocalBlobStore) PresignGet(
 	context.Context,
 	string,
 	time.Duration,
+	GetObjectOptions,
 ) (SignedRequest, error) {
 	return SignedRequest{}, ErrDirectTransferUnsupported
 }

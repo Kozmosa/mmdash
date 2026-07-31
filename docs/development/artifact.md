@@ -176,5 +176,67 @@ expiry, full-size and SHA-256 mismatch, cross-role denial, version retention,
 trash restore, shared-Blob purge, and Local signed streaming. Inspect Core logs
 afterward for errors and secret-bearing values.
 
-Web/BFF is added by the following Stage 2 checkpoint. Artifact CLI commands
-remain deferred to Stage 3.
+## Web, BFF, and browser acceptance
+
+Web BFF proxies Artifact JSON and streaming routes without buffering complete
+parts or files. It rewrites only signed Core-local transfer URLs; MinIO/S3
+presigned URLs remain direct. The Project-scoped Web library provides:
+
+- bounded multipart upload with incremental SHA-256, retry, pause, resume,
+  refresh recovery, and cancel;
+- kind, source, status, and exact-tag filters;
+- editable display metadata, immutable Version history, historical restore,
+  secure preview, thumbnail, and controlled download;
+- source-file selection for `source_artifact_ids[]`, Project creation
+  hand-off, and Project-home rendering;
+- a distinct trash view with restore and confirmation-gated permanent purge.
+
+Direct object-storage download grants sign `response-content-disposition` and
+`response-content-type`, so the browser downloads the immutable filename
+instead of rendering images inline. Preview grants intentionally retain inline
+provider behavior.
+
+Stage 2 acceptance on 2026-07-31 used real Chrome, PostgreSQL, MinIO, Core,
+Web BFF, Web, MCP Gateway, and a one-shot Docker Worker. It verified a real
+multipart upload, a 512 x 356 decoded thumbnail, image structure summary,
+63,706-byte browser download, v2 upload, v1-to-v3 immutable restore, source
+binding, filters, trash retention of v1/v2/v3, and trash restore with no
+console errors. Preview state is Version-scoped and asynchronous: after v2 was
+uploaded and v1 was copied into current v3, the one-shot Worker processed both
+queued Version jobs. The final combined screenshot shows the current v3 image
+preview and structure summary together with retained v1/v2/v3 history.
+Reviewed screenshots:
+
+- [`artifact-uploader.png`](../screenshots/artifact-uploader.png)
+- [`artifact-library.png`](../screenshots/artifact-library.png)
+- [`artifact-detail-preview.png`](../screenshots/artifact-detail-preview.png)
+- [`artifact-versions.png`](../screenshots/artifact-versions.png)
+- [`artifact-trash.png`](../screenshots/artifact-trash.png)
+- [`artifact-project-home.png`](../screenshots/artifact-project-home.png)
+
+The final real-service checks were:
+
+```powershell
+$env:MMDASH_TEST_DATABASE_URL = "postgres://..."
+$env:MMDASH_TEST_MINIO_ENDPOINT = "http://localhost:9000"
+$env:MMDASH_TEST_CORE_URL = "http://localhost:8080"
+go test ./internal/artifact -count=1 -v
+
+$env:REPO_LOCAL_ALLOWED_ROOTS = "/tmp"
+$env:MMDASH_SMOKE_WORKER_MODE = "docker"
+$env:MMDASH_SMOKE_REPO_MODE = "docker"
+pnpm smoke
+pnpm smoke:artifact-preview
+pnpm check
+```
+
+The full Artifact suite ran every opt-in PostgreSQL, Local, MinIO, and Core
+HTTP test without skips. `pnpm check` passed with Python Worker 25/25 and no
+skips. A fresh database applied all 14 migrations through
+`000014_artifact_preview_transfer`; the preserved development database also
+contains `000013` and `000014`.
+
+The long-running Compose `worker` service requires a Project-scoped token and
+therefore exits when that intentionally empty development variable is used.
+Acceptance issues a real token and runs the Worker as a one-shot container.
+Artifact CLI commands remain deferred to Stage 3.

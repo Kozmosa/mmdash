@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -156,6 +157,14 @@ func TestPostgresMinIOMultipartServiceLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initialize MinIO upload: %v", err)
 	}
+	stranger := auth.Identity{
+		Kind: "session", User: auth.User{ID: generator.MustNew()},
+	}
+	if _, err := service.SignParts(
+		ctx, stranger, projectID, upload.UploadID, []int{1},
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("unauthorized MinIO part signing should fail: %v", err)
+	}
 	grants, err := service.SignParts(
 		ctx, owner, projectID, upload.UploadID, []int{1},
 	)
@@ -196,6 +205,17 @@ func TestPostgresMinIOMultipartServiceLifecycle(t *testing.T) {
 	if err != nil || !created || detail.CurrentVersion == nil {
 		t.Fatalf("confirm real MinIO upload: %#v, %v, %v", detail, created, err)
 	}
+	repeated, repeatedCreated, err := service.Confirm(
+		ctx, owner, projectID, upload.UploadID,
+		[]ConfirmPart{{PartNumber: 1, ETag: etag}},
+	)
+	if err != nil || repeatedCreated || repeated.CurrentVersion == nil ||
+		repeated.CurrentVersion.ID != detail.CurrentVersion.ID {
+		t.Fatalf(
+			"idempotent MinIO confirm: %#v created=%v err=%v",
+			repeated, repeatedCreated, err,
+		)
+	}
 	download, err := service.Download(
 		ctx, owner, projectID, detail.Artifact.ID, "",
 	)
@@ -223,6 +243,105 @@ func TestPostgresMinIOMultipartServiceLifecycle(t *testing.T) {
 		t.Fatalf("purge MinIO Artifact: %v", err)
 	}
 
+	multipartContents := bytes.Repeat(
+		[]byte("m"), int(MultipartMinPartBytes)+37,
+	)
+	multipartUpload, err := service.Initialize(
+		ctx, owner, projectID, InitializeUploadInput{
+			Filename:       "out-of-order.bin",
+			SizeBytes:      int64(len(multipartContents)),
+			SHA256:         digest(multipartContents),
+			MIMEType:       "application/octet-stream",
+			Kind:           KindAttachment,
+			IdempotencyKey: "minio-out-of-order",
+		},
+	)
+	if err != nil {
+		t.Fatalf("initialize multipart MinIO upload: %v", err)
+	}
+	multipartGrants, err := service.SignParts(
+		ctx, owner, projectID, multipartUpload.UploadID, []int{2, 1},
+	)
+	if err != nil {
+		t.Fatalf("sign out-of-order MinIO parts: %v", err)
+	}
+	grantsByPart := make(map[int]PartGrant, len(multipartGrants.Items))
+	for _, grant := range multipartGrants.Items {
+		grantsByPart[grant.PartNumber] = grant
+	}
+	partTwo := multipartContents[MultipartMinPartBytes:]
+	partTwoETag := putMinIOPart(t, grantsByPart[2], partTwo)
+	recoveredMultipart, err := service.GetUpload(
+		ctx, owner, projectID, multipartUpload.UploadID,
+	)
+	if err != nil || len(recoveredMultipart.CompletedParts) != 1 ||
+		recoveredMultipart.CompletedParts[0].PartNumber != 2 {
+		t.Fatalf(
+			"recover out-of-order MinIO part: %#v err=%v",
+			recoveredMultipart, err,
+		)
+	}
+	if _, _, err := service.Confirm(
+		ctx, owner, projectID, multipartUpload.UploadID,
+		[]ConfirmPart{{PartNumber: 2, ETag: partTwoETag}},
+	); !errors.Is(err, ErrUploadIncomplete) {
+		t.Fatalf("missing MinIO part should reject confirm: %v", err)
+	}
+	partOneETag := putMinIOPart(
+		t, grantsByPart[1], multipartContents[:MultipartMinPartBytes],
+	)
+	multipartDetail, multipartCreated, err := service.Confirm(
+		ctx, owner, projectID, multipartUpload.UploadID,
+		[]ConfirmPart{
+			{PartNumber: 1, ETag: partOneETag},
+			{PartNumber: 2, ETag: partTwoETag},
+		},
+	)
+	if err != nil || !multipartCreated || multipartDetail.CurrentVersion == nil {
+		t.Fatalf(
+			"confirm out-of-order MinIO parts: %#v created=%v err=%v",
+			multipartDetail, multipartCreated, err,
+		)
+	}
+	if err := service.Trash(
+		ctx, owner, projectID, multipartDetail.Artifact.ID,
+	); err != nil {
+		t.Fatalf("trash multipart MinIO Artifact: %v", err)
+	}
+	if err := service.Purge(
+		ctx, owner, projectID, multipartDetail.Artifact.ID,
+	); err != nil {
+		t.Fatalf("purge multipart MinIO Artifact: %v", err)
+	}
+
+	hashContents := []byte("actual MinIO hash bytes")
+	hashUpload, err := service.Initialize(
+		ctx, owner, projectID, InitializeUploadInput{
+			Filename:       "hash-mismatch.txt",
+			SizeBytes:      int64(len(hashContents)),
+			SHA256:         digest([]byte("different MinIO hash bytes")),
+			MIMEType:       "text/plain",
+			Kind:           KindAttachment,
+			IdempotencyKey: "minio-hash-mismatch",
+		},
+	)
+	if err != nil {
+		t.Fatalf("initialize MinIO hash mismatch: %v", err)
+	}
+	hashGrants, err := service.SignParts(
+		ctx, owner, projectID, hashUpload.UploadID, []int{1},
+	)
+	if err != nil {
+		t.Fatalf("sign MinIO hash mismatch part: %v", err)
+	}
+	hashETag := putMinIOPart(t, hashGrants.Items[0], hashContents)
+	if _, _, err := service.Confirm(
+		ctx, owner, projectID, hashUpload.UploadID,
+		[]ConfirmPart{{PartNumber: 1, ETag: hashETag}},
+	); !errors.Is(err, ErrHashMismatch) {
+		t.Fatalf("expected MinIO full SHA-256 mismatch, got %v", err)
+	}
+
 	cancelContents := []byte("cancel")
 	cancelUpload, err := service.Initialize(
 		ctx, owner, projectID, InitializeUploadInput{
@@ -244,4 +363,60 @@ func TestPostgresMinIOMultipartServiceLifecycle(t *testing.T) {
 	); err != nil {
 		t.Fatalf("repeat abort real MinIO upload: %v", err)
 	}
+
+	expiredUpload, err := service.Initialize(
+		ctx, owner, projectID, InitializeUploadInput{
+			Filename:       "expired.txt",
+			SizeBytes:      7,
+			SHA256:         digest([]byte("expired")),
+			MIMEType:       "text/plain",
+			Kind:           KindAttachment,
+			IdempotencyKey: "minio-expired",
+		},
+	)
+	if err != nil {
+		t.Fatalf("initialize expiring MinIO upload: %v", err)
+	}
+	service.Clock = clock.Fixed{Time: now.Add(2 * time.Hour)}
+	expiredCount, err := service.ExpireUploads(ctx, 10)
+	if err != nil || expiredCount != 1 {
+		t.Fatalf("expire real MinIO upload: count=%d err=%v", expiredCount, err)
+	}
+	expiredState, err := store.GetUpload(
+		ctx, projectID, expiredUpload.UploadID,
+	)
+	if err != nil || expiredState.Status != UploadExpired {
+		t.Fatalf("expired MinIO upload state: %#v err=%v", expiredState, err)
+	}
+}
+
+func putMinIOPart(t *testing.T, grant PartGrant, contents []byte) string {
+	t.Helper()
+	request, err := http.NewRequest(
+		http.MethodPut, grant.Transfer.URL, bytes.NewReader(contents),
+	)
+	if err != nil {
+		t.Fatalf("create MinIO part PUT: %v", err)
+	}
+	request.ContentLength = int64(len(contents))
+	for key, value := range grant.Transfer.Headers {
+		request.Header.Set(key, value)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("PUT MinIO part %d: %v", grant.PartNumber, err)
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"unexpected MinIO part %d PUT status: %d",
+			grant.PartNumber, response.StatusCode,
+		)
+	}
+	etag := response.Header.Get("ETag")
+	if etag == "" {
+		t.Fatalf("MinIO part %d PUT did not return ETag", grant.PartNumber)
+	}
+	return etag
 }

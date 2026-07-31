@@ -145,6 +145,61 @@ describe("Artifact detail drawer", () => {
     expect(update).not.toHaveProperty("kind");
   });
 
+  it("renders the primary preview structure alongside its thumbnail", async () => {
+    mocks.listPreviews.mockResolvedValue({
+      items: [
+        {
+          created_at: "2026-07-30T00:00:00Z",
+          error_code: null,
+          preview_id: "00000000-0000-4000-8000-000000000004",
+          preview_type: "image",
+          status: "available",
+          structural_summary: {
+            format: "png",
+            height: 1000,
+            width: 1440,
+          },
+          transfer: null,
+          updated_at: "2026-07-30T00:00:00Z",
+          version_id: version.version_id,
+        },
+        {
+          created_at: "2026-07-30T00:00:00Z",
+          error_code: null,
+          preview_id: "00000000-0000-4000-8000-000000000005",
+          preview_type: "thumbnail",
+          status: "available",
+          structural_summary: {},
+          transfer: {
+            expires_at: "2026-07-30T00:15:00Z",
+            headers: {},
+            method: "GET",
+            url: "http://localhost:9000/thumbnail.png?signature=test",
+          },
+          updated_at: "2026-07-30T00:00:00Z",
+          version_id: version.version_id,
+        },
+      ],
+    });
+
+    render(
+      <ArtifactDetailDrawer
+        artifactId={artifactId}
+        initialDetail={detail as never}
+        onClose={vi.fn()}
+        projectId={projectId}
+        trashView={false}
+      />,
+      { wrapper: Providers },
+    );
+
+    expect(
+      await screen.findByAltText(`${artifactId} 缩略图`),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/"width": 1440/)).toBeInTheDocument();
+    expect(screen.getByText(/"height": 1000/)).toBeInTheDocument();
+  });
+
   it("uses trash-list detail without active-only detail, preview, or download grants", async () => {
     render(
       <ArtifactDetailDrawer
