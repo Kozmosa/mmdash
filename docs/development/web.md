@@ -6,21 +6,27 @@ Git, Hermes, or Box directly.
 
 ## Route map
 
-| Route                               | Purpose                         |
-| ----------------------------------- | ------------------------------- |
-| `/login`                            | Browser-authentication shell    |
-| `/projects`                         | Project-list shell              |
-| `/projects/[projectId]`             | Project workspace and home slot |
-| `/projects/[projectId]/agent`       | mmdash Agent slot               |
-| `/projects/[projectId]/progress`    | Progress slot                   |
-| `/projects/[projectId]/models`      | Model slot                      |
-| `/projects/[projectId]/article`     | Article slot                    |
-| `/projects/[projectId]/experiments` | Experiment slot                 |
-| `/projects/[projectId]/settings`    | Module settings slots           |
+| Route                               | Purpose                              |
+| ----------------------------------- | ------------------------------------ |
+| `/login`                            | Browser-authentication shell         |
+| `/projects`                         | Project-list shell                   |
+| `/projects/[projectId]`             | Project workspace and home slot      |
+| `/projects/[projectId]/agent`       | mmdash Agent slot                    |
+| `/projects/[projectId]/progress`    | Progress slot                        |
+| `/projects/[projectId]/models`      | Model slot                           |
+| `/projects/[projectId]/article`     | Article slot                         |
+| `/projects/[projectId]/experiments` | Experiment-record slot               |
+| `/projects/[projectId]/repository`  | Read-only managed Repository browser |
+| `/projects/[projectId]/settings`    | Module settings slots                |
 
 The canonical seven-item navigation registry is
 `apps/web/src/lib/navigation.ts`. A feature route must be registered there and
 tested before it appears in the sidebar.
+
+The Repository browser is intentionally reached from Repo settings and is not
+registered in the workspace sidebar. The experiment route remains reserved for
+experiment records whose future detail view binds a commit and combines its
+file tree, file preview, and result analysis.
 
 ## Context and data boundaries
 

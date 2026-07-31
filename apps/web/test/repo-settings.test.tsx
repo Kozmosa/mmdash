@@ -158,6 +158,9 @@ describe("Repo settings flow", () => {
     await waitFor(() => expect(provider).toBeDisabled());
     expect(remoteUrl).toBeDisabled();
     expect(screen.getByText(/acme\/model/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "查看 Repository" }),
+    ).toHaveAttribute("href", "/projects/project-1/repository");
 
     fireEvent.click(screen.getByRole("button", { name: "断开" }));
 
@@ -250,7 +253,7 @@ describe("Repo settings flow", () => {
       target: { value: "https://github.com/acme/replacement" },
     });
     expect(
-      screen.getByRole("button", { name: "绑定 Repository" }),
+      screen.getByRole("button", { name: "立即清理旧绑定并改绑" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "恢复 Repository" }),
@@ -284,30 +287,68 @@ describe("Repo settings flow", () => {
     expect(await screen.findByText("pending")).toBeInTheDocument();
   });
 
-  it("does not offer recovery after a different remote was saved", async () => {
-    vi.spyOn(apiClient, "request").mockImplementation(async (path) => {
-      if (path.endsWith("/permissions")) {
-        return {
-          permissions: ["project.repo.manage", "project.repo.read"],
-          role: "owner",
-        } as never;
-      }
-      if (path.includes("/settings/repo.connection")) {
-        const saved = settingFixture();
-        return {
-          ...saved,
-          values: {
-            ...saved.values,
-            remote_url: "https://github.com/acme/replacement",
-          },
-          version: 4,
-        } as never;
-      }
-      if (path.endsWith("/repository")) {
-        return { ...repositoryFixture(), status: "disconnected" } as never;
-      }
-      throw new Error(`unexpected request ${path}`);
-    });
+  it("immediately cleans a disconnected binding before binding a different remote", async () => {
+    let replaced = false;
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockImplementation(async (path, options) => {
+        if (path.endsWith("/permissions")) {
+          return {
+            permissions: ["project.repo.manage", "project.repo.read"],
+            role: "owner",
+          } as never;
+        }
+        if (path.includes("/settings/repo.connection")) {
+          const saved = settingFixture();
+          return {
+            ...saved,
+            values: {
+              ...saved.values,
+              remote_url: "https://github.com/acme/replacement",
+            },
+            version: options?.method === "PATCH" ? 5 : 4,
+          } as never;
+        }
+        if (path.endsWith("/repository/test")) {
+          return {
+            branches: ["main", "article", "result"],
+            checked_at: "2026-07-31T00:00:00Z",
+            checks: [
+              { name: "provider", status: "passed" },
+              { name: "authentication", status: "passed" },
+            ],
+            default_branch: "main",
+            status: "passed",
+          } as never;
+        }
+        if (path.endsWith("/repository/branches")) {
+          return { items: [] } as never;
+        }
+        if (path.endsWith("/repository")) {
+          if (options?.method === "PUT") {
+            replaced = true;
+            return {
+              ...repositoryFixture(),
+              display_name: "acme/replacement",
+              remote_url: "https://github.com/acme/replacement",
+              settings_version: 5,
+              status: "pending",
+            } as never;
+          }
+          if (replaced) {
+            return {
+              ...repositoryFixture(),
+              display_name: "acme/replacement",
+              remote_url: "https://github.com/acme/replacement",
+              settings_version: 5,
+              status: "pending",
+            } as never;
+          }
+          return { ...repositoryFixture(), status: "disconnected" } as never;
+        }
+        throw new Error(`unexpected request ${path} ${options?.method}`);
+      });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(
       <TestQueryProvider>
@@ -320,7 +361,7 @@ describe("Repo settings flow", () => {
       expect(remoteUrl).toHaveValue("https://github.com/acme/replacement"),
     );
     expect(
-      screen.getByRole("button", { name: "绑定 Repository" }),
+      screen.getByRole("button", { name: "立即清理旧绑定并改绑" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "恢复 Repository" }),
@@ -328,6 +369,27 @@ describe("Repo settings flow", () => {
     expect(
       screen.queryByText(/可以立即恢复并复用原记录/),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/不会删除或修改 GitHub 远程仓库/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "立即清理旧绑定并改绑" }),
+    );
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith("/projects/project-1/repository", {
+        body: {
+          replace_disconnected: true,
+          settings_version: 5,
+        },
+        method: "PUT",
+      }),
+    );
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("GitHub 远程仓库不会被删除"),
+    );
+    expect(await screen.findByText("pending")).toBeInTheDocument();
   });
 });
 

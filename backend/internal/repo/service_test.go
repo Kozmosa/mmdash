@@ -59,11 +59,24 @@ func (source *serviceSettings) Update(
 }
 
 type serviceStore struct {
-	created      int
-	disconnected int
-	reconnected  int
-	snapshot     ConnectionSnapshot
-	value        Repository
+	claimedReplacement   int
+	completedReplacement int
+	created              int
+	disconnected         int
+	reconnected          int
+	releasedReplacement  int
+	snapshot             ConnectionSnapshot
+	value                Repository
+}
+
+type replacementStorage struct {
+	err     error
+	removed []string
+}
+
+func (storage *replacementStorage) RemoveRepository(storageKey string) error {
+	storage.removed = append(storage.removed, storageKey)
+	return storage.err
 }
 
 func (*serviceStore) ClaimSync(
@@ -78,6 +91,20 @@ func (*serviceStore) CompleteSync(
 	return nil
 }
 
+func (store *serviceStore) CompleteReplacement(
+	_ context.Context,
+	repositoryID string,
+) error {
+	if store.value.ID != repositoryID ||
+		store.value.SyncLockedBy == nil ||
+		*store.value.SyncLockedBy != "repo-replace" {
+		return ErrConflict
+	}
+	store.completedReplacement++
+	store.value = Repository{}
+	return nil
+}
+
 func (store *serviceStore) CreatePending(
 	_ context.Context,
 	_ string,
@@ -88,7 +115,31 @@ func (store *serviceStore) CreatePending(
 	store.value = Repository{
 		ID: "repository-1", ProjectID: snapshot.ProjectID,
 		Provider: snapshot.Provider, Webhook: Webhook{HookID: "hook-1"},
+		Status: StatusPending,
 	}
+	return store.value, nil
+}
+
+func (store *serviceStore) ClaimReplacement(
+	_ context.Context,
+	projectID string,
+	now time.Time,
+	lease time.Duration,
+) (Repository, error) {
+	if store.value.ProjectID != projectID {
+		return Repository{}, ErrNotConfigured
+	}
+	if store.value.Status != StatusDisconnected {
+		return Repository{}, ErrAlreadyConnected
+	}
+	if store.value.SyncLockedBy != nil {
+		return Repository{}, ErrReconnectExpired
+	}
+	owner := "repo-replace"
+	expiresAt := now.Add(lease)
+	store.claimedReplacement++
+	store.value.SyncLockedBy = &owner
+	store.value.SyncLeaseExpiresAt = &expiresAt
 	return store.value, nil
 }
 
@@ -161,6 +212,23 @@ func (store *serviceStore) ReconnectPending(
 	store.value.UpdatedAt = now
 	store.value.Workspaces = mappingList(snapshot.Workspaces, now)
 	return store.value, nil
+}
+
+func (store *serviceStore) ReleaseReplacement(
+	_ context.Context,
+	repositoryID string,
+	cleanupAfter time.Time,
+	now time.Time,
+) error {
+	if store.value.ID != repositoryID {
+		return ErrNotConfigured
+	}
+	store.releasedReplacement++
+	store.value.CleanupAfter = &cleanupAfter
+	store.value.SyncLockedBy = nil
+	store.value.SyncLeaseExpiresAt = nil
+	store.value.UpdatedAt = now
+	return nil
 }
 
 func (*serviceStore) RenewSyncLease(context.Context, string, string, time.Time) error {
@@ -327,7 +395,8 @@ func TestServiceConnectUsesTestedSettingsAndReturnsWebhookSecretOnce(t *testing.
 	}
 	identity := auth.Identity{User: auth.User{ID: "user-1"}}
 	connected, err := service.Connect(
-		context.Background(), identity, "project-1", 7,
+		context.Background(), identity, "project-1",
+		ConnectRequest{SettingsVersion: 7},
 	)
 	if err != nil {
 		t.Fatalf("connect repository: %v", err)
@@ -372,7 +441,7 @@ func TestServiceConnectRejectsStaleSettingsVersion(t *testing.T) {
 		context.Background(),
 		auth.Identity{User: auth.User{ID: "user-1"}},
 		"project-1",
-		2,
+		ConnectRequest{SettingsVersion: 2},
 	)
 	if !errors.Is(err, ErrConflict) || store.created != 0 {
 		t.Fatalf("expected stale version conflict, got %v", err)
@@ -406,7 +475,7 @@ func TestServiceConnectRestoresDisconnectedRepositoryInPlace(t *testing.T) {
 		context.Background(),
 		auth.Identity{User: auth.User{ID: "user-1"}},
 		"project-1",
-		1,
+		ConnectRequest{SettingsVersion: 1},
 	)
 	if err != nil {
 		t.Fatalf("restore disconnected repository: %v", err)
@@ -455,12 +524,113 @@ func TestServiceConnectRejectsDifferentRemoteDuringRecoveryGrace(t *testing.T) {
 		context.Background(),
 		auth.Identity{User: auth.User{ID: "user-1"}},
 		"project-1",
-		1,
+		ConnectRequest{SettingsVersion: 1},
 	)
 	if !errors.Is(err, ErrReconnectMismatch) ||
 		store.created != 0 ||
 		store.reconnected != 0 {
 		t.Fatalf("expected reconnect remote mismatch, got %v", err)
+	}
+}
+
+func TestServiceConnectReplacesDifferentDisconnectedRemoteAfterConfirmation(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	cleanupAfter := now.Add(time.Hour)
+	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
+	settingSource.resolved.Values["remote_url"] = "C:/repositories/different"
+	providers := provider.NewRegistry()
+	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	store := &serviceStore{value: Repository{
+		CanonicalRemoteURL: "C:/repositories/source",
+		CleanupAfter:       &cleanupAfter,
+		ID:                 "old-repository",
+		ProjectID:          "project-1",
+		Provider:           ProviderLocal,
+		Status:             StatusDisconnected,
+		StorageKey:         "old-storage",
+	}}
+	storage := &replacementStorage{}
+	service := Service{
+		Access: &serviceAccess{}, Clock: clock.Fixed{Time: now},
+		Providers: providers, Settings: settingSource, Storage: storage,
+		Store: store,
+	}
+
+	replaced, err := service.Connect(
+		context.Background(),
+		auth.Identity{User: auth.User{ID: "user-1"}},
+		"project-1",
+		ConnectRequest{
+			ReplaceDisconnected: true,
+			SettingsVersion:     1,
+		},
+	)
+	if err != nil {
+		t.Fatalf("replace disconnected repository: %v", err)
+	}
+	if store.claimedReplacement != 1 ||
+		store.completedReplacement != 1 ||
+		store.releasedReplacement != 0 ||
+		store.created != 1 {
+		t.Fatalf("unexpected replacement lifecycle: %#v", store)
+	}
+	if len(storage.removed) != 1 || storage.removed[0] != "old-storage" {
+		t.Fatalf("old managed storage was not removed: %#v", storage.removed)
+	}
+	if store.snapshot.CanonicalRemoteURL != "C:/repositories/different" ||
+		replaced.Status != StatusPending {
+		t.Fatalf("different repository was not bound: %#v", replaced)
+	}
+}
+
+func TestServiceConnectPreservesDisconnectedBindingWhenReplacementCleanupFails(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	cleanupAfter := now.Add(time.Hour)
+	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
+	settingSource.resolved.Values["remote_url"] = "C:/repositories/different"
+	providers := provider.NewRegistry()
+	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	store := &serviceStore{value: Repository{
+		CanonicalRemoteURL: "C:/repositories/source",
+		CleanupAfter:       &cleanupAfter,
+		ID:                 "old-repository",
+		ProjectID:          "project-1",
+		Provider:           ProviderLocal,
+		Status:             StatusDisconnected,
+		StorageKey:         "old-storage",
+	}}
+	storage := &replacementStorage{err: errors.New("storage unavailable")}
+	service := Service{
+		Access: &serviceAccess{}, Clock: clock.Fixed{Time: now},
+		Providers: providers, Settings: settingSource, Storage: storage,
+		Store: store,
+	}
+
+	_, err := service.Connect(
+		context.Background(),
+		auth.Identity{User: auth.User{ID: "user-1"}},
+		"project-1",
+		ConnectRequest{
+			ReplaceDisconnected: true,
+			SettingsVersion:     1,
+		},
+	)
+	if !errors.Is(err, ErrReplacementCleanup) ||
+		store.claimedReplacement != 1 ||
+		store.completedReplacement != 0 ||
+		store.releasedReplacement != 1 ||
+		store.created != 0 {
+		t.Fatalf("failed replacement did not preserve old binding: %v %#v", err, store)
+	}
+	if store.value.ID != "old-repository" ||
+		store.value.SyncLockedBy != nil ||
+		store.value.CleanupAfter == nil ||
+		!store.value.CleanupAfter.Equal(cleanupAfter) {
+		t.Fatalf("old disconnected binding was not restored: %#v", store.value)
 	}
 }
 
@@ -491,7 +661,7 @@ func TestServiceConnectRejectsRecoveryAfterCleanupLease(t *testing.T) {
 		context.Background(),
 		auth.Identity{User: auth.User{ID: "user-1"}},
 		"project-1",
-		1,
+		ConnectRequest{SettingsVersion: 1},
 	)
 	if !errors.Is(err, ErrReconnectExpired) ||
 		store.created != 0 ||

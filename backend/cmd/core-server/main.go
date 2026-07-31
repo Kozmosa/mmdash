@@ -352,6 +352,7 @@ func run(logger *logging.Logger) error {
 			Storage:      repoStorage,
 		},
 		Settings: settingsService,
+		Storage:  repoStorage,
 		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
 		Webhooks: repoStore, Writer: repoWriter,
 	}
