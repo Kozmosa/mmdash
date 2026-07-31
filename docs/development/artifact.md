@@ -197,20 +197,23 @@ instead of rendering images inline. Preview grants intentionally retain inline
 provider behavior.
 
 Stage 2 acceptance on 2026-07-31 used real Chrome, PostgreSQL, MinIO, Core,
-Web BFF, Web, MCP Gateway, and a one-shot Docker Worker. It verified a real
-multipart upload, a 512 x 356 decoded thumbnail, image structure summary,
-63,706-byte browser download, v2 upload, v1-to-v3 immutable restore, source
-binding, filters, trash retention of v1/v2/v3, and trash restore with no
-console errors. Preview state is Version-scoped and asynchronous: after v2 was
-uploaded and v1 was copied into current v3, the one-shot Worker processed both
-queued Version jobs. The final combined screenshot shows the current v3 image
-preview and structure summary together with retained v1/v2/v3 history.
+Web BFF, Web, MCP Gateway, and one-shot Docker Workers. It verified real image
+and PDF multipart uploads, a 512 x 356 image thumbnail, a 362 x 512 PDF
+first-page thumbnail, image structure summary, a two-page PDF page count and
+bounded two-page text extraction, a 63,706-byte browser download, v2 upload,
+v1-to-v3 immutable restore, source binding, filters, trash retention of
+v1/v2/v3, and trash restore with no console errors. Preview state is
+Version-scoped and asynchronous. Every available Version row has an independent
+preview action; real Chrome switched from current v3 to historical v1 and
+rendered v1's own preview. The PDF detail rendered its first page, page count,
+and extracted text together.
 Reviewed screenshots:
 
 - [`artifact-uploader.png`](../screenshots/artifact-uploader.png)
 - [`artifact-library.png`](../screenshots/artifact-library.png)
 - [`artifact-detail-preview.png`](../screenshots/artifact-detail-preview.png)
 - [`artifact-versions.png`](../screenshots/artifact-versions.png)
+- [`artifact-pdf-preview.png`](../screenshots/artifact-pdf-preview.png)
 - [`artifact-trash.png`](../screenshots/artifact-trash.png)
 - [`artifact-project-home.png`](../screenshots/artifact-project-home.png)
 
@@ -231,8 +234,8 @@ pnpm check
 ```
 
 The full Artifact suite ran every opt-in PostgreSQL, Local, MinIO, and Core
-HTTP test without skips. `pnpm check` passed with Python Worker 25/25 and no
-skips. A fresh database applied all 14 migrations through
+HTTP test without skips. `pnpm check` passed with Web 56/56 and Python Worker
+25/25 with no skips. A fresh database applied all 14 migrations through
 `000014_artifact_preview_transfer`; the preserved development database also
 contains `000013` and `000014`.
 
