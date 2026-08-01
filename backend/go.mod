@@ -1,6 +1,6 @@
 module github.com/mmdash/mmdash/backend
 
-go 1.17
+go 1.26
 
 require (
 	github.com/jackc/pgconn v1.14.3
