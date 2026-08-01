@@ -184,6 +184,9 @@ export function createServiceConfiguration(
       },
       web: {
         BFF_INTERNAL_URL: `http://${host}:${ports.bff}`,
+        CORE_INTERNAL_URL: coreUrl,
+        MCP_INTERNAL_URL: `http://${host}:${ports.mcp}`,
+        MMDASH_LOCAL_UNIFIED_PROXY: "true",
       },
       webBff: {
         BFF_COOKIE_SECRET: "local-pixi-cookie-secret-change-before-production",
