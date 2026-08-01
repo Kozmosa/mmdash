@@ -40,8 +40,9 @@ S3-compatible deployments.
 - Worker creates bounded previews, thumbnails, and structural summaries.
   `SemanticDescriptionGenerator` is an interface only; LLM/multimodal
   description and automatic `recommended_usage` are deferred to Article.
-- Artifact CLI commands and the CLI login/project-binding product flow are
-  deferred to Stage 3.
+- CLI login and Project selection are deferred to the Stage 3 Go CLI
+  foundation. Artifact commands are added by a later Artifact iteration through
+  the CLI feature registry.
 
 ## Consequences
 

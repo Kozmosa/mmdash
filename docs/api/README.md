@@ -24,7 +24,7 @@ machine-readable contracts live in
 ## Public ingress
 
 The repository-root `Caddyfile` is the authoritative public route map for
-`https://mmdash.com`:
+`https://mmdash.moe`:
 
 | Public path         | Upstream            | Traffic                                |
 | ------------------- | ------------------- | -------------------------------------- |

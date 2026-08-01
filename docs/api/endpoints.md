@@ -23,6 +23,11 @@ Stage 3.16 adds the following account and collaboration operations:
   `bff.projects.invitations.list`, `bff.projects.invitations.create`, and
   `bff.projects.invitations.revoke`.
 
+Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
+`auth.device.verify`, and `auth.device.token`, plus browser approval through
+`bff.auth.device.verify`. MCP `project.list` and `project.get` are cataloged in
+[`mcp-tools.md`](mcp-tools.md).
+
 | Service     | Kind          | Method / name | Path                                                                             | `operationId`                              | Module               | Contract           |
 | ----------- | ------------- | ------------- | -------------------------------------------------------------------------------- | ------------------------------------------ | -------------------- | ------------------ |
 | Core        | HTTP          | `GET`         | `/health/live`                                                                   | `health.live`                              | platform health      | `core.yaml`        |
@@ -31,6 +36,10 @@ Stage 3.16 adds the following account and collaboration operations:
 | Core        | Metrics       | `GET`         | `/metrics`                                                                       | `observability.metrics.get`                | platform metrics     | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/example`                                                                    | `example.check`                            | engineering baseline | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/auth/login`                                                                 | `auth.login`                               | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/refresh`                                                               | `auth.refresh`                             | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/device/authorize`                                                      | `auth.device.authorize`                    | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/device/verify`                                                         | `auth.device.verify`                       | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/device/token`                                                          | `auth.device.token`                        | auth                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/auth/logout`                                                                | `auth.logout`                              | auth                 | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/auth/me`                                                                    | `auth.me`                                  | auth                 | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/auth/tokens`                                                                | `auth.tokens.list`                         | auth                 | `core.yaml`        |
@@ -84,6 +93,7 @@ Stage 3.16 adds the following account and collaboration operations:
 | Web BFF     | HTTP          | `GET`         | `/health/ready`                                                                  | `bff.health.ready`                         | health               | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/example`                                                                   | `bff.example.check`                        | example proxy        | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/auth/login`                                                                | `bff.auth.login`                           | auth                 | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/auth/device/verify`                                                        | `bff.auth.device.verify`                   | auth                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/auth/me`                                                                   | `bff.auth.me`                              | auth                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/auth/logout`                                                               | `bff.auth.logout`                          | auth                 | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects`                                                                  | `bff.projects.list`                        | project              | `web-bff.yaml`     |

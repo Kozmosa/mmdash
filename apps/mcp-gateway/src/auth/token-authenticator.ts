@@ -1,4 +1,5 @@
 import type { AuthInfo } from "@modelcontextprotocol/server";
+import { CoreClient, CoreClientError } from "@mmdash/core-client";
 import { createHash, timingSafeEqual } from "node:crypto";
 
 import type { McpGatewayConfig } from "../config.js";
@@ -7,6 +8,7 @@ import { GatewayError } from "../errors/gateway-error.js";
 export type TokenKind = "agent" | "cli";
 
 export type Principal = {
+  delegated: boolean;
   id: string;
   kind: TokenKind;
   projects: readonly string[];
@@ -21,64 +23,126 @@ type TokenRecord = {
 export class TokenAuthenticator {
   private readonly records: readonly TokenRecord[];
 
-  constructor(records: readonly TokenRecord[]) {
+  constructor(
+    records: readonly TokenRecord[],
+    private readonly coreClient?: CoreClient,
+    private readonly delegatedTools: readonly string[] = [],
+  ) {
     this.records = [...records];
   }
 
-  authenticate(authorization: string | null): {
+  async authenticate(
+    authorization: string | null,
+    requestId: string,
+  ): Promise<{
     authInfo: AuthInfo;
     principal: Principal;
-  } {
+  }> {
     const token = readBearerToken(authorization);
     const record = this.records.find((candidate) =>
       secretEquals(candidate.token, token),
     );
-    if (!record) {
-      throw new GatewayError(
-        "UNAUTHENTICATED",
-        "A valid CLI or Agent token is required",
-        401,
-      );
-    }
+    const principal =
+      record?.principal ?? (await this.authenticateDelegated(token, requestId));
     return {
       authInfo: {
-        clientId: record.principal.id,
-        extra: { principal: record.principal },
-        scopes: [
-          "mcp:tools",
-          `principal:${record.principal.kind}`,
-        ],
-        token: record.token,
+        clientId: principal.id,
+        extra: { principal },
+        scopes: ["mcp:tools", `principal:${principal.kind}`],
+        token,
       },
-      principal: record.principal,
+      principal,
     };
   }
 
-  static fromConfig(config: McpGatewayConfig): TokenAuthenticator {
-    return new TokenAuthenticator([
-      {
+  private async authenticateDelegated(
+    token: string,
+    requestId: string,
+  ): Promise<Principal> {
+    if (!this.coreClient) {
+      throw unauthenticated();
+    }
+    try {
+      const identity = await this.coreClient.currentIdentity({
+        accessToken: token,
+        requestId,
+      });
+      if (identity.kind !== "session" && identity.kind !== "api") {
+        throw unauthenticated();
+      }
+      return {
+        delegated: true,
+        id: `cli:${identity.user.id}`,
+        kind: "cli",
+        projects: identity.project_id ? [identity.project_id] : ["*"],
+        tools: this.delegatedTools,
+      };
+    } catch (error) {
+      if (error instanceof GatewayError) {
+        throw error;
+      }
+      if (error instanceof CoreClientError && error.status < 500) {
+        throw unauthenticated();
+      }
+      if (error instanceof CoreClientError || error instanceof TypeError) {
+        throw new GatewayError(
+          "AUTH_SERVICE_UNAVAILABLE",
+          "Authentication is temporarily unavailable",
+          503,
+        );
+      }
+      throw new GatewayError(
+        "AUTH_SERVICE_UNAVAILABLE",
+        "Authentication is temporarily unavailable",
+        503,
+      );
+    }
+  }
+
+  static fromConfig(
+    config: McpGatewayConfig,
+    coreClient?: CoreClient,
+  ): TokenAuthenticator {
+    const records: TokenRecord[] = [];
+    if (config.cliToken) {
+      records.push({
         principal: {
+          delegated: false,
           id: tokenIdentity("cli", config.cliToken),
           kind: "cli",
           projects: config.cliProjects,
           tools: config.cliTools,
         },
         token: config.cliToken,
-      },
-      {
+      });
+    }
+    if (config.agentToken) {
+      records.push({
         principal: {
+          delegated: false,
           id: tokenIdentity("agent", config.agentToken),
           kind: "agent",
           projects: config.agentProjects,
           tools: config.agentTools,
         },
         token: config.agentToken,
-      },
-    ]);
+      });
+    }
+    return new TokenAuthenticator(records, coreClient, config.cliTools);
   }
 }
 
-export function principalFromAuthInfo(authInfo: AuthInfo | undefined): Principal {
+function unauthenticated(): GatewayError {
+  return new GatewayError(
+    "UNAUTHENTICATED",
+    "A valid user or Agent token is required",
+    401,
+  );
+}
+
+export function principalFromAuthInfo(
+  authInfo: AuthInfo | undefined,
+): Principal {
   const principal = authInfo?.extra?.principal;
   if (
     typeof principal !== "object" ||

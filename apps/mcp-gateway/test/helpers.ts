@@ -8,7 +8,7 @@ export const testConfig: McpGatewayConfig = {
   agentToken,
   agentTools: ["system.echo"],
   allowedHosts: ["test.local", "127.0.0.1"],
-  allowedOrigins: ["https://mmdash.com"],
+  allowedOrigins: ["https://mmdash.moe"],
   cliProjects: ["*"],
   cliToken,
   cliTools: ["*"],

@@ -13,6 +13,7 @@ import (
 )
 
 type memoryStore struct {
+	devices      map[string]DeviceAuthorization
 	passwordHash string
 	sessions     map[string]Session
 	tokens       map[string]Token
@@ -85,9 +86,77 @@ func (projectAuthorizerStub) AuthorizeTokenManagement(
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
+		devices:  map[string]DeviceAuthorization{},
 		sessions: map[string]Session{},
 		tokens:   map[string]Token{},
 	}
+}
+
+func (store *memoryStore) CreateDeviceAuthorization(_ context.Context, authorization DeviceAuthorization) error {
+	store.devices[authorization.DeviceCodeHash] = authorization
+	return nil
+}
+
+func (store *memoryStore) DecideDeviceAuthorization(_ context.Context, userCodeHash string, userID string, approve bool, now time.Time) error {
+	for key, authorization := range store.devices {
+		if authorization.UserCodeHash != userCodeHash {
+			continue
+		}
+		if authorization.Status != "pending" {
+			return ErrConflict
+		}
+		if !authorization.ExpiresAt.After(now) {
+			return ErrAuthorizationExpired
+		}
+		authorization.UserID = userID
+		if approve {
+			authorization.Status = "approved"
+		} else {
+			authorization.Status = "denied"
+		}
+		store.devices[key] = authorization
+		return nil
+	}
+	return ErrNotFound
+}
+
+func (store *memoryStore) ExchangeDeviceAuthorization(_ context.Context, deviceCodeHash string, now time.Time, createSession func(User) (Session, error)) (Session, User, error) {
+	authorization, ok := store.devices[deviceCodeHash]
+	if !ok {
+		return Session{}, User{}, ErrNotFound
+	}
+	if !authorization.ExpiresAt.After(now) {
+		return Session{}, User{}, ErrAuthorizationExpired
+	}
+	if authorization.Status == "pending" {
+		return Session{}, User{}, ErrAuthorizationPending
+	}
+	if authorization.Status == "denied" {
+		return Session{}, User{}, ErrAuthorizationDenied
+	}
+	if authorization.Status != "approved" {
+		return Session{}, User{}, ErrConflict
+	}
+	session, err := createSession(store.user)
+	if err != nil {
+		return Session{}, User{}, err
+	}
+	authorization.Status = "consumed"
+	store.devices[deviceCodeHash] = authorization
+	store.sessions[session.ID] = session
+	return session, store.user, nil
+}
+
+func (store *memoryStore) RotateSession(_ context.Context, refreshTokenHash string, tokenHash string, newRefreshTokenHash string, now time.Time) (Session, User, error) {
+	for id, session := range store.sessions {
+		if session.RefreshTokenHash == refreshTokenHash && session.RevokedAt == nil && session.ExpiresAt.After(now) {
+			session.TokenHash = tokenHash
+			session.RefreshTokenHash = newRefreshTokenHash
+			store.sessions[id] = session
+			return session, store.user, nil
+		}
+	}
+	return Session{}, User{}, ErrNotFound
 }
 
 func (store *memoryStore) CreateUser(
@@ -202,6 +271,15 @@ func (store *memoryStore) FindSession(
 		return Session{}, User{}, errors.New("not found")
 	}
 	return session, store.user, nil
+}
+
+func (store *memoryStore) FindSessionByRefreshToken(_ context.Context, refreshTokenHash string, now time.Time) (Session, User, error) {
+	for _, session := range store.sessions {
+		if session.RefreshTokenHash == refreshTokenHash && session.RevokedAt == nil && session.ExpiresAt.After(now) {
+			return session, store.user, nil
+		}
+	}
+	return Session{}, User{}, ErrNotFound
 }
 
 func (store *memoryStore) RevokeSession(
@@ -400,5 +478,62 @@ func TestIssuedAgentTokenIsHashedAndProjectScoped(t *testing.T) {
 	}
 	if authenticated.Kind != "agent" || authenticated.ProjectID != "project-1" {
 		t.Fatalf("unexpected token identity: %#v", authenticated)
+	}
+}
+
+func TestDeviceAuthorizationAndRefreshRotation(t *testing.T) {
+	now := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	store.user = User{ID: "user-1", Email: "user@example.com", DisplayName: "User", Status: "active", SystemRole: "member", CreatedAt: now}
+	service := Service{
+		AccessTokenTTL:         time.Hour,
+		Clock:                  clock.Fixed{Time: now},
+		DeviceAuthorizationTTL: 10 * time.Minute,
+		DevicePollInterval:     2 * time.Second,
+		DeviceVerificationURI:  "https://mmdash.example/cli/authorize",
+		Generator:              identity.Generator{Reader: bytes.NewReader(make([]byte, 64))},
+		JWTSecret:              []byte("test-jwt-secret-with-at-least-32-characters"),
+		SessionTTL:             24 * time.Hour,
+		Store:                  store,
+	}
+
+	authorization, err := service.StartDeviceAuthorization(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorization.Interval != 2 || authorization.UserCode == "" || authorization.DeviceCode == "" {
+		t.Fatalf("unexpected authorization: %#v", authorization)
+	}
+	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode); !errors.Is(err, ErrAuthorizationPending) {
+		t.Fatalf("expected pending exchange, got %v", err)
+	}
+	if err := service.DecideDeviceAuthorization(context.Background(), Identity{Kind: "session", User: store.user}, authorization.UserCode, true); err != nil {
+		t.Fatal(err)
+	}
+	login, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login.RefreshToken == "" || login.AccessToken == "" {
+		t.Fatal("device exchange did not return both session secrets")
+	}
+	if _, err := service.Authenticate(context.Background(), "Bearer "+login.AccessToken); err != nil {
+		t.Fatalf("authenticate device session: %v", err)
+	}
+	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode); !errors.Is(err, ErrConflict) {
+		t.Fatalf("device code was not single-use: %v", err)
+	}
+	refreshed, err := service.Refresh(context.Background(), login.RefreshToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.AccessToken == login.AccessToken || refreshed.RefreshToken == login.RefreshToken {
+		t.Fatal("refresh did not rotate both secrets")
+	}
+	if _, err := service.Authenticate(context.Background(), "Bearer "+login.AccessToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("old access token remained valid: %v", err)
+	}
+	if _, err := service.Refresh(context.Background(), login.RefreshToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("old refresh token remained valid: %v", err)
 	}
 }

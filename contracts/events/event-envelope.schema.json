@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mmdash.com/schemas/events/event-envelope.schema.json",
+  "$id": "https://mmdash.moe/schemas/events/event-envelope.schema.json",
   "title": "mmdash Event Envelope",
   "type": "object",
   "additionalProperties": false,

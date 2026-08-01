@@ -1,196 +1,129 @@
-# mmdash v0.1 Stage 2 Artifact handoff
+# mmdash v0.1 Stage 3 CLI and local MCP handoff
 
-- Updated: 2026-07-31
-- Branch: `codex/stage-2-artifact`
-- Base: `origin/main@0f54510`
+- Updated: 2026-08-01
+- Branch: `main`
+- Base: `origin/main@490b06e`
+- Delivery state: implemented and validated for the Stage 3 delivery commit
 
 ## Status
 
-Stage 2 Artifact is implemented and fully validated on the dedicated
-`stage-2-artifact` worktree. Go Core remains the only owner of authoritative
-Artifact, Version, upload, Blob, trash, RBAC, Audit, Outbox, and Project source
-reference state. Web BFF, Web, Worker, MCP Gateway, and Data Hub do not write
-Artifact business tables directly.
+Stage 3 is complete against the v0.1 implementation-order v0.4, technical-
+architecture v0.4, and product-design v0.1 baselines. The temporary TypeScript
+CLI has been replaced by a separately buildable Go 1.26 module and native
+binary. Local Coding Agents can use the CLI's stdio MCP bridge, while hosted
+Agent runtimes remain independent direct clients of the MCP Gateway.
 
-Checkpoint commits:
-
-| Checkpoint | Commit      | Delivery                                                                                                  |
-| ---------- | ----------- | --------------------------------------------------------------------------------------------------------- |
-| 1          | `0da28fe`   | Frozen design, OpenAPI, events, errors, ADR, generated clients, and migration reservation                 |
-| 2          | `a5d1bdf`   | Multipart `BlobStore`, `000013_artifact`, Local/MinIO/S3-compatible adapters, and system configuration    |
-| 3          | `11f9b21`   | Core Artifact, immutable Version, upload, download, trash, purge, RBAC, Audit, and metrics                |
-| 4          | `948e8f6`   | Bounded Worker image/PDF/CSV/JSON/text previews, thumbnails, registry, and semantic interface placeholder |
-| 5          | `2da9678`   | Outbox, Data Hub, MCP `data.list/read`, and validated Project source references                           |
-| 6          | `b302734`   | Web BFF and Project file library, uploader, filters, detail, versions, preview, selector, and trash       |
-| 7          | `fb63feb`   | Real-service acceptance, browser screenshots, download hardening, documentation, and handoff              |
-| Follow-up  | this commit | Per-Version preview selection plus explicit PDF first-page, page-count, and bounded-text rendering        |
+Go Core remains authoritative for authentication, Project membership, RBAC,
+Data Hub reads, Audit, and persisted state. The CLI stores only non-secret
+configuration and current Project selection; access and refresh credentials
+remain in the operating-system credential store.
 
 ## Delivered behavior
 
-- Stable Project-scoped `Artifact` identities and immutable retained Versions.
-- Fixed system `kind` and `source` enums with normalized user `tags[]`.
-- Project-local SHA-256 plus size deduplication with real provider `Stat`.
-- Local, MinIO, and S3-compatible multipart adapters behind one Core contract.
-- Dynamic MiB-aligned part sizing within S3 limits and on-demand short-lived
-  part grants.
-- Bounded browser concurrency, single-part retry, pause/resume, refresh-safe
-  recovery, cancellation, provider list/complete/abort, expiry cleanup, and
-  idempotent confirmation.
-- Full completed-object size and streaming SHA-256 verification before a
-  Version becomes available.
-- Direct MinIO/S3 presigned part PUT; Local signed BFF/Core streaming transfer
-  without buffering a complete part or file.
-- Indefinite retention of successful originals and every historical Version.
-  Normal deletion moves an Artifact to recoverable trash. Permanent purge
-  removes object bytes only when no retained Version or preview references the
-  Project-local Blob.
-- Worker previews for image, PDF, CSV, JSON, and text, including thumbnails and
-  bounded structural summaries. `SemanticDescriptionGenerator` is an unused
-  interface placeholder only.
-- `artifact.created`, `artifact.available`, and `artifact.deleted` in the same
-  transaction as authoritative state and Audit.
-- Data Hub `artifact` and `attachment_registry_entry` projections, generic MCP
-  `data.list/read`, and current Project RBAC on controlled reads.
-- Project `source_artifact_ids[]` validation, two-step Project creation flow,
-  source selector, and Project-home aggregate.
-- Project file library with multipart uploader, kind/source/status/tag filters,
-  metadata detail, independently selectable preview for every immutable
-  Version, explicit image/PDF rendering, controlled download, selector, and
-  trash.
-- Direct object-storage downloads sign attachment disposition and MIME response
-  headers. Preview URLs remain inline.
+- Extensible compile-time Go Feature registration for commands and `doctor`
+  checks; no runtime plugins and no TypeScript runtime dependency.
+- Native Windows, macOS, and Linux credential adapters with no plaintext token
+  fallback.
+- Browser-approved CLI device authorization, bounded polling, delegated access
+  and refresh-token rotation, `whoami`, logout, and server-scoped credential
+  profiles.
+- Versioned, atomically written non-secret `config.json` with platform paths,
+  environment overrides, HTTPS enforcement, and loopback HTTP support.
+- `mmdash config set-domain [domain]` updates the unified public, Core, and MCP
+  endpoints together. The hosted default is the confirmed production domain;
+  a loopback host such as `localhost:3000` automatically selects HTTP for local
+  testing.
+- Explicit Project discovery and selection through `project list`, `project
+  use`, and `project current`.
+- Transparent stdio-to-Streamable-HTTP `mmdash mcp` bridge with JSON-RPC stdout
+  isolation, safe stderr diagnostics, session handling, delegated CLI auth,
+  project propagation, and retry after token refresh.
+- `doctor` checks for configuration, delegated identity, selected Project, and
+  MCP Gateway reachability.
+- MCP Gateway CLI-token authentication through Core `auth.me`, separate static
+  development Agent-token support, constant-time static-token comparison,
+  tool and Project authorization, per-call session/request context, Audit, and
+  redacted structured logs.
+- MCP reads for `project.list`, `project.get`, `data.list`, and `data.read`,
+  plus the existing bounded foundation tools, all routed through Core rather
+  than direct database access.
+- Go CLI release workflow for Windows, macOS, and Linux amd64/arm64 archives
+  and SHA-256 checksums.
+- The confirmed hosted domain was changed in-place across the existing
+  configuration, ingress,
+  contract identifiers/examples, Gateway defaults/tests, and documentation.
 
-## Migrations and configuration
+## Contracts and persistence
 
-Stage 2 adds:
+Stage 3 adds Core operations for CLI device authorization, exchange, refresh,
+logout, delegated identity, and Project reads. Generated Core client output,
+contract mocks, the API catalog, and MCP tool schemas/documentation are aligned.
 
-- `000013_artifact`
-- `000014_artifact_preview_transfer`
+Migration `000015_cli_device_auth` owns device grants, CLI sessions, hashed
+refresh credentials, expiry, revocation, and safe lifecycle constraints. No
+additional queue or infrastructure backend was introduced.
 
-Both the preserved development database and a disposable fresh database were
-validated. The fresh database applied all 14 migrations in order through
-`000014_artifact_preview_transfer`, exposed both Artifact and Registry tables,
-and was deleted after verification.
+## Verification
 
-Object-storage endpoint, bucket, credentials, region, upload limit, part size,
-signed URL lifetime, session lifetime, staging cleanup, preview limits, and
-Local root are system environment variables documented in
-[`docs/development/artifact.md`](docs/development/artifact.md). None are Project
-settings.
+The following completed successfully on 2026-08-01 before the final domain-
+configuration increment:
 
-## Final verification
+- `pnpm check`: exit 0, including lint, TypeScript/Go/Python tests and builds,
+  generated-contract freshness and compatibility, 187 documented API
+  operations, and Caddyfile validation.
+- TypeScript suites: scripts 9/9, Web 60/60, Core client 6/6, validation 1/1,
+  MCP Gateway 15/15, and Web BFF 30/30.
+- Python Worker: 25/25.
+- All Go packages, including the temporary-Git Repo integration suite.
+- Exact Compose build and smoke path with the local
+  `golang:1.26-alpine` image: all required services became healthy and the
+  native CLI device-login, Project selection, and stdio MCP path passed.
+- A second full smoke run against fresh tmpfs PostgreSQL and MinIO state passed;
+  all required readiness endpoints returned HTTP 200, fault-log matches were
+  zero, and credential/token/Authorization leak scans were zero.
+- Both Compose environments were stopped with `down`, never `down -v`; named
+  PostgreSQL and MinIO volumes were preserved.
 
-The following passed on 2026-07-31:
+After adding `config set-domain` and replacing the hosted domain, these narrow
+checks passed:
 
-- Real PostgreSQL + Local + MinIO + Core HTTP Artifact suite:
-  `go test ./internal/artifact -count=1 -v`; every opt-in integration test ran,
-  with no skips.
-- Real multipart cases: interruption/recovery, out-of-order upload, missing
-  manifest, repeated confirmation, cancellation and repeat abort, expiry,
-  SHA-256 mismatch, unauthorized signing, Local streaming, MinIO presigning,
-  and provider completion.
-- `pnpm smoke` with Docker Worker and Docker Local Repo:
-  `status: passed`.
-- `pnpm smoke:artifact-preview`: real MinIO upload and one-shot Docker Worker
-  produced `image` and `thumbnail`.
-- A second real MinIO multipart upload and one-shot Docker Worker produced a
-  two-page PDF preview, a valid first-page PNG, and bounded extracted text from
-  both pages.
-- `pnpm check`: exit 0.
-  - script tests: 9/9;
-  - Web: 56/56;
-  - Core client: 6/6;
-  - CLI shell: 7/7;
-  - validation: 1/1;
-  - MCP Gateway: 11/11;
-  - Web BFF: 28/28;
-  - all Go packages passed, including the real temporary-Git Repo suite;
-  - Python Worker: 25/25, no skips;
-  - all TypeScript, Go, and Python builds passed;
-  - 2 OpenAPI documents and shared schemas passed freshness and compatibility;
-  - API catalog covers 180 operations;
-  - Caddy configuration is valid.
-- Compose required services are healthy: PostgreSQL, MinIO, Core, Web BFF,
-  Web, and MCP Gateway. Migration and MinIO initialization containers exited 0. Core readiness reports PostgreSQL, object storage, Git, and Repo storage
-  as `ready`.
-- Artifact metrics are exposed with bounded labels. Recent required-service
-  logs contain no panic, service fatal/error, credentials, tokens, or
-  Authorization values. Two PostgreSQL error lines were caused by acceptance
-  operator typos, diagnosed immediately, and followed by successful checks.
+- `go test ./clients/cli/...`
+- `pnpm contracts:generate` followed by `pnpm contracts:check`
+- `pnpm caddy:check` (`Valid configuration`; no Caddy service was started)
+- `gofmt` on all changed CLI Go files
+- `git diff --check`
+- `\.localscripts\dev.ps1 --check --skip-install --skip-worker`: built the
+  native CLI, generated its isolated local launcher, applied migrations, and
+  reached healthy Core, Web BFF, Web, and MCP Gateway before stopping the
+  application processes.
 
-The persistent `worker` Compose profile intentionally has no Project-scoped API
-token and exits 2. Acceptance issued real Core tokens and ran one-shot Worker
-containers successfully; this is not a product failure.
+The local wrapper check reused Docker only for PostgreSQL and MinIO. It did not
+repeat the full Compose image build or Stage 3 smoke acceptance.
 
-## Real browser acceptance
+## Operational notes
 
-Real Chrome exercised Project creation, source-file setup, multipart upload,
-filters, tags, metadata, preview, thumbnail, download, new Version upload,
-historical Version preview selection and restore, a real two-page PDF upload
-and preview, source binding, Project home, trash, permanent purge controls, and
-trash restore with no console errors.
+- Local bootstrap defaults remain `admin@mmdash.local` and
+  `mmdash-local-admin` unless overridden by the documented environment
+  variables.
+- The environment-configured static Gateway Agent token remains only a
+  foundation development/test mechanism. Project-scoped, revocable Agent-token
+  lifecycle belongs to the later Agent stage.
+- A historical persisted Repo record produced one `repo.sync.failed` line in
+  the first Compose log review. A fresh-state rerun produced zero fault-log
+  matches, proving it was pre-existing data rather than this stage's smoke path.
+- The ignored local `\.localscripts\dev.mjs` now enforces Go 1.26, supports
+  per-service application-port overrides, forces safe local service URLs,
+  builds `\.tmp\dev-tools\mmdash.exe`, and generates an isolated
+  `mmdash-local` launcher. It remains workstation-local by repository policy.
+- The pytest basetemp directory created during validation was explicitly
+  inspected and safely removed, including its five internal-only symlinks.
 
-Observed results:
+## Boundaries and next stage
 
-- decoded thumbnail: 512 x 356;
-- image structural summary: PNG, RGB, 1440 x 1000;
-- controlled browser download: `repo-browser.png`, 63,706 bytes, complete and
-  safe;
-- immutable history after restore: v1 original, v2 new upload, v3 restored
-  copy;
-- every v1/v2/v3 row exposes an independent preview action. Real Chrome
-  switched from current v3 to historical v1 and rendered the preview belonging
-  to v1;
-- real PDF preview: 2 pages, 362 x 512 decoded first-page thumbnail, 5,805-byte
-  signed PNG, and bounded text from both pages;
-- trash retained v1/v2/v3 and exposed restore plus confirmation-gated
-  permanent purge.
+Stage 3 intentionally does not implement Artifact-specific human CLI commands,
+Agent-instance lifecycle, product Agent tokens, Progress, Model, Experiment,
+Box, Sandbox, or Article behavior. Later domain stages should register their
+commands and diagnostics through the Go Feature boundary and reuse the same
+authenticated Core/MCP transports.
 
-Reviewed screenshots:
-
-- [`artifact-uploader.png`](docs/screenshots/artifact-uploader.png)
-- [`artifact-library.png`](docs/screenshots/artifact-library.png)
-- [`artifact-detail-preview.png`](docs/screenshots/artifact-detail-preview.png)
-- [`artifact-versions.png`](docs/screenshots/artifact-versions.png)
-- [`artifact-pdf-preview.png`](docs/screenshots/artifact-pdf-preview.png)
-- [`artifact-trash.png`](docs/screenshots/artifact-trash.png)
-- [`artifact-project-home.png`](docs/screenshots/artifact-project-home.png)
-
-## Boundaries and known follow-ups
-
-Stage 2 intentionally does not implement:
-
-- Artifact CLI commands, CLI login, or CLI Project binding; those begin in
-  Stage 3 using the reusable Core contracts.
-- Cross-Project or account-wide file libraries.
-- A storage administration panel or Project-level storage settings.
-- Browser file editing.
-- LLM or multimodal semantic description and automatic
-  `recommended_usage`; Article owns that future behavior.
-- Article, Model, Experiment, Agent, Progress, or Box product modules.
-
-Issue #22 remains the separate Worker test-reliability tracker. Issue #19
-remains the separate Go toolchain alignment decision. No Stage 2 workaround
-changes either issue.
-
-The single recommended next product stage is Stage 3. Start from the
-authoritative versioned design, reuse Artifact Core contracts, and keep CLI
-authentication and Project binding outside Stage 2.
-
-## Revalidation
-
-Preserve Docker volumes:
-
-```powershell
-$env:REPO_LOCAL_ALLOWED_ROOTS = "/tmp"
-docker-compose -f deploy/compose/compose.yaml up -d --build
-
-$env:MMDASH_SMOKE_WORKER_MODE = "docker"
-$env:MMDASH_SMOKE_REPO_MODE = "docker"
-pnpm smoke
-pnpm smoke:artifact-preview
-pnpm check
-```
-
-Ordinary shutdown may use `docker-compose ... down`. Never use `down -v`
-unless deletion of PostgreSQL and MinIO test data is explicitly approved.
+The next implementation stage is Stage 4 Home and Progress.

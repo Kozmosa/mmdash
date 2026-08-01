@@ -11,10 +11,48 @@ afterEach(async () => {
 });
 
 describe("auth and collaborative project routes", () => {
+  it("requires a browser session and forwards CLI device approval to Core", async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      payload: { approve: true, user_code: "ABCD-EFGH" },
+      url: "/api/auth/device/verify",
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const response = await app.inject({
+      headers: { cookie: await signedSessionCookie(app) },
+      method: "POST",
+      payload: { approve: true, user_code: "abcd-efgh" },
+      url: "/api/auth/device/verify",
+    });
+
+    expect(response.statusCode).toBe(204);
+    const [url, options] = fetchImplementation.mock.calls[0]!;
+    expect(url).toBe("http://core.test/v1/auth/device/verify");
+    expect(new Headers(options?.headers).get("authorization")).toBe(
+      "Bearer test-access-token",
+    );
+    expect(JSON.parse(String(options?.body))).toEqual({
+      approve: true,
+      user_code: "abcd-efgh",
+    });
+  });
+
   it("registers a browser account and creates a signed session", async () => {
     const registerResult = {
       access_token: "new-core-session-token",
-      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      refresh_token: "new-refresh-token-that-is-at-least-32-characters",
       session_id: "session-new",
       user: {
         created_at: "2026-07-29T08:00:00Z",
@@ -64,7 +102,8 @@ describe("auth and collaborative project routes", () => {
   it("creates an HTTP-only signed browser session from Core timestamps with offsets", async () => {
     const loginResult = {
       access_token: "core-session-token",
-      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      refresh_token: "login-refresh-token-that-is-at-least-32-characters",
       session_id: "session-1",
       user: {
         created_at: "2026-07-28T08:00:00+08:00",
@@ -118,6 +157,61 @@ describe("auth and collaborative project routes", () => {
     const [url, options] = fetchImplementation.mock.calls[0]!;
     expect(url).toBe("http://core.test/v1/auth/login");
     expect(options?.method).toBe("POST");
+  });
+
+  it("rotates an expired browser access token before forwarding a request", async () => {
+    const refreshed = {
+      access_token: "rotated-access-token",
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      refresh_token: "rotated-refresh-token-that-is-at-least-32-characters",
+      session_id: "session-refreshed",
+      user: {
+        created_at: "2026-07-28T08:00:00Z",
+        display_name: "Team Owner",
+        email: "owner@example.com",
+        id: "user-1",
+        status: "active",
+        system_role: "admin",
+      },
+    };
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(refreshed))
+      .mockResolvedValueOnce(
+        Response.json({
+          kind: "session",
+          session_id: refreshed.session_id,
+          user: refreshed.user,
+        }),
+      );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app, {
+      expires_at: new Date(Date.now() - 1_000).toISOString(),
+      refresh_token: "stale-refresh-token-that-is-at-least-32-characters",
+    });
+
+    const response = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/auth/me",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["set-cookie"]).toContain(`${sessionCookieName}=`);
+    const [refreshUrl, refreshOptions] = fetchImplementation.mock.calls[0]!;
+    expect(refreshUrl).toBe("http://core.test/v1/auth/refresh");
+    expect(JSON.parse(String(refreshOptions?.body))).toEqual({
+      refresh_token: "stale-refresh-token-that-is-at-least-32-characters",
+    });
+    const [, identityOptions] = fetchImplementation.mock.calls[1]!;
+    expect(new Headers(identityOptions?.headers).get("authorization")).toBe(
+      "Bearer rotated-access-token",
+    );
   });
 
   it("forwards the session token when listing team projects", async () => {

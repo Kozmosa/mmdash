@@ -2,12 +2,18 @@ import { execFileSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
-const files = await goFiles("backend");
+const files = [
+  ...(await goFiles("backend")),
+  ...(await goFiles("clients/cli")),
+].sort();
 const unformatted = [];
 
 for (const file of files) {
   const contents = (await readFile(file, "utf8")).replaceAll("\r\n", "\n");
-  const formatted = execFileSync("gofmt", { encoding: "utf8", input: contents });
+  const formatted = execFileSync("gofmt", {
+    encoding: "utf8",
+    input: contents,
+  });
   if (formatted !== contents) {
     unformatted.push(file);
   }

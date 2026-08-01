@@ -45,11 +45,17 @@ Run the complete baseline on Windows or Linux without Docker with the
 global prerequisite and keeps service data and toolchains under `.testenv`.
 
 The production-shaped public entry is defined only in the repository-root
-`Caddyfile`, using `mmdash.com`. Validate it without starting services:
+`Caddyfile`, using `mmdash.moe`. Browser traffic uses `/api`, the native CLI
+uses the authenticated Core `/v1` surface and `/mcp`, and Box remains under
+`/box`. Validate it without starting services:
 
 ```bash
 caddy validate --config Caddyfile --adapter caddyfile
 ```
+
+`pnpm caddy:check` uses that local binary when available and otherwise runs
+the same validation in the pinned Caddy 2.10 Docker image; it never starts the
+Caddy service.
 
 Run migrations independently with:
 

@@ -2,6 +2,7 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import type { CoreClient } from "@mmdash/core-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MemoryAuditSink } from "../src/audit/audit.js";
@@ -71,6 +72,8 @@ describe("MCP Gateway", () => {
     expect(listed.tools.map((tool) => tool.name)).toEqual([
       "data.list",
       "data.read",
+      "project.get",
+      "project.list",
       "project.member.get",
       "project.member.list",
       "system.echo",
@@ -88,6 +91,62 @@ describe("MCP Gateway", () => {
       projectId: "project-1",
       toolName: "system.echo",
     });
+  });
+
+  it("lists and reads projects through the delegated Core boundary", async () => {
+    const audit = new MemoryAuditSink();
+    const listProjects = vi.fn().mockResolvedValue({
+      items: [
+        { id: "allowed-project", name: "Allowed" },
+        { id: "blocked-project", name: "Blocked" },
+      ],
+    });
+    const getProject = vi.fn().mockResolvedValue({
+      id: "allowed-project",
+      name: "Allowed",
+      problem_title: "Optimization",
+    });
+    const gateway = buildGateway({
+      audit,
+      config: { ...testConfig, cliProjects: ["allowed-project"] },
+      coreClient: { getProject, listProjects } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
+    const client = new Client(
+      { name: "mmdash-project-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const listed = await client.callTool({
+      arguments: {},
+      name: "project.list",
+    });
+    const read = await client.callTool({
+      arguments: { project_id: "allowed-project" },
+      name: "project.get",
+    });
+    await client.close();
+
+    expect(listed.structuredContent).toMatchObject({
+      items: [{ id: "allowed-project" }],
+    });
+    expect(read.structuredContent).toMatchObject({ id: "allowed-project" });
+    expect(getProject).toHaveBeenCalledWith(
+      "allowed-project",
+      expect.objectContaining({
+        accessToken: "test-core-access-token-that-is-at-least-32-characters",
+      }),
+    );
+    expect(audit.events.map((event) => event.toolName)).toEqual([
+      "project.list",
+      "project.get",
+    ]);
   });
 
   it("reads Data Hub objects through Core with project scope and audit", async () => {

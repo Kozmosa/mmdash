@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mmdash.com/schemas/mcp-tools/data.list.json",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/data.list.json",
   "title": "data.list MCP tool",
   "description": "Lists authorized Data Hub projections without reading module storage directly.",
   "x-operation-id": "data.list",
