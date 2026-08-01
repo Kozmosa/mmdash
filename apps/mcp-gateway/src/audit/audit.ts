@@ -9,7 +9,7 @@ export type ToolAuditEvent = {
   errorCode?: string;
   occurredAt: string;
   outcome: AuditOutcome;
-  projectId: string;
+  projectId?: string;
   requestId: string;
   sessionId: string;
   toolName: string;

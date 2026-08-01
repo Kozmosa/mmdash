@@ -59,7 +59,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       maxPayload: 1024 * 1024,
     },
   });
-  registerBrowserAuth(app, config.cookieSecret);
+  registerBrowserAuth(app, coreClient, config);
   registerProjectContext(app);
   registerErrorHandler(app);
 

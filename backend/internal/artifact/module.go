@@ -30,8 +30,8 @@ func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	)
 }
 
-// ProjectHandler is mounted by Project because Go 1.17 ServeMux cannot
-// register two independent handlers for the same /v1/projects/ subtree.
+// ProjectHandler is mounted by Project so the shared /v1/projects/ subtree
+// keeps one explicit dispatcher and one module owner for each child route.
 func (module Module) ProjectHandler() http.Handler {
 	return http.HandlerFunc(module.handleProjectResource)
 }

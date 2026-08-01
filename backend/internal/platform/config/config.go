@@ -44,11 +44,14 @@ type ArtifactConfig struct {
 
 // AuthConfig configures bootstrap login and session signing.
 type AuthConfig struct {
-	BootstrapDisplayName string
-	BootstrapEmail       string
-	BootstrapPassword    string
-	JWTSecret            string
-	SessionTTL           time.Duration
+	AccessTokenTTL         time.Duration
+	BootstrapDisplayName   string
+	BootstrapEmail         string
+	BootstrapPassword      string
+	DeviceAuthorizationTTL time.Duration
+	DevicePollInterval     time.Duration
+	JWTSecret              string
+	SessionTTL             time.Duration
 }
 
 // DatabaseConfig configures the PostgreSQL connection pool.
@@ -153,11 +156,14 @@ func Load(lookup LookupEnv) (Config, error) {
 			),
 		},
 		Auth: AuthConfig{
-			BootstrapDisplayName: envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
-			BootstrapEmail:       envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
-			BootstrapPassword:    envOrDefault(lookup, "AUTH_BOOTSTRAP_PASSWORD", "mmdash-local-admin"),
-			JWTSecret:            envOrDefault(lookup, "AUTH_JWT_SECRET", "development-auth-jwt-secret-change-me"),
-			SessionTTL:           durationOrDefault(lookup, "AUTH_SESSION_TTL", 24*time.Hour),
+			AccessTokenTTL:         durationOrDefault(lookup, "AUTH_ACCESS_TOKEN_TTL", 24*time.Hour),
+			BootstrapDisplayName:   envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
+			BootstrapEmail:         envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
+			BootstrapPassword:      envOrDefault(lookup, "AUTH_BOOTSTRAP_PASSWORD", "mmdash-local-admin"),
+			JWTSecret:              envOrDefault(lookup, "AUTH_JWT_SECRET", "development-auth-jwt-secret-change-me"),
+			DeviceAuthorizationTTL: durationOrDefault(lookup, "AUTH_DEVICE_AUTHORIZATION_TTL", 10*time.Minute),
+			DevicePollInterval:     durationOrDefault(lookup, "AUTH_DEVICE_POLL_INTERVAL", 5*time.Second),
+			SessionTTL:             durationOrDefault(lookup, "AUTH_SESSION_TTL", 30*24*time.Hour),
 		},
 		Database: DatabaseConfig{
 			ConnMaxIdleTime: durationOrDefault(lookup, "DATABASE_CONN_MAX_IDLE_TIME", 5*time.Minute),
@@ -266,8 +272,11 @@ func (config Config) Validate() error {
 	if len(config.Auth.JWTSecret) < 32 {
 		return fmt.Errorf("AUTH_JWT_SECRET must contain at least 32 characters")
 	}
-	if config.Auth.SessionTTL <= 0 {
-		return fmt.Errorf("AUTH_SESSION_TTL must be positive")
+	if config.Auth.SessionTTL <= 0 || config.Auth.AccessTokenTTL <= 0 || config.Auth.AccessTokenTTL > config.Auth.SessionTTL {
+		return fmt.Errorf("AUTH_ACCESS_TOKEN_TTL must be positive and no longer than AUTH_SESSION_TTL")
+	}
+	if config.Auth.DeviceAuthorizationTTL <= config.Auth.DevicePollInterval || config.Auth.DevicePollInterval < time.Second || config.Auth.DevicePollInterval > 30*time.Second {
+		return fmt.Errorf("device authorization durations are invalid")
 	}
 	if config.Database.MaxOpenConns < 1 {
 		return fmt.Errorf("DATABASE_MAX_OPEN_CONNS must be positive")

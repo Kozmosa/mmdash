@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mmdash.com/schemas/mcp-tools/data.read.json",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/data.read.json",
   "title": "data.read MCP tool",
   "description": "Reads an authorized Data Hub object through its authoritative module adapter.",
   "x-operation-id": "data.read",

@@ -1,26 +1,42 @@
 # mmdash CLI
 
-Installable local command shell for mmdash:
+Native Go 1.26 CLI for users and local Coding Agents.
 
 ```bash
-pnpm --filter @mmdash/cli build
-pnpm --filter @mmdash/cli dev -- help
-pnpm --filter @mmdash/cli pack:check
-```
+go build ./clients/cli/cmd/mmdash
+go test ./clients/cli/...
 
-After npm/pnpm installation, the package exposes the `mmdash` executable:
-
-```bash
-npm install --global @mmdash/cli
-# or: pnpm add --global @mmdash/cli
-
-mmdash --version
-mmdash help
+mmdash login
+mmdash whoami
+mmdash project list
+mmdash project use <project_id>
+mmdash project current
+mmdash config set-domain [domain]
+mmdash mcp
 mmdash doctor
+mmdash logout
 ```
 
-Stage 3.6 intentionally contains only the engineering and publication shell.
-Login, project binding, secure credential storage, and the stdio-to-remote MCP
-bridge are introduced in the later P0 CLI/MCP vertical.
+`mmdash login` uses browser-approved device authorization. Access and refresh
+tokens are stored only in Windows Credential Manager, macOS Keychain, or the
+Linux Secret Service. `config.json` contains non-secret endpoints and the
+explicit current Project selection.
+
+`mmdash mcp` is a transparent stdio-to-Streamable-HTTP bridge. Its stdout is
+reserved for MCP JSON-RPC; diagnostics and safe errors use stderr. Hermes and
+other hosted Agent runtimes connect directly to the Gateway in the later Agent
+stage and never through this CLI.
 
 See [the CLI development guide](../../docs/development/cli.md).
+
+## Install and upgrade
+
+Release tags named `cli-v*` publish one archive for each supported Windows,
+macOS, and Linux amd64/arm64 target, together with `SHA256SUMS`. Download the
+archive matching your operating system and CPU, verify its SHA-256 digest,
+extract it, and place `mmdash` (or `mmdash.exe`) in a directory on `PATH`.
+
+To upgrade, verify and extract a newer release, then replace the single binary.
+The versioned non-secret config and the operating system credential entry stay
+in their platform locations, so an upgrade does not require another login or
+Project selection. Run `mmdash --version` and `mmdash doctor` after replacement.

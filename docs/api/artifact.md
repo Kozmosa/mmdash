@@ -156,5 +156,6 @@ flow creates the Project first, uploads within it, then PATCHes the validated
 references. The Project-home Problem aggregate exposes those sources and their
 current preview state.
 
-Stage 2 adds no Artifact CLI command. Stage 3 reuses these Core contracts after
-CLI login and Project binding are implemented.
+Stage 2 adds no Artifact CLI command. Stage 3 provides the Go CLI foundation,
+login, and Project selection; a later Artifact iteration reuses these Core
+contracts when it registers Artifact commands with that foundation.

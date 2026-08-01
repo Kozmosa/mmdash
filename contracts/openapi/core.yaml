@@ -154,6 +154,89 @@ paths:
                 $ref: "#/components/schemas/LoginResult"
         "401":
           $ref: "#/components/responses/Error"
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate a session by using its refresh token
+      operationId: auth.refresh
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Access and refresh tokens were rotated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "401":
+          $ref: "#/components/responses/Error"
+  /v1/auth/device/authorize:
+    post:
+      tags: [Auth]
+      summary: Start a CLI device authorization
+      operationId: auth.device.authorize
+      security: []
+      responses:
+        "201":
+          description: One-time device and user codes were created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAuthorization"
+  /v1/auth/device/verify:
+    post:
+      tags: [Auth]
+      summary: Approve or deny a CLI device authorization
+      operationId: auth.device.verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceVerificationRequest"
+      responses:
+        "204":
+          description: Device authorization decision recorded.
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/auth/device/token:
+    post:
+      tags: [Auth]
+      summary: Exchange an approved device code for a CLI session
+      operationId: auth.device.token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceTokenRequest"
+      responses:
+        "200":
+          description: Approved device authorization exchanged once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /v1/auth/register:
     post:
       tags: [Auth]
@@ -2112,6 +2195,67 @@ components:
         password:
           type: string
           minLength: 1
+    RefreshTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          minLength: 32
+          maxLength: 4096
+    DeviceAuthorization:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          device_code,
+          user_code,
+          verification_uri,
+          verification_uri_complete,
+          expires_at,
+          interval,
+        ]
+      properties:
+        device_code:
+          type: string
+          minLength: 32
+          maxLength: 4096
+        user_code:
+          type: string
+          pattern: "^[A-Z0-9]{4}-[A-Z0-9]{4}$"
+        verification_uri:
+          type: string
+          format: uri
+        verification_uri_complete:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+        interval:
+          type: integer
+          minimum: 1
+          maximum: 30
+    DeviceVerificationRequest:
+      type: object
+      additionalProperties: false
+      required: [user_code, approve]
+      properties:
+        user_code:
+          type: string
+          pattern: "^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$"
+        approve:
+          type: boolean
+    DeviceTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [device_code]
+      properties:
+        device_code:
+          type: string
+          minLength: 32
+          maxLength: 4096
     RegisterRequest:
       type: object
       additionalProperties: false
@@ -2166,6 +2310,8 @@ components:
       required: [access_token, expires_at, session_id, user]
       properties:
         access_token:
+          type: string
+        refresh_token:
           type: string
         expires_at:
           type: string

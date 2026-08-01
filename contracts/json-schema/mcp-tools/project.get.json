@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/project.get.json",
+  "title": "project.get MCP tool",
+  "description": "Reads one authorized project's metadata and source overview.",
+  "x-operation-id": "project.get",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id"],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+        }
+      }
+    },
+    "output": { "type": "object" }
+  }
+}

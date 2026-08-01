@@ -19,6 +19,10 @@ func (Module) Name() string { return "auth" }
 
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/auth/login", module.handleLogin)
+	mux.HandleFunc("/v1/auth/refresh", module.handleRefresh)
+	mux.HandleFunc("/v1/auth/device/authorize", module.handleDeviceAuthorize)
+	mux.HandleFunc("/v1/auth/device/verify", module.handleDeviceVerify)
+	mux.HandleFunc("/v1/auth/device/token", module.handleDeviceToken)
 	mux.HandleFunc("/v1/auth/register", module.handleRegister)
 	mux.HandleFunc("/v1/auth/logout", module.handleLogout)
 	mux.HandleFunc("/v1/auth/me", module.handleMe)
@@ -28,6 +32,70 @@ func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/auth/invitations/reject", module.handleInvitationReject)
 	mux.HandleFunc("/v1/auth/tokens", module.handleTokens)
 	mux.HandleFunc("/v1/auth/tokens/", module.handleToken)
+}
+
+func (module Module) handleRefresh(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body refreshTokenRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	result, err := module.Service.Refresh(request.Context(), body.RefreshToken)
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, result)
+}
+
+func (module Module) handleDeviceAuthorize(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	result, err := module.Service.StartDeviceAuthorization(request.Context())
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusCreated, result)
+}
+
+func (module Module) handleDeviceVerify(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	identity, err := module.Service.Authenticate(request.Context(), request.Header.Get("Authorization"))
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	var body deviceVerificationRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	if err := module.Service.DecideDeviceAuthorization(request.Context(), identity, body.UserCode, body.Approve); err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (module Module) handleDeviceToken(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body deviceTokenRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	result, err := module.Service.ExchangeDeviceAuthorization(request.Context(), body.DeviceCode)
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, result)
 }
 
 func (module Module) handleRegister(response http.ResponseWriter, request *http.Request) {
@@ -271,6 +339,12 @@ func writeDomainError(response http.ResponseWriter, request *http.Request, err e
 		httpx.WriteError(response, request, apperror.New(http.StatusForbidden, "REGISTRATION_CLOSED", "Open registration is disabled"))
 	case errors.Is(err, ErrInvalidInvitation):
 		httpx.WriteError(response, request, apperror.New(http.StatusBadRequest, "INVALID_INVITATION", "The invitation is invalid, expired, revoked, or already used"))
+	case errors.Is(err, ErrAuthorizationPending):
+		httpx.WriteError(response, request, apperror.New(http.StatusBadRequest, "AUTHORIZATION_PENDING", "Device authorization is still pending"))
+	case errors.Is(err, ErrAuthorizationDenied):
+		httpx.WriteError(response, request, apperror.New(http.StatusUnauthorized, "AUTHORIZATION_DENIED", "Device authorization was denied"))
+	case errors.Is(err, ErrAuthorizationExpired):
+		httpx.WriteError(response, request, apperror.New(http.StatusBadRequest, "AUTHORIZATION_EXPIRED", "Device authorization expired"))
 	default:
 		httpx.WriteError(response, request, err)
 	}
@@ -300,4 +374,14 @@ type changePasswordRequest struct {
 }
 type invitationTokenRequest struct {
 	Token string `json:"token"`
+}
+type refreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+type deviceVerificationRequest struct {
+	Approve  bool   `json:"approve"`
+	UserCode string `json:"user_code"`
+}
+type deviceTokenRequest struct {
+	DeviceCode string `json:"device_code"`
 }

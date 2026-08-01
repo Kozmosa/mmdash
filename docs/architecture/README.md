@@ -4,10 +4,20 @@ mmdash v0.1 uses a monorepo with strict process boundaries:
 
 ```text
 Browser -> Web BFF -> Go Core -> PostgreSQL / Object Storage
-Agent -> CLI or Hermes -> MCP Gateway -> Go Core
+Local Coding Agent -> Go CLI stdio bridge -> MCP Gateway -> Go Core
+Bound Hermes Agent -> MCP Gateway -> Go Core
 Go Core <-> Python Worker
 Go Core <-> Box Gateway -> Capability -> Runtime
 ```
+
+The two Agent paths use different principals. The local path delegates the
+signed-in user's CLI identity. Hermes is an independently hosted MCP client and,
+in the later Agent stage, presents its own Project-scoped Agent Token directly
+to the Gateway; it never traverses the CLI. `manual` and `auto` Hermes
+management modes change who installs and rotates that credential, not the MCP
+runtime path. Automatic management uses a separate server-reachable Hermes
+management connection, either directly or through an authenticated network
+layer such as Cloudflare Access.
 
 Only Core owns authoritative business state. Web BFF, MCP Gateway, CLI, Worker,
 and Box do not write the business database directly.
