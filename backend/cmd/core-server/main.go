@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -98,11 +99,15 @@ func run(logger *logging.Logger) error {
 	systemClock := clock.System{}
 	idGenerator := identity.Generator{}
 	authService := &auth.Service{
-		Clock:      systemClock,
-		Generator:  idGenerator,
-		JWTSecret:  []byte(processConfig.Auth.JWTSecret),
-		SessionTTL: processConfig.Auth.SessionTTL,
-		Store:      auth.PostgresStore{DB: db},
+		AccessTokenTTL:         processConfig.Auth.AccessTokenTTL,
+		Clock:                  systemClock,
+		DeviceAuthorizationTTL: processConfig.Auth.DeviceAuthorizationTTL,
+		DevicePollInterval:     processConfig.Auth.DevicePollInterval,
+		DeviceVerificationURI:  strings.TrimRight(processConfig.PublicURL, "/") + "/cli/authorize",
+		Generator:              idGenerator,
+		JWTSecret:              []byte(processConfig.Auth.JWTSecret),
+		SessionTTL:             processConfig.Auth.SessionTTL,
+		Store:                  auth.PostgresStore{DB: db},
 	}
 	transactionManager := transaction.Manager{DB: transaction.SQLBeginner{DB: db}}
 	outboxWriter := outbox.Writer{Clock: systemClock, Generator: idGenerator}

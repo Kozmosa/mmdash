@@ -94,8 +94,11 @@ services:
       CORE_INTERNAL_URL: http://core:8080
       # Session/API Token 签名密钥；生产必须替换为 Secret 管理器提供的高熵值。
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
-      # 浏览器 Session 有效期；生产按安全策略调整。
-      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-24h}
+      # 浏览器和 CLI 的短期访问 Token、可刷新 Session 与设备授权时限。
+      AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-24h}
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-720h}
+      AUTH_DEVICE_AUTHORIZATION_TTL: ${AUTH_DEVICE_AUTHORIZATION_TTL:-10m}
+      AUTH_DEVICE_POLL_INTERVAL: ${AUTH_DEVICE_POLL_INTERVAL:-5s}
       # 首个管理员邮箱；生产必须设置为受控管理员账号。
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@mmdash.local}
       # 首个管理员显示名；生产应设置为实际运维/管理员名称。
@@ -221,9 +224,9 @@ services:
       # Agent 可调用 Tool 范围；生产必须设置最小权限清单，禁止使用 *。
       MCP_AGENT_TOOLS: ${MCP_AGENT_TOOLS:-*}
       # 允许的 Host Header；生产必须仅包含正式域名。
-      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mmdash.com,localhost,127.0.0.1}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mmdash.moe,localhost,127.0.0.1}
       # CORS 允许来源；生产必须仅包含正式 HTTPS 前端域名。
-      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-https://mmdash.com,http://localhost:3002}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-https://mmdash.moe,http://localhost:3002}
       # CLI Token 可访问项目范围；生产必须收敛为显式项目 ID，禁止使用 *。
       MCP_CLI_PROJECTS: ${MCP_CLI_PROJECTS:-*}
       # CLI 调用鉴权 Token；生产必须使用 Secret 管理器注入的强随机值。

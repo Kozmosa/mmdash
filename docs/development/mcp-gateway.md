@@ -20,8 +20,13 @@ authenticated `DELETE /mcp` with that header explicitly terminates it.
 
 ## Authentication and authorization
 
-`Authorization: Bearer <token>` accepts two independently configured static
-foundation tokens:
+`Authorization: Bearer <token>` accepts a Core user session or API token for
+the Stage 3 CLI path. The Gateway validates it through `auth.me`, maps it to a
+CLI principal, and forwards the same delegated token to Core. Current Project
+membership and RBAC therefore remain authoritative at the owning Core module.
+
+Two independently configured static foundation tokens remain available for
+local development and boundary tests:
 
 | Variable          | Principal     | Default permissions variable            |
 | ----------------- | ------------- | --------------------------------------- |
@@ -29,9 +34,21 @@ foundation tokens:
 | `MCP_AGENT_TOKEN` | Agent runtime | `MCP_AGENT_PROJECTS`, `MCP_AGENT_TOOLS` |
 
 Permission lists are comma-separated exact names or prefix patterns ending in
-`*`; a single `*` allows all. Production startup rejects development tokens.
+`*`; a single `*` allows all. Production startup rejects development token
+values and does not require either static token.
 Tokens are compared in constant time, represented in logs only by a short
 SHA-256-derived principal ID, and never returned by tools.
+
+These environment-configured values exist for local development, integration
+tests, and validation of the Gateway authorization boundary. In particular,
+`MCP_AGENT_TOKEN` is not the first product Agent Token scheme and must not be
+used as the production Hermes credential lifecycle.
+
+The later Agent stage integrates the Gateway with the Core/Auth-managed opaque
+Agent Token model. That token is issued once for an Agent instance, scoped to a
+Project and allowed MCP tools, stored by Hermes, and presented by Hermes
+directly to this Gateway. The user CLI has a separate user-delegated identity
+and does not proxy, mint, persist, or validate Hermes credentials.
 
 The gateway also validates Host and Origin using `MCP_ALLOWED_HOSTS` and
 `MCP_ALLOWED_ORIGINS` to prevent DNS rebinding.

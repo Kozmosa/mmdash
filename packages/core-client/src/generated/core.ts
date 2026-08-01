@@ -106,6 +106,74 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/auth/refresh": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rotate a session by using its refresh token */
+    post: operations["auth.refresh"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/device/authorize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start a CLI device authorization */
+    post: operations["auth.device.authorize"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/device/verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve or deny a CLI device authorization */
+    post: operations["auth.device.verify"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/device/token": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Exchange an approved device code for a CLI session */
+    post: operations["auth.device.token"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/auth/register": {
     parameters: {
       query?: never;
@@ -1590,6 +1658,27 @@ export interface components {
       email: string;
       password: string;
     };
+    RefreshTokenRequest: {
+      refresh_token: string;
+    };
+    DeviceAuthorization: {
+      device_code: string;
+      user_code: string;
+      /** Format: uri */
+      verification_uri: string;
+      /** Format: uri */
+      verification_uri_complete: string;
+      /** Format: date-time */
+      expires_at: string;
+      interval: number;
+    };
+    DeviceVerificationRequest: {
+      user_code: string;
+      approve: boolean;
+    };
+    DeviceTokenRequest: {
+      device_code: string;
+    };
     RegisterRequest: {
       /** Format: email */
       email: string;
@@ -1612,6 +1701,7 @@ export interface components {
     };
     LoginResult: {
       access_token: string;
+      refresh_token?: string;
       /** Format: date-time */
       expires_at: string;
       /** Format: uuid */
@@ -2923,6 +3013,105 @@ export interface operations {
         };
       };
       401: components["responses"]["Error"];
+    };
+  };
+  "auth.refresh": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RefreshTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Access and refresh tokens were rotated. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LoginResult"];
+        };
+      };
+      401: components["responses"]["Error"];
+    };
+  };
+  "auth.device.authorize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One-time device and user codes were created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeviceAuthorization"];
+        };
+      };
+    };
+  };
+  "auth.device.verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeviceVerificationRequest"];
+      };
+    };
+    responses: {
+      /** @description Device authorization decision recorded. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      401: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "auth.device.token": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeviceTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Approved device authorization exchanged once. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LoginResult"];
+        };
+      };
+      400: components["responses"]["Error"];
+      401: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
     };
   };
   "auth.register": {

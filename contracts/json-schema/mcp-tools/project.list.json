@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/project.list.json",
+  "title": "project.list MCP tool",
+  "description": "Lists projects visible to the delegated mmdash user.",
+  "x-operation-id": "project.list",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    }
+  }
+}

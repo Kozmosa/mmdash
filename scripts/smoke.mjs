@@ -1,5 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { resolveComposeCommand } from "./compose-command.mjs";
 import { runRepoSmoke } from "./repo-smoke.mjs";
@@ -248,15 +250,15 @@ assert(
   "MCP Gateway health check failed.",
 );
 
-const cli = spawnSync(
-  process.execPath,
-  ["clients/cli/dist/main.js", "--version"],
-  { encoding: "utf8" },
-);
-assert(
-  cli.status === 0 && cli.stdout.trim().length > 0,
-  `CLI shell failed:\n${cli.stdout}\n${cli.stderr}`,
-);
+await runCliMcpSmoke({
+  cookie,
+  coreUrl,
+  dataObjectId: object.object_id,
+  mcpUrl,
+  projectId,
+  runId,
+  webUrl,
+});
 
 const repo =
   process.env.MMDASH_SMOKE_REPO_MODE === "docker"
@@ -316,6 +318,256 @@ async function poll(load, ready, message) {
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   throw new Error(`${message} Last state: ${JSON.stringify(last)}`);
+}
+
+async function runCliMcpSmoke({
+  cookie,
+  coreUrl,
+  dataObjectId,
+  mcpUrl,
+  projectId,
+  runId,
+  webUrl,
+}) {
+  const configDirectory = mkdtempSync(join(tmpdir(), "mmdash-cli-smoke-"));
+  const environment = {
+    ...process.env,
+    MMDASH_CONFIG_DIR: configDirectory,
+    MMDASH_CORE_URL: coreUrl,
+    MMDASH_MCP_URL: `${mcpUrl}/mcp`,
+    // The profile URL is deliberately unique so this smoke never replaces a
+    // developer's normal localhost credential in the platform secret store.
+    MMDASH_URL: `${coreUrl}/cli-smoke-${runId}`,
+  };
+  const cliBinary = join(
+    configDirectory,
+    process.platform === "win32" ? "mmdash.exe" : "mmdash",
+  );
+  const build = spawnSync(
+    "go",
+    ["build", "-trimpath", "-o", cliBinary, "./clients/cli/cmd/mmdash"],
+    { encoding: "utf8", env: environment, timeout: 120_000 },
+  );
+  assert(
+    build.status === 0,
+    `Native CLI build failed:\n${build.stdout}\n${build.stderr}`,
+  );
+  let authenticated = false;
+  let loginProcess;
+  try {
+    const version = runCli(cliBinary, ["--version"], environment);
+    assert(version.stdout.trim().length > 0, "Native CLI returned no version.");
+
+    let resolveUserCode;
+    let rejectUserCode;
+    let timeout;
+    const userCode = new Promise((resolveCode, rejectCode) => {
+      resolveUserCode = (code) => {
+        clearTimeout(timeout);
+        resolveCode(code);
+      };
+      rejectUserCode = rejectCode;
+    });
+    const login = startCli(
+      cliBinary,
+      ["login", "--no-browser"],
+      environment,
+      (text) => {
+        const match = text.match(/enter code ([A-Za-z0-9]{4}-[A-Za-z0-9]{4})/);
+        if (match) resolveUserCode(match[1]);
+      },
+    );
+    loginProcess = login.child;
+    timeout = setTimeout(
+      () =>
+        rejectUserCode(new Error("CLI login did not present a device code.")),
+      20_000,
+    );
+    let code;
+    try {
+      code = await Promise.race([
+        userCode,
+        login.finished.then((result) => {
+          throw new Error(
+            `CLI login exited before presenting a device code:\n${result.stdout}\n${result.stderr}`,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
+    await fetchChecked(`${webUrl}/api/auth/device/verify`, {
+      body: { approve: true, user_code: code },
+      headers: { cookie },
+      method: "POST",
+    });
+    const loginResult = await withTimeout(
+      login.finished,
+      30_000,
+      "CLI login did not finish after browser approval.",
+    );
+    loginProcess = undefined;
+    authenticated = loginResult.code === 0;
+    assert(
+      authenticated,
+      `Native CLI login failed:\n${loginResult.stdout}\n${loginResult.stderr}`,
+    );
+
+    runCli(cliBinary, ["--json", "project", "use", projectId], environment);
+    const requests = [
+      {
+        id: 1,
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          capabilities: {},
+          clientInfo: { name: "mmdash-cli-smoke", version: "0.1.0" },
+          protocolVersion: "2026-07-28",
+        },
+      },
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+      { id: 2, jsonrpc: "2.0", method: "tools/list" },
+      {
+        id: 3,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { arguments: {}, name: "project.list" },
+      },
+      {
+        id: 4,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { arguments: {}, name: "project.get" },
+      },
+      {
+        id: 5,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { arguments: { type: "project" }, name: "data.list" },
+      },
+      {
+        id: 6,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          arguments: { object_id: dataObjectId },
+          name: "data.read",
+        },
+      },
+    ];
+    const mcp = runCli(cliBinary, ["mcp"], environment, {
+      input: `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`,
+      timeout: 120_000,
+    });
+    const responses = mcp.stdout
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    for (const id of [1, 2, 3, 4, 5, 6]) {
+      assert(byId.has(id), `CLI MCP omitted JSON-RPC response ${id}.`);
+      assert(
+        !byId.get(id).error,
+        `CLI MCP request ${id} failed: ${JSON.stringify(byId.get(id).error)}`,
+      );
+    }
+    const tools = byId.get(2).result.tools.map((tool) => tool.name);
+    for (const tool of [
+      "project.list",
+      "project.get",
+      "data.list",
+      "data.read",
+    ]) {
+      assert(tools.includes(tool), `CLI MCP discovery omitted ${tool}.`);
+    }
+    assert(
+      byId.get(4).result.structuredContent?.id === projectId,
+      "CLI project.get did not use the explicitly selected Project.",
+    );
+    assert(
+      byId.get(6).result.structuredContent?.object?.object_id === dataObjectId,
+      "CLI data.read did not return the selected Data Hub object.",
+    );
+  } finally {
+    await stopChild(loginProcess);
+    if (authenticated) {
+      const logout = spawnSync(cliBinary, ["logout"], {
+        encoding: "utf8",
+        env: environment,
+        timeout: 60_000,
+      });
+      if (logout.status !== 0) {
+        process.stderr.write(
+          `CLI smoke cleanup could not remove its credential:\n${logout.stdout}\n${logout.stderr}\n`,
+        );
+      }
+    }
+    rmSync(configDirectory, { force: true, recursive: true });
+  }
+}
+
+function runCli(cliBinary, arguments_, environment, options = {}) {
+  const result = spawnSync(cliBinary, arguments_, {
+    encoding: "utf8",
+    env: environment,
+    timeout: 60_000,
+    ...options,
+  });
+  assert(
+    result.status === 0,
+    `Native CLI failed (${arguments_.join(" ")}):\n${result.stdout}\n${result.stderr}`,
+  );
+  return result;
+}
+
+function startCli(cliBinary, arguments_, environment, onStderr) {
+  const child = spawn(cliBinary, arguments_, {
+    env: environment,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (text) => {
+    stdout += text;
+  });
+  child.stderr.on("data", (text) => {
+    stderr += text;
+    onStderr(stderr);
+  });
+  const finished = new Promise((resolveFinished, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolveFinished({ code, stderr, stdout }));
+  });
+  return { child, finished };
+}
+
+async function stopChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill();
+  await new Promise((resolveStopped) => {
+    const timeout = setTimeout(resolveStopped, 5_000);
+    child.once("close", () => {
+      clearTimeout(timeout);
+      resolveStopped();
+    });
+  });
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timeout;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function assert(condition, message) {

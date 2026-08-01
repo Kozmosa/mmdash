@@ -1,4 +1,4 @@
-mmdash.com {
+mmdash.moe {
 	encode zstd gzip
 
 	log {
@@ -49,6 +49,23 @@ mmdash.com {
 				lb_try_duration 5s
 				flush_interval -1
 				stream_close_delay 5m
+			}
+		}
+
+		@core_api path /v1/*
+		handle @core_api {
+			request_body {
+				max_size 16MB
+			}
+			reverse_proxy core:8080 {
+				health_uri /health/ready
+				health_interval 15s
+				health_timeout 3s
+				health_fails 3
+				health_passes 2
+				fail_duration 30s
+				lb_try_duration 5s
+				flush_interval -1
 			}
 		}
 

@@ -75,17 +75,17 @@ docker compose -f deploy/compose/compose.yaml down
 
 ## Evidence matrix
 
-| Requirement                   | Runtime evidence in `pnpm smoke`                          |
-| ----------------------------- | --------------------------------------------------------- |
-| Services start                | Web, Core, BFF, MCP health plus CLI/Worker process checks |
-| Login and empty project       | Browser login and BFF project creation                    |
-| Web → BFF → Core → PostgreSQL | `/api/example`, project, and home aggregation             |
-| MCP Gateway and CLI shell     | MCP liveness and `mmdash --version`                       |
-| Worker claims test Job        | Core-issued API token plus `system.test` one-shot Worker  |
-| Outbox delivery               | `system.test.emitted` reaches successful delivery         |
-| Data Hub object               | `project.created` projection plus `data.read` routing     |
-| Request ID and Audit          | BFF-preserved ID queried from append-only Core Audit      |
-| CI                            | Node 24 workflow and `pnpm check`                         |
+| Requirement                   | Runtime evidence in `pnpm smoke`                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| Services start                | Web, Core, BFF, MCP health plus CLI/Worker process checks                                           |
+| Login and empty project       | Browser login and BFF project creation                                                              |
+| Web → BFF → Core → PostgreSQL | `/api/example`, project, and home aggregation                                                       |
+| MCP Gateway and native CLI    | Device login, Project selection, discovery, and all four Stage 3 tools over stdio → Streamable HTTP |
+| Worker claims test Job        | Core-issued API token plus `system.test` one-shot Worker                                            |
+| Outbox delivery               | `system.test.emitted` reaches successful delivery                                                   |
+| Data Hub object               | `project.created` projection plus `data.read` routing                                               |
+| Request ID and Audit          | BFF-preserved ID queried from append-only Core Audit                                                |
+| CI                            | Node 24 workflow and `pnpm check`                                                                   |
 
 Smoke creates isolated records with a timestamped name and idempotency key. It
 polls asynchronous state once per second and stops after 30 attempts.

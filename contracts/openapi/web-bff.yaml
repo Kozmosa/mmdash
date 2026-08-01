@@ -6,7 +6,7 @@ info:
     Browser-facing API served by the Fastify Web BFF. Authenticated operations
     require the signed, HTTP-only mmdash_session cookie.
 servers:
-  - url: https://mmdash.com
+  - url: https://mmdash.moe
     description: Public ingress
   - url: http://localhost:3001
     description: Local Web BFF
@@ -92,6 +92,28 @@ paths:
                   user:
                     $ref: "./core.yaml#/components/schemas/User"
         "401":
+          $ref: "#/components/responses/Error"
+  /api/auth/device/verify:
+    post:
+      tags: [Auth]
+      summary: Approve or deny a CLI device authorization in the browser
+      operationId: bff.auth.device.verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/DeviceVerificationRequest"
+      responses:
+        "204":
+          description: Device authorization decision recorded.
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
   /api/auth/register:
     post:

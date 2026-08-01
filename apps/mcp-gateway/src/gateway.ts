@@ -32,6 +32,7 @@ import {
   projectMemberGetTool,
   projectMemberListTool,
 } from "./tools/project-members.js";
+import { projectGetTool, projectListTool } from "./tools/projects.js";
 
 export type GatewayFetchHandler = {
   close(): Promise<void>;
@@ -67,7 +68,7 @@ export function buildGateway(
   const registry = options.registry ?? createDefaultToolRegistry();
   const sessions =
     options.sessions ?? new SessionRegistry(config.sessionTtlMs, now);
-  const authenticator = TokenAuthenticator.fromConfig(config);
+  const authenticator = TokenAuthenticator.fromConfig(config, coreClient);
 
   const handler = createMcpHandler(
     (requestContext) => {
@@ -76,7 +77,9 @@ export function buildGateway(
         audit,
         authorizer,
         coreClient,
-        coreAccessToken: config.coreAccessToken,
+        coreAccessToken: principal.delegated
+          ? requestContext.authInfo?.token
+          : config.coreAccessToken,
         now,
         principal,
         requestId: readExtra(requestContext.authInfo?.extra, "requestId"),
@@ -111,6 +114,8 @@ function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(dataListTool);
   registry.register(dataReadTool);
+  registry.register(projectGetTool);
+  registry.register(projectListTool);
   registry.register(systemEchoTool);
   registry.register(projectMemberListTool);
   registry.register(projectMemberGetTool);
@@ -125,7 +130,7 @@ async function handleGatewayRequest(
   handler: McpHttpHandler,
 ): Promise<Response> {
   const url = new URL(request.url);
-  if (url.pathname === "/health/live") {
+  if (url.pathname === "/health/live" || url.pathname === "/mcp/health/live") {
     return jsonResponse(200, {
       service: "mcp-gateway",
       status: "ok",
@@ -141,8 +146,10 @@ async function handleGatewayRequest(
 
   try {
     validateRequestOrigin(request, config);
-    const { authInfo, principal } = authenticator.authenticate(
+    const requestId = resolveRequestId(request.headers.get("x-request-id"));
+    const { authInfo, principal } = await authenticator.authenticate(
       request.headers.get("authorization"),
+      requestId,
     );
     const suppliedSession = request.headers.get(gatewaySessionHeader);
     if (request.method === "DELETE" && suppliedSession) {
@@ -150,7 +157,6 @@ async function handleGatewayRequest(
       return new Response(null, { status: 204 });
     }
     const session = sessions.resolve(suppliedSession, principal.id);
-    const requestId = resolveRequestId(request.headers.get("x-request-id"));
     const options: McpHandlerRequestOptions = {
       authInfo: {
         ...authInfo,

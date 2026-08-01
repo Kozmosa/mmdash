@@ -1,7 +1,9 @@
 import cookie from "@fastify/cookie";
-import type { FastifyInstance } from "fastify";
+import type { CoreClient } from "@mmdash/core-client";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
+import type { BffConfig } from "../config.js";
 import { BffError } from "../errors/bff-error.js";
 
 export const sessionCookieName = "mmdash_session";
@@ -12,6 +14,7 @@ const sessionAssertionSchema = z.object({
   display_name: z.string().min(1).max(200),
   email: z.string().email(),
   expires_at: z.string().datetime({ offset: true }),
+  refresh_token: z.string().min(32),
   session_id: z.string().min(1).max(200),
   status: z.enum(["active", "disabled"]),
   system_role: z.enum(["admin", "member"]),
@@ -23,6 +26,8 @@ export type BrowserIdentity = {
   createdAt: string;
   displayName: string;
   email: string;
+  expiresAt: string;
+  refreshToken: string;
   sessionId: string;
   status: "active" | "disabled";
   systemRole: "admin" | "member";
@@ -33,15 +38,16 @@ export type SessionAssertion = z.input<typeof sessionAssertionSchema>;
 
 export function registerBrowserAuth(
   app: FastifyInstance,
-  cookieSecret: string,
+  coreClient: CoreClient,
+  config: BffConfig,
 ): void {
   app.register(cookie, {
     hook: "onRequest",
-    secret: cookieSecret,
+    secret: config.cookieSecret,
   });
   app.decorateRequest("browserIdentity");
 
-  app.addHook("preHandler", async (request) => {
+  app.addHook("preHandler", async (request, reply) => {
     if (request.routeOptions.config.auth === "public") {
       return;
     }
@@ -64,20 +70,77 @@ export function registerBrowserAuth(
       throw unauthorized();
     }
     const parsed = sessionAssertionSchema.safeParse(assertion);
-    if (!parsed.success || Date.parse(parsed.data.expires_at) <= Date.now()) {
+    if (!parsed.success) {
       throw unauthorized();
     }
 
+    let session = parsed.data;
+    if (Date.parse(session.expires_at) <= Date.now() + 60_000) {
+      try {
+        const refreshed = await coreClient.refreshSession(
+          session.refresh_token,
+          { requestId: request.id },
+        );
+        setBrowserSessionCookie(reply, refreshed, config);
+        session = sessionAssertionSchema.parse({
+          access_token: refreshed.access_token,
+          created_at: refreshed.user.created_at,
+          display_name: refreshed.user.display_name,
+          email: refreshed.user.email,
+          expires_at: refreshed.expires_at,
+          refresh_token: refreshed.refresh_token,
+          session_id: refreshed.session_id,
+          status: refreshed.user.status,
+          system_role: refreshed.user.system_role,
+          user_id: refreshed.user.id,
+        });
+      } catch {
+        reply.clearCookie(sessionCookieName, { path: "/" });
+        throw unauthorized();
+      }
+    }
+
     request.browserIdentity = {
-      accessToken: parsed.data.access_token,
-      createdAt: parsed.data.created_at,
-      displayName: parsed.data.display_name,
-      email: parsed.data.email,
-      sessionId: parsed.data.session_id,
-      status: parsed.data.status,
-      systemRole: parsed.data.system_role,
-      userId: parsed.data.user_id,
+      accessToken: session.access_token,
+      createdAt: session.created_at,
+      displayName: session.display_name,
+      email: session.email,
+      expiresAt: session.expires_at,
+      refreshToken: session.refresh_token,
+      sessionId: session.session_id,
+      status: session.status,
+      systemRole: session.system_role,
+      userId: session.user_id,
     };
+  });
+}
+
+export function setBrowserSessionCookie(
+  reply: FastifyReply,
+  result: Awaited<ReturnType<CoreClient["login"]>>,
+  config: BffConfig,
+): void {
+  if (!result.refresh_token) {
+    throw new Error("Core did not return a refreshable session");
+  }
+  const assertion = encodeSessionAssertion({
+    access_token: result.access_token,
+    created_at: result.user.created_at,
+    display_name: result.user.display_name,
+    email: result.user.email,
+    expires_at: result.expires_at,
+    refresh_token: result.refresh_token,
+    session_id: result.session_id,
+    status: result.user.status,
+    system_role: result.user.system_role,
+    user_id: result.user.id,
+  });
+  reply.setCookie(sessionCookieName, assertion, {
+    httpOnly: true,
+    path: "/",
+    sameSite: "lax",
+    secure: config.nodeEnv === "production",
+    signed: true,
   });
 }
 

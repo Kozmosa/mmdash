@@ -1,0 +1,64 @@
+name: CLI release
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [darwin, linux, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: backend/go.sum
+      - name: Test CLI
+        run: go test ./clients/cli/...
+      - name: Build native binary
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#cli-v}"
+          binary="mmdash"
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then binary="mmdash.exe"; fi
+          directory="mmdash_${version}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p "dist/${directory}"
+          GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" CGO_ENABLED=0 \
+            go build -trimpath \
+              -ldflags="-s -w -X main.version=${version}" \
+              -o "dist/${directory}/${binary}" \
+              ./clients/cli/cmd/mmdash
+          cp clients/cli/README.md "dist/${directory}/README.md"
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            (cd dist && zip -r "${directory}.zip" "${directory}")
+          else
+            tar -C dist -czf "dist/${directory}.tar.gz" "${directory}"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

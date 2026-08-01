@@ -113,10 +113,148 @@ func (store PostgresStore) FindUserByEmail(ctx context.Context, email string) (U
 func (store PostgresStore) CreateSession(ctx context.Context, session Session) error {
 	_, err := store.DB.ExecContext(ctx, `
 		INSERT INTO auth_sessions (
-			session_id, user_id, token_hash, expires_at, last_seen_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $5)
-	`, session.ID, session.UserID, session.TokenHash, session.ExpiresAt, session.CreatedAt)
+			session_id, user_id, token_hash, refresh_token_hash,
+			expires_at, last_seen_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $6)
+	`, session.ID, session.UserID, session.TokenHash, nullableHash(session.RefreshTokenHash), session.ExpiresAt, session.CreatedAt)
 	return err
+}
+
+func (store PostgresStore) CreateDeviceAuthorization(ctx context.Context, authorization DeviceAuthorization) error {
+	if _, err := store.DB.ExecContext(ctx, `
+		DELETE FROM auth_device_authorizations WHERE expires_at <= $1
+	`, authorization.CreatedAt); err != nil {
+		return err
+	}
+	_, err := store.DB.ExecContext(ctx, `
+		INSERT INTO auth_device_authorizations (
+			authorization_id, device_code_hash, user_code_hash, status,
+			expires_at, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6)
+	`, authorization.ID, authorization.DeviceCodeHash, authorization.UserCodeHash, authorization.Status, authorization.ExpiresAt, authorization.CreatedAt)
+	return err
+}
+
+func (store PostgresStore) DecideDeviceAuthorization(ctx context.Context, userCodeHash string, userID string, approve bool, now time.Time) error {
+	status := "denied"
+	if approve {
+		status = "approved"
+	}
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE auth_device_authorizations
+		SET status = $3, user_id = $2, approved_at = CASE WHEN $3 = 'approved' THEN $4 ELSE NULL END
+		WHERE user_code_hash = $1 AND status = 'pending' AND expires_at > $4
+	`, userCodeHash, userID, status, now)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return deviceAuthorizationError(ctx, store.DB, "user_code_hash", userCodeHash, now)
+	}
+	return nil
+}
+
+func (store PostgresStore) ExchangeDeviceAuthorization(
+	ctx context.Context,
+	deviceCodeHash string,
+	now time.Time,
+	createSession func(User) (Session, error),
+) (Session, User, error) {
+	var session Session
+	var user User
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var userID string
+		err := tx.QueryRowContext(ctx, `
+			UPDATE auth_device_authorizations
+			SET status = 'consumed', consumed_at = $2
+			WHERE device_code_hash = $1 AND status = 'approved' AND expires_at > $2
+			RETURNING user_id
+		`, deviceCodeHash, now).Scan(&userID)
+		if err == sql.ErrNoRows {
+			return deviceAuthorizationError(ctx, tx, "device_code_hash", deviceCodeHash, now)
+		}
+		if err != nil {
+			return err
+		}
+		err = tx.QueryRowContext(ctx, `
+			SELECT user_id, email, display_name, status, system_role, created_at
+			FROM auth_users WHERE user_id = $1 AND status = 'active'
+		`, userID).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Status, &user.SystemRole, &user.CreatedAt)
+		if err != nil {
+			return err
+		}
+		session, err = createSession(user)
+		if err != nil {
+			return err
+		}
+		if session.UserID != userID {
+			return fmt.Errorf("device session user does not match approved user")
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO auth_sessions (
+				session_id, user_id, token_hash, refresh_token_hash,
+				expires_at, last_seen_at, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $6)
+		`, session.ID, session.UserID, session.TokenHash, session.RefreshTokenHash, session.ExpiresAt, session.CreatedAt)
+		return err
+	})
+	return session, user, err
+}
+
+func (store PostgresStore) RotateSession(ctx context.Context, refreshTokenHash string, tokenHash string, newRefreshTokenHash string, now time.Time) (Session, User, error) {
+	var session Session
+	var user User
+	err := store.DB.QueryRowContext(ctx, `
+		UPDATE auth_sessions AS session
+		SET token_hash = $2, refresh_token_hash = $3, last_seen_at = $4
+		FROM auth_users AS users
+		WHERE session.refresh_token_hash = $1
+		  AND session.revoked_at IS NULL
+		  AND session.expires_at > $4
+		  AND users.user_id = session.user_id
+		  AND users.status = 'active'
+		RETURNING session.session_id, session.user_id, session.token_hash,
+		          session.refresh_token_hash, session.expires_at, session.created_at,
+		          users.user_id, users.email, users.display_name,
+		          users.status, users.system_role, users.created_at
+	`, refreshTokenHash, tokenHash, newRefreshTokenHash, now).Scan(
+		&session.ID, &session.UserID, &session.TokenHash,
+		&session.RefreshTokenHash, &session.ExpiresAt, &session.CreatedAt,
+		&user.ID, &user.Email, &user.DisplayName,
+		&user.Status, &user.SystemRole, &user.CreatedAt,
+	)
+	return session, user, err
+}
+
+type rowQuerier interface {
+	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+}
+
+func deviceAuthorizationError(ctx context.Context, querier rowQuerier, column string, hash string, now time.Time) error {
+	query := `SELECT status, expires_at FROM auth_device_authorizations WHERE device_code_hash = $1`
+	if column == "user_code_hash" {
+		query = `SELECT status, expires_at FROM auth_device_authorizations WHERE user_code_hash = $1`
+	}
+	var status string
+	var expiresAt time.Time
+	if err := querier.QueryRowContext(ctx, query, hash).Scan(&status, &expiresAt); err != nil {
+		return ErrNotFound
+	}
+	if !expiresAt.After(now) {
+		return ErrAuthorizationExpired
+	}
+	switch status {
+	case "pending":
+		return ErrAuthorizationPending
+	case "denied":
+		return ErrAuthorizationDenied
+	default:
+		return ErrConflict
+	}
 }
 
 func (store PostgresStore) FindSession(
@@ -153,6 +291,29 @@ func (store PostgresStore) FindSession(
 		&user.Status,
 		&user.SystemRole,
 		&user.CreatedAt,
+	)
+	return session, user, err
+}
+
+func (store PostgresStore) FindSessionByRefreshToken(ctx context.Context, refreshTokenHash string, now time.Time) (Session, User, error) {
+	var session Session
+	var user User
+	err := store.DB.QueryRowContext(ctx, `
+		SELECT session.session_id, session.user_id, session.token_hash,
+		       session.refresh_token_hash, session.expires_at, session.created_at,
+		       users.user_id, users.email, users.display_name,
+		       users.status, users.system_role, users.created_at
+		FROM auth_sessions AS session
+		JOIN auth_users AS users ON users.user_id = session.user_id
+		WHERE session.refresh_token_hash = $1
+		  AND session.revoked_at IS NULL
+		  AND session.expires_at > $2
+		  AND users.status = 'active'
+	`, refreshTokenHash, now).Scan(
+		&session.ID, &session.UserID, &session.TokenHash,
+		&session.RefreshTokenHash, &session.ExpiresAt, &session.CreatedAt,
+		&user.ID, &user.Email, &user.DisplayName,
+		&user.Status, &user.SystemRole, &user.CreatedAt,
 	)
 	return session, user, err
 }
@@ -276,4 +437,11 @@ func wrapStore(operation string, err error) error {
 func isUniqueViolation(err error) bool {
 	var postgresError *pgconn.PgError
 	return errors.As(err, &postgresError) && postgresError.Code == "23505"
+}
+
+func nullableHash(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
 }

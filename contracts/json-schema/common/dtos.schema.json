@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mmdash.com/schemas/common/dtos.schema.json",
+  "$id": "https://mmdash.moe/schemas/common/dtos.schema.json",
   "title": "mmdash common DTOs",
   "$defs": {
     "Identifier": {

@@ -1,4 +1,4 @@
-FROM golang:1.17-alpine AS build
+FROM golang:1.26-alpine AS build
 ENV GOPROXY=https://goproxy.cn
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
