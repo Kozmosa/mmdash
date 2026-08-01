@@ -1,10 +1,10 @@
 import type { CoreClient } from "@mmdash/core-client";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import {
-  encodeSessionAssertion,
   sessionCookieName,
+  setBrowserSessionCookie,
 } from "../auth/browser-auth.js";
 import type { BffConfig } from "../config.js";
 
@@ -30,7 +30,7 @@ export function registerAuthRoutes(
       const result = await coreClient.login(loginSchema.parse(request.body), {
         requestId: request.id,
       });
-      setSessionCookie(reply, result, config);
+      setBrowserSessionCookie(reply, result, config);
       return { user: result.user };
     },
   );
@@ -43,8 +43,26 @@ export function registerAuthRoutes(
         registerSchema.parse(request.body),
         { requestId: request.id },
       );
-      setSessionCookie(reply, result, config);
+      setBrowserSessionCookie(reply, result, config);
       return reply.code(201).send({ user: result.user });
+    },
+  );
+
+  app.post(
+    "/api/auth/device/verify",
+    { config: { auth: "required", project: "none" } },
+    async (request, reply) => {
+      const input = z
+        .object({
+          approve: z.boolean(),
+          user_code: z
+            .string()
+            .trim()
+            .regex(/^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/),
+        })
+        .parse(request.body);
+      await coreClient.verifyDeviceAuthorization(input, authContext(request));
+      return reply.code(204).send();
     },
   );
 
@@ -142,29 +160,4 @@ function authContext(request: {
     requestId: request.id,
     userId: request.browserIdentity!.userId,
   };
-}
-
-function setSessionCookie(
-  reply: FastifyReply,
-  result: Awaited<ReturnType<CoreClient["login"]>>,
-  config: BffConfig,
-): void {
-  const assertion = encodeSessionAssertion({
-    access_token: result.access_token,
-    created_at: result.user.created_at,
-    display_name: result.user.display_name,
-    email: result.user.email,
-    expires_at: result.expires_at,
-    session_id: result.session_id,
-    status: result.user.status,
-    system_role: result.user.system_role,
-    user_id: result.user.id,
-  });
-  reply.setCookie(sessionCookieName, assertion, {
-    httpOnly: true,
-    path: "/",
-    sameSite: "lax",
-    secure: config.nodeEnv === "production",
-    signed: true,
-  });
 }

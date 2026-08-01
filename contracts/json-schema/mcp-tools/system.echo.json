@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mmdash.com/schemas/mcp-tools/system.echo.json",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/system.echo.json",
   "title": "system.echo MCP tool",
   "description": "Stage 3.5 test tool for the MCP Gateway request boundary.",
   "x-operation-id": "system.echo",

@@ -17,6 +17,22 @@ The cookie uses `SameSite=Lax`, is scoped to `/`, and is `Secure` in
 production. `POST /api/auth/logout` revokes the Core session before clearing
 the browser cookie.
 
+## CLI device authorization and refresh
+
+The native CLI never collects an account password. It starts a ten-minute
+device authorization with `auth.device.authorize`, opens the returned
+`verification_uri_complete`, and polls `auth.device.token` at the advertised
+interval. An authenticated browser approves or denies the user code through
+`bff.auth.device.verify`. Device codes and user codes are stored only as hashes,
+and a successful exchange is atomic and single-use.
+
+Core sessions now have a shorter access-token lifetime and a longer absolute
+session lifetime. `auth.refresh` rotates both the JWT and the high-entropy
+refresh token using compare-and-swap storage; the previous pair is invalid as
+soon as rotation succeeds. The CLI keeps both secrets only in the operating
+system credential store. Browser BFF continues to expose neither secret to
+JavaScript.
+
 Local Compose creates the configurable bootstrap account declared by
 `AUTH_BOOTSTRAP_EMAIL` and `AUTH_BOOTSTRAP_PASSWORD`.
 
@@ -32,6 +48,20 @@ Core supports three revocable opaque token kinds:
 
 Only a SHA-256 token hash is stored. The secret is returned once by
 `auth.tokens.create`; list operations expose metadata only.
+
+The `agent` kind is the generic Auth credential primitive. Product-level
+Hermes onboarding is a later Agent-stage capability: an Agent instance receives
+a high-entropy token bound to that instance, one Project grant, and an allowed
+MCP tool set. In `manual` management mode the user stores the one-time secret in
+Hermes; in `auto` mode the Hermes Adapter writes it through an authenticated,
+server-reachable Hermes management endpoint. Hermes then presents the secret
+directly to the remote MCP Gateway. Rotation temporarily keeps the old and new
+token valid until the new credential passes an actual MCP call. The user-device
+CLI is neither a hop in that request path nor a holder of the Hermes Agent Token.
+
+The static `MCP_AGENT_TOKEN` accepted by the current foundation Gateway is a
+development and boundary-test credential. It is not the product Agent Token
+lifecycle described above.
 
 ## Collaborative project roles
 

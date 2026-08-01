@@ -34,12 +34,34 @@ type User struct {
 
 // Session is a persisted browser login.
 type Session struct {
-	CreatedAt time.Time
-	ExpiresAt time.Time
-	ID        string
-	RevokedAt *time.Time
-	TokenHash string
-	UserID    string
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
+	ID               string
+	RefreshTokenHash string
+	RevokedAt        *time.Time
+	TokenHash        string
+	UserID           string
+}
+
+// DeviceAuthorization is a short-lived user-approved CLI login request.
+type DeviceAuthorization struct {
+	CreatedAt      time.Time
+	DeviceCodeHash string
+	ExpiresAt      time.Time
+	ID             string
+	Status         string
+	UserCodeHash   string
+	UserID         string
+}
+
+// DeviceAuthorizationResult returns the two one-time codes to the CLI.
+type DeviceAuthorizationResult struct {
+	DeviceCode              string    `json:"device_code"`
+	ExpiresAt               time.Time `json:"expires_at"`
+	Interval                int       `json:"interval"`
+	UserCode                string    `json:"user_code"`
+	VerificationURI         string    `json:"verification_uri"`
+	VerificationURIComplete string    `json:"verification_uri_complete"`
 }
 
 // Token is a persisted API, Agent, or Box credential.
@@ -66,10 +88,11 @@ type Identity struct {
 
 // LoginResult returns the JWT only at login time.
 type LoginResult struct {
-	AccessToken string    `json:"access_token"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	SessionID   string    `json:"session_id"`
-	User        User      `json:"user"`
+	AccessToken  string    `json:"access_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	RefreshToken string    `json:"refresh_token"`
+	SessionID    string    `json:"session_id"`
+	User         User      `json:"user"`
 }
 
 // RegisterInput contains public account registration fields.
@@ -117,13 +140,18 @@ type IssuedToken struct {
 
 // Store is the persistence boundary for the auth domain.
 type Store interface {
+	CreateDeviceAuthorization(context.Context, DeviceAuthorization) error
 	CreateSession(context.Context, Session) error
 	CreateToken(context.Context, Token) error
 	CreateUser(context.Context, User, string) error
 	FindSession(context.Context, string, string, time.Time) (Session, User, error)
+	FindSessionByRefreshToken(context.Context, string, time.Time) (Session, User, error)
 	FindToken(context.Context, string, time.Time) (Token, User, error)
 	FindUserByEmail(context.Context, string) (User, string, error)
+	DecideDeviceAuthorization(context.Context, string, string, bool, time.Time) error
+	ExchangeDeviceAuthorization(context.Context, string, time.Time, func(User) (Session, error)) (Session, User, error)
 	ListTokens(context.Context, string) ([]Token, error)
+	RotateSession(context.Context, string, string, string, time.Time) (Session, User, error)
 	RevokeSession(context.Context, string, time.Time) error
 	RevokeOtherSessions(context.Context, string, string, time.Time) error
 	RevokeToken(context.Context, string, string, time.Time) error
@@ -171,14 +199,18 @@ type ProjectTokenAuthorizer interface {
 
 // Service contains credential policy and token cryptography.
 type Service struct {
-	Clock         clock.Clock
-	Generator     identity.Generator
-	JWTSecret     []byte
-	Invitations   InvitationService
-	Policy        RegistrationPolicy
-	ProjectTokens ProjectTokenAuthorizer
-	SessionTTL    time.Duration
-	Store         Store
+	AccessTokenTTL         time.Duration
+	Clock                  clock.Clock
+	DeviceAuthorizationTTL time.Duration
+	DevicePollInterval     time.Duration
+	DeviceVerificationURI  string
+	Generator              identity.Generator
+	JWTSecret              []byte
+	Invitations            InvitationService
+	Policy                 RegistrationPolicy
+	ProjectTokens          ProjectTokenAuthorizer
+	SessionTTL             time.Duration
+	Store                  Store
 }
 
 // Register creates an active account and immediately creates a session.
@@ -311,6 +343,7 @@ func (service Service) DeclineInvitation(ctx context.Context, token string) erro
 
 type jwtClaims struct {
 	ExpiresAt int64  `json:"exp"`
+	ID        string `json:"jti"`
 	IssuedAt  int64  `json:"iat"`
 	SessionID string `json:"sid"`
 	Subject   string `json:"sub"`
@@ -360,33 +393,170 @@ func (service Service) Login(ctx context.Context, email string, password string)
 	if err != nil {
 		return LoginResult{}, err
 	}
-	expiresAt := now.Add(service.SessionTTL)
-	accessToken, err := service.signJWT(jwtClaims{
-		ExpiresAt: expiresAt.Unix(),
-		IssuedAt:  now.Unix(),
-		SessionID: sessionID,
-		Subject:   user.ID,
-		Type:      "session",
-	})
+	sessionExpiresAt := now.Add(service.SessionTTL)
+	accessToken, refreshToken, accessExpiresAt, err := service.createSessionTokens(sessionID, user.ID, now, sessionExpiresAt)
 	if err != nil {
 		return LoginResult{}, err
 	}
 	if err := service.Store.CreateSession(ctx, Session{
-		CreatedAt: now,
-		ExpiresAt: expiresAt,
-		ID:        sessionID,
-		TokenHash: hashToken(accessToken),
-		UserID:    user.ID,
+		CreatedAt:        now,
+		ExpiresAt:        sessionExpiresAt,
+		ID:               sessionID,
+		RefreshTokenHash: hashToken(refreshToken),
+		TokenHash:        hashToken(accessToken),
+		UserID:           user.ID,
 	}); err != nil {
 		return LoginResult{}, fmt.Errorf("create session: %w", err)
 	}
 	requestctx.SetActor(ctx, user.ID, "session")
 	return LoginResult{
-		AccessToken: accessToken,
-		ExpiresAt:   expiresAt,
-		SessionID:   sessionID,
-		User:        user,
+		AccessToken:  accessToken,
+		ExpiresAt:    accessExpiresAt,
+		RefreshToken: refreshToken,
+		SessionID:    sessionID,
+		User:         user,
 	}, nil
+}
+
+// Refresh rotates both session secrets and immediately invalidates the old pair.
+func (service Service) Refresh(ctx context.Context, refreshToken string) (LoginResult, error) {
+	if !strings.HasPrefix(refreshToken, "mmdash_refresh_") {
+		return LoginResult{}, ErrUnauthenticated
+	}
+	now := service.Clock.Now().UTC()
+	session, user, err := service.Store.FindSessionByRefreshToken(ctx, hashToken(refreshToken), now)
+	if err != nil {
+		return LoginResult{}, ErrUnauthenticated
+	}
+	newRefresh, err := randomSecret("mmdash_refresh_")
+	if err != nil {
+		return LoginResult{}, err
+	}
+	accessExpiresAt := service.accessExpiresAt(now, session.ExpiresAt)
+	jwtID, err := randomSecret("jwt_")
+	if err != nil {
+		return LoginResult{}, err
+	}
+	accessToken, err := service.signJWT(jwtClaims{ExpiresAt: accessExpiresAt.Unix(), ID: jwtID, IssuedAt: now.Unix(), SessionID: session.ID, Subject: user.ID, Type: "session"})
+	if err != nil {
+		return LoginResult{}, err
+	}
+	session, user, err = service.Store.RotateSession(ctx, hashToken(refreshToken), hashToken(accessToken), hashToken(newRefresh), now)
+	if err != nil {
+		return LoginResult{}, ErrUnauthenticated
+	}
+	requestctx.SetActor(ctx, user.ID, "session")
+	return LoginResult{AccessToken: accessToken, ExpiresAt: accessExpiresAt, RefreshToken: newRefresh, SessionID: session.ID, User: user}, nil
+}
+
+// StartDeviceAuthorization creates one short-lived device login challenge.
+func (service Service) StartDeviceAuthorization(ctx context.Context) (DeviceAuthorizationResult, error) {
+	now := service.Clock.Now().UTC()
+	id, err := service.Generator.New()
+	if err != nil {
+		return DeviceAuthorizationResult{}, err
+	}
+	deviceCode, err := randomSecret("mmdash_device_")
+	if err != nil {
+		return DeviceAuthorizationResult{}, err
+	}
+	userCode, err := randomUserCode()
+	if err != nil {
+		return DeviceAuthorizationResult{}, err
+	}
+	ttl := service.DeviceAuthorizationTTL
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	interval := service.DevicePollInterval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	verificationURI := strings.TrimRight(service.DeviceVerificationURI, "/")
+	if verificationURI == "" {
+		return DeviceAuthorizationResult{}, fmt.Errorf("device verification URI is not configured")
+	}
+	authorization := DeviceAuthorization{CreatedAt: now, DeviceCodeHash: hashToken(deviceCode), ExpiresAt: now.Add(ttl), ID: id, Status: "pending", UserCodeHash: hashToken(normalizeUserCode(userCode))}
+	if err := service.Store.CreateDeviceAuthorization(ctx, authorization); err != nil {
+		return DeviceAuthorizationResult{}, err
+	}
+	return DeviceAuthorizationResult{DeviceCode: deviceCode, ExpiresAt: authorization.ExpiresAt, Interval: int(interval / time.Second), UserCode: userCode, VerificationURI: verificationURI, VerificationURIComplete: verificationURI + "?user_code=" + userCode}, nil
+}
+
+// DecideDeviceAuthorization records the authenticated browser user's decision.
+func (service Service) DecideDeviceAuthorization(ctx context.Context, identity Identity, userCode string, approve bool) error {
+	if identity.User.ID == "" {
+		return ErrUnauthenticated
+	}
+	return service.Store.DecideDeviceAuthorization(ctx, hashToken(normalizeUserCode(userCode)), identity.User.ID, approve, service.Clock.Now().UTC())
+}
+
+// ExchangeDeviceAuthorization creates a refreshable CLI session exactly once.
+func (service Service) ExchangeDeviceAuthorization(ctx context.Context, deviceCode string) (LoginResult, error) {
+	if !strings.HasPrefix(deviceCode, "mmdash_device_") {
+		return LoginResult{}, ErrInvalid
+	}
+	now := service.Clock.Now().UTC()
+	sessionID, err := service.Generator.New()
+	if err != nil {
+		return LoginResult{}, err
+	}
+	refreshToken, err := randomSecret("mmdash_refresh_")
+	if err != nil {
+		return LoginResult{}, err
+	}
+	sessionExpiresAt := now.Add(service.SessionTTL)
+	accessExpiresAt := service.accessExpiresAt(now, sessionExpiresAt)
+	var accessToken string
+	session, user, err := service.Store.ExchangeDeviceAuthorization(ctx, hashToken(deviceCode), now, func(user User) (Session, error) {
+		jwtID, err := randomSecret("jwt_")
+		if err != nil {
+			return Session{}, err
+		}
+		accessToken, err = service.signJWT(jwtClaims{ExpiresAt: accessExpiresAt.Unix(), ID: jwtID, IssuedAt: now.Unix(), SessionID: sessionID, Subject: user.ID, Type: "session"})
+		if err != nil {
+			return Session{}, err
+		}
+		return Session{
+			CreatedAt:        now,
+			ExpiresAt:        sessionExpiresAt,
+			ID:               sessionID,
+			RefreshTokenHash: hashToken(refreshToken),
+			TokenHash:        hashToken(accessToken),
+			UserID:           user.ID,
+		}, nil
+	})
+	if err != nil {
+		return LoginResult{}, err
+	}
+	requestctx.SetActor(ctx, user.ID, "session")
+	return LoginResult{AccessToken: accessToken, ExpiresAt: accessExpiresAt, RefreshToken: refreshToken, SessionID: session.ID, User: user}, nil
+}
+
+func (service Service) createSessionTokens(sessionID string, userID string, now time.Time, sessionExpiresAt time.Time) (string, string, time.Time, error) {
+	accessExpiresAt := service.accessExpiresAt(now, sessionExpiresAt)
+	jwtID, err := randomSecret("jwt_")
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	accessToken, err := service.signJWT(jwtClaims{ExpiresAt: accessExpiresAt.Unix(), ID: jwtID, IssuedAt: now.Unix(), SessionID: sessionID, Subject: userID, Type: "session"})
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	refreshToken, err := randomSecret("mmdash_refresh_")
+	return accessToken, refreshToken, accessExpiresAt, err
+}
+
+func (service Service) accessExpiresAt(now time.Time, sessionExpiresAt time.Time) time.Time {
+	ttl := service.AccessTokenTTL
+	if ttl <= 0 {
+		ttl = service.SessionTTL
+	}
+	expiresAt := now.Add(ttl)
+	if expiresAt.After(sessionExpiresAt) {
+		return sessionExpiresAt
+	}
+	return expiresAt
 }
 
 // Authenticate validates a session JWT or opaque service token.
@@ -547,6 +717,23 @@ func randomSecret(prefix string) (string, error) {
 	return prefix + base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
+func randomUserCode() (string, error) {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	value := make([]byte, 8)
+	random := make([]byte, len(value))
+	if _, err := rand.Read(random); err != nil {
+		return "", fmt.Errorf("generate user code: %w", err)
+	}
+	for index := range value {
+		value[index] = alphabet[int(random[index])%len(alphabet)]
+	}
+	return string(value[:4]) + "-" + string(value[4:]), nil
+}
+
+func normalizeUserCode(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -558,12 +745,15 @@ func normalizeEmail(email string) string {
 
 // Domain errors are mapped to stable HTTP errors by the module.
 var (
-	ErrConflict           = fmt.Errorf("auth conflict")
-	ErrForbidden          = fmt.Errorf("forbidden")
-	ErrInvalidCredentials = fmt.Errorf("invalid credentials")
-	ErrInvalid            = fmt.Errorf("invalid auth input")
-	ErrNotFound           = fmt.Errorf("not found")
-	ErrInvalidInvitation  = fmt.Errorf("invalid invitation")
-	ErrRegistrationClosed = fmt.Errorf("registration closed")
-	ErrUnauthenticated    = fmt.Errorf("unauthenticated")
+	ErrConflict             = fmt.Errorf("auth conflict")
+	ErrForbidden            = fmt.Errorf("forbidden")
+	ErrInvalidCredentials   = fmt.Errorf("invalid credentials")
+	ErrInvalid              = fmt.Errorf("invalid auth input")
+	ErrNotFound             = fmt.Errorf("not found")
+	ErrInvalidInvitation    = fmt.Errorf("invalid invitation")
+	ErrAuthorizationPending = fmt.Errorf("authorization pending")
+	ErrAuthorizationDenied  = fmt.Errorf("authorization denied")
+	ErrAuthorizationExpired = fmt.Errorf("authorization expired")
+	ErrRegistrationClosed   = fmt.Errorf("registration closed")
+	ErrUnauthenticated      = fmt.Errorf("unauthenticated")
 )

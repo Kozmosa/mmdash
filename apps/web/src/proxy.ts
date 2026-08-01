@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-const protectedPrefixes = ["/projects", "/account"];
+const protectedPrefixes = ["/projects", "/account", "/cli/authorize"];
 
 export function proxy(request: NextRequest) {
   if (
@@ -18,4 +18,6 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(login);
 }
 
-export const config = { matcher: ["/projects/:path*", "/account/:path*"] };
+export const config = {
+  matcher: ["/projects/:path*", "/account/:path*", "/cli/authorize/:path*"],
+};

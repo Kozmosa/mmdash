@@ -64,6 +64,49 @@ export class CoreClient {
     );
   }
 
+  async refreshSession(
+    refreshToken: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["LoginResult"]> {
+    return this.request(
+      "/v1/auth/refresh",
+      { body: { refresh_token: refreshToken }, method: "POST" },
+      context,
+    );
+  }
+
+  async startDeviceAuthorization(
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["DeviceAuthorization"]> {
+    return this.request(
+      "/v1/auth/device/authorize",
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async verifyDeviceAuthorization(
+    input: components["schemas"]["DeviceVerificationRequest"],
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      "/v1/auth/device/verify",
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async exchangeDeviceAuthorization(
+    deviceCode: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["LoginResult"]> {
+    return this.request(
+      "/v1/auth/device/token",
+      { body: { device_code: deviceCode }, method: "POST" },
+      context,
+    );
+  }
+
   async register(
     input: components["schemas"]["RegisterRequest"],
     context: CoreRequestContext,

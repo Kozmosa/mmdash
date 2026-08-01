@@ -22,6 +22,7 @@ htmlcov/
 # Node.js
 node_modules/
 .pnpm-store/
+/.cache/
 # Non-pnpm lockfiles (project is pnpm-only)
 /package-lock.json
 /yarn.lock

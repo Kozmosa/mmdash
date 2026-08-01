@@ -242,4 +242,5 @@ contains `000013` and `000014`.
 The long-running Compose `worker` service requires a Project-scoped token and
 therefore exits when that intentionally empty development variable is used.
 Acceptance issues a real token and runs the Worker as a one-shot container.
-Artifact CLI commands remain deferred to Stage 3.
+Artifact CLI commands remain deferred until the Stage 3 Go CLI foundation is
+available and an Artifact iteration adds them through its extension mechanism.
