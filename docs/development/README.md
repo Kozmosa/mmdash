@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Node.js 24 or newer and pnpm 11
-- Go 1.18 or newer (the backend module remains runnable with Go 1.17)
+- Go 1.26 or newer (the Go 1.26 toolchain is required by the backend module)
 - Python 3.11 or newer and uv
 - Docker Compose
 
