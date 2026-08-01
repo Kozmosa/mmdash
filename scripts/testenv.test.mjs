@@ -71,6 +71,12 @@ describe("isolated Pixi development environment", () => {
     expect(configuration.coreUrl).toBe("http://127.0.0.1:18080");
     expect(configuration.environments.webBff.BFF_HOST).toBe("127.0.0.1");
     expect(configuration.environments.mcp.MCP_GATEWAY_HOST).toBe("127.0.0.1");
+    expect(configuration.environments.web).toMatchObject({
+      BFF_INTERNAL_URL: "http://127.0.0.1:13001",
+      CORE_INTERNAL_URL: "http://127.0.0.1:18080",
+      MCP_INTERNAL_URL: "http://127.0.0.1:13002",
+      MMDASH_LOCAL_UNIFIED_PROXY: "true",
+    });
     expect(serviceOrder).toEqual([
       "postgres",
       "minio",
