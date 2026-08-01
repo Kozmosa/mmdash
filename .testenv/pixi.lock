@@ -20,7 +20,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_9.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/c-ares-1.34.8-hb03c661_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/go-1.22.12-h282a287_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/caddy-2.11.4-hfc2019e_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/go-1.26.5-h282a287_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-h54a6638_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-hb9d3cd8_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/krb5-1.22.2-hbde042b_1.conda
@@ -70,7 +71,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/_go_select-2.3.0-cgo.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/win-64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/bzip2-1.0.8-h0ad9c76_9.conda
-      - conda: https://conda.anaconda.org/conda-forge/win-64/go-1.22.12-h59133dd_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/caddy-2.11.4-h11686cb_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/go-1.26.5-h59133dd_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/krb5-1.22.2-h719d79b_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libexpat-2.8.1-hac47afa_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/libffi-3.5.2-h3d046cb_0.conda
@@ -150,27 +152,35 @@ packages:
     - c-ares >=1.34.8,<2.0a0
   size: 210929
   timestamp: 1784091008551
-- conda: https://conda.anaconda.org/conda-forge/linux-64/go-1.22.12-h282a287_1.conda
-  sha256: 7a3e35ee5e2f7ff651b0ff9bb02b88894efe8f14b7cb98d486e9a25aa56a4290
-  md5: 8b1434f2786869550443545778b10bd0
+- conda: https://conda.anaconda.org/conda-forge/linux-64/caddy-2.11.4-hfc2019e_0.conda
+  sha256: db8e4b57818e11835c0bf3244531d02d503a574386ef859d0c29e8ab76706b12
+  md5: 0e479a64594e9484595d99d0a7384c57
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports: {}
+  size: 17273398
+  timestamp: 1780482646226
+- conda: https://conda.anaconda.org/conda-forge/linux-64/go-1.26.5-h282a287_0.conda
+  sha256: ed9177700bc51cb25d7a8cd412a2062be0e06a95c249c545b7536ee8c577c0f0
+  md5: 2853cc98520c445ecd01d81dd31e5b2b
   depends:
   - __glibc >=2.17,<3.0.a0
-  - _go_select ==2.3.0 cgo
+  - _go_select 2.3.0 cgo
   - libgcc >=14
   - libgfortran
   - libgfortran5 >=14.3.0
   - libstdcxx >=14
   constrains:
-  - gfortran_linux-64 14.*
   - gcc_linux-64 14.*
+  - gfortran_linux-64 14.*
   - gxx_linux-64 14.*
   license: BSD-3-Clause
   license_family: BSD
   run_exports:
     strong:
     - __glibc >=2.17
-  size: 55962199
-  timestamp: 1752164240642
+  size: 54761805
+  timestamp: 1784116124617
 - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-h54a6638_2.conda
   sha256: d7c260b7e1cf22ce04d6ba8a86eabf4e6c50bc96a5c27fe2ecb32298af3e88eb
   md5: 4ef4b977bb216a3001a3334696a80850
@@ -811,11 +821,19 @@ packages:
     - bzip2 >=1.0.8,<2.0a0
   size: 56115
   timestamp: 1771350256444
-- conda: https://conda.anaconda.org/conda-forge/win-64/go-1.22.12-h59133dd_1.conda
-  sha256: 7b93c272e43c0b943fe287c8b316275f0f3eb8087daf5cf0bb5e76fc6297f955
-  md5: 884617fecb17ab2e84d07b61500d9bc2
+- conda: https://conda.anaconda.org/conda-forge/win-64/caddy-2.11.4-h11686cb_0.conda
+  sha256: 25d9fd657b59dc857e2bf600dc3d77182ce65bbe73a16209f35be04c7407f6dc
+  md5: 88bdc3915a0084160b9f4098ee9ffdd7
+  license: Apache-2.0
+  license_family: APACHE
+  run_exports: {}
+  size: 16671976
+  timestamp: 1780482674809
+- conda: https://conda.anaconda.org/conda-forge/win-64/go-1.26.5-h59133dd_0.conda
+  sha256: ad5bef56bc54fd1cccd260d3ffd108f1a0aa86ebbe8ce418c3b65e1264fc852f
+  md5: 044efa796fe20ba125843fd967680048
   depends:
-  - _go_select ==2.3.0 cgo
+  - _go_select 2.3.0 cgo
   - libgcc >=14
   - libgfortran
   - libgfortran5 >=14.3.0
@@ -823,14 +841,14 @@ packages:
   - libwinpthread >=12.0.0.r4.gg4f2fc60ca
   - ucrt >=10.0.20348.0
   constrains:
-  - gcc_win-64 14.*
-  - gxx_win-64 14.*
   - gfortran_win-64 14.*
+  - gxx_win-64 14.*
+  - gcc_win-64 14.*
   license: BSD-3-Clause
   license_family: BSD
   run_exports: {}
-  size: 56659791
-  timestamp: 1752164532417
+  size: 55368902
+  timestamp: 1784116805868
 - conda: https://conda.anaconda.org/conda-forge/win-64/krb5-1.22.2-h719d79b_1.conda
   sha256: c55745796e762ba9e817ab1fc0f21f1a049e202f90fa762df39578f37923f6c2
   md5: 00335c2c4a98656554771aaf6f1a7400

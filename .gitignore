@@ -22,7 +22,12 @@ htmlcov/
 # Node.js
 node_modules/
 .pnpm-store/
+# Non-pnpm lockfiles (project is pnpm-only)
 /package-lock.json
+/yarn.lock
+/yarn.lock.*
+/bun.lock
+/bun.lockb
 .next/
 dist/
 build/
@@ -53,6 +58,7 @@ uploads/
 .vscode/
 .idea/
 .opencode/
+.claude/
 .DS_Store
 Thumbs.db
 
