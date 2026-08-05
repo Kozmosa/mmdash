@@ -21,23 +21,56 @@ func (store PostgresStore) ClaimEmailRecipients(ctx context.Context, email, user
 	return err
 }
 
-func (store PostgresStore) ApplyInvitationOutcome(ctx context.Context, invitationID, outcome string) error {
-	if invitationID == "" || (outcome != OutcomeResolved && outcome != OutcomeRevoked && outcome != OutcomeExpired) {
+func (store PostgresStore) ApplyInvitationOutcome(ctx context.Context, fact InvitationOutcome) error {
+	if strings.TrimSpace(fact.InvitationID) == "" || strings.TrimSpace(fact.ProjectID) == "" || strings.TrimSpace(fact.SourceEventID) == "" || fact.OccurredAt.IsZero() || (fact.Outcome != OutcomeResolved && fact.Outcome != OutcomeRevoked && fact.Outcome != OutcomeExpired) {
 		return ErrInvalid
 	}
 	if store.Transaction.DB == nil {
 		return ErrNotReady
 	}
+	now := store.now()
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `UPDATE notification_inbox_items AS item SET outcome=$2, updated_at=NOW() FROM notification_notifications AS notification WHERE item.notification_id=notification.notification_id AND notification.type_key=$3 AND notification.data->>'invitation_id'=$1 AND item.outcome='active'`, invitationID, outcome, TypeInvitationReceived); err != nil {
-			return err
-		}
-		if outcome == OutcomeRevoked || outcome == OutcomeExpired {
-			_, err := tx.ExecContext(ctx, `UPDATE notification_deliveries AS delivery SET status='cancelled',locked_by=NULL,lease_expires_at=NULL,last_error_code='notification_outcome',last_error_message=$2,updated_at=NOW() FROM notification_notifications AS notification WHERE delivery.notification_id=notification.notification_id AND notification.type_key=$3 AND notification.data->>'invitation_id'=$1 AND delivery.status IN ('pending','retrying')`, invitationID, "Invitation is no longer active", TypeInvitationReceived)
-			return err
-		}
-		return nil
+		_, err := store.applyInvitationOutcomeTx(ctx, tx, fact, now)
+		return err
 	})
+}
+
+func (store PostgresStore) applyInvitationOutcomeTx(ctx context.Context, tx transaction.Tx, fact InvitationOutcome, now time.Time) (string, error) {
+	var outcome string
+	err := tx.QueryRowContext(ctx, `
+		INSERT INTO notification_invitation_outcomes(
+			invitation_id,project_id,outcome,source_event_id,occurred_at,created_at,updated_at
+		) VALUES($1,$2,$3,$4,$5,$6,$6)
+		ON CONFLICT(invitation_id) DO UPDATE SET
+			outcome=EXCLUDED.outcome,
+			source_event_id=EXCLUDED.source_event_id,
+			occurred_at=EXCLUDED.occurred_at,
+			updated_at=EXCLUDED.updated_at
+		WHERE notification_invitation_outcomes.project_id=EXCLUDED.project_id
+		  AND notification_invitation_outcomes.outcome='active'
+		RETURNING outcome
+	`, fact.InvitationID, fact.ProjectID, fact.Outcome, fact.SourceEventID, fact.OccurredAt, now).Scan(&outcome)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = tx.QueryRowContext(ctx, `SELECT outcome FROM notification_invitation_outcomes WHERE invitation_id=$1 AND project_id=$2`, fact.InvitationID, fact.ProjectID).Scan(&outcome)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrInvalid
+	}
+	if err != nil {
+		return "", err
+	}
+	if outcome == OutcomeActive {
+		return outcome, nil
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE notification_inbox_items AS item SET outcome=$2, updated_at=$3 FROM notification_notifications AS notification WHERE item.notification_id=notification.notification_id AND notification.type_key=$4 AND notification.data->>'invitation_id'=$1 AND item.outcome='active'`, fact.InvitationID, outcome, now, TypeInvitationReceived); err != nil {
+		return "", err
+	}
+	if outcome == OutcomeRevoked || outcome == OutcomeExpired {
+		if _, err = tx.ExecContext(ctx, `UPDATE notification_deliveries AS delivery SET status='cancelled',locked_by=NULL,lease_expires_at=NULL,last_error_code='notification_outcome',last_error_message=$2,updated_at=$3 FROM notification_notifications AS notification WHERE delivery.notification_id=notification.notification_id AND notification.type_key=$4 AND notification.data->>'invitation_id'=$1 AND delivery.status IN ('pending','retrying')`, fact.InvitationID, "Invitation is no longer active", now, TypeInvitationReceived); err != nil {
+			return "", err
+		}
+	}
+	return outcome, nil
 }
 
 func (store PostgresStore) ListInbox(ctx context.Context, userID string, filter Filter, page pagination.Request) (Page, error) {
