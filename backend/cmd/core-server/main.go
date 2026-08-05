@@ -19,6 +19,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/events"
 	"github.com/mmdash/mmdash/backend/internal/example"
 	"github.com/mmdash/mmdash/backend/internal/jobs"
+	"github.com/mmdash/mmdash/backend/internal/notification"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/config"
 	"github.com/mmdash/mmdash/backend/internal/platform/coreapp"
@@ -32,6 +33,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
+	"github.com/mmdash/mmdash/backend/internal/progress"
 	"github.com/mmdash/mmdash/backend/internal/project"
 	"github.com/mmdash/mmdash/backend/internal/repo"
 	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
@@ -206,6 +208,18 @@ func run(logger *logging.Logger) error {
 		Outbox:      outboxWriter,
 		Transaction: transactionManager,
 	}
+	progressStore := progress.PostgresStore{
+		Clock: systemClock, DB: db, Generator: idGenerator,
+		Outbox: outboxWriter, Transaction: transactionManager,
+	}
+	progressService := &progress.Service{
+		Access: projectService, Audit: auditRecorder, Clock: systemClock,
+		Generator: idGenerator, Store: progressStore,
+	}
+	notificationService := notification.Service{
+		Adapter: notification.PersistenceAdapter{Store: notification.PostgresStore{Clock: systemClock, DB: db}},
+		Clock:   systemClock, Generator: idGenerator,
+	}
 	dataAdapters := datahub.NewAdapterRegistry()
 	if err := dataAdapters.Register("project", datahub.ReaderFunc(
 		func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
@@ -233,6 +247,27 @@ func run(logger *logging.Logger) error {
 	)); err != nil {
 		return err
 	}
+	for _, definition := range []struct {
+		objectType string
+		read       func(context.Context, auth.Identity, string, string) (interface{}, error)
+	}{
+		{"milestone", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return progressService.ReadMilestone(ctx, caller, projectID, sourceID)
+		}},
+		{"task", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return progressService.ReadTask(ctx, caller, projectID, sourceID)
+		}},
+		{"progress_proposal", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return progressService.ReadProposal(ctx, caller, projectID, sourceID)
+		}},
+	} {
+		definition := definition
+		if err := dataAdapters.Register(definition.objectType, datahub.ReaderFunc(func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			return definition.read(ctx, caller, object.ProjectID, object.SourceID)
+		})); err != nil {
+			return err
+		}
+	}
 	projections := datahub.NewProjectionRegistry()
 	if err := projections.Register(
 		"project.created",
@@ -254,6 +289,7 @@ func run(logger *logging.Logger) error {
 	dataService := datahub.Service{
 		Access: projectService, Adapters: dataAdapters,
 		Clock: systemClock, Store: dataStore,
+		Progress: progressService,
 	}
 	auditService := audit.Service{
 		Access: projectService, Clock: systemClock, Store: auditStore,
@@ -447,10 +483,24 @@ func run(logger *logging.Logger) error {
 			return err
 		}
 	}
+	for _, eventType := range []string{
+		"progress.milestone.created", "progress.milestone.updated",
+		"progress.task.created", "progress.task.updated", "progress.task.deleted",
+		"progress.proposal.created", "progress.proposal.reviewed",
+	} {
+		if err := projections.Register(eventType, datahub.ProjectorFunc(dataStore.ProjectProgress)); err != nil {
+			return err
+		}
+	}
 	if err := eventBus.Register(eventbus.Consumer{
 		Name:     "datahub.projections",
 		Patterns: projections.Patterns(),
 		Handler:  projections.Handle,
+	}); err != nil {
+		return err
+	}
+	if err := eventBus.Register(eventbus.Consumer{
+		Name: "notification.progress-reminder", Patterns: []string{"progress.reminder.due"}, Handler: notificationService.HandleReminderDue,
 	}); err != nil {
 		return err
 	}
@@ -472,6 +522,7 @@ func run(logger *logging.Logger) error {
 	}
 	if err := modules.Register(project.Module{
 		Artifact:   artifactModule.ProjectHandler(),
+		Progress:   progress.Module{Service: *progressService}.ProjectHandler(),
 		Repository: repoModule.ProjectHandler(),
 		Service:    *projectService,
 	}); err != nil {
@@ -481,6 +532,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(repoModule); err != nil {
+		return err
+	}
+	if err := modules.Register(progress.Module{Service: *progressService}); err != nil {
 		return err
 	}
 	if err := modules.Register(jobs.Module{Service: jobService}); err != nil {

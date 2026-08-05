@@ -173,6 +173,10 @@ type ProblemProvider interface {
 	ProblemItems(context.Context, auth.Identity, string) ([]interface{}, error)
 }
 
+type ProgressProvider interface {
+	ProgressHomeItems(context.Context, auth.Identity, string) ([]interface{}, []interface{}, error)
+}
+
 // AdapterRegistry maps stable object types to domain-owned readers.
 type AdapterRegistry struct {
 	mu      sync.RWMutex
@@ -228,6 +232,7 @@ type Service struct {
 	Adapters *AdapterRegistry
 	Clock    interface{ Now() time.Time }
 	Problem  ProblemProvider
+	Progress ProgressProvider
 	Store    Store
 }
 
@@ -377,11 +382,27 @@ func (service Service) Home(
 			Available: true, Items: items, Total: len(items),
 		}
 	}
+	milestones, todos := empty(), empty()
+	if service.Progress != nil {
+		milestoneItems, todoItems, err := service.Progress.ProgressHomeItems(ctx, identity, projectID)
+		if err != nil {
+			return HomeAggregate{}, err
+		}
+		milestones = HomeSection{Available: true, Items: nonNilItems(milestoneItems), Total: len(milestoneItems)}
+		todos = HomeSection{Available: true, Items: nonNilItems(todoItems), Total: len(todoItems)}
+	}
 	return HomeAggregate{
 		Agent: empty(), Article: empty(), Experiments: empty(),
-		GeneratedAt: service.Clock.Now().UTC(), Milestones: empty(),
-		Models: empty(), Problem: problem, ProjectID: projectID, Todos: empty(),
+		GeneratedAt: service.Clock.Now().UTC(), Milestones: milestones,
+		Models: empty(), Problem: problem, ProjectID: projectID, Todos: todos,
 	}, nil
+}
+
+func nonNilItems(items []interface{}) []interface{} {
+	if items == nil {
+		return []interface{}{}
+	}
+	return items
 }
 
 var (

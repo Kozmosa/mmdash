@@ -19,6 +19,7 @@ tags:
   - name: Repo
   - name: Artifact
   - name: Pages
+  - name: Progress
   - name: Streams
 paths:
   /health/live:
@@ -435,6 +436,228 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ProjectPermissions"
+  /api/projects/{projectId}/progress:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: Read the Progress page aggregate
+      operationId: bff.progress.get
+      responses:
+        "200":
+          description: Progress aggregate.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Progress" } } }
+  /api/projects/{projectId}/progress/milestones:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: List Progress milestones
+      operationId: bff.progress.milestones.list
+      responses:
+        "200":
+          description: Milestones.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/MilestoneList" } } }
+    post:
+      tags: [Progress]
+      summary: Create a Progress milestone
+      operationId: bff.progress.milestones.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateMilestoneRequest" } } }
+      responses:
+        "201":
+          description: Created milestone.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Milestone" } } }
+  /api/projects/{projectId}/progress/milestones/{milestoneId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: milestoneId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Progress]
+      summary: Update a Progress milestone
+      operationId: bff.progress.milestones.update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/UpdateMilestoneRequest" } } }
+      responses:
+        "200":
+          description: Updated milestone.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Milestone" } } }
+  /api/projects/{projectId}/progress/tasks:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: List Progress tasks
+      operationId: bff.progress.tasks.list
+      responses:
+        "200":
+          description: Tasks.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/TaskList" } } }
+    post:
+      tags: [Progress]
+      summary: Create a Progress task
+      operationId: bff.progress.tasks.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateTaskRequest" } } }
+      responses:
+        "201":
+          description: Created task.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Task" } } }
+  /api/projects/{projectId}/progress/tasks/{taskId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Progress]
+      summary: Update a Progress task
+      operationId: bff.progress.tasks.update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/UpdateTaskRequest" } } }
+      responses:
+        "200":
+          description: Updated task.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Task" } } }
+    delete:
+      tags: [Progress]
+      summary: Delete a Progress task
+      operationId: bff.progress.tasks.delete
+      responses: { "204": { description: Task deleted. } }
+  /api/projects/{projectId}/progress/dependencies:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: List Progress dependencies
+      operationId: bff.progress.dependencies.list
+      responses:
+        "200":
+          description: Dependencies.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/DependencyList" } } }
+    post:
+      tags: [Progress]
+      summary: Create a Progress dependency
+      operationId: bff.progress.dependencies.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateDependencyRequest" } } }
+      responses:
+        "201":
+          description: Created dependency.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Dependency" } } }
+  /api/projects/{projectId}/progress/dependencies/{dependencyId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: dependencyId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [Progress]
+      summary: Delete a Progress dependency
+      operationId: bff.progress.dependencies.delete
+      responses: { "204": { description: Dependency deleted. } }
+  /api/projects/{projectId}/progress/reminders:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: List Progress reminders
+      operationId: bff.progress.reminders.list
+      responses:
+        "200":
+          description: Reminders.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ReminderList" } } }
+    post:
+      tags: [Progress]
+      summary: Create a Progress reminder
+      operationId: bff.progress.reminders.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateReminderRequest" } } }
+      responses:
+        "201":
+          description: Created reminder.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Reminder" } } }
+  /api/projects/{projectId}/progress/reminders/{reminderId}/trigger:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: reminderId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Progress]
+      summary: Trigger a Progress reminder event
+      operationId: bff.progress.reminders.trigger
+      responses:
+        "200":
+          description: Triggered reminder.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/Reminder" } } }
+  /api/projects/{projectId}/progress/proposals:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: List Progress Proposals
+      operationId: bff.progress.proposals.list
+      responses:
+        "200":
+          description: Proposals.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ProgressProposalList" } } }
+    post:
+      tags: [Progress]
+      summary: Create a Progress Proposal
+      operationId: bff.progress.proposals.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateProgressProposalRequest" } } }
+      responses:
+        "201":
+          description: Created proposal.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ProgressProposal" } } }
+  /api/projects/{projectId}/progress/proposals/{proposalId}/review:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Progress]
+      summary: Review a Progress Proposal
+      operationId: bff.progress.proposals.review
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ReviewProgressProposalRequest" } } }
+      responses:
+        "200":
+          description: Reviewed proposal.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ProgressProposal" } } }
+  /api/projects/{projectId}/progress/settings:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: Read Progress settings
+      operationId: bff.progress.settings.get
+      responses:
+        "200":
+          description: Progress settings.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ProgressSettings" } } }
+    patch:
+      tags: [Progress]
+      summary: Update Progress settings
+      operationId: bff.progress.settings.update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/UpdateProgressSettingsRequest" } } }
+      responses:
+        "200":
+          description: Updated settings.
+          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ProgressSettings" } } }
   /api/settings/types:
     get:
       tags: [Settings]

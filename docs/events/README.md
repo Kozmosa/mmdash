@@ -11,3 +11,8 @@ idempotency, failure, and replay semantics.
 Event-specific payload schemas evolve with their owning domain modules. Every
 catalog entry must identify a producer, schema version, project scope, and
 known consumers.
+
+Stage 4 Progress payload schemas are under `contracts/events` and cover the
+Milestone, Task, Dependency, Reminder, and Proposal lifecycle. Reminder due
+events stop at the NotificationAdapter boundary; full Notification 3.17
+delivery is a later module.

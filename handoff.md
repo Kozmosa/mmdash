@@ -1,129 +1,109 @@
-# mmdash v0.1 Stage 3 CLI and local MCP handoff
+# mmdash v0.1 Stage 4 Home and Progress handoff
 
-- Updated: 2026-08-01
-- Branch: `main`
-- Base: `origin/main@490b06e`
-- Delivery state: implemented and validated for the Stage 3 delivery commit
+- Updated: 2026-08-05
+- Branch: `codex/stage-4-home-progress`
+- Base: `origin/main@23057c4ebbea43d62ef388a63144fc4dad55be68`
+- Delivery state: Stage 4 implementation complete; commit and PR handoff
+  pending
 
 ## Status
 
-Stage 3 is complete against the v0.1 implementation-order v0.4, technical-
-architecture v0.4, and product-design v0.1 baselines. The temporary TypeScript
-CLI has been replaced by a separately buildable Go 1.26 module and native
-binary. Local Coding Agents can use the CLI's stdio MCP bridge, while hosted
-Agent runtimes remain independent direct clients of the MCP Gateway.
+Stage 4 is complete against the v0.1 implementation-order v0.4,
+technical-architecture v0.4, and product-design v0.1 baselines. Project Home
+now reads a real aggregate, and Progress is the authoritative Core boundary
+for Milestone, Task, Dependency, Reminder, and Proposal state. No Model,
+Experiment, Article, or Agent business behavior was introduced ahead of its
+stage.
 
-Go Core remains authoritative for authentication, Project membership, RBAC,
-Data Hub reads, Audit, and persisted state. The CLI stores only non-secret
-configuration and current Project selection; access and refresh credentials
-remain in the operating-system credential store.
+Human-controlled milestones and critical task changes remain human-session
+operations. Agent-originated Task changes and Proposal creation go through
+Progress, require a non-empty `source_run_id`, and write source and Audit
+metadata. There is no direct database path from Web, BFF, MCP, or the Worker
+into Progress-owned state.
 
 ## Delivered behavior
 
-- Extensible compile-time Go Feature registration for commands and `doctor`
-  checks; no runtime plugins and no TypeScript runtime dependency.
-- Native Windows, macOS, and Linux credential adapters with no plaintext token
-  fallback.
-- Browser-approved CLI device authorization, bounded polling, delegated access
-  and refresh-token rotation, `whoami`, logout, and server-scoped credential
-  profiles.
-- Versioned, atomically written non-secret `config.json` with platform paths,
-  environment overrides, HTTPS enforcement, and loopback HTTP support.
-- `mmdash config set-domain [domain]` updates the unified public, Core, and MCP
-  endpoints together. The hosted default is the confirmed production domain;
-  a loopback host such as `localhost:3000` automatically selects HTTP for local
-  testing.
-- Explicit Project discovery and selection through `project list`, `project
-  use`, and `project current`.
-- Transparent stdio-to-Streamable-HTTP `mmdash mcp` bridge with JSON-RPC stdout
-  isolation, safe stderr diagnostics, session handling, delegated CLI auth,
-  project propagation, and retry after token refresh.
-- `doctor` checks for configuration, delegated identity, selected Project, and
-  MCP Gateway reachability.
-- MCP Gateway CLI-token authentication through Core `auth.me`, separate static
-  development Agent-token support, constant-time static-token comparison,
-  tool and Project authorization, per-call session/request context, Audit, and
-  redacted structured logs.
-- MCP reads for `project.list`, `project.get`, `data.list`, and `data.read`,
-  plus the existing bounded foundation tools, all routed through Core rather
-  than direct database access.
-- Go CLI release workflow for Windows, macOS, and Linux amd64/arm64 archives
-  and SHA-256 checksums.
-- The confirmed hosted domain was changed in-place across the existing
-  configuration, ingress,
-  contract identifiers/examples, Gateway defaults/tests, and documentation.
+- Project Home aggregation for progress, todos, upcoming reminders,
+  proposals, and real Empty States for Model, Experiment, Article, and Agent
+  regions.
+- Progress Core models and APIs for Milestone, Task, Dependency, Reminder,
+  Proposal, and the Home aggregate, including human-only milestone/critical
+  change rules and idempotent operations.
+- Agent Task auto-change policy through the Progress service with mandatory
+  run provenance and Audit records; completed and cancelled Tasks are excluded
+  from Home todos.
+- Proposal create, review, and apply workflow with explicit human review for
+  critical changes.
+- Web BFF aggregation and Progress routes plus Web Project Home, board/list,
+  Gantt, today/reminder, and Proposal review views.
+- Data Hub authoritative readers/projections for Milestone, Task, and
+  Progress Proposal, with MCP `data.list`/`data.read` access through Core.
+- Project-scoped RBAC, request/operation Audit coverage, stable Progress event
+  envelopes, JSON Schemas, generated clients, API catalog entries, and module
+  documentation.
+- Minimal Stage 4 Notification前置能力: `progress.reminder.due` is consumed
+  only by the NotificationAdapter, which persists an idempotent notification
+  intent keyed by `source_event_id`. Progress never sends Feishu or Webhook
+  requests directly.
 
 ## Contracts and persistence
 
-Stage 3 adds Core operations for CLI device authorization, exchange, refresh,
-logout, delegated identity, and Project reads. Generated Core client output,
-contract mocks, the API catalog, and MCP tool schemas/documentation are aligned.
+Migration `000016_progress` owns the Progress tables, constraints, indexes,
+and projections. Migration `000017_notification_stage4` owns only the minimal
+NotificationAdapter intent boundary required for Reminder acceptance. No
+Redis or other queue infrastructure was introduced; PostgreSQL remains the
+Job Queue backend.
 
-Migration `000015_cli_device_auth` owns device grants, CLI sessions, hashed
-refresh credentials, expiry, revocation, and safe lifecycle constraints. No
-additional queue or infrastructure backend was introduced.
+Progress create/update/delete and proposal lifecycle events are defined under
+`contracts/events/`, included in the event catalog, and wired to the standard
+Outbox/Data Hub path. OpenAPI source files, examples/catalog coverage,
+generated Go/TypeScript clients, and the Progress API/development guides are
+aligned. The coverage matrix and API/event indexes were updated.
 
 ## Verification
 
-The following completed successfully on 2026-08-01 before the final domain-
-configuration increment:
+Passed:
 
-- `pnpm check`: exit 0, including lint, TypeScript/Go/Python tests and builds,
-  generated-contract freshness and compatibility, 187 documented API
-  operations, and Caddyfile validation.
-- TypeScript suites: scripts 9/9, Web 60/60, Core client 6/6, validation 1/1,
-  MCP Gateway 15/15, and Web BFF 30/30.
-- Python Worker: 25/25.
-- All Go packages, including the temporary-Git Repo integration suite.
-- Exact Compose build and smoke path with the local
-  `golang:1.26-alpine` image: all required services became healthy and the
-  native CLI device-login, Project selection, and stdio MCP path passed.
-- A second full smoke run against fresh tmpfs PostgreSQL and MinIO state passed;
-  all required readiness endpoints returned HTTP 200, fault-log matches were
-  zero, and credential/token/Authorization leak scans were zero.
-- Both Compose environments were stopped with `down`, never `down -v`; named
-  PostgreSQL and MinIO volumes were preserved.
+- `pnpm contracts:generate`
+- `pnpm contracts:check`
+- `pnpm api:check`
+- TypeScript lint, tests, and builds; Go formatting, lint, tests, and builds
+  outside the existing Repo Git integration timeout suite; Python Worker
+  lint/tests/build; and Web/BFF/MCP/CLI builds.
+- Progress, NotificationAdapter, Data Hub, BFF aggregation, and Web tests.
+- Docker Compose image build and full Stage 4 smoke acceptance. Because the
+  workstation already had ports 3000, 3001, 5432, 8080, 9000, and 9001 in
+  use, the same Compose stack ran on isolated host ports 13000, 13001, 15432,
+  18080, 19000, and 19001. All services became healthy and `pnpm smoke`
+  passed, including Web/BFF/Core, login/project creation, Worker Job,
+  Outbox/Audit, Data Hub, MCP, and native CLI flows.
+- Compose logs had zero panic/fatal/error matches and zero matches for the
+  configured development credential values. The stack was stopped with
+  `docker compose down`, never `down -v`, so named volumes were preserved.
 
-After adding `config set-domain` and replacing the hosted domain, these narrow
-checks passed:
+`pnpm check` reached the test stage but did not exit successfully because five
+pre-existing Repo Git integration cases repeatedly timed out in
+`repo.worktree.add/reset` and `repo.commit.finalize`. A fresh uncached run
+reproduced only those failures; all changed Stage 4 suites and the other Go,
+CLI, TypeScript, and Python checks passed. The Docker smoke needed a temporary
+`/tmp` Secret Service shim because this workstation has no writable Linux
+keyring; the product CLI and its credential-store implementation were not
+changed.
 
-- `go test ./clients/cli/...`
-- `pnpm contracts:generate` followed by `pnpm contracts:check`
-- `pnpm caddy:check` (`Valid configuration`; no Caddy service was started)
-- `gofmt` on all changed CLI Go files
-- `git diff --check`
-- `\.localscripts\dev.ps1 --check --skip-install --skip-worker`: built the
-  native CLI, generated its isolated local launcher, applied migrations, and
-  reached healthy Core, Web BFF, Web, and MCP Gateway before stopping the
-  application processes.
-
-The local wrapper check reused Docker only for PostgreSQL and MinIO. It did not
-repeat the full Compose image build or Stage 3 smoke acceptance.
-
-## Operational notes
+## Operational notes and boundaries
 
 - Local bootstrap defaults remain `admin@mmdash.local` and
   `mmdash-local-admin` unless overridden by the documented environment
   variables.
-- The environment-configured static Gateway Agent token remains only a
-  foundation development/test mechanism. Project-scoped, revocable Agent-token
-  lifecycle belongs to the later Agent stage.
-- A historical persisted Repo record produced one `repo.sync.failed` line in
-  the first Compose log review. A fresh-state rerun produced zero fault-log
-  matches, proving it was pre-existing data rather than this stage's smoke path.
-- The ignored local `\.localscripts\dev.mjs` now enforces Go 1.26, supports
-  per-service application-port overrides, forces safe local service URLs,
-  builds `\.tmp\dev-tools\mmdash.exe`, and generates an isolated
-  `mmdash-local` launcher. It remains workstation-local by repository policy.
-- The pytest basetemp directory created during validation was explicitly
-  inspected and safely removed, including its five internal-only symlinks.
+- Reminder delivery stops at the stable event and NotificationAdapter intent
+  boundary. Notification 3.17 still needs provider adapters (including
+  Feishu/Webhook), user preferences, delivery/retry policy, and its complete
+  operational surface in a later stage.
+- Stage 5 Agent-session lifecycle, product Agent tokens, and Stage 6 automatic
+  progress tracking are not implemented. The Stage 4 Task provenance rule is
+  limited to the Progress mutation boundary and does not create a Stage 6
+  tracker.
+- Model, Experiment, Box, Sandbox, and Article remain honest Empty States on
+  Home; no temporary or fake records are created for them.
 
-## Boundaries and next stage
-
-Stage 3 intentionally does not implement Artifact-specific human CLI commands,
-Agent-instance lifecycle, product Agent tokens, Progress, Model, Experiment,
-Box, Sandbox, or Article behavior. Later domain stages should register their
-commands and diagnostics through the Go Feature boundary and reuse the same
-authenticated Core/MCP transports.
-
-The next implementation stage is Stage 4 Home and Progress.
+The next implementation stage is Stage 5 Agent sessions.

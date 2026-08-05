@@ -1636,6 +1636,267 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/progress": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the project Progress aggregate */
+    get: operations["progress.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/milestones": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List project milestones */
+    get: operations["progress.milestones.list"];
+    put?: never;
+    /**
+     * Create a human milestone
+     * @description Critical milestones can only be created by a human browser session.
+     */
+    post: operations["progress.milestones.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/milestones/{milestoneId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        milestoneId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update a human milestone
+     * @description Agents and automatic processes must submit a Progress Proposal instead.
+     */
+    patch: operations["progress.milestones.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/tasks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List project tasks */
+    get: operations["progress.tasks.list"];
+    put?: never;
+    /**
+     * Create a task
+     * @description Agent task changes are tagged with their source and obey the project automatic-change setting.
+     */
+    post: operations["progress.tasks.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/tasks/{taskId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        taskId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete a human task */
+    delete: operations["progress.tasks.delete"];
+    options?: never;
+    head?: never;
+    /** Update a task */
+    patch: operations["progress.tasks.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/dependencies": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List task dependencies */
+    get: operations["progress.dependencies.list"];
+    put?: never;
+    /** Create a task dependency */
+    post: operations["progress.dependencies.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/dependencies/{dependencyId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        dependencyId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete a task dependency */
+    delete: operations["progress.dependencies.delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/reminders": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List project reminders */
+    get: operations["progress.reminders.list"];
+    put?: never;
+    /**
+     * Create a reminder
+     * @description Reminder delivery is delegated to the NotificationAdapter boundary.
+     */
+    post: operations["progress.reminders.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/reminders/{reminderId}/trigger": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        reminderId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Trigger a due reminder
+     * @description Emits progress.reminder.due; Progress never calls Feishu or Webhook directly.
+     */
+    post: operations["progress.reminders.trigger"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/proposals": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List Progress Proposals */
+    get: operations["progress.proposals.list"];
+    put?: never;
+    /**
+     * Create a Progress Proposal
+     * @description Non-human callers use this endpoint for milestone changes and proposal-only task changes.
+     */
+    post: operations["progress.proposals.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/proposals/{proposalId}/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        proposalId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Review a Progress Proposal
+     * @description Requires a human browser session; accepted changes are applied by the Progress service transaction.
+     */
+    post: operations["progress.proposals.review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read Progress automatic-change settings */
+    get: operations["progress.settings.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Progress automatic-change settings */
+    patch: operations["progress.settings.update"];
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2796,6 +3057,286 @@ export interface components {
       experiments: components["schemas"]["HomeSection"];
       article: components["schemas"]["HomeSection"];
       agent: components["schemas"]["HomeSection"];
+    };
+    Progress: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: date-time */
+      generated_at: string;
+      milestones: components["schemas"]["Milestone"][];
+      tasks: components["schemas"]["Task"][];
+      dependencies: components["schemas"]["Dependency"][];
+      reminders: components["schemas"]["Reminder"][];
+      proposals: components["schemas"]["ProgressProposal"][];
+      today: components["schemas"]["Task"][];
+      overdue: components["schemas"]["Task"][];
+      blocked: components["schemas"]["Task"][];
+      board: {
+        todo: components["schemas"]["Task"][];
+        in_progress: components["schemas"]["Task"][];
+        blocked: components["schemas"]["Task"][];
+        done: components["schemas"]["Task"][];
+      };
+      gantt: {
+        /** Format: uuid */
+        id: string;
+        /** @enum {string} */
+        kind: "milestone" | "task";
+        title: string;
+        /** Format: date-time */
+        start_at?: string;
+        /** Format: date-time */
+        target_at?: string;
+        status: string;
+      }[];
+      settings: components["schemas"]["ProgressSettings"];
+    };
+    Milestone: {
+      /** Format: uuid */
+      milestone_id: string;
+      /** Format: uuid */
+      project_id: string;
+      title: string;
+      description: string;
+      /** @enum {string} */
+      status: "planned" | "in_progress" | "completed" | "cancelled";
+      critical: boolean;
+      /** Format: date-time */
+      start_at?: string;
+      /** Format: date-time */
+      target_at?: string;
+      /** Format: date-time */
+      completed_at?: string;
+      /** @enum {string} */
+      source: "human" | "proposal";
+      source_run_id?: string;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: uuid */
+      updated_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    MilestoneList: {
+      items: components["schemas"]["Milestone"][];
+    };
+    CreateMilestoneRequest: {
+      title: string;
+      description?: string;
+      critical?: boolean;
+      /** Format: date-time */
+      start_at?: string;
+      /** Format: date-time */
+      target_at?: string;
+    };
+    UpdateMilestoneRequest: {
+      title?: string;
+      description?: string;
+      /** @enum {string} */
+      status?: "planned" | "in_progress" | "completed" | "cancelled";
+      critical?: boolean;
+      /** Format: date-time */
+      start_at?: string;
+      /** Format: date-time */
+      target_at?: string;
+    };
+    Task: {
+      /** Format: uuid */
+      task_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      milestone_id?: string;
+      title: string;
+      description: string;
+      /** @enum {string} */
+      status: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      /** Format: uuid */
+      assignee_id?: string;
+      /** Format: date-time */
+      start_at?: string;
+      /** Format: date-time */
+      due_at?: string;
+      /** Format: date-time */
+      completed_at?: string;
+      /** @enum {string} */
+      source: "human" | "agent" | "proposal";
+      source_run_id?: string;
+      related_object_ids: string[];
+      /** Format: uuid */
+      created_by: string;
+      /** Format: uuid */
+      updated_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    TaskList: {
+      items: components["schemas"]["Task"][];
+    };
+    CreateTaskRequest: {
+      /** Format: uuid */
+      milestone_id?: string;
+      title: string;
+      description?: string;
+      /** @enum {string} */
+      status?: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      /** Format: uuid */
+      assignee_id?: string;
+      /** Format: date-time */
+      start_at?: string;
+      /** Format: date-time */
+      due_at?: string;
+      related_object_ids?: string[];
+      source_run_id?: string;
+    };
+    UpdateTaskRequest: {
+      /** Format: uuid */
+      milestone_id?: string;
+      title?: string;
+      description?: string;
+      /** @enum {string} */
+      status?: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      /** Format: uuid */
+      assignee_id?: string;
+      /** Format: date-time */
+      start_at?: string;
+      /** Format: date-time */
+      due_at?: string;
+      related_object_ids?: string[];
+      source_run_id?: string;
+    };
+    Dependency: {
+      /** Format: uuid */
+      dependency_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      task_id: string;
+      /** Format: uuid */
+      depends_on_task_id: string;
+      /** @enum {string} */
+      kind: "blocks" | "relates_to";
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    DependencyList: {
+      items: components["schemas"]["Dependency"][];
+    };
+    CreateDependencyRequest: {
+      /** Format: uuid */
+      task_id: string;
+      /** Format: uuid */
+      depends_on_task_id: string;
+      /** @enum {string} */
+      kind?: "blocks" | "relates_to";
+    };
+    Reminder: {
+      /** Format: uuid */
+      reminder_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      task_id?: string;
+      /** Format: uuid */
+      milestone_id?: string;
+      /** Format: date-time */
+      remind_at: string;
+      /** @enum {string} */
+      status: "pending" | "triggered" | "cancelled";
+      note: string;
+      /** @enum {string} */
+      source: "human" | "system";
+      /** Format: date-time */
+      triggered_at?: string;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ReminderList: {
+      items: components["schemas"]["Reminder"][];
+    };
+    CreateReminderRequest: {
+      /** Format: uuid */
+      task_id?: string;
+      /** Format: uuid */
+      milestone_id?: string;
+      /** Format: date-time */
+      remind_at: string;
+      note?: string;
+    };
+    ProgressProposal: {
+      /** Format: uuid */
+      proposal_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      proposal_type:
+        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+      /** Format: uuid */
+      target_id?: string;
+      title: string;
+      rationale: string;
+      changes: {
+        [key: string]: unknown;
+      };
+      /** @enum {string} */
+      source: "agent" | "system";
+      source_run_id?: string;
+      /** Format: uuid */
+      proposed_by: string;
+      /** @enum {string} */
+      status: "pending" | "accepted" | "rejected";
+      /** Format: uuid */
+      reviewed_by?: string;
+      /** Format: date-time */
+      reviewed_at?: string;
+      review_note: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ProgressProposalList: {
+      items: components["schemas"]["ProgressProposal"][];
+    };
+    CreateProgressProposalRequest: {
+      /** @enum {string} */
+      proposal_type:
+        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+      /** Format: uuid */
+      target_id?: string;
+      title: string;
+      rationale?: string;
+      changes: {
+        [key: string]: unknown;
+      };
+      source_run_id?: string;
+    };
+    ReviewProgressProposalRequest: {
+      /** @enum {string} */
+      decision: "accepted" | "rejected";
+      note?: string;
+    };
+    ProgressSettings: {
+      /** Format: uuid */
+      project_id: string;
+      auto_task_changes: boolean;
+      /** Format: uuid */
+      updated_by: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    UpdateProgressSettingsRequest: {
+      auto_task_changes: boolean;
     };
     Liveness: {
       /** @constant */
@@ -5463,6 +6004,462 @@ export interface operations {
         };
       };
       403: components["responses"]["Error"];
+    };
+  };
+  "progress.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One authoritative aggregate used by all Progress views. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Progress"];
+        };
+      };
+    };
+  };
+  "progress.milestones.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project milestones. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MilestoneList"];
+        };
+      };
+    };
+  };
+  "progress.milestones.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateMilestoneRequest"];
+      };
+    };
+    responses: {
+      /** @description Created milestone. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Milestone"];
+        };
+      };
+    };
+  };
+  "progress.milestones.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        milestoneId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateMilestoneRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated milestone. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Milestone"];
+        };
+      };
+    };
+  };
+  "progress.tasks.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project tasks. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TaskList"];
+        };
+      };
+    };
+  };
+  "progress.tasks.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateTaskRequest"];
+      };
+    };
+    responses: {
+      /** @description Created task. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Task"];
+        };
+      };
+    };
+  };
+  "progress.tasks.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        taskId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Task deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "progress.tasks.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        taskId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateTaskRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated task. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Task"];
+        };
+      };
+    };
+  };
+  "progress.dependencies.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Task dependencies. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DependencyList"];
+        };
+      };
+    };
+  };
+  "progress.dependencies.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateDependencyRequest"];
+      };
+    };
+    responses: {
+      /** @description Created dependency. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Dependency"];
+        };
+      };
+    };
+  };
+  "progress.dependencies.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        dependencyId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Dependency deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "progress.reminders.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project reminders. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReminderList"];
+        };
+      };
+    };
+  };
+  "progress.reminders.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateReminderRequest"];
+      };
+    };
+    responses: {
+      /** @description Created reminder. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Reminder"];
+        };
+      };
+    };
+  };
+  "progress.reminders.trigger": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        reminderId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Triggered reminder. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Reminder"];
+        };
+      };
+    };
+  };
+  "progress.proposals.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Proposals and their human review state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressProposalList"];
+        };
+      };
+    };
+  };
+  "progress.proposals.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateProgressProposalRequest"];
+      };
+    };
+    responses: {
+      /** @description Pending proposal. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressProposal"];
+        };
+      };
+    };
+  };
+  "progress.proposals.review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        proposalId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReviewProgressProposalRequest"];
+      };
+    };
+    responses: {
+      /** @description Reviewed proposal. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressProposal"];
+        };
+      };
+    };
+  };
+  "progress.settings.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Progress settings. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressSettings"];
+        };
+      };
+    };
+  };
+  "progress.settings.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateProgressSettingsRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Progress settings. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressSettings"];
+        };
+      };
     };
   };
 }

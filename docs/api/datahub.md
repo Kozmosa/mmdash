@@ -20,7 +20,7 @@ projection tables.
 | `data.context.proposals.list`   | GET    | `/v1/data/projects/{projectId}/context/proposals`                     | List context proposals                      |
 | `data.context.proposals.create` | POST   | `/v1/data/projects/{projectId}/context/proposals`                     | Suggest an item for formal Project Context  |
 | `data.context.proposals.review` | POST   | `/v1/data/projects/{projectId}/context/proposals/{proposalId}/review` | Human acceptance or rejection               |
-| `data.home.get`                 | GET    | `/v1/data/projects/{projectId}/home`                                  | Read the typed project-home aggregate shell |
+| `data.home.get`                 | GET    | `/v1/data/projects/{projectId}/home`                                  | Read the typed project-home aggregate |
 
 Object and activity lists use opaque cursor pagination. `type` filters the
 object list by its stable `object_type`; clients must not inspect cursor
@@ -49,6 +49,9 @@ table read or whole-project dump is permitted. Current registrations are:
 | `repository`       | `repo.connected`          | Repo module        |
 | `repo_commit`      | Repo commit events        | Repo module        |
 | `repo_file`        | Current Code head index   | Repo module        |
+| `milestone`        | Progress lifecycle events | Progress module    |
+| `task`             | Progress lifecycle events | Progress module    |
+| `progress_proposal`| Progress lifecycle events | Progress module    |
 
 The `datahub.projections` Event Bus consumer registers Project and Repo
 events. Repo connection projects all three current workspace commits and the
@@ -78,9 +81,8 @@ The relevant stable permissions are `project.data.read`,
 
 ## Home aggregate shell
 
-`data.home.get` currently returns typed, empty sections for `problem`,
-`milestones`, `todos`, `models`, `experiments`, `article`, and `agent`.
-`available` is false, `total` is zero, and `items` is an empty array. This
-preserves the future response contract without pretending that later business
-modules are implemented. Web BFF exposes it through the registered `home` page
-aggregator.
+`data.home.get` returns real validated Problem Artifact cards and Progress
+Milestone/open-Task summaries. Model, Experiment, Article, and Agent sections
+remain typed Empty States (`available=false`, zero total, empty items) until
+their owning stages exist. Web BFF exposes it through the registered `home`
+page aggregator.

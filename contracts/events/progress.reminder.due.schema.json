@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/progress.reminder.due.schema.json",
+  "title": "progress.reminder.due payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resource_id", "resource_type", "title", "status", "reminder_id"],
+  "properties": {
+    "resource_id": { "type": "string", "format": "uuid" },
+    "resource_type": { "const": "reminder" },
+    "title": { "type": "string" },
+    "status": { "type": "string" },
+    "reminder_id": { "type": "string", "format": "uuid" },
+    "task_id": { "type": "string", "format": "uuid" },
+    "milestone_id": { "type": "string", "format": "uuid" }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/progress.milestone.updated.schema.json",
+  "title": "progress.milestone.updated payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resource_id", "resource_type", "title", "status", "source"],
+  "properties": {
+    "resource_id": { "type": "string", "format": "uuid" },
+    "resource_type": { "const": "milestone" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "type": "string" },
+    "source": { "type": "string" },
+    "critical": { "type": "boolean" },
+    "proposal_id": { "type": "string", "format": "uuid" },
+    "source_run_id": { "type": "string" }
+  }
+}

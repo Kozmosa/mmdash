@@ -52,6 +52,11 @@ PostgreSQL directly. `data.list` accepts a `project_id` plus optional `type`,
 `repo_file`. `data.read` accepts a `project_id` and Data Hub `object_id`, then
 Core resolves full content through the owning module's authorized reader.
 
+Stage 4 adds Progress projections for `milestone`, `task`, and
+`progress_proposal`. Their full content is resolved by Core's Progress reader;
+Dependency and Reminder events stay in the domain event stream and are not
+advertised as standalone Data Hub object types yet.
+
 For `repo_file`, the returned content remains pinned to the full commit SHA
 stored in the projection. Binary, oversized, LFS, symlink, and submodule
 objects return safe metadata rather than editable text.
