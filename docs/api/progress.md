@@ -19,6 +19,23 @@ All browser routes use the selected Project context from the BFF session and
 forward the browser identity to Core. Core performs the final Project RBAC and
 identity-kind checks.
 
+All Progress references are Project-scoped. A Task milestone, both Dependency
+Task IDs, and a Reminder Task or Milestone must belong to the route Project. A
+Task assignee must be a current member of that Project. Task
+`related_object_ids` must contain UUIDs for non-hidden Data Hub objects in the
+same Project. Duplicate related object IDs are accepted by the current
+contract.
+
+The same rules apply to Progress Proposal `target_id` and to Task reference
+fields inside Proposal `changes`. Proposal creation validates references before
+the pending record is stored, and acceptance validates them again in the review
+transaction. Invalid, missing, hidden, nonmember, and cross-Project references
+all return `400 PROGRESS_REFERENCE_INVALID` with the same generic message, so
+the API does not reveal the existence of records outside the caller's Project.
+Existing Task related-object IDs are stable historical references: a later
+Data Hub hide does not erase them or block an unrelated Task update, but an
+explicit update that submits a hidden ID is rejected.
+
 Progress events are documented in [`docs/events/catalog.md`](../events/catalog.md).
 `milestone`, `task`, and `progress_proposal` are available through Data Hub
 `data.list`/`data.read`; the Progress page itself uses the aggregate endpoint.

@@ -17,6 +17,13 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
+func TestProgressReferenceValidationSkipsEmptyInput(t *testing.T) {
+	valid, err := (PostgresStore{}).ValidateProgressReferences(context.Background(), nil, "project-id", nil)
+	if err != nil || !valid {
+		t.Fatalf("empty Progress references should not query: valid=%v err=%v", valid, err)
+	}
+}
+
 type accessStub struct {
 	authorized []project.Permission
 	err        error
