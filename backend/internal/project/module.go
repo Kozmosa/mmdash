@@ -14,6 +14,7 @@ import (
 // Module exposes project collaboration routes.
 type Module struct {
 	Artifact   http.Handler
+	Progress   http.Handler
 	Repository http.Handler
 	Service    Service
 }
@@ -90,6 +91,11 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 	case "repository":
 		if module.Repository != nil {
 			module.Repository.ServeHTTP(response, request)
+			return
+		}
+	case "progress":
+		if module.Progress != nil {
+			module.Progress.ServeHTTP(response, request)
 			return
 		}
 	case "restore":

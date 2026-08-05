@@ -1,5 +1,10 @@
 # API endpoint catalog
 
+Stage 4 Progress operations:
+
+- Core: `progress.get`, `progress.milestones.list`, `progress.milestones.create`, `progress.milestones.update`, `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`, `progress.tasks.delete`, `progress.dependencies.list`, `progress.dependencies.create`, `progress.dependencies.delete`, `progress.reminders.list`, `progress.reminders.create`, `progress.reminders.trigger`, `progress.proposals.list`, `progress.proposals.create`, `progress.proposals.review`, `progress.settings.get`, and `progress.settings.update`.
+- Web BFF: `bff.progress.get`, `bff.progress.milestones.list`, `bff.progress.milestones.create`, `bff.progress.milestones.update`, `bff.progress.tasks.list`, `bff.progress.tasks.create`, `bff.progress.tasks.update`, `bff.progress.tasks.delete`, `bff.progress.dependencies.list`, `bff.progress.dependencies.create`, `bff.progress.dependencies.delete`, `bff.progress.reminders.list`, `bff.progress.reminders.create`, `bff.progress.reminders.trigger`, `bff.progress.proposals.list`, `bff.progress.proposals.create`, `bff.progress.proposals.review`, `bff.progress.settings.get`, and `bff.progress.settings.update`.
+
 Search this file by `operationId`, method/name, path, service, or module. The
 catalog is the human-readable lookup index; the linked OpenAPI contract is the
 machine-readable source of truth.

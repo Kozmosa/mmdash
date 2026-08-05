@@ -44,12 +44,25 @@ type problemProviderStub struct {
 	items []interface{}
 }
 
+type progressProviderStub struct {
+	milestones []interface{}
+	todos      []interface{}
+}
+
 func (stub problemProviderStub) ProblemItems(
 	context.Context,
 	auth.Identity,
 	string,
 ) ([]interface{}, error) {
 	return stub.items, nil
+}
+
+func (stub progressProviderStub) ProgressHomeItems(
+	context.Context,
+	auth.Identity,
+	string,
+) ([]interface{}, []interface{}, error) {
+	return stub.milestones, stub.todos, nil
 }
 
 func (stub *storeStub) CreateProposal(
@@ -230,6 +243,27 @@ func TestHomeAggregateIncludesValidatedProblemArtifacts(t *testing.T) {
 	}
 	if home.Models.Available || home.Models.Items == nil {
 		t.Fatalf("future sections must remain typed empty shells: %#v", home.Models)
+	}
+}
+
+func TestHomeAggregateIncludesProgressItemsAndKeepsFutureSectionsEmpty(t *testing.T) {
+	service := Service{
+		Access: &accessStub{}, Clock: clock.Fixed{Time: time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)},
+		Progress: progressProviderStub{
+			milestones: []interface{}{map[string]interface{}{"milestone_id": "milestone-1"}},
+			todos:      []interface{}{map[string]interface{}{"task_id": "task-1"}},
+		},
+		Store: &storeStub{},
+	}
+	home, err := service.Home(context.Background(), auth.Identity{}, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !home.Milestones.Available || home.Milestones.Total != 1 || !home.Todos.Available || home.Todos.Total != 1 {
+		t.Fatalf("progress was not aggregated into Home: %#v", home)
+	}
+	if home.Models.Available || home.Experiments.Available || home.Article.Available || home.Agent.Available {
+		t.Fatalf("future home sections must remain empty: %#v", home)
 	}
 }
 

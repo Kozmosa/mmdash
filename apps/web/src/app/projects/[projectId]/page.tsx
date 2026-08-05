@@ -6,12 +6,12 @@ import {
   FileQuestion,
   Gauge,
   ListChecks,
-  Waypoints,
 } from "lucide-react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/states/empty-state";
 import { useCurrentProject } from "@/components/providers/project-provider";
 import { apiClient } from "@/lib/api-client";
 import type {
@@ -56,12 +56,13 @@ export default function ProjectHomePage() {
   const project = useCurrentProject();
   const home = useQuery({
     queryFn: () =>
-      apiClient.request<{ fragments: { home: HomeAggregate } }>(
+      apiClient.request<{ fragments: { home: HomeAggregate; project: Project } }>(
         `/projects/${encodeURIComponent(project.id)}/pages/home`,
       ),
     queryKey: ["project-home", project.id],
   });
   const aggregate = home.data?.fragments.home;
+  const projectDetail = home.data?.fragments.project;
 
   return (
     <div className="grid gap-6">
@@ -72,11 +73,25 @@ export default function ProjectHomePage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">项目首页</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            题目原始文件来自 Project 的
-            source_artifact_ids[]，其余模块按阶段接入。
+            {projectDetail?.problem_title || "项目问题与协作进度"}
           </p>
         </div>
       </header>
+
+      {projectDetail?.project_constraints?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">关键约束</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+              {projectDetail.project_constraints.map((constraint) => (
+                <li key={constraint}>{constraint}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section aria-labelledby="problem-files-title">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -169,48 +184,53 @@ export default function ProjectHomePage() {
         aria-label="未来模块状态"
         className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
       >
-        <FutureModule
-          icon={ListChecks}
-          label="里程碑与任务"
-          section={aggregate?.milestones}
-        />
-        <FutureModule
-          icon={Waypoints}
-          label="模型、实验与论文"
-          section={aggregate?.models}
-        />
-        <FutureModule
-          icon={Gauge}
-          label="Agent 状态"
-          section={aggregate?.agent}
-        />
+        <ProgressHomeCard aggregate={aggregate} projectId={project.id} />
+        <EmptyModule label="模型、实验与论文" />
+        <EmptyModule label="Agent 状态" />
       </section>
     </div>
   );
 }
 
-function FutureModule({
-  icon: Icon,
-  label,
-  section,
-}: Readonly<{
-  icon: typeof Gauge;
-  label: string;
-  section?: HomeSection;
-}>) {
+type Project = {
+  problem_title: string;
+  project_constraints: string[];
+};
+
+function ProgressHomeCard({
+  aggregate,
+  projectId,
+}: Readonly<{ aggregate?: HomeAggregate; projectId: string }>) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <span className="flex size-9 items-center justify-center rounded-lg bg-muted">
-          <Icon aria-hidden="true" className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{label}</p>
-          <p className="text-xs text-muted-foreground">
-            {section?.available ? `${section.total} 项` : "后续阶段接入"}
-          </p>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ListChecks aria-hidden="true" className="size-4" />
+          Progress
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">关键节点</span>
+          <Badge>{aggregate?.milestones.total ?? 0}</Badge>
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">任务</span>
+          <Badge>{aggregate?.todos.total ?? 0}</Badge>
+        </div>
+        <Link
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+          href={`/projects/${encodeURIComponent(projectId)}/progress`}
+        >
+          打开 Progress <ArrowRight aria-hidden="true" className="size-3" />
+        </Link>
       </CardContent>
     </Card>
   );
+}
+
+function EmptyModule({
+  label,
+}: Readonly<{ label: string }>) {
+  return <EmptyState description="该首页区域属于后续产品阶段，当前没有临时或模拟数据。" title={`${label}尚未接入`} />;
 }

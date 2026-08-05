@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/progress.reminder.created.schema.json",
+  "title": "progress.reminder.created payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resource_id", "resource_type", "title", "status", "remind_at"],
+  "properties": {
+    "resource_id": { "type": "string", "format": "uuid" },
+    "resource_type": { "const": "reminder" },
+    "title": { "type": "string" },
+    "status": { "type": "string" },
+    "remind_at": { "type": "string", "format": "date-time" }
+  }
+}

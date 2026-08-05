@@ -51,6 +51,9 @@ const (
 	PermissionArtifactUpload   Permission = "project.artifact.upload"
 	PermissionArtifactDownload Permission = "project.artifact.download"
 	PermissionArtifactDelete   Permission = "project.artifact.delete"
+	PermissionProgressRead     Permission = "project.progress.read"
+	PermissionProgressManage   Permission = "project.progress.manage"
+	PermissionProgressPropose  Permission = "project.progress.propose"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -77,6 +80,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactUpload,
 		PermissionArtifactDownload,
 		PermissionArtifactDelete,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -100,6 +106,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactUpload,
 		PermissionArtifactDownload,
 		PermissionArtifactDelete,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -117,6 +126,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactRead,
 		PermissionArtifactUpload,
 		PermissionArtifactDownload,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -127,6 +139,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionRepoRead,
 		PermissionArtifactRead,
 		PermissionArtifactDownload,
+		PermissionProgressRead,
 	},
 	RoleAgent: {
 		PermissionRead,
@@ -138,6 +151,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionContextPropose,
 		PermissionAuditWrite,
 		PermissionRepoRead,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleBox: {
 		PermissionRead,
@@ -146,6 +162,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionAuditWrite,
 		PermissionRepoRead,
+		PermissionProgressRead,
 	},
 }
 

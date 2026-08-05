@@ -28,6 +28,17 @@ All entries currently use envelope schema version `1`.
 | `artifact.created`          | artifact | yes            | `artifact_id`, `version_id`, `kind`, `source`, `name`, `filename`, `sha256`, `size_bytes`, `status`        | `datahub.projections`          |
 | `artifact.available`        | artifact | yes            | `artifact_id`, `version_id`, `version_no`, `sha256`, `size_bytes`, `mime_type`, `reason`, `available_at`   | `datahub.projections`          |
 | `artifact.deleted`          | artifact | yes            | `artifact_id`, `current_version_id`, `reason`, `trashed_at`                                                | `datahub.projections`          |
+| `progress.milestone.created`  | progress | yes            | `resource_id`, `resource_type=milestone`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id` | `datahub.projections`          |
+| `progress.milestone.updated`  | progress | yes            | `resource_id`, `resource_type=milestone`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id` | `datahub.projections`          |
+| `progress.task.created`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id` | `datahub.projections`          |
+| `progress.task.updated`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id` | `datahub.projections`          |
+| `progress.task.deleted`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status=deleted`, `source` | `datahub.projections`          |
+| `progress.dependency.created` | progress | yes            | `resource_id`, `resource_type=dependency`, `title`, `status`, `task_id`, `depends_on_task_id` | none |
+| `progress.dependency.deleted` | progress | yes            | `resource_id`, `resource_type=dependency`, `title`, `status=deleted`, `source` | none |
+| `progress.reminder.created`   | progress | yes            | `resource_id`, `resource_type=reminder`, `title`, `status`, `remind_at` | none |
+| `progress.reminder.due`       | progress | yes            | `resource_id`, `resource_type=reminder`, `title`, `status`, `reminder_id`, optional task/milestone IDs | `notification.progress-reminder` |
+| `progress.proposal.created`   | progress | yes            | `resource_id`, `resource_type=progress_proposal`, `title`, `status`, `proposal_type`, `source`, `source_run_id` | `datahub.projections`          |
+| `progress.proposal.reviewed`  | progress | yes            | `resource_id`, `resource_type=progress_proposal`, `title`, `status`, `proposal_type`, `decision` | `datahub.projections`          |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.
@@ -51,6 +62,13 @@ is emitted only after full size and SHA-256 verification, except
 `reason=restored`, which re-exposes an already verified immutable Version.
 `artifact.deleted` is a recoverable trash transition and does not imply that
 Version bytes were deleted.
+
+Progress events carry only bounded resource metadata and source references.
+Critical Milestone writes are human-session operations; accepted non-human
+changes are applied by Progress and carry their Proposal/source run. Reminder
+delivery stops at the stable `progress.reminder.due` event and the minimal
+Stage 4 NotificationAdapter intent consumer; full Notification 3.17 delivery is
+not yet available.
 
 When adding an event:
 
