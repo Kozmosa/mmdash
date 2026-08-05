@@ -24,6 +24,16 @@ export class PatternAuthorizer implements GatewayAuthorizer {
   }
 
   assertToolAccess(principal: Principal, toolName: string): void {
+    if (
+      principal.kind === "agent" &&
+      principal.credentialStatus === "pending"
+    ) {
+      throw new GatewayError(
+        "AGENT_CREDENTIAL_PENDING",
+        "The pending Agent credential cannot call tools",
+        403,
+      );
+    }
     if (!this.canAccessTool(principal, toolName)) {
       throw new GatewayError(
         "TOOL_ACCESS_DENIED",
