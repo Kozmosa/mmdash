@@ -23,6 +23,14 @@ Settings type. Sends are performed by the Go Core Delivery Processor with
 PostgreSQL leases and provider classification; Python Worker and Progress do
 not participate.
 
+Webhook configuration is validated before Settings persistence, during the
+safe connection test, and again before delivery. HTTPS is required by default.
+The deployment-only `NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK` exception is
+disabled by default and permits HTTP only for explicit loopback hostnames or IP
+literals in local development. Embedded URL credentials and fragments are
+rejected, query strings remain supported for provider endpoints, and redirects
+are returned as rejected provider responses rather than followed.
+
 Invitation Inbox records carry the typed browser-safe action
 `project.invitation.accept` with the invitation ID only. The Web action calls
 Project's protected invitation command; Notification never mutates Project

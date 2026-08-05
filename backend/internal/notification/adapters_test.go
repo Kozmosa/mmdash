@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -84,6 +86,107 @@ func TestWebhookTimeoutIsRetryableAndCredentialsInURLAreRejected(t *testing.T) {
 	}
 	if err := adapter.ValidateConfig(map[string]interface{}{"endpoint": "https://user:password@example.test/hook", "signing_secret": "secret"}); err == nil {
 		t.Fatal("webhook URL with embedded credentials was accepted")
+	}
+}
+
+func TestWebhookURLPolicyRequiresHTTPSExceptExplicitLoopbackDevelopment(t *testing.T) {
+	tests := []struct {
+		name  string
+		url   string
+		local bool
+		want  bool
+	}{
+		{name: "https", url: "https://example.test/hook?provider=allowed", want: true},
+		{name: "production http loopback", url: "http://127.0.0.1:8080/hook"},
+		{name: "local localhost", url: "http://localhost:8080/hook", local: true, want: true},
+		{name: "local localhost subdomain", url: "http://receiver.localhost/hook", local: true, want: true},
+		{name: "local ipv4 loopback", url: "http://127.0.0.2:8080/hook", local: true, want: true},
+		{name: "local ipv6 loopback", url: "http://[::1]:8080/hook", local: true, want: true},
+		{name: "local public host", url: "http://example.test/hook", local: true},
+		{name: "deceptive localhost", url: "http://localhost.example.test/hook", local: true},
+		{name: "embedded credentials", url: "https://user:credential@example.test/hook", local: true},
+		{name: "fragment", url: "https://example.test/hook#credential", local: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			secret := "signing-credential-that-must-not-leak"
+			adapter := GenericWebhook{AllowHTTPLoopback: test.local}
+			err := adapter.ValidateConfig(map[string]interface{}{"endpoint": test.url, "signing_secret": secret})
+			if (err == nil) != test.want {
+				t.Fatalf("ValidateConfig(%q) error=%v, want valid=%t", test.url, err, test.want)
+			}
+			if err != nil && (strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "credential")) {
+				t.Fatalf("validation error leaked credentials: %v", err)
+			}
+		})
+	}
+
+	if err := (FeishuWebhook{AllowHTTPLoopback: true}).ValidateConfig(map[string]interface{}{"webhook_url": "http://localhost:8080/feishu"}); err != nil {
+		t.Fatalf("explicit local Feishu loopback URL was rejected: %v", err)
+	}
+}
+
+func TestWebhookSendRejectsInsecureConfigurationBeforeRequest(t *testing.T) {
+	requested := false
+	credential := "delivery-secret-that-must-not-leak"
+	adapter := GenericWebhook{Client: httpDoerFunc(func(*http.Request) (*http.Response, error) {
+		requested = true
+		return nil, nil
+	})}
+	err := adapter.Send(context.Background(), map[string]interface{}{
+		"endpoint": "http://127.0.0.1:8080/hook", "signing_secret": credential,
+	}, "delivery-1", "test", RenderedMessage{Body: []byte("{}"), ContentType: "application/json"})
+	providerErr, ok := err.(ProviderError)
+	if !ok || providerErr.Code != "configuration_error" || requested {
+		t.Fatalf("insecure delivery result: requested=%t err=%T %#v", requested, err, err)
+	}
+	if strings.Contains(err.Error(), credential) || strings.Contains(err.Error(), "127.0.0.1") {
+		t.Fatalf("delivery validation leaked configuration: %v", err)
+	}
+}
+
+func TestWebhookClientDoesNotFollowRedirects(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		local bool
+		tls   bool
+	}{
+		{name: "https", tls: true},
+		{name: "explicit local http", local: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var targetRequests atomic.Int32
+			target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				targetRequests.Add(1)
+			}))
+			defer target.Close()
+
+			redirect := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				http.Redirect(response, request, target.URL, http.StatusTemporaryRedirect)
+			})
+			var source *httptest.Server
+			if test.tls {
+				source = httptest.NewTLSServer(redirect)
+			} else {
+				source = httptest.NewServer(redirect)
+			}
+			defer source.Close()
+
+			adapter := GenericWebhook{
+				AllowHTTPLoopback: test.local,
+				Client:            NewWebhookHTTPClient(source.Client()),
+			}
+			err := adapter.Send(context.Background(), map[string]interface{}{
+				"endpoint": source.URL, "signing_secret": "redirect-signing-secret",
+			}, "delivery-redirect", "test", RenderedMessage{Body: []byte(`{"secret":"payload"}`), ContentType: "application/json"})
+			providerErr, ok := err.(ProviderError)
+			if !ok || providerErr.Code != "provider_rejected" || providerErr.StatusCode != http.StatusTemporaryRedirect {
+				t.Fatalf("redirect result: got %T %#v", err, err)
+			}
+			if targetRequests.Load() != 0 {
+				t.Fatal("Webhook payload or signature was forwarded to the redirect target")
+			}
+		})
 	}
 }
 

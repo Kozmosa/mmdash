@@ -382,7 +382,7 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, apperror.New(http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required"))
 	case errors.Is(err, ErrNotFound):
 		httpx.WriteError(w, r, apperror.New(http.StatusNotFound, "NOT_FOUND", "Notification not found"))
-	case errors.Is(err, ErrInvalid):
+	case errors.Is(err, ErrInvalid), errors.Is(err, settings.ErrInvalid):
 		httpx.WriteError(w, r, apperror.New(http.StatusBadRequest, "INVALID_REQUEST", "Notification input is invalid"))
 	case errors.Is(err, ErrDeliveryRetryConflict):
 		httpx.WriteError(w, r, apperror.New(http.StatusConflict, "NOTIFICATION_DELIVERY_RETRY_CONFLICT", "Only failed deliveries can be manually retried"))

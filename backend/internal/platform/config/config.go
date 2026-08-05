@@ -20,6 +20,7 @@ type Config struct {
 	InternalURL     string
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
+	Notification    NotificationConfig
 	Outbox          OutboxConfig
 	Progress        ProgressConfig
 	PublicURL       string
@@ -74,6 +75,11 @@ type ObjectStorageConfig struct {
 	SecretKey      string
 }
 
+// NotificationConfig configures external notification delivery boundaries.
+type NotificationConfig struct {
+	WebhookAllowHTTPLoopback bool
+}
+
 // OutboxConfig configures durable event publication and delivery.
 type OutboxConfig struct {
 	DeliveryLease time.Duration
@@ -115,6 +121,14 @@ type LookupEnv func(string) (string, bool)
 
 // Load builds a validated Config from environment variables.
 func Load(lookup LookupEnv) (Config, error) {
+	webhookAllowHTTPLoopback, err := boolOrDefault(
+		lookup,
+		"NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK",
+		false,
+	)
+	if err != nil {
+		return Config{}, err
+	}
 	config := Config{
 		Addr: envOrDefault(lookup, "CORE_ADDR", ":8080"),
 		Artifact: ArtifactConfig{
@@ -188,6 +202,9 @@ func Load(lookup LookupEnv) (Config, error) {
 			PublicEndpoint: envOrDefault(lookup, "OBJECT_STORAGE_PUBLIC_ENDPOINT", ""),
 			Region:         envOrDefault(lookup, "OBJECT_STORAGE_REGION", "us-east-1"),
 			SecretKey:      envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
+		},
+		Notification: NotificationConfig{
+			WebhookAllowHTTPLoopback: webhookAllowHTTPLoopback,
 		},
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
 		InternalURL: envOrDefault(lookup, "CORE_INTERNAL_URL", "http://localhost:8080"),
@@ -434,6 +451,18 @@ func intOrDefault(lookup LookupEnv, key string, fallback int) int {
 		return -1
 	}
 	return parsed
+}
+
+func boolOrDefault(lookup LookupEnv, key string, fallback bool) (bool, error) {
+	value, ok := lookup(key)
+	if !ok || value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return parsed, nil
 }
 
 func int64OrDefault(lookup LookupEnv, key string, fallback int64) int64 {

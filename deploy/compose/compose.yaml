@@ -107,6 +107,8 @@ services:
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-mmdash-local-admin}
       # Settings AES-GCM 加密主密钥；生产必须替换为稳定的 Secret，轮换需有迁移方案。
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-development-settings-encryption-key-change-me}
+      # 生产保持 false；仅本机开发接收器可显式开启，且 Core 仍只允许明确 loopback 主机。
+      NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK: ${NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK:-false}
       # Core 使用的 PostgreSQL DSN；生产必须使用生产主机、账号、密码和 TLS。
       DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
       # 空闲数据库连接上限；生产按数据库容量与副本数调优。
