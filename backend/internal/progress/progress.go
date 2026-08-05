@@ -656,6 +656,7 @@ func nonNilTasks(items []Task) []Task {
 
 var (
 	ErrInvalid           = errors.New("invalid progress input")
+	ErrReferenceInvalid  = errors.New("progress reference is invalid")
 	ErrNotFound          = errors.New("progress record not found")
 	ErrConflict          = errors.New("progress conflict")
 	ErrHumanRequired     = errors.New("human confirmation required")
@@ -670,6 +671,8 @@ func ErrorCode(err error) string {
 		return "HUMAN_REVIEW_REQUIRED"
 	case errors.Is(err, ErrProposalRequired):
 		return "PROGRESS_PROPOSAL_REQUIRED"
+	case errors.Is(err, ErrReferenceInvalid):
+		return "PROGRESS_REFERENCE_INVALID"
 	case errors.Is(err, ErrConflict):
 		return "PROGRESS_CONFLICT"
 	case errors.Is(err, ErrNotFound):

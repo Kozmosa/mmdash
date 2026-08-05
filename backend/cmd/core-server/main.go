@@ -212,6 +212,7 @@ func run(logger *logging.Logger) error {
 	progressStore := progress.PostgresStore{
 		Clock: systemClock, DB: db, Generator: idGenerator,
 		Outbox: outboxWriter, ReminderLease: processConfig.Progress.ReminderLease,
+		References:         dataStore,
 		ReminderRetryDelay: processConfig.Progress.ReminderRetryDelay,
 		Transaction:        transactionManager,
 	}
