@@ -44,17 +44,41 @@ tests, and validation of the Gateway authorization boundary. In particular,
 `MCP_AGENT_TOKEN` is not the first product Agent Token scheme and must not be
 used as the production Hermes credential lifecycle.
 
-The later Agent stage integrates the Gateway with the Core/Auth-managed opaque
-Agent Token model. That token is issued once for an Agent instance, scoped to a
-Project and allowed MCP tools, stored by Hermes, and presented by Hermes
+Stage 5 integrates the Gateway with the Core/Auth-managed opaque Agent Token
+model. That token is issued once for an Agent instance, scoped to one Project
+and an exact MCP Tool allowlist, stored by Hermes, and presented by Hermes
 directly to this Gateway. The user CLI has a separate user-delegated identity
 and does not proxy, mint, persist, or validate Hermes credentials.
+
+A pending product Agent Token can authenticate only for its verification
+handshake. `auth.me`, current-protocol `server/discover`, and legacy
+`initialize` do not mark it verified. Once the client has negotiated an mmdash
+MCP Session, the first successful `tools/list` causes Gateway to record evidence through Core
+`auth.agent_tokens.verification.record`. The evidence callback uses
+`MCP_CORE_ACCESS_TOKEN`; Core must be configured with that API credential's
+non-secret Token ID in `AUTH_AGENT_VERIFICATION_TOKEN_ID`. The credential must
+belong to an active admin account, and a Project-scoped credential can record
+evidence only for that same Project. Ordinary admin API Tokens are rejected.
+
+If evidence cannot be recorded, Gateway fails the pending `tools/list` with
+`AGENT_VERIFICATION_UNAVAILABLE` and does not treat the Token as verified.
+After activation, normal exact-allowlist authorization applies. Gateway sends
+the product Agent Token as Core's primary identity and the dedicated access
+credential separately as `X-Mmdash-Gateway-Authorization`. Core permits direct
+Agent use only for `GET /v1/auth/me`; every Agent business route requires the
+exact configured Gateway Token ID, admin role, and compatible Project scope.
+The attestation never contains a Tool name and does not replace Core RBAC.
+Request logs, errors, and MCP results must not contain either credential.
 
 The gateway also validates Host and Origin using `MCP_ALLOWED_HOSTS` and
 `MCP_ALLOWED_ORIGINS` to prevent DNS rebinding.
 
-Set `MCP_CORE_ACCESS_TOKEN` to a Core-issued, project-authorized API/Agent token
-for business reads such as `data.list` and `data.read`. Set
+Set `MCP_CORE_ACCESS_TOKEN` to the dedicated Core-issued admin API token used
+for the Agent-verification callback and active Agent request attestation. Its
+non-secret ID must equal `AUTH_AGENT_VERIFICATION_TOKEN_ID`; a Project-scoped
+token may attest only that Project. CLI reads continue to delegate the user's
+own Core credential.
+Set
 `MCP_CORE_AUDIT_TOKEN` to a Core-issued API token to persist tool audit events
 in Core's queryable Audit ledger. If the access token is omitted, the audit
 token is used for Core reads as a compatibility fallback. Without an audit
