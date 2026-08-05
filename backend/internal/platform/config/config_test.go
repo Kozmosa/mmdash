@@ -36,6 +36,10 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 		config.Progress.ReminderRetryDelay != 2*time.Second {
 		t.Fatalf("unexpected Progress reminder defaults: %+v", config.Progress)
 	}
+	if config.Project.InvitationExpiryBatchSize != 100 ||
+		config.Project.InvitationExpiryPollInterval != 30*time.Second {
+		t.Fatalf("unexpected Project invitation expiry defaults: %+v", config.Project)
+	}
 	if config.Notification.WebhookAllowHTTPLoopback {
 		t.Fatal("insecure loopback Webhooks must be disabled by default")
 	}
