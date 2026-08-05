@@ -3,6 +3,9 @@ package notification
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -16,6 +19,97 @@ type notificationProjectAccessStub struct {
 
 func (stub notificationProjectAccessStub) Authorize(context.Context, auth.Identity, string, project.Permission) error {
 	return stub.err
+}
+
+type notificationAuthenticatorStub struct {
+	identity auth.Identity
+}
+
+func (stub notificationAuthenticatorStub) Authenticate(context.Context, string) (auth.Identity, error) {
+	return stub.identity, nil
+}
+
+func TestMarkAllReadUsesOnlyJSONBodyFilters(t *testing.T) {
+	const (
+		projectID      = "00000000-0000-4000-8000-000000000001"
+		otherProjectID = "00000000-0000-4000-8000-000000000003"
+		userID         = "00000000-0000-4000-8000-000000000002"
+	)
+	tests := []struct {
+		name string
+		path string
+		body string
+		want Filter
+	}{
+		{
+			name: "body project and type",
+			path: "/v1/inbox/mark-all-read",
+			body: `{"project_id":"` + projectID + `","type_key":"` + TypeReminderDue + `"}`,
+			want: Filter{ProjectID: projectID, TypeKey: TypeReminderDue},
+		},
+		{
+			name: "no body",
+			path: "/v1/inbox/mark-all-read",
+			want: Filter{},
+		},
+		{
+			name: "empty object",
+			path: "/v1/inbox/mark-all-read?project_id=" + otherProjectID + "&type_key=query.type",
+			body: `{}`,
+			want: Filter{},
+		},
+		{
+			name: "query filters ignored",
+			path: "/v1/inbox/mark-all-read?project_id=" + otherProjectID + "&type_key=query.type&read_state=unread&archived=false&outcome=active",
+			want: Filter{},
+		},
+		{
+			name: "body wins over conflicting query",
+			path: "/v1/inbox/mark-all-read?project_id=" + otherProjectID + "&type_key=query.type&read_state=unread",
+			body: `{"project_id":"` + projectID + `","type_key":"` + TypeReminderDue + `"}`,
+			want: Filter{ProjectID: projectID, TypeKey: TypeReminderDue},
+		},
+		{
+			name: "collection route uses the same body semantics",
+			path: "/v1/inbox?action=mark-all-read&project_id=" + otherProjectID + "&type_key=query.type",
+			body: `{"project_id":"` + projectID + `","type_key":"` + TypeReminderDue + `"}`,
+			want: Filter{ProjectID: projectID, TypeKey: TypeReminderDue},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := &notificationStoreStub{}
+			module := Module{
+				Auth: notificationAuthenticatorStub{identity: auth.Identity{
+					Kind: "session",
+					User: auth.User{ID: userID},
+				}},
+				Service: Service{Store: store},
+			}
+			mux := http.NewServeMux()
+			module.RegisterRoutes(mux)
+			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			if test.body != "" {
+				request.Header.Set("Content-Type", "application/json")
+			}
+			response := httptest.NewRecorder()
+
+			mux.ServeHTTP(response, request)
+
+			if response.Code != http.StatusNoContent {
+				t.Fatalf("mark all read: got %d, want %d: %s", response.Code, http.StatusNoContent, response.Body.String())
+			}
+			if !store.markAllReadCalled {
+				t.Fatal("mark all read did not reach the store")
+			}
+			if store.markAllReadUserID != userID {
+				t.Fatalf("mark all read user: got %q, want %q", store.markAllReadUserID, userID)
+			}
+			if store.markAllReadFilter != test.want {
+				t.Fatalf("mark all read filter: got %#v, want %#v", store.markAllReadFilter, test.want)
+			}
+		})
+	}
 }
 
 func TestInboxRejectsMachineIdentitiesBeforeStoreAccess(t *testing.T) {

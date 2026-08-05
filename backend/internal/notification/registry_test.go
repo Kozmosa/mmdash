@@ -46,9 +46,12 @@ func TestRegistryRejectsUnsafeAndIncompleteDescriptors(t *testing.T) {
 }
 
 type notificationStoreStub struct {
-	created      []Notification
-	listInboxHit bool
-	upsertedRule Rule
+	created           []Notification
+	listInboxHit      bool
+	markAllReadCalled bool
+	markAllReadFilter Filter
+	markAllReadUserID string
+	upsertedRule      Rule
 }
 
 func (stub *notificationStoreStub) CreateEvent(_ context.Context, notification Notification, _ []RecipientInput, _ bool, _ []DeliveryIntent) error {
@@ -69,7 +72,12 @@ func (*notificationStoreStub) GetInbox(context.Context, string, string) (InboxIt
 func (*notificationStoreStub) UpdateInbox(context.Context, string, string, *string, *bool) (InboxItem, error) {
 	return InboxItem{}, nil
 }
-func (*notificationStoreStub) MarkAllRead(context.Context, string, Filter) error { return nil }
+func (stub *notificationStoreStub) MarkAllRead(_ context.Context, userID string, filter Filter) error {
+	stub.markAllReadCalled = true
+	stub.markAllReadUserID = userID
+	stub.markAllReadFilter = filter
+	return nil
+}
 func (*notificationStoreStub) UnreadCount(context.Context, string, string) (int64, error) {
 	return 0, nil
 }
