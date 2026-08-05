@@ -70,13 +70,35 @@ type Delivery = {
 
 export function NotificationSettingsPanel() {
   const project = useCurrentProject();
+  const canManage = project.role === "owner" || project.role === "maintainer";
   const deliveries = useQuery({
     queryKey: ["notification-deliveries", project.id],
     queryFn: () =>
       apiClient.request<{ items: Delivery[] }>(
         `/projects/${encodeURIComponent(project.id)}/notification-deliveries?limit=8`,
       ),
+    enabled: canManage,
   });
+
+  if (!canManage) {
+    return (
+      <section
+        className="space-y-2"
+        aria-labelledby="notification-settings-title"
+      >
+        <h2
+          className="flex items-center gap-2 text-lg font-semibold"
+          id="notification-settings-title"
+        >
+          <Bell aria-hidden="true" className="size-5" />
+          Notification 规则与投递
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          仅 Project owner 或 maintainer 可以管理通知规则并查看投递诊断。
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -266,7 +288,9 @@ function NotificationChannelCard({
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             onChange={(event) => setEndpoint(event.target.value)}
             placeholder={
-              query.data?.configured ? "Endpoint 已保存，留空以保留" : "https://…"
+              query.data?.configured
+                ? "Endpoint 已保存，留空以保留"
+                : "https://…"
             }
             type="url"
             value={endpoint}

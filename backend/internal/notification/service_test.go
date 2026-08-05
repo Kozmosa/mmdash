@@ -16,10 +16,14 @@ import (
 )
 
 type notificationProjectAccessStub struct {
-	err error
+	err        error
+	permission project.Permission
+	projectID  string
 }
 
-func (stub notificationProjectAccessStub) Authorize(context.Context, auth.Identity, string, project.Permission) error {
+func (stub *notificationProjectAccessStub) Authorize(_ context.Context, _ auth.Identity, projectID string, permission project.Permission) error {
+	stub.permission = permission
+	stub.projectID = projectID
 	return stub.err
 }
 
@@ -192,7 +196,7 @@ func TestNotificationRuleEnforcesRegisteredTypeBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := &notificationStoreStub{}
-	service := Service{Registry: registry, Store: store, Access: notificationProjectAccessStub{}}
+	service := Service{Registry: registry, Store: store, Access: &notificationProjectAccessStub{}}
 	identity := auth.Identity{Kind: "session", User: auth.User{ID: "owner-1"}}
 	projectID := "00000000-0000-4000-8000-000000000001"
 
@@ -219,14 +223,99 @@ func TestNotificationRuleEnforcesRegisteredTypeBoundaries(t *testing.T) {
 	}
 }
 
-func TestNotificationRuleHonorsProjectAuthorization(t *testing.T) {
+func TestNotificationDiagnosticsRequireSettingsManage(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := Service{Registry: registry, Store: &notificationStoreStub{}, Access: notificationProjectAccessStub{err: project.ErrForbidden}}
-	_, err = service.GetRule(context.Background(), auth.Identity{Kind: "session", User: auth.User{ID: "viewer-1"}}, "project-1", TypeReminderDue)
-	if !errors.Is(err, project.ErrForbidden) {
-		t.Fatalf("unauthorized rule read: got %v", err)
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "viewer-1"}}
+	for _, test := range []struct {
+		name     string
+		call     func(Service) error
+		storeHit func(*notificationStoreStub) bool
+	}{
+		{
+			name: "rule read",
+			call: func(service Service) error {
+				_, err := service.GetRule(context.Background(), identity, "project-1", TypeReminderDue)
+				return err
+			},
+			storeHit: func(store *notificationStoreStub) bool { return store.getRuleHit },
+		},
+		{
+			name: "delivery diagnostics",
+			call: func(service Service) error {
+				_, err := service.ListDeliveries(context.Background(), identity, "project-1", "", pagination.Request{})
+				return err
+			},
+			storeHit: func(store *notificationStoreStub) bool { return store.listDeliveriesHit },
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Run("authorized manager", func(t *testing.T) {
+				store := &notificationStoreStub{}
+				access := &notificationProjectAccessStub{}
+				service := Service{Registry: registry, Store: store, Access: access}
+				if err := test.call(service); err != nil {
+					t.Fatalf("authorized access: %v", err)
+				}
+				if access.projectID != "project-1" || access.permission != project.PermissionSettingsManage {
+					t.Fatalf("authorization: project=%q permission=%q", access.projectID, access.permission)
+				}
+				if !test.storeHit(store) {
+					t.Fatal("authorized request did not reach the notification store")
+				}
+			})
+			t.Run("denied member", func(t *testing.T) {
+				store := &notificationStoreStub{}
+				access := &notificationProjectAccessStub{err: project.ErrForbidden}
+				service := Service{Registry: registry, Store: store, Access: access}
+				if err := test.call(service); !errors.Is(err, project.ErrForbidden) {
+					t.Fatalf("unauthorized access: got %v", err)
+				}
+				if access.projectID != "project-1" || access.permission != project.PermissionSettingsManage {
+					t.Fatalf("authorization: project=%q permission=%q", access.projectID, access.permission)
+				}
+				if test.storeHit(store) {
+					t.Fatal("denied request reached the notification store")
+				}
+			})
+		})
+	}
+}
+
+func TestNotificationDiagnosticsHTTPForbiddenDoesNotDiscloseData(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/v1/projects/project-1/notification-rules/" + TypeReminderDue,
+		"/v1/projects/project-1/notification-deliveries?limit=10",
+	} {
+		t.Run(path, func(t *testing.T) {
+			store := &notificationStoreStub{}
+			access := &notificationProjectAccessStub{err: project.ErrForbidden}
+			module := Module{
+				Auth:    notificationAuthenticatorStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "viewer-1"}}},
+				Service: Service{Registry: registry, Store: store, Access: access},
+			}
+			response := httptest.NewRecorder()
+			module.ProjectHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("status: got %d, want %d: %s", response.Code, http.StatusForbidden, response.Body.String())
+			}
+			if access.permission != project.PermissionSettingsManage {
+				t.Fatalf("permission: got %q", access.permission)
+			}
+			if store.getRuleHit || store.listDeliveriesHit {
+				t.Fatal("forbidden HTTP request reached the notification store")
+			}
+			body := response.Body.String()
+			if strings.Contains(body, TypeReminderDue) || strings.Contains(body, "delivery_id") {
+				t.Fatalf("forbidden response disclosed notification data: %s", body)
+			}
+		})
 	}
 }
