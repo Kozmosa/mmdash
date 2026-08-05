@@ -304,7 +304,10 @@ export interface paths {
     /** List token metadata owned by the current user */
     get: operations["auth.tokens.list"];
     put?: never;
-    /** Issue an API, Agent, or Box token */
+    /**
+     * Issue an API or Box token
+     * @description Product Agent Tokens are issued only through the Agent instance lifecycle.
+     */
     post: operations["auth.tokens.create"];
     delete?: never;
     options?: never;
@@ -326,6 +329,33 @@ export interface paths {
     post?: never;
     /** Revoke an access token */
     delete: operations["auth.tokens.revoke"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/agent-tokens/{tokenId}/verification": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Record trusted MCP verification evidence for a pending Agent Token
+     * @description Internal callback used only by MCP Gateway after a pending product
+     *     Agent Token completes one successful `tools/list` request in a
+     *     protocol-negotiated MCP session. Requires the dedicated Gateway Core
+     *     API credential. Browser sessions, Agent Tokens, Box Tokens, ordinary
+     *     `/auth/me`, current `server/discover`, and legacy `initialize` cannot
+     *     create verification evidence on their own.
+     */
+    post: operations["auth.agent_tokens.verification.record"];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -1615,6 +1645,546 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/agent-instances": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List Agent instances granted to a project */
+    get: operations["agent.instances.list"];
+    put?: never;
+    /**
+     * Create and bind an Agent instance
+     * @description Creates a Hermes-backed instance and Project Grant. Manual mode may
+     *     return one Agent Token plaintext exactly once; auto mode never returns
+     *     Agent Token plaintext to the browser.
+     */
+    post: operations["agent.instances.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    /** Get an Agent instance */
+    get: operations["agent.instances.get"];
+    put?: never;
+    post?: never;
+    /**
+     * Disable an Agent instance and revoke Project access
+     * @description Disables the local instance and credentials without deleting Hermes message history.
+     */
+    delete: operations["agent.instances.disable"];
+    options?: never;
+    head?: never;
+    /**
+     * Update Agent runtime or management configuration
+     * @description Ordinary configuration changes return only the updated instance.
+     *     Changing allowed_tools starts a two-phase Agent Token rotation: the old
+     *     Token remains active until the new scope is verified; manual mode may
+     *     return the new Token once, while auto mode never returns plaintext.
+     */
+    patch: operations["agent.instances.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/checks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Run bounded Agent runtime and management checks */
+    post: operations["agent.instances.check"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Verify Hermes can reach the scoped mmdash MCP endpoint
+     * @description Verification is distinct from runtime and Dashboard connectivity.
+     */
+    post: operations["agent.project_access.verify"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Begin a two-phase Agent Token rotation
+     * @description The old active Token remains valid until the new pending Token is verified and activated.
+     */
+    post: operations["agent.tokens.rotate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Verify and activate a pending Agent Token
+     * @description Revokes the previous Token only after a real MCP access using the pending Token succeeds.
+     */
+    post: operations["agent.tokens.verify"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Abort a pending Agent Token rotation */
+    post: operations["agent.tokens.abort"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Immediately revoke an Agent Token */
+    delete: operations["agent.tokens.revoke"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    /** Get the generated and effective project Agent prompt */
+    get: operations["agent.prompt.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Set a project-specific Agent prompt override */
+    patch: operations["agent.prompt.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt/reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore the generated default project Agent prompt */
+    post: operations["agent.prompt.reset"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    /** List indexed Agent sessions */
+    get: operations["agent.sessions.list"];
+    put?: never;
+    /**
+     * Create a main, progress, or experiment Agent session
+     * @description Stage 5 does not attach automatic triggers to progress sessions.
+     */
+    post: operations["agent.sessions.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    /** Get an indexed Agent session */
+    get: operations["agent.sessions.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Rename an Agent session */
+    patch: operations["agent.sessions.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/end": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** End an Agent session without deleting history */
+    post: operations["agent.sessions.end"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/continue": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Continue an ended Agent session */
+    post: operations["agent.sessions.continue"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/fork": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Fork an Agent session and preserve lineage */
+    post: operations["agent.sessions.fork"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/default": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Make an Agent session the project default */
+    post: operations["agent.sessions.default"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/messages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    /** Read the message history retained by Hermes */
+    get: operations["agent.sessions.messages.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start a stoppable Agent Run for a user message */
+    post: operations["agent.runs.start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    /** Get current Agent Run status */
+    get: operations["agent.runs.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    /** Stream normalized Agent Run events */
+    get: operations["agent.runs.events"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+        approvalId: components["parameters"]["AgentApprovalId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Respond to a pending Agent Run approval
+     * @description Applies a normalized approval choice without exposing raw Tool arguments or provider state.
+     */
+    post: operations["agent.runs.approve"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stop a running Agent Run */
+    post: operations["agent.runs.stop"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Regenerate a Run in a non-destructive fork
+     * @description Hermes has no native regenerate endpoint; mmdash forks the Session and replays the selected or latest user turn.
+     */
+    post: operations["agent.runs.regenerate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Re-execute a prior user turn in the current Session */
+    post: operations["agent.runs.rerun"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/audit/events": {
     parameters: {
       query?: never;
@@ -2155,12 +2725,17 @@ export interface components {
       /** @enum {string} */
       kind: "session" | "api" | "agent" | "box";
       /** Format: uuid */
+      agent_instance_id?: string;
+      /** Format: uuid */
       project_id?: string;
+      allowed_tools?: string[];
+      /** @enum {string} */
+      credential_status?: "pending" | "active";
       /** Format: uuid */
       session_id?: string;
       /** Format: uuid */
       token_id?: string;
-      user: components["schemas"]["User"];
+      user?: components["schemas"]["User"];
     };
     AccessToken: {
       /** Format: uuid */
@@ -2180,7 +2755,10 @@ export interface components {
       created_at: string;
     };
     CreateTokenRequest: {
-      /** @enum {string} */
+      /**
+       * @description `agent` is retained only for request-contract compatibility and is rejected by this generic endpoint. Product Agent Tokens must be issued through the project-scoped Agent credential lifecycle.
+       * @enum {string}
+       */
       kind: "api" | "agent" | "box";
       name: string;
       /** Format: uuid */
@@ -2191,6 +2769,32 @@ export interface components {
     IssuedToken: {
       token: string;
       credential: components["schemas"]["AccessToken"];
+    };
+    RecordAgentTokenVerificationRequest: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** @constant */
+      mcp_method: "tools/list";
+      mcp_session_id: string;
+      request_id: string;
+    };
+    AgentTokenVerificationEvidence: {
+      /** Format: uuid */
+      evidence_id: string;
+      /** Format: uuid */
+      token_id: string;
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** @constant */
+      mcp_method: "tools/list";
+      mcp_session_id: string;
+      request_id: string;
+      /** Format: date-time */
+      verified_at: string;
     };
     /** @enum {string} */
     ProjectRole: "owner" | "maintainer" | "editor" | "viewer" | "agent" | "box";
@@ -3164,6 +3768,16 @@ export interface components {
       context_type: string;
       source_object_ids?: string[];
       rationale?: string;
+      /**
+       * Format: uuid
+       * @description Optional local mmdash Agent Session provenance; must be paired with agent_run_id and validated against the caller.
+       */
+      agent_session_id?: string;
+      /**
+       * Format: uuid
+       * @description Optional local mmdash Agent Run provenance; must belong to agent_session_id and the authenticated Agent/Project.
+       */
+      agent_run_id?: string;
     };
     ReviewContextProposalRequest: {
       /** @enum {string} */
@@ -3180,8 +3794,25 @@ export interface components {
       context_type: string;
       source_object_ids: string[];
       rationale: string;
-      /** Format: uuid */
+      /**
+       * Format: uuid
+       * @description Stable proposer ID retained for existing clients; Agent proposals use the Agent instance ID.
+       */
       proposed_by: string;
+      /**
+       * Format: uuid
+       * @description Explicit actor ID for clients that distinguish human and Agent proposers.
+       */
+      proposed_by_actor_id?: string;
+      /**
+       * @description Explicit actor kind paired with proposed_by_actor_id.
+       * @enum {string}
+       */
+      proposed_by_actor_kind?: "session" | "api" | "agent";
+      /** Format: uuid */
+      agent_session_id?: string;
+      /** Format: uuid */
+      agent_run_id?: string;
       /** @enum {string} */
       status: "pending" | "accepted" | "rejected";
       /** Format: uuid */
@@ -3682,6 +4313,449 @@ export interface components {
     RetryNotificationDeliveryRequest: {
       reason: string;
     };
+    /** @enum {string} */
+    AgentAdapterType: "hermes";
+    /** @enum {string} */
+    AgentManagementMode: "manual" | "auto";
+    /** @enum {string} */
+    AgentInstanceStatus:
+      "setup_pending" | "configuring" | "active" | "degraded" | "disabled";
+    /** @enum {string} */
+    AgentManagementPath:
+      "direct" | "cloudflare_access" | "unreachable" | "unsupported_auth";
+    /** @enum {string} */
+    AgentProjectAccessStatus:
+      "pending" | "verified" | "failed" | "rotation_failed" | "revoked";
+    /** @enum {string} */
+    AgentTokenStatus: "pending" | "active" | "revoked";
+    /** @enum {string} */
+    AgentSessionType: "main" | "progress" | "experiment";
+    /** @enum {string} */
+    AgentSessionStatus: "active" | "ended";
+    /** @enum {string} */
+    AgentRunStatus:
+      | "queued"
+      | "running"
+      | "waiting_for_approval"
+      | "stopping"
+      | "completed"
+      | "failed"
+      | "stopped";
+    /** @enum {string} */
+    AgentRunSource: "message" | "regenerate" | "rerun";
+    AgentProjectAccessCapabilities: {
+      verify: boolean;
+      configure: boolean;
+      rotate: boolean;
+    };
+    AgentCapabilities: {
+      sessions: boolean;
+      message_history: boolean;
+      session_fork: boolean;
+      session_chat_stream: boolean;
+      runs: boolean;
+      run_status: boolean;
+      run_events: boolean;
+      run_stop: boolean;
+      run_approval: boolean;
+      /** @description Adapter mapping capability only; Stage 5 does not create automatic progress Jobs. */
+      jobs: boolean;
+      project_access: components["schemas"]["AgentProjectAccessCapabilities"];
+    };
+    AgentSecretConfigurationStatus: {
+      hermes_api_key_configured: boolean;
+      dashboard_session_token_configured: boolean;
+      cloudflare_access_configured: boolean;
+    };
+    AgentCheck: {
+      /** @enum {string} */
+      kind:
+        | "runtime"
+        | "authentication"
+        | "capabilities"
+        | "sessions"
+        | "messages"
+        | "sse"
+        | "runs"
+        | "jobs"
+        | "management"
+        | "project_access";
+      /** @enum {string} */
+      status: "passed" | "failed" | "unsupported" | "not_configured";
+      code: string;
+      /** @description Browser-safe diagnostic that never includes credentials or raw provider errors. */
+      message?: string;
+      /** Format: date-time */
+      checked_at: string;
+    };
+    AgentProjectGrant: {
+      /** Format: uuid */
+      grant_id: string;
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      status: "active" | "revoked";
+      allowed_tools: string[];
+      project_access_status?: components["schemas"]["AgentProjectAccessStatus"];
+      /** Format: uuid */
+      default_session_id?: string;
+      /** Format: date-time */
+      last_access_at?: string;
+      /** Format: int64 */
+      version: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      revoked_at?: string;
+    };
+    AgentCredential: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** Format: uuid */
+      grant_id: string;
+      /** Format: uuid */
+      project_id: string;
+      name: string;
+      allowed_tools: string[];
+      status: components["schemas"]["AgentTokenStatus"];
+      /** Format: uuid */
+      replaces_token_id?: string;
+      /** Format: date-time */
+      expires_at?: string;
+      /** Format: date-time */
+      activated_at?: string;
+      /** Format: date-time */
+      last_used_at?: string;
+      /** Format: date-time */
+      revoked_at?: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    AgentInstance: {
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** Format: uuid */
+      project_id: string;
+      adapter_type: components["schemas"]["AgentAdapterType"];
+      display_name: string;
+      management_mode: components["schemas"]["AgentManagementMode"];
+      /** Format: uri */
+      runtime_url: string;
+      profile?: string;
+      request_timeout_seconds: number;
+      /**
+       * Format: uri
+       * @description Optional manual dashboard link or auto management endpoint after server-side validation.
+       */
+      management_url?: string;
+      status: components["schemas"]["AgentInstanceStatus"];
+      management_path: components["schemas"]["AgentManagementPath"];
+      capabilities: components["schemas"]["AgentCapabilities"];
+      secrets: components["schemas"]["AgentSecretConfigurationStatus"];
+      runtime_check?: components["schemas"]["AgentCheck"];
+      management_check?: components["schemas"]["AgentCheck"];
+      project_access_check?: components["schemas"]["AgentCheck"];
+      grant: components["schemas"]["AgentProjectGrant"];
+      credentials: components["schemas"]["AgentCredential"][];
+      /** Format: int64 */
+      version: number;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      disabled_at?: string;
+    };
+    AgentInstanceList: {
+      items: components["schemas"]["AgentInstance"][];
+    };
+    CreateAgentInstanceRequest: {
+      display_name: string;
+      adapter_type?: components["schemas"]["AgentAdapterType"];
+      management_mode: components["schemas"]["AgentManagementMode"];
+      /** Format: uri */
+      runtime_url: string;
+      hermes_api_key: string;
+      profile?: string;
+      /** @description Per-instance Hermes request timeout. The Adapter may apply a lower deployment-configured maximum. */
+      request_timeout_seconds?: number;
+      /** Format: uri */
+      management_url?: string;
+      dashboard_session_token?: string;
+      cloudflare_access_client_id?: string;
+      cloudflare_access_client_secret?: string;
+      /** @description Exact reviewed MCP tool names; product Agent grants do not accept wildcards. */
+      allowed_tools: string[];
+    };
+    UpdateAgentInstanceRequest: {
+      display_name?: string;
+      management_mode?: components["schemas"]["AgentManagementMode"];
+      /** Format: uri */
+      runtime_url?: string;
+      hermes_api_key?: string;
+      profile?: string;
+      /** @description Per-instance Hermes request timeout. The Adapter may apply a lower deployment-configured maximum. */
+      request_timeout_seconds?: number;
+      /** Format: uri */
+      management_url?: string;
+      dashboard_session_token?: string;
+      cloudflare_access_client_id?: string;
+      cloudflare_access_client_secret?: string;
+      allowed_tools?: string[];
+    };
+    OneTimeAgentToken: {
+      /** @description Opaque Agent Token returned exactly once in manual mode. */
+      readonly token: string;
+      credential: components["schemas"]["AgentCredential"];
+      /** Format: uri */
+      mcp_endpoint: string;
+      /** @description Recommended Hermes MCP server name. */
+      server_name?: string;
+    };
+    AgentInstanceProvisioningResult: {
+      instance: components["schemas"]["AgentInstance"];
+      /** @description Present only for manual provisioning; auto mode never returns Agent Token plaintext to the browser. */
+      one_time_credential?: components["schemas"]["OneTimeAgentToken"];
+    };
+    RunAgentChecksRequest: {
+      /** @enum {string} */
+      scope: "runtime" | "management" | "project_access" | "all";
+    };
+    AgentChecksResult: {
+      /** @enum {string} */
+      status: "passed" | "failed" | "partial";
+      /** Format: date-time */
+      checked_at: string;
+      checks: components["schemas"]["AgentCheck"][];
+      instance: components["schemas"]["AgentInstance"];
+    };
+    AgentProjectAccessVerificationResult: {
+      verified: boolean;
+      /** Format: date-time */
+      checked_at: string;
+      check: components["schemas"]["AgentCheck"];
+      instance: components["schemas"]["AgentInstance"];
+    };
+    RotateAgentTokenRequest: {
+      name?: string;
+      /** Format: date-time */
+      expires_at?: string;
+    };
+    AgentTokenRotationResult: {
+      credential: components["schemas"]["AgentCredential"];
+      /** @enum {string} */
+      rotation_status:
+        | "awaiting_user"
+        | "configuring"
+        | "verifying"
+        | "completed"
+        | "failed"
+        | "cancelled";
+      old_credential_remains_active: boolean;
+      /** @description Present only for manual rotation; auto mode never returns plaintext. */
+      one_time_credential?: components["schemas"]["OneTimeAgentToken"];
+      safe_error_code?: string;
+    };
+    AgentTokenVerificationResult: {
+      verified: boolean;
+      credential: components["schemas"]["AgentCredential"];
+      old_credential_revoked: boolean;
+      instance: components["schemas"]["AgentInstance"];
+    };
+    AgentTokenAbortResult: {
+      credential: components["schemas"]["AgentCredential"];
+      old_credential_remains_active: boolean;
+    };
+    AgentPrompt: {
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** Format: uuid */
+      project_id: string;
+      default_prompt: string;
+      effective_prompt: string;
+      custom_prompt?: string;
+      custom: boolean;
+      /** Format: int64 */
+      version: number;
+      /** Format: uuid */
+      updated_by?: string;
+      /** Format: date-time */
+      updated_at?: string;
+    };
+    UpdateAgentPromptRequest: {
+      content: string;
+    };
+    AgentSession: {
+      /** Format: uuid */
+      session_id: string;
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** Format: uuid */
+      project_id: string;
+      remote_session_id: string;
+      session_type: components["schemas"]["AgentSessionType"];
+      title: string;
+      status: components["schemas"]["AgentSessionStatus"];
+      default: boolean;
+      /** Format: uuid */
+      parent_session_id?: string;
+      end_reason?: string;
+      /** Format: uuid */
+      last_run_id?: string;
+      /** Format: date-time */
+      last_message_at?: string;
+      /** Format: date-time */
+      last_run_at?: string;
+      /** Format: int64 */
+      version: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      ended_at?: string;
+    };
+    AgentSessionList: {
+      items: components["schemas"]["AgentSession"][];
+    };
+    CreateAgentSessionRequest: {
+      title: string;
+      session_type: components["schemas"]["AgentSessionType"];
+      default?: boolean;
+    };
+    UpdateAgentSessionRequest: {
+      title: string;
+    };
+    EndAgentSessionRequest: {
+      reason?: string;
+    };
+    ForkAgentSessionRequest: {
+      title?: string;
+      default?: boolean;
+    };
+    AgentToolCall: {
+      tool_call_id: string;
+      name: string;
+      /** @enum {string} */
+      status: "queued" | "running" | "completed" | "failed";
+      input_summary?: string;
+      output_summary?: string;
+      safe_error_code?: string;
+      /** Format: date-time */
+      started_at?: string;
+      /** Format: date-time */
+      completed_at?: string;
+    };
+    AgentMessage: {
+      message_id: string;
+      /** @enum {string} */
+      role: "user" | "assistant" | "tool" | "system";
+      content: string;
+      tool_call_id?: string;
+      tool_calls?: components["schemas"]["AgentToolCall"][];
+      /** Format: date-time */
+      created_at?: string;
+    };
+    AgentMessageList: {
+      items: components["schemas"]["AgentMessage"][];
+    };
+    AgentUsage: {
+      input_tokens?: number;
+      output_tokens?: number;
+      total_tokens?: number;
+    };
+    AgentRun: {
+      /** Format: uuid */
+      run_id: string;
+      /** Format: uuid */
+      session_id: string;
+      remote_run_id: string;
+      status: components["schemas"]["AgentRunStatus"];
+      source: components["schemas"]["AgentRunSource"];
+      /** Format: uuid */
+      source_run_id?: string;
+      safe_error_code?: string;
+      safe_error_message?: string;
+      tool_calls: components["schemas"]["AgentToolCall"][];
+      usage?: components["schemas"]["AgentUsage"];
+      /** Format: int64 */
+      version: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      started_at?: string;
+      /** Format: date-time */
+      completed_at?: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    AgentRunLaunch: {
+      session: components["schemas"]["AgentSession"];
+      run: components["schemas"]["AgentRun"];
+    };
+    StartAgentRunRequest: {
+      message: string;
+    };
+    ReplayAgentRunRequest: {
+      message_id?: string;
+    };
+    /** @enum {string} */
+    AgentApprovalChoice: "once" | "session" | "always" | "deny";
+    RespondAgentRunApprovalRequest: {
+      choice: components["schemas"]["AgentApprovalChoice"];
+    };
+    AgentApproval: {
+      approval_id: string;
+      choices: components["schemas"]["AgentApprovalChoice"][];
+    };
+    /** @enum {string} */
+    AgentStreamEventType:
+      | "run.started"
+      | "run.status"
+      | "message.started"
+      | "message.delta"
+      | "message.completed"
+      | "tool.progress"
+      | "tool.started"
+      | "tool.completed"
+      | "tool.failed"
+      | "approval.required"
+      | "approval.responded"
+      | "subagent.started"
+      | "subagent.completed"
+      | "run.completed"
+      | "run.failed"
+      | "run.stopped"
+      | "heartbeat"
+      | "done"
+      | "error";
+    AgentStreamEvent: {
+      event: components["schemas"]["AgentStreamEventType"];
+      event_id: string;
+      /** Format: int64 */
+      sequence: number;
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: uuid */
+      run_id: string;
+      /** Format: uuid */
+      session_id: string;
+      message_id?: string;
+      delta?: string;
+      tool_call?: components["schemas"]["AgentToolCall"];
+      run?: components["schemas"]["AgentRun"];
+      approval?: components["schemas"]["AgentApproval"];
+      safe_error_code?: string;
+      safe_error_message?: string;
+    };
     Liveness: {
       /** @constant */
       service: "core";
@@ -3752,6 +4826,11 @@ export interface components {
     RepoLimit: number;
     RepoCommitLimit: number;
     TokenId: string;
+    AgentInstanceId: string;
+    AgentSessionId: string;
+    AgentRunId: string;
+    AgentApprovalId: string;
+    AgentTokenId: string;
     UserId: string;
     TypeKey: string;
     JobId: string;
@@ -4230,6 +5309,15 @@ export interface operations {
           "application/json": components["schemas"]["IssuedToken"];
         };
       };
+      /** @description Invalid token request, including the compatibility-only `agent` kind. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
     };
   };
   "auth.tokens.revoke": {
@@ -4251,6 +5339,36 @@ export interface operations {
         content?: never;
       };
       404: components["responses"]["Error"];
+    };
+  };
+  "auth.agent_tokens.verification.record": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RecordAgentTokenVerificationRequest"];
+      };
+    };
+    responses: {
+      /** @description Durable evidence bound to the pending Token, Agent, and Project. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentTokenVerificationEvidence"];
+        };
+      };
+      400: components["responses"]["Error"];
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
     };
   };
   "projects.list": {
@@ -6298,6 +7416,832 @@ export interface operations {
           "application/json": components["schemas"]["HomeAggregate"];
         };
       };
+    };
+  };
+  "agent.instances.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Agent instances with redacted configuration state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentInstanceList"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "agent.instances.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateAgentInstanceRequest"];
+      };
+    };
+    responses: {
+      /** @description Instance created or auto provisioning completed. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentInstanceProvisioningResult"];
+        };
+      };
+      400: components["responses"]["Error"];
+      403: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.instances.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Agent instance without credential plaintext. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentInstance"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.instances.disable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Instance disabled and credentials revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.instances.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateAgentInstanceRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated instance and, only when required in manual mode, one-time rotation material. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentInstanceProvisioningResult"];
+        };
+      };
+      400: components["responses"]["Error"];
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.instances.check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RunAgentChecksRequest"];
+      };
+    };
+    responses: {
+      /** @description Independent runtime, management, and project-access results. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentChecksResult"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.project_access.verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Actual reverse-connection verification result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentProjectAccessVerificationResult"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.tokens.rotate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["RotateAgentTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Rotation created; manual mode may return the new Token once. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentTokenRotationResult"];
+        };
+      };
+      403: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.tokens.verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Pending Token activated and previous Token safely revoked. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentTokenVerificationResult"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.tokens.abort": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Pending Token revoked while the old Token remains active. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentTokenAbortResult"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.tokens.revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        tokenId: components["parameters"]["AgentTokenId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Token revoked; Hermes can no longer use it to access mmdash. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.prompt.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Default, custom, and effective prompt state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentPrompt"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.prompt.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateAgentPromptRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated effective prompt. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentPrompt"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.prompt.reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Custom override removed. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentPrompt"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Local indexes mapped to Hermes remote Session IDs. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSessionList"];
+        };
+      };
+      403: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateAgentSessionRequest"];
+      };
+    };
+    responses: {
+      /** @description Local and remote Session created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSession"];
+        };
+      };
+      403: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Agent Session index. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSession"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateAgentSessionRequest"];
+      };
+    };
+    responses: {
+      /** @description Local and remote title updated. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSession"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.end": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["EndAgentSessionRequest"];
+      };
+    };
+    responses: {
+      /** @description Session ended in mmdash and Hermes. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSession"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.continue": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Session is active and ready for another Run. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSession"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.fork": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["ForkAgentSessionRequest"];
+      };
+    };
+    responses: {
+      /** @description Child Session created with the source transcript. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSession"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.default": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Default Session index updated without a Hermes mutation. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentSession"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.sessions.messages.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Normalized messages and safe Tool Call summaries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentMessageList"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.runs.start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StartAgentRunRequest"];
+      };
+    };
+    responses: {
+      /** @description Hermes Run accepted; subscribe to the Run event stream. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRunLaunch"];
+        };
+      };
+      403: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.runs.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Normalized Run status and safe Tool Call state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRun"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.runs.events": {
+    parameters: {
+      query?: never;
+      header?: {
+        "Last-Event-ID"?: string;
+      };
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Unbuffered Runtime-neutral SSE; each data payload conforms to AgentStreamEvent. */
+      200: {
+        headers: {
+          "X-Accel-Buffering"?: "no";
+          [name: string]: unknown;
+        };
+        content: {
+          "text/event-stream": string;
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+    };
+  };
+  "agent.runs.approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+        approvalId: components["parameters"]["AgentApprovalId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RespondAgentRunApprovalRequest"];
+      };
+    };
+    responses: {
+      /** @description Approval recorded and the latest Run status returned. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRun"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.runs.stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Stop requested; terminal status becomes stopped. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRun"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.runs.regenerate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["ReplayAgentRunRequest"];
+      };
+    };
+    responses: {
+      /** @description Fork and replacement Run accepted. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRunLaunch"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
+    };
+  };
+  "agent.runs.rerun": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        agentInstanceId: components["parameters"]["AgentInstanceId"];
+        sessionId: components["parameters"]["AgentSessionId"];
+        runId: components["parameters"]["AgentRunId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["ReplayAgentRunRequest"];
+      };
+    };
+    responses: {
+      /** @description Replacement Run accepted in the current Session. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRunLaunch"];
+        };
+      };
+      403: components["responses"]["Error"];
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
     };
   };
   "audit.events.list": {

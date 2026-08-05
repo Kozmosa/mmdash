@@ -20,6 +20,18 @@ func (stub authStub) Authenticate(context.Context, string) (auth.Identity, error
 	return stub.identity, nil
 }
 
+type agentGrantResolverStub struct {
+	role Role
+}
+
+func (stub agentGrantResolverStub) ResolveAgentRole(
+	context.Context,
+	string,
+	string,
+) (Role, error) {
+	return stub.role, nil
+}
+
 type storeStub struct {
 	invitationCreated  bool
 	invitationDeclined bool
@@ -469,7 +481,7 @@ func TestArtifactPermissionsMatchCollaborationRoles(t *testing.T) {
 		{RoleMaintainer, true, true, true, true},
 		{RoleEditor, true, true, true, false},
 		{RoleViewer, true, false, true, false},
-		{RoleAgent, false, false, false, false},
+		{RoleAgent, true, false, true, false},
 		{RoleBox, false, false, false, false},
 	}
 	for _, testCase := range cases {
@@ -483,6 +495,75 @@ func TestArtifactPermissionsMatchCollaborationRoles(t *testing.T) {
 				testCase.role, permissions,
 			)
 		}
+	}
+}
+
+func TestAgentRoleIsReadOnlyOutsideExplicitContextPromotion(t *testing.T) {
+	permissions := permissionsByRole[RoleAgent]
+	for _, permission := range []Permission{
+		PermissionRead,
+		PermissionDataRead,
+		PermissionContextPropose,
+		PermissionRepoRead,
+		PermissionArtifactRead,
+		PermissionArtifactDownload,
+		PermissionProgressRead,
+	} {
+		if !hasPermission(permissions, permission) {
+			t.Fatalf("Agent role is missing Stage 5 permission %q", permission)
+		}
+	}
+	for _, permission := range []Permission{
+		PermissionSettingsRead,
+		PermissionJobsCreate,
+		PermissionJobsRead,
+		PermissionJobsCancel,
+		PermissionRepoManage,
+		PermissionRepoWrite,
+		PermissionArtifactUpload,
+		PermissionArtifactDelete,
+		PermissionProgressManage,
+		PermissionProgressPropose,
+		PermissionAgentUse,
+		PermissionAgentManage,
+		PermissionAgentTokensManage,
+	} {
+		if hasPermission(permissions, permission) {
+			t.Fatalf("Agent role unexpectedly grants mutation permission %q", permission)
+		}
+	}
+}
+
+func TestAgentAuthorizationRequiresMatchingProductToolGrant(t *testing.T) {
+	service := Service{AgentGrants: agentGrantResolverStub{role: RoleAgent}}
+	identity := auth.Identity{
+		AgentInstanceID: "agent-1", CredentialStatus: "active", Kind: "agent",
+		ProjectID: "project-1",
+	}
+	tests := []struct {
+		name       string
+		tools      []string
+		permission Permission
+		allowed    bool
+	}{
+		{name: "project read", tools: []string{"project.get"}, permission: PermissionRead, allowed: true},
+		{name: "artifact through data read", tools: []string{"data.read"}, permission: PermissionArtifactRead, allowed: true},
+		{name: "repo through data read", tools: []string{"data.read"}, permission: PermissionRepoRead, allowed: true},
+		{name: "data list", tools: []string{"data.list"}, permission: PermissionDataRead, allowed: true},
+		{name: "context proposal", tools: []string{"context.promote"}, permission: PermissionContextPropose, allowed: true},
+		{name: "list cannot download", tools: []string{"data.list"}, permission: PermissionArtifactDownload},
+		{name: "project tool cannot read artifact", tools: []string{"project.get"}, permission: PermissionArtifactRead},
+		{name: "no tool grants management", tools: []string{"data.read"}, permission: PermissionProgressManage},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			caller := identity
+			caller.AllowedTools = testCase.tools
+			err := service.Authorize(context.Background(), caller, "project-1", testCase.permission)
+			if (err == nil) != testCase.allowed {
+				t.Fatalf("authorization result: allowed=%v err=%v", testCase.allowed, err)
+			}
+		})
 	}
 }
 

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/agent.prompt.updated.schema.json",
+  "title": "agent.prompt.updated payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "resource_id", "version_changed"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "resource_id": { "type": "string", "format": "uuid" },
+    "version_changed": { "const": true }
+  }
+}

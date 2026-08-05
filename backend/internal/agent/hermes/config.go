@@ -21,6 +21,7 @@ const (
 	ConfigDashboardSessionToken  = "dashboard_session_token"
 	ConfigCloudflareClientID     = "cloudflare_access_client_id"
 	ConfigCloudflareClientSecret = "cloudflare_access_client_secret"
+	ConfigRequestTimeoutSeconds  = "request_timeout_seconds"
 
 	// TestedVersion and TestedCommit pin the upstream contract implemented by
 	// this adapter. Compatibility is still capability-probed at runtime.
@@ -60,18 +61,20 @@ type ManagementConfig struct {
 }
 
 type Config struct {
-	InstanceID       string
-	RuntimeURL       string
-	APIKey           string
-	Profile          string
-	Management       *ManagementConfig
-	RuntimePolicy    NetworkPolicy
-	ManagementPolicy NetworkPolicy
+	InstanceID                string
+	RuntimeURL                string
+	APIKey                    string
+	Profile                   string
+	Management                *ManagementConfig
+	RuntimePolicy             NetworkPolicy
+	ManagementPolicy          NetworkPolicy
+	ManagementMinimumInterval time.Duration
 }
 
 type FactoryOptions struct {
-	RuntimePolicy    NetworkPolicy
-	ManagementPolicy NetworkPolicy
+	RuntimePolicy             NetworkPolicy
+	ManagementPolicy          NetworkPolicy
+	ManagementMinimumInterval time.Duration
 }
 
 func Descriptor() agent.Descriptor {
@@ -99,13 +102,25 @@ func Register(registry *agent.Registry, options FactoryOptions) error {
 func NewFactory(options FactoryOptions) agent.Factory {
 	return func(_ context.Context, opaque agent.AdapterConfig) (agent.Adapter, error) {
 		values := opaque.Values
+		runtimePolicy := options.RuntimePolicy
+		managementPolicy := options.ManagementPolicy
+		if rawTimeout := strings.TrimSpace(values[ConfigRequestTimeoutSeconds]); rawTimeout != "" {
+			seconds, err := strconv.Atoi(rawTimeout)
+			if err != nil || seconds < 1 || seconds > 300 {
+				return nil, fmt.Errorf("%w: invalid request timeout", agent.ErrInvalidArgument)
+			}
+			requested := time.Duration(seconds) * time.Second
+			runtimePolicy = narrowRequestTimeout(runtimePolicy, requested)
+			managementPolicy = narrowRequestTimeout(managementPolicy, requested)
+		}
 		config := Config{
-			InstanceID:       strings.TrimSpace(opaque.InstanceID),
-			RuntimeURL:       strings.TrimSpace(values[ConfigRuntimeURL]),
-			APIKey:           values[ConfigAPIKey],
-			Profile:          strings.TrimSpace(values[ConfigProfile]),
-			RuntimePolicy:    options.RuntimePolicy,
-			ManagementPolicy: options.ManagementPolicy,
+			InstanceID:                strings.TrimSpace(opaque.InstanceID),
+			RuntimeURL:                strings.TrimSpace(values[ConfigRuntimeURL]),
+			APIKey:                    values[ConfigAPIKey],
+			Profile:                   strings.TrimSpace(values[ConfigProfile]),
+			RuntimePolicy:             runtimePolicy,
+			ManagementPolicy:          managementPolicy,
+			ManagementMinimumInterval: options.ManagementMinimumInterval,
 		}
 		if managementURL := strings.TrimSpace(values[ConfigManagementURL]); managementURL != "" {
 			config.Management = &ManagementConfig{
@@ -117,6 +132,15 @@ func NewFactory(options FactoryOptions) agent.Factory {
 		}
 		return New(config)
 	}
+}
+
+func narrowRequestTimeout(policy NetworkPolicy, requested time.Duration) NetworkPolicy {
+	maximum := policy.RequestTimeout
+	if maximum <= 0 {
+		maximum = 30 * time.Second
+	}
+	policy.RequestTimeout = min(requested, maximum)
+	return policy
 }
 
 func normalizePolicy(policy NetworkPolicy) (NetworkPolicy, error) {

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/agent.session.renamed.schema.json",
+  "title": "agent.session.renamed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "resource_id", "status", "session_type"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "resource_id": { "type": "string", "format": "uuid" },
+    "status": { "type": "string", "enum": ["active", "ended"] },
+    "session_type": {
+      "type": "string",
+      "enum": ["main", "progress", "experiment"]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/agent.run.started.schema.json",
+  "title": "agent.run.started payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "resource_id", "session_id", "source"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "resource_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string", "format": "uuid" },
+    "source": { "type": "string", "enum": ["message", "regenerate", "rerun"] }
+  }
+}

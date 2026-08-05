@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/agent"
 )
@@ -29,6 +30,8 @@ type managementClient struct {
 	cloudflareClientSecret string
 	route                  agent.AccessRoute
 	operationPermit        chan struct{}
+	minimumInterval        time.Duration
+	nextOperationAt        time.Time
 }
 
 type dashboardHealth struct {
@@ -56,7 +59,15 @@ type mcpTestResult struct {
 	Resources int `json:"resources"`
 }
 
-func newManagementClient(connector *connector, profile string, config ManagementConfig) *managementClient {
+func newManagementClient(
+	connector *connector,
+	profile string,
+	config ManagementConfig,
+	minimumInterval time.Duration,
+) *managementClient {
+	if minimumInterval <= 0 {
+		minimumInterval = 250 * time.Millisecond
+	}
 	headers := http.Header{}
 	if config.DashboardSessionToken != "" {
 		headers.Set("X-Hermes-Session-Token", config.DashboardSessionToken)
@@ -68,6 +79,7 @@ func newManagementClient(connector *connector, profile string, config Management
 		cloudflareClientID:     config.CloudflareClientID,
 		cloudflareClientSecret: config.CloudflareClientSecret,
 		operationPermit:        make(chan struct{}, 1),
+		minimumInterval:        minimumInterval,
 	}
 	management.operationPermit <- struct{}{}
 	return management
@@ -76,13 +88,26 @@ func newManagementClient(connector *connector, profile string, config Management
 func (management *managementClient) acquire(ctx context.Context) error {
 	select {
 	case <-management.operationPermit:
-		return nil
+		wait := time.Until(management.nextOperationAt)
+		if wait <= 0 {
+			return nil
+		}
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return nil
+		case <-ctx.Done():
+			management.operationPermit <- struct{}{}
+			return ctx.Err()
+		}
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
 func (management *managementClient) release() {
+	management.nextOperationAt = time.Now().Add(management.minimumInterval)
 	management.operationPermit <- struct{}{}
 }
 
@@ -347,12 +372,41 @@ func (adapter *Adapter) RotateProjectAccess(ctx context.Context, request agent.P
 		// keep the old product token active whenever this path returns an error.
 		return result, err
 	}
-	if err := adapter.management.deleteServer(ctx, request.CurrentRemoteID); err != nil {
-		// The new configuration has passed both probes. A stale old server is
-		// safe to clean up later; it does not invalidate the verified new path.
-		result.CleanupPending = true
-	}
 	return result, nil
+}
+
+// FinalizeProjectAccess is intentionally separate from rotation. Core invokes
+// it only after the replacement Agent Token has been durably activated, so a
+// failed activation can never delete the old Hermes MCP configuration.
+func (adapter *Adapter) FinalizeProjectAccess(
+	ctx context.Context,
+	request agent.ProjectAccessFinalizeRequest,
+) (agent.ProjectAccessFinalizeResult, error) {
+	activeRemoteID := strings.TrimSpace(request.ActiveRemoteID)
+	previousRemoteID := strings.TrimSpace(request.PreviousRemoteID)
+	if activeRemoteID == "" {
+		return agent.ProjectAccessFinalizeResult{}, agent.ErrInvalidArgument
+	}
+	if previousRemoteID == "" || previousRemoteID == activeRemoteID {
+		return agent.ProjectAccessFinalizeResult{}, nil
+	}
+	if adapter.management == nil {
+		return agent.ProjectAccessFinalizeResult{CleanupPending: true}, &agent.AdapterError{
+			Code: agent.ErrorUnsupported, Operation: "project_access.finalize",
+			Message: "automatic project access cleanup is unavailable",
+		}
+	}
+	if err := adapter.management.acquire(ctx); err != nil {
+		return agent.ProjectAccessFinalizeResult{CleanupPending: true}, err
+	}
+	defer adapter.management.release()
+	if _, err := adapter.management.ensureReady(ctx); err != nil {
+		return agent.ProjectAccessFinalizeResult{CleanupPending: true}, err
+	}
+	if err := adapter.management.deleteServer(ctx, previousRemoteID); err != nil {
+		return agent.ProjectAccessFinalizeResult{CleanupPending: true}, err
+	}
+	return agent.ProjectAccessFinalizeResult{}, nil
 }
 
 func (adapter *Adapter) installProjectAccess(ctx context.Context, request agent.ProjectAccessRequest) (agent.ProjectAccessResult, error) {

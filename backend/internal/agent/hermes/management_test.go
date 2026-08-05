@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/agent"
 )
@@ -49,7 +50,7 @@ func TestConfigureProjectAccessUsesDashboardMCPContract(t *testing.T) {
 	}
 }
 
-func TestRotateProjectAccessDeletesOldOnlyAfterNewPassesBothProbes(t *testing.T) {
+func TestRotateProjectAccessStagesOldCleanupUntilCoreFinalizes(t *testing.T) {
 	state := newDashboardState()
 	state.servers["mmdash-project-old"] = mcpServer{Name: "mmdash-project-old", Transport: "http", URL: "https://mcp.example.test/mcp", Auth: "header", Enabled: true}
 	server := httptest.NewServer(state.handler(t, false, false))
@@ -68,13 +69,59 @@ func TestRotateProjectAccessDeletesOldOnlyAfterNewPassesBothProbes(t *testing.T)
 		t.Fatalf("unexpected result: %#v", result)
 	}
 	state.mutex.Lock()
-	defer state.mutex.Unlock()
-	wantTail := []string{"create:" + newID, "test:" + newID, "restart", "test:" + newID, "delete:mmdash-project-old"}
+	wantTail := []string{"create:" + newID, "test:" + newID, "restart", "test:" + newID}
 	if len(state.calls) < len(wantTail) || !reflect.DeepEqual(state.calls[len(state.calls)-len(wantTail):], wantTail) {
-		t.Fatalf("old server was not deleted last: %#v", state.calls)
+		state.mutex.Unlock()
+		t.Fatalf("unexpected staged rotation sequence: %#v", state.calls)
 	}
+	if _, exists := state.servers["mmdash-project-old"]; !exists {
+		state.mutex.Unlock()
+		t.Fatal("old server was deleted before Core activation")
+	}
+	state.mutex.Unlock()
+
+	finalized, err := adapter.FinalizeProjectAccess(context.Background(), agent.ProjectAccessFinalizeRequest{
+		ActiveRemoteID: newID, PreviousRemoteID: "mmdash-project-old",
+	})
+	if err != nil || finalized.CleanupPending {
+		t.Fatalf("finalize activated access: %#v %v", finalized, err)
+	}
+	state.mutex.Lock()
+	defer state.mutex.Unlock()
 	if _, exists := state.servers["mmdash-project-old"]; exists {
-		t.Fatal("old server still present after successful cleanup")
+		t.Fatal("old server still present after post-activation finalize")
+	}
+	wantFinalizeTail := []string{"health", "list", "delete:mmdash-project-old"}
+	if len(state.calls) < len(wantFinalizeTail) ||
+		!reflect.DeepEqual(state.calls[len(state.calls)-len(wantFinalizeTail):], wantFinalizeTail) {
+		t.Fatalf("unexpected finalize sequence: %#v", state.calls)
+	}
+}
+
+func TestFinalizeProjectAccessReportsCleanupPendingWithoutDeletingActiveServer(t *testing.T) {
+	state := newDashboardState()
+	state.failDelete = true
+	state.servers["mmdash-project-old"] = mcpServer{Name: "mmdash-project-old", Transport: "http", URL: "https://mcp.example.test/mcp", Auth: "header", Enabled: true}
+	state.servers["mmdash-project-new"] = mcpServer{Name: "mmdash-project-new", Transport: "http", URL: "https://mcp.example.test/mcp", Auth: "header", Enabled: true}
+	server := httptest.NewServer(state.handler(t, false, false))
+	defer server.Close()
+	adapter := managedAdapterForServer(t, server.URL)
+
+	result, err := adapter.FinalizeProjectAccess(context.Background(), agent.ProjectAccessFinalizeRequest{
+		ActiveRemoteID: "mmdash-project-new", PreviousRemoteID: "mmdash-project-old",
+	})
+	var adapterError *agent.AdapterError
+	if !errors.As(err, &adapterError) || !result.CleanupPending ||
+		adapterError.Operation != "hermes.dashboard.mcp.delete" {
+		t.Fatalf("unexpected cleanup failure: %#v %#v", result, err)
+	}
+	state.mutex.Lock()
+	defer state.mutex.Unlock()
+	if _, exists := state.servers["mmdash-project-old"]; !exists {
+		t.Fatal("failed cleanup removed the previous server")
+	}
+	if _, exists := state.servers["mmdash-project-new"]; !exists {
+		t.Fatal("failed cleanup touched the active server")
 	}
 }
 
@@ -187,6 +234,29 @@ func TestDashboardAuthModesAndManualBehavior(t *testing.T) {
 	})
 }
 
+func TestManagementRateLimitHonorsContextCancellationAndReturnsPermit(t *testing.T) {
+	management := newManagementClient(nil, "default", ManagementConfig{}, time.Hour)
+	if err := management.acquire(context.Background()); err != nil {
+		t.Fatalf("acquire first permit: %v", err)
+	}
+	management.release()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := management.acquire(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancelled rate-limit wait, got %v", err)
+	}
+
+	// A cancelled waiter must return the serialization permit. Reset the
+	// interval so this assertion remains deterministic and fast.
+	management.minimumInterval = 0
+	management.nextOperationAt = time.Time{}
+	if err := management.acquire(context.Background()); err != nil {
+		t.Fatalf("acquire permit after cancellation: %v", err)
+	}
+	management.release()
+}
+
 type dashboardState struct {
 	mutex                sync.Mutex
 	calls                []string
@@ -196,6 +266,7 @@ type dashboardState struct {
 	lastEndpoint         string
 	lastProfile          string
 	failRestart          bool
+	failDelete           bool
 	sawCloudflareHeaders bool
 }
 
@@ -283,6 +354,11 @@ func (state *dashboardState) handler(t *testing.T, authRequired, requireProxy bo
 		case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/api/mcp/servers/"):
 			name := strings.TrimPrefix(request.URL.Path, "/api/mcp/servers/")
 			state.calls = append(state.calls, "delete:"+name)
+			if state.failDelete {
+				response.WriteHeader(http.StatusInternalServerError)
+				writeJSON(t, response, map[string]any{"detail": "delete failed"})
+				return
+			}
 			delete(state.servers, name)
 			writeJSON(t, response, map[string]any{"ok": true})
 		default:

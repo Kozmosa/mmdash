@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,9 @@ func (stub *accessStub) Authorize(
 }
 
 type storeStub struct {
-	reviewed bool
+	createdActor ProposalActor
+	createdInput CreateProposalInput
+	reviewed     bool
 }
 
 type problemProviderStub struct {
@@ -47,6 +50,18 @@ type problemProviderStub struct {
 type progressProviderStub struct {
 	milestones []interface{}
 	todos      []interface{}
+}
+
+type agentProviderStub struct {
+	items []interface{}
+}
+
+type provenanceValidatorStub struct {
+	agentInstanceID string
+	err             error
+	projectID       string
+	runID           string
+	sessionID       string
 }
 
 func (stub problemProviderStub) ProblemItems(
@@ -65,9 +80,33 @@ func (stub progressProviderStub) ProgressHomeItems(
 	return stub.milestones, stub.todos, nil
 }
 
+func (stub agentProviderStub) AgentHomeItems(
+	context.Context,
+	auth.Identity,
+	string,
+) ([]interface{}, error) {
+	return stub.items, nil
+}
+
+func (stub *provenanceValidatorStub) ValidateProvenance(
+	_ context.Context,
+	agentInstanceID string,
+	projectID string,
+	sessionID string,
+	runID string,
+) error {
+	stub.agentInstanceID = agentInstanceID
+	stub.projectID = projectID
+	stub.sessionID = sessionID
+	stub.runID = runID
+	return stub.err
+}
+
 func (stub *storeStub) CreateProposal(
-	context.Context, string, string, CreateProposalInput,
+	_ context.Context, _ string, actor ProposalActor, input CreateProposalInput,
 ) (ContextProposal, error) {
+	stub.createdActor = actor
+	stub.createdInput = input
 	return ContextProposal{ID: "proposal"}, nil
 }
 func (stub *storeStub) GetContext(context.Context, string, string) (ContextEntry, error) {
@@ -194,6 +233,136 @@ func TestOnlyHumanSessionCanReviewContext(t *testing.T) {
 	}
 }
 
+func TestAgentContextProposalRequiresExactToolAndPairedOwnedProvenance(t *testing.T) {
+	identity := auth.Identity{
+		AgentInstanceID:  "agent-1",
+		AllowedTools:     []string{"context.promote"},
+		CredentialStatus: "active",
+		Kind:             "agent",
+		ProjectID:        "project-1",
+	}
+	input := CreateProposalInput{
+		AgentRunID:      " run-1 ",
+		AgentSessionID:  " session-1 ",
+		Content:         " conclusion ",
+		ContextType:     " finding ",
+		Rationale:       " evidence ",
+		SourceObjectIDs: []string{" object-1 ", "object-1", "object-2"},
+		Title:           " result ",
+	}
+
+	t.Run("accepts an owned pair and records the Agent actor", func(t *testing.T) {
+		store := &storeStub{}
+		provenance := &provenanceValidatorStub{}
+		service := Service{
+			Access:          &accessStub{},
+			AgentProvenance: provenance,
+			Store:           store,
+		}
+		if _, err := service.CreateProposal(
+			context.Background(), identity, "project-1", input,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if provenance.agentInstanceID != "agent-1" ||
+			provenance.projectID != "project-1" ||
+			provenance.sessionID != "session-1" || provenance.runID != "run-1" {
+			t.Fatalf("provenance was not checked against the caller: %#v", provenance)
+		}
+		if store.createdActor.ID != "agent-1" ||
+			store.createdActor.Kind != "agent" || store.createdActor.UserID != "" ||
+			store.createdActor.AgentSessionID != "session-1" ||
+			store.createdActor.AgentRunID != "run-1" {
+			t.Fatalf("unexpected persisted actor: %#v", store.createdActor)
+		}
+		if !reflect.DeepEqual(
+			store.createdInput.SourceObjectIDs,
+			[]string{"object-1", "object-2"},
+		) {
+			t.Fatalf("source IDs were not normalized: %#v", store.createdInput.SourceObjectIDs)
+		}
+	})
+
+	t.Run("rejects a half-filled provenance pair", func(t *testing.T) {
+		service := Service{Access: &accessStub{}, Store: &storeStub{}}
+		half := input
+		half.AgentRunID = ""
+		if _, err := service.CreateProposal(
+			context.Background(), identity, "project-1", half,
+		); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("expected invalid provenance pair, got %v", err)
+		}
+	})
+
+	t.Run("rejects missing or mismatched ownership validation", func(t *testing.T) {
+		for name, validator := range map[string]AgentProvenanceValidator{
+			"missing":  nil,
+			"mismatch": &provenanceValidatorStub{err: errors.New("not owned")},
+		} {
+			t.Run(name, func(t *testing.T) {
+				service := Service{
+					Access: &accessStub{}, AgentProvenance: validator, Store: &storeStub{},
+				}
+				if _, err := service.CreateProposal(
+					context.Background(), identity, "project-1", input,
+				); !errors.Is(err, ErrForbidden) {
+					t.Fatalf("expected forbidden provenance, got %v", err)
+				}
+			})
+		}
+	})
+
+	t.Run("rejects a credential without context.promote", func(t *testing.T) {
+		denied := identity
+		denied.AllowedTools = []string{"data.read"}
+		access := &accessStub{}
+		if _, err := (Service{Access: access, Store: &storeStub{}}).CreateProposal(
+			context.Background(), denied, "project-1", CreateProposalInput{
+				Content: "content", ContextType: "finding", Title: "title",
+			},
+		); !errors.Is(err, ErrForbidden) || len(access.authorized) != 0 {
+			t.Fatalf("tool denial must precede project access: %v %#v", err, access.authorized)
+		}
+	})
+}
+
+func TestNonAgentCannotForgeAgentContextProvenance(t *testing.T) {
+	store := &storeStub{}
+	service := Service{Access: &accessStub{}, Store: store}
+	identity := auth.Identity{
+		Kind: "session",
+		User: auth.User{ID: "00000000-0000-4000-8000-000000000001"},
+	}
+	_, err := service.CreateProposal(
+		context.Background(), identity, "project-1", CreateProposalInput{
+			AgentRunID: "run-1", AgentSessionID: "session-1",
+			Content: "content", ContextType: "finding", Title: "title",
+		},
+	)
+	if !errors.Is(err, ErrForbidden) || store.createdActor.ID != "" {
+		t.Fatalf("non-Agent provenance forgery reached persistence: %v %#v", err, store.createdActor)
+	}
+}
+
+func TestContextProposalRejectsMoreThanContractSourceLimit(t *testing.T) {
+	sourceIDs := make([]string, 101)
+	for index := range sourceIDs {
+		sourceIDs[index] = "source-" + strconv.Itoa(index)
+	}
+	service := Service{Access: &accessStub{}, Store: &storeStub{}}
+	_, err := service.CreateProposal(
+		context.Background(), auth.Identity{
+			Kind: "session", User: auth.User{ID: "00000000-0000-4000-8000-000000000001"},
+		}, "project-1", CreateProposalInput{
+			Content: "content", ContextType: "finding",
+			SourceObjectIDs: sourceIDs, Title: "title",
+		},
+	)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected maxItems=100 enforcement, got %v", err)
+	}
+}
+
 func TestHomeAggregateIsTypedEmptyShell(t *testing.T) {
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	service := Service{
@@ -264,6 +433,26 @@ func TestHomeAggregateIncludesProgressItemsAndKeepsFutureSectionsEmpty(t *testin
 	}
 	if home.Models.Available || home.Experiments.Available || home.Article.Available || home.Agent.Available {
 		t.Fatalf("future home sections must remain empty: %#v", home)
+	}
+}
+
+func TestHomeAggregateIncludesAgentItems(t *testing.T) {
+	service := Service{
+		Access: &accessStub{}, Agent: agentProviderStub{items: []interface{}{
+			map[string]interface{}{"agent_instance_id": "agent-1", "status": "active"},
+		}},
+		Clock: clock.Fixed{Time: time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)},
+		Store: &storeStub{},
+	}
+	home, err := service.Home(context.Background(), auth.Identity{}, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !home.Agent.Available || home.Agent.Total != 1 || len(home.Agent.Items) != 1 {
+		t.Fatalf("Agent provider was not aggregated: %#v", home.Agent)
+	}
+	if home.Models.Available || home.Experiments.Available || home.Article.Available {
+		t.Fatalf("future home sections must remain typed empty shells: %#v", home)
 	}
 }
 

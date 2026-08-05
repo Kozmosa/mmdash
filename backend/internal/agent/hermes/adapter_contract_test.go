@@ -68,6 +68,56 @@ func TestProbeMatchesHermesV2026_8_3Contract(t *testing.T) {
 	}
 }
 
+func TestRuntimeProbeDoesNotDependOnDashboardManagement(t *testing.T) {
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assertRuntimeAuth(t, request)
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/health":
+			writeJSON(t, response, map[string]any{"status": "ok", "platform": "hermes-agent", "version": "2026.8.3"})
+		case "/health/detailed":
+			writeJSON(t, response, map[string]any{"status": "ready"})
+		case "/v1/capabilities":
+			writeJSON(t, response, authoritativeCapabilities())
+		case "/api/sessions":
+			writeJSON(t, response, map[string]any{"data": []any{}, "limit": 1, "offset": 0, "has_more": false})
+		case "/api/jobs":
+			writeJSON(t, response, map[string]any{"jobs": []any{}})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer runtimeServer.Close()
+
+	managementCalls := 0
+	managementServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		managementCalls++
+		http.Error(response, "dashboard unavailable", http.StatusServiceUnavailable)
+	}))
+	defer managementServer.Close()
+
+	runtimePolicy := loopbackPolicy(t, runtimeServer.URL)
+	managementPolicy := loopbackPolicy(t, managementServer.URL)
+	adapter, err := New(Config{
+		InstanceID: "instance", RuntimeURL: runtimeServer.URL, APIKey: "runtime-secret",
+		RuntimePolicy: runtimePolicy, ManagementPolicy: managementPolicy,
+		Management: &ManagementConfig{URL: managementServer.URL, DashboardSessionToken: "dashboard-secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := adapter.Probe(context.Background())
+	if err != nil || !probe.Healthy || !probe.Authenticated {
+		t.Fatalf("runtime probe depended on management: %#v %v", probe, err)
+	}
+	if !probe.Capabilities.ProjectAccess.Configure || !probe.Capabilities.ProjectAccess.Rotate {
+		t.Fatalf("configured management capabilities missing: %#v", probe.Capabilities.ProjectAccess)
+	}
+	if managementCalls != 0 {
+		t.Fatalf("runtime probe called management %d times", managementCalls)
+	}
+}
+
 func TestSessionMessageAndChatMapping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assertRuntimeAuth(t, request)

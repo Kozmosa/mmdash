@@ -407,6 +407,22 @@ type ProjectAccessResult struct {
 	CleanupPending bool
 }
 
+// ProjectAccessFinalizeRequest identifies a previously active remote
+// configuration that may be removed after ActiveRemoteID's credential has
+// been durably activated by Core. Credentials are deliberately absent from
+// this boundary so a best-effort cleanup can never replay or expose them.
+type ProjectAccessFinalizeRequest struct {
+	ActiveRemoteID   string
+	PreviousRemoteID string
+}
+
+// ProjectAccessFinalizeResult reports whether the previous remote
+// configuration still needs cleanup. A pending cleanup does not invalidate
+// the already activated project access path.
+type ProjectAccessFinalizeResult struct {
+	CleanupPending bool
+}
+
 // Adapter is the complete runtime-neutral port. Implementations must be safe
 // for concurrent use, while each instance must own its own authentication and
 // transport context.
@@ -441,6 +457,7 @@ type Adapter interface {
 	VerifyProjectAccess(context.Context, ProjectAccessRequest) (ProjectAccessResult, error)
 	ConfigureProjectAccess(context.Context, ProjectAccessRequest) (ProjectAccessResult, error)
 	RotateProjectAccess(context.Context, ProjectAccessRequest) (ProjectAccessResult, error)
+	FinalizeProjectAccess(context.Context, ProjectAccessFinalizeRequest) (ProjectAccessFinalizeResult, error)
 }
 
 // AgentAdapter keeps the design-document name available without duplicating
