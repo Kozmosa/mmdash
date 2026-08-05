@@ -47,6 +47,7 @@ func TestRegistryRejectsUnsafeAndIncompleteDescriptors(t *testing.T) {
 
 type notificationStoreStub struct {
 	created           []Notification
+	invitationOutcome InvitationOutcome
 	listInboxHit      bool
 	markAllReadCalled bool
 	markAllReadFilter Filter
@@ -59,7 +60,8 @@ func (stub *notificationStoreStub) CreateEvent(_ context.Context, notification N
 	return nil
 }
 func (*notificationStoreStub) ClaimEmailRecipients(context.Context, string, string) error { return nil }
-func (*notificationStoreStub) ApplyInvitationOutcome(context.Context, string, string) error {
+func (stub *notificationStoreStub) ApplyInvitationOutcome(_ context.Context, outcome InvitationOutcome) error {
+	stub.invitationOutcome = outcome
 	return nil
 }
 func (stub *notificationStoreStub) ListInbox(context.Context, string, Filter, pagination.Request) (Page, error) {

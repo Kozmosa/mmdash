@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
@@ -109,6 +111,37 @@ func TestMarkAllReadUsesOnlyJSONBodyFilters(t *testing.T) {
 				t.Fatalf("mark all read filter: got %#v, want %#v", store.markAllReadFilter, test.want)
 			}
 		})
+	}
+}
+
+func TestInvitationLifecycleEventPassesDurableOutcomeFact(t *testing.T) {
+	projectID := "00000000-0000-4000-8000-000000000001"
+	invitationID := "00000000-0000-4000-8000-000000000002"
+	eventID := "00000000-0000-4000-8000-000000000003"
+	occurredAt := time.Date(2026, 8, 6, 1, 0, 0, 0, time.UTC)
+	store := &notificationStoreStub{}
+	service := Service{Store: store}
+
+	err := service.HandleEvent(context.Background(), contract.EventEnvelope{
+		EventID:       eventID,
+		EventType:     "project.invitation.revoked",
+		OccurredAt:    occurredAt,
+		Payload:       map[string]interface{}{"invitation_id": invitationID, "project_id": projectID},
+		ProjectID:     &projectID,
+		SchemaVersion: 1,
+	})
+	if err != nil {
+		t.Fatalf("handle invitation outcome: %v", err)
+	}
+	want := InvitationOutcome{
+		InvitationID:  invitationID,
+		ProjectID:     projectID,
+		Outcome:       OutcomeRevoked,
+		SourceEventID: eventID,
+		OccurredAt:    occurredAt,
+	}
+	if store.invitationOutcome != want {
+		t.Fatalf("invitation outcome: got %#v, want %#v", store.invitationOutcome, want)
 	}
 }
 

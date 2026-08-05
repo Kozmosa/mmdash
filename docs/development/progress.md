@@ -53,6 +53,10 @@ Migrations `000020_notification_authoritative_fields` and
 `000021_notification_delivery_unique_target` persist typed browser-safe
 invitation Actions, target-aware Delivery idempotency, Rule/Settings snapshots,
 bounded retry limits, safe provider diagnostics, and Notification metrics.
+Migration `000022_notification_invitation_outcomes` adds the durable
+Invitation lifecycle serialization row used by both invitation creation and
+terminal outcome consumers, so out-of-order or concurrent delivery cannot
+recreate an active Inbox item after an invitation has ended.
 
 ## HTTP and views
 
