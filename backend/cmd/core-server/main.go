@@ -156,18 +156,19 @@ func run(logger *logging.Logger) error {
 	}); err != nil {
 		return err
 	}
+	projectStore := project.PostgresStore{
+		Clock:       systemClock,
+		DB:          db,
+		Generator:   idGenerator,
+		Outbox:      outboxWriter,
+		Transaction: transactionManager,
+	}
 	projectService := &project.Service{
 		Auth:           authService,
 		Clock:          systemClock,
 		InvitationTTL:  72 * time.Hour,
 		TrashRetention: 30 * 24 * time.Hour,
-		Store: project.PostgresStore{
-			Clock:       systemClock,
-			DB:          db,
-			Generator:   idGenerator,
-			Outbox:      outboxWriter,
-			Transaction: transactionManager,
-		},
+		Store:          projectStore,
 	}
 	jobStore := jobs.PostgresStore{
 		Clock:       systemClock,
@@ -689,6 +690,16 @@ func run(logger *logging.Logger) error {
 			"error": processorErr.Error(),
 		})
 	})
+	startInvitationExpiryProcessor(ctx, project.InvitationExpiryProcessor{
+		BatchSize: processConfig.Project.InvitationExpiryBatchSize,
+		Clock:     systemClock,
+		Poll:      processConfig.Project.InvitationExpiryPollInterval,
+		Store:     projectStore,
+	}, func(processorErr error) {
+		logger.Error("project.invitation.expiry.failed", map[string]interface{}{
+			"error": processorErr.Error(),
+		})
+	})
 	notificationAdapters := notification.NewAdapterRegistry()
 	if err := notificationAdapters.Register(feishuWebhookAdapter); err != nil {
 		return err
@@ -784,6 +795,19 @@ type progressReminderRunner interface {
 }
 
 func startProgressReminderProcessor(ctx context.Context, runner progressReminderRunner, onError func(error)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Run(ctx, onError)
+	}()
+	return done
+}
+
+type invitationExpiryRunner interface {
+	Run(context.Context, func(error))
+}
+
+func startInvitationExpiryProcessor(ctx context.Context, runner invitationExpiryRunner, onError func(error)) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

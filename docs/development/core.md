@@ -54,6 +54,8 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `PROGRESS_REMINDER_BATCH_SIZE`    | `20`                        | Maximum Reminders claimed per scan                             |
 | `PROGRESS_REMINDER_LEASE`         | `30s`                       | Recoverable due Reminder processing lease                      |
 | `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`                        | Retry delay after a due event transaction failure              |
+| `PROJECT_INVITATION_EXPIRY_POLL_INTERVAL` | `30s`              | Idle scan interval for due Project invitations                 |
+| `PROJECT_INVITATION_EXPIRY_BATCH_SIZE` | `100`                    | Maximum invitations expired in one transaction                 |
 
 Configuration validates all values before opening listeners. JSON logging
 recursively redacts credential, authorization, secret, token, password,

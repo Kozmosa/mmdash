@@ -23,6 +23,7 @@ type Config struct {
 	Notification    NotificationConfig
 	Outbox          OutboxConfig
 	Progress        ProgressConfig
+	Project         ProjectConfig
 	PublicURL       string
 	Repo            RepoConfig
 	Settings        SettingsConfig
@@ -94,6 +95,12 @@ type ProgressConfig struct {
 	ReminderLease        time.Duration
 	ReminderPollInterval time.Duration
 	ReminderRetryDelay   time.Duration
+}
+
+// ProjectConfig configures Project-owned lifecycle processors.
+type ProjectConfig struct {
+	InvitationExpiryBatchSize    int
+	InvitationExpiryPollInterval time.Duration
 }
 
 // RepoConfig configures the managed Git runtime and synchronization loop.
@@ -220,6 +227,18 @@ func Load(lookup LookupEnv) (Config, error) {
 			ReminderLease:        durationOrDefault(lookup, "PROGRESS_REMINDER_LEASE", 30*time.Second),
 			ReminderPollInterval: durationOrDefault(lookup, "PROGRESS_REMINDER_POLL_INTERVAL", time.Second),
 			ReminderRetryDelay:   durationOrDefault(lookup, "PROGRESS_REMINDER_RETRY_DELAY", 2*time.Second),
+		},
+		Project: ProjectConfig{
+			InvitationExpiryBatchSize: intOrDefault(
+				lookup,
+				"PROJECT_INVITATION_EXPIRY_BATCH_SIZE",
+				100,
+			),
+			InvitationExpiryPollInterval: durationOrDefault(
+				lookup,
+				"PROJECT_INVITATION_EXPIRY_POLL_INTERVAL",
+				30*time.Second,
+			),
 		},
 		Repo: RepoConfig{
 			AskPassPath:       envOrDefault(lookup, "REPO_ASKPASS_PATH", "mmdash-git-askpass"),
@@ -383,6 +402,12 @@ func (config Config) Validate() error {
 		config.Progress.ReminderPollInterval <= 0 ||
 		config.Progress.ReminderRetryDelay <= 0 {
 		return fmt.Errorf("Progress reminder durations must be positive")
+	}
+	if config.Project.InvitationExpiryBatchSize < 1 || config.Project.InvitationExpiryBatchSize > 1000 {
+		return fmt.Errorf("PROJECT_INVITATION_EXPIRY_BATCH_SIZE must be between 1 and 1000")
+	}
+	if config.Project.InvitationExpiryPollInterval <= 0 {
+		return fmt.Errorf("PROJECT_INVITATION_EXPIRY_POLL_INTERVAL must be positive")
 	}
 	if strings.TrimSpace(config.Repo.StorageRoot) == "" {
 		return fmt.Errorf("REPO_STORAGE_ROOT must not be empty")
