@@ -2626,7 +2626,7 @@ paths:
         {
           "200":
             {
-              description: New retry delivery,
+              description: Idempotently created retry delivery,
               content:
                 {
                   application/json:
@@ -2636,6 +2636,8 @@ paths:
                     },
                 },
             },
+          "404": { $ref: "#/components/responses/Error" },
+          "409": { $ref: "#/components/responses/Error" },
         }
 components:
   securitySchemes:

@@ -35,6 +35,9 @@ the update never overwrites a newer Rule. A rule that has not been materialized
 yet returns version `0` and omits update metadata until its first PUT.
 
 Delivery diagnostics retain the project target key, Rule and Settings snapshot
-versions, bounded attempt count, and safe response summary metadata. Explicit
-retry creates a new `retry:{id}` delivery key; it never reopens the original
-delivery.
+versions, bounded attempt count, and safe response summary metadata. Only a
+`failed` Delivery can be manually retried. The retry creates a new
+`retry:{sourceDeliveryId}` delivery key and never reopens the original
+Delivery. Repeated or concurrent requests for the same failed Delivery are
+idempotent and return the same retry Delivery. A non-failed Delivery returns
+`409 NOTIFICATION_DELIVERY_RETRY_CONFLICT`; a missing Delivery returns `404`.

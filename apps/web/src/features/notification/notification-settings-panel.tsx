@@ -477,7 +477,7 @@ function DeliveryRow({
         {delivery.attempts} 次尝试
         {delivery.last_error_code ? ` · ${delivery.last_error_code}` : ""}
       </span>
-      {delivery.status === "failed" || delivery.status === "retrying" ? (
+      {delivery.status === "failed" ? (
         <button
           className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
           disabled={retry.isPending}

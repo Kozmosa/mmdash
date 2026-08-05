@@ -145,6 +145,33 @@ func TestInvitationLifecycleEventPassesDurableOutcomeFact(t *testing.T) {
 	}
 }
 
+func TestRetryDeliveryReturnsStableStatusConflict(t *testing.T) {
+	store := &notificationStoreStub{retryErr: ErrDeliveryRetryConflict}
+	module := Module{
+		Auth: notificationAuthenticatorStub{identity: auth.Identity{
+			Kind: "session",
+			User: auth.User{ID: "user-1"},
+		}},
+		Service: Service{Store: store},
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/projects/project-1/notification-deliveries/delivery-1/retry",
+		strings.NewReader(`{"reason":"operator retry"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	module.ProjectHandler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusConflict {
+		t.Fatalf("retry status conflict: got %d, want %d: %s", response.Code, http.StatusConflict, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"code":"NOTIFICATION_DELIVERY_RETRY_CONFLICT"`) {
+		t.Fatalf("retry status conflict code: %s", response.Body.String())
+	}
+}
+
 func TestInboxRejectsMachineIdentitiesBeforeStoreAccess(t *testing.T) {
 	store := &notificationStoreStub{}
 	service := Service{Store: store}
