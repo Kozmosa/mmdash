@@ -21,6 +21,7 @@ type Config struct {
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	Outbox          OutboxConfig
+	Progress        ProgressConfig
 	PublicURL       string
 	Repo            RepoConfig
 	Settings        SettingsConfig
@@ -79,6 +80,14 @@ type OutboxConfig struct {
 	EventLease    time.Duration
 	PollInterval  time.Duration
 	RetryDelay    time.Duration
+}
+
+// ProgressConfig configures the in-Core due reminder processor.
+type ProgressConfig struct {
+	ReminderBatchSize    int
+	ReminderLease        time.Duration
+	ReminderPollInterval time.Duration
+	ReminderRetryDelay   time.Duration
 }
 
 // RepoConfig configures the managed Git runtime and synchronization loop.
@@ -188,6 +197,12 @@ func Load(lookup LookupEnv) (Config, error) {
 			EventLease:    durationOrDefault(lookup, "OUTBOX_EVENT_LEASE", 30*time.Second),
 			PollInterval:  durationOrDefault(lookup, "OUTBOX_POLL_INTERVAL", 500*time.Millisecond),
 			RetryDelay:    durationOrDefault(lookup, "OUTBOX_RETRY_DELAY", 2*time.Second),
+		},
+		Progress: ProgressConfig{
+			ReminderBatchSize:    intOrDefault(lookup, "PROGRESS_REMINDER_BATCH_SIZE", 20),
+			ReminderLease:        durationOrDefault(lookup, "PROGRESS_REMINDER_LEASE", 30*time.Second),
+			ReminderPollInterval: durationOrDefault(lookup, "PROGRESS_REMINDER_POLL_INTERVAL", time.Second),
+			ReminderRetryDelay:   durationOrDefault(lookup, "PROGRESS_REMINDER_RETRY_DELAY", 2*time.Second),
 		},
 		Repo: RepoConfig{
 			AskPassPath:       envOrDefault(lookup, "REPO_ASKPASS_PATH", "mmdash-git-askpass"),
@@ -343,6 +358,14 @@ func (config Config) Validate() error {
 		config.Outbox.PollInterval <= 0 ||
 		config.Outbox.RetryDelay <= 0 {
 		return fmt.Errorf("Outbox durations must be positive")
+	}
+	if config.Progress.ReminderBatchSize < 1 || config.Progress.ReminderBatchSize > 1000 {
+		return fmt.Errorf("PROGRESS_REMINDER_BATCH_SIZE must be between 1 and 1000")
+	}
+	if config.Progress.ReminderLease <= 0 ||
+		config.Progress.ReminderPollInterval <= 0 ||
+		config.Progress.ReminderRetryDelay <= 0 {
+		return fmt.Errorf("Progress reminder durations must be positive")
 	}
 	if strings.TrimSpace(config.Repo.StorageRoot) == "" {
 		return fmt.Errorf("REPO_STORAGE_ROOT must not be empty")

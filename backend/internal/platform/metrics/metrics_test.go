@@ -23,6 +23,9 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 	registry.ObserveNotificationDelivery("retrying", 300*time.Millisecond)
 	registry.ObserveNotificationDelivery("failed", 200*time.Millisecond)
 	registry.SetNotificationGauges(4, 5)
+	registry.ObserveProgressReminder("triggered")
+	registry.ObserveProgressReminder("pending")
+	registry.ObserveProgressReminder("failed")
 	mux := http.NewServeMux()
 	registry.RegisterRoutes(mux)
 	response := httptest.NewRecorder()
@@ -51,6 +54,9 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 		`mmdash_notification_delivery_retries_total 1`,
 		`mmdash_notification_delivery_failures_total 1`,
 		`mmdash_notification_delivery_duration_seconds_count 2`,
+		`mmdash_progress_reminders_triggered_total 1`,
+		`mmdash_progress_reminder_retries_total 1`,
+		`mmdash_progress_reminder_failures_total 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q:\n%s", expected, body)

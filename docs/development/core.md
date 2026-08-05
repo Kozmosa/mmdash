@@ -49,6 +49,10 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `OUTBOX_EVENT_LEASE`            | `30s`                         | Outbox publication lease                                       |
 | `OUTBOX_DELIVERY_LEASE`         | `30s`                         | Per-consumer processing lease                                  |
 | `OUTBOX_RETRY_DELAY`            | `2s`                          | Baseline publication and consumer retry delay                  |
+| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`                        | Idle due Reminder scan interval                                |
+| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`                        | Maximum Reminders claimed per scan                             |
+| `PROGRESS_REMINDER_LEASE`         | `30s`                       | Recoverable due Reminder processing lease                      |
+| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`                        | Retry delay after a due event transaction failure              |
 
 Configuration validates all values before opening listeners. JSON logging
 recursively redacts credential, authorization, secret, token, password,

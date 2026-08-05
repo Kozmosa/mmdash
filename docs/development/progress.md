@@ -19,6 +19,27 @@ The source and source run are stored with every automatic Task or Proposal
 change. Domain state and its Outbox event are written in the same PostgreSQL
 transaction. PostgreSQL remains the queue and delivery backend.
 
+Migration `000023_progress_reminder_processing` adds Reminder processing
+leases, retry availability, bounded attempts, safe error diagnostics, and
+cross-Project partial queue indexes. The state machine is:
+
+```text
+pending -> processing -> triggered
+              |
+              +-> pending (lease expiry or retryable event-write failure)
+              +-> failed  (max attempts exhausted)
+pending -> cancelled
+```
+
+The Core Reminder Processor claims globally due rows with
+`FOR UPDATE SKIP LOCKED`, so multiple Core replicas can safely share the same
+PostgreSQL queue. Claim is a short transaction. Completion updates the Reminder
+to `triggered` and writes `progress.reminder.due` to `system_outbox` in one
+transaction. The stable due event ID is the Reminder UUID. A crash after claim
+leaves a finite lease; the next automatic scan or manual trigger recovers an
+expired lease. Manual trigger uses the same claim/complete path and cannot race
+the automatic processor into a duplicate event.
+
 ## Mutation policy
 
 - Browser sessions with `project.progress.manage` create and edit Milestones,
@@ -57,6 +78,20 @@ Migration `000022_notification_invitation_outcomes` adds the durable
 Invitation lifecycle serialization row used by both invitation creation and
 terminal outcome consumers, so out-of-order or concurrent delivery cannot
 recreate an active Inbox item after an invitation has ended.
+
+The automatic due event uses the Reminder creator as the event actor, which
+preserves the existing Notification recipient resolution without adding
+recipient data to the payload. Processor metrics use fixed counters only, and
+processor logs never include Reminder note content.
+
+## Reminder processor configuration
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s` | Idle scan interval |
+| `PROGRESS_REMINDER_BATCH_SIZE` | `20` | Maximum rows claimed per scan |
+| `PROGRESS_REMINDER_LEASE` | `30s` | Recoverable processing lease |
+| `PROGRESS_REMINDER_RETRY_DELAY` | `2s` | Delay after an event-write failure |
 
 ## HTTP and views
 
