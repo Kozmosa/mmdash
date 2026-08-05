@@ -7,10 +7,11 @@ import (
 
 func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	environment := map[string]string{
-		"DATABASE_URL":              "postgres://mmdash:test@localhost/mmdash",
-		"OBJECT_STORAGE_ACCESS_KEY": "access",
-		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
-		"OBJECT_STORAGE_SECRET_KEY": "secret",
+		"AUTH_AGENT_VERIFICATION_TOKEN_ID": "11111111-1111-4111-8111-111111111111",
+		"DATABASE_URL":                     "postgres://mmdash:test@localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY":        "access",
+		"OBJECT_STORAGE_ENDPOINT":          "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":        "secret",
 	}
 
 	config, err := Load(mapLookup(environment))
@@ -49,7 +50,16 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	if config.InternalURL != "http://localhost:8080" {
 		t.Fatalf("unexpected internal Core URL: %s", config.InternalURL)
 	}
+	if config.Agent.GatewayURL != "http://localhost:3002/mcp" ||
+		config.Agent.Runtime.AllowLoopback || config.Agent.Runtime.AllowPrivate ||
+		config.Agent.Management.AllowLoopback || config.Agent.Management.AllowPrivate ||
+		config.Agent.Runtime.ConnectTimeout != 5*time.Second ||
+		config.Agent.ManagementMinimumInterval != 250*time.Millisecond ||
+		config.Agent.Management.MaxResponseBytes != 4*1024*1024 {
+		t.Fatalf("unexpected Agent connector defaults: %+v", config.Agent)
+	}
 	if config.Auth.AccessTokenTTL != 24*time.Hour ||
+		config.Auth.AgentVerificationTokenID != "11111111-1111-4111-8111-111111111111" ||
 		config.Auth.SessionTTL != 30*24*time.Hour ||
 		config.Auth.DeviceAuthorizationTTL != 10*time.Minute ||
 		config.Auth.DevicePollInterval != 5*time.Second {
@@ -181,6 +191,83 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected device authorization TTL no longer than its poll interval to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"AGENT_RUNTIME_ALLOW_PRIVATE": "sometimes",
+		"DATABASE_URL":                "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY":   "access",
+		"OBJECT_STORAGE_ENDPOINT":     "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":   "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid Agent private-network policy to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"AGENT_MANAGEMENT_ALLOWED_PORTS": "443,70000",
+		"DATABASE_URL":                   "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY":      "access",
+		"OBJECT_STORAGE_ENDPOINT":        "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":      "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid Agent management port policy to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"AGENT_MANAGEMENT_MINIMUM_INTERVAL": "0s",
+		"DATABASE_URL":                      "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY":         "access",
+		"OBJECT_STORAGE_ENDPOINT":           "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":         "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected non-positive Agent management interval to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"AGENT_MCP_GATEWAY_URL":     "https://user:secret@example.test/mcp",
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected credential-bearing Agent Gateway URL to fail")
+	}
+}
+
+func TestLoadAppliesExplicitAgentConnectorPolicy(t *testing.T) {
+	loaded, err := Load(mapLookup(map[string]string{
+		"AGENT_MCP_GATEWAY_URL":                 "https://mmdash.example/mcp",
+		"AGENT_RUNTIME_ALLOW_LOOPBACK":          "true",
+		"AGENT_RUNTIME_ALLOW_PRIVATE":           "true",
+		"AGENT_RUNTIME_ALLOWED_PORTS":           "443,8642,443",
+		"AGENT_RUNTIME_CONNECT_TIMEOUT":         "2s",
+		"AGENT_RUNTIME_MAX_REDIRECTS":           "2",
+		"AGENT_RUNTIME_MAX_RESPONSE_BYTES":      "2097152",
+		"AGENT_RUNTIME_REQUEST_TIMEOUT":         "20s",
+		"AGENT_RUNTIME_RESPONSE_HEADER_TIMEOUT": "4s",
+		"AGENT_MANAGEMENT_ALLOWED_PORTS":        "443,9119",
+		"AGENT_MANAGEMENT_MINIMUM_INTERVAL":     "750ms",
+		"DATABASE_URL":                          "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY":             "access",
+		"OBJECT_STORAGE_ENDPOINT":               "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":             "secret",
+	}))
+	if err != nil {
+		t.Fatalf("load explicit Agent policy: %v", err)
+	}
+	if !loaded.Agent.Runtime.AllowLoopback || !loaded.Agent.Runtime.AllowPrivate ||
+		len(loaded.Agent.Runtime.AllowedPorts) != 2 ||
+		loaded.Agent.Runtime.ConnectTimeout != 2*time.Second ||
+		loaded.Agent.Runtime.RequestTimeout != 20*time.Second ||
+		loaded.Agent.Runtime.ResponseHeaderTimeout != 4*time.Second ||
+		loaded.Agent.Runtime.MaxRedirects != 2 ||
+		loaded.Agent.Runtime.MaxResponseBytes != 2*1024*1024 ||
+		loaded.Agent.ManagementMinimumInterval != 750*time.Millisecond {
+		t.Fatalf("unexpected explicit Agent runtime policy: %+v", loaded.Agent.Runtime)
 	}
 }
 

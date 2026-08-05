@@ -48,7 +48,12 @@ func New(config Config) (*Adapter, error) {
 		if connectorErr != nil {
 			return nil, connectorErr
 		}
-		result.management = newManagementClient(managementConnector, strings.TrimSpace(config.Profile), *config.Management)
+		result.management = newManagementClient(
+			managementConnector,
+			strings.TrimSpace(config.Profile),
+			*config.Management,
+			config.ManagementMinimumInterval,
+		)
 	}
 	return result, nil
 }
@@ -109,15 +114,11 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 	} else if adapterError, ok := err.(*agent.AdapterError); !ok || adapterError.Code != agent.ErrorUnavailable && adapterError.Code != agent.ErrorUnsupported {
 		return result, err
 	}
+	// Runtime health and capability probing is deliberately independent from
+	// Dashboard management reachability. A configured management client means
+	// the adapter supports those operations, while CheckConnections probes the
+	// live management and project-access paths separately.
 	if adapter.management != nil {
-		if err := adapter.management.acquire(ctx); err != nil {
-			return result, err
-		}
-		_, managementErr := adapter.management.ensureReady(ctx)
-		adapter.management.release()
-		if managementErr != nil {
-			return result, managementErr
-		}
 		result.Capabilities.ProjectAccess.Configure = true
 		result.Capabilities.ProjectAccess.Rotate = true
 	}

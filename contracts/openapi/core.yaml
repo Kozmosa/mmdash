@@ -55,6 +55,8 @@ tags:
     description: Append-only security/activity audit ingestion and authorized search.
   - name: Progress
     description: Authoritative milestones, tasks, dependencies, reminders, and human-reviewed proposals.
+  - name: Agent
+    description: Runtime-independent Agent instances, project grants, sessions, Runs, prompts, and credential lifecycle.
   - name: Notification
     description: User Inbox, project notification routing, and safe delivery diagnostics.
   - name: Observability
@@ -389,7 +391,8 @@ paths:
                       $ref: "#/components/schemas/AccessToken"
     post:
       tags: [Auth]
-      summary: Issue an API, Agent, or Box token
+      summary: Issue an API or Box token
+      description: Product Agent Tokens are issued only through the Agent instance lifecycle.
       operationId: auth.tokens.create
       requestBody:
         required: true
@@ -404,6 +407,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IssuedToken"
+        "400":
+          description: Invalid token request, including the compatibility-only `agent` kind.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/auth/tokens/{tokenId}:
     parameters:
       - $ref: "#/components/parameters/TokenId"
@@ -415,6 +424,41 @@ paths:
         "204":
           description: Token revoked.
         "404":
+          $ref: "#/components/responses/Error"
+  /v1/auth/agent-tokens/{tokenId}/verification:
+    parameters:
+      - $ref: "#/components/parameters/AgentTokenId"
+    post:
+      tags: [Auth]
+      summary: Record trusted MCP verification evidence for a pending Agent Token
+      description: |
+        Internal callback used only by MCP Gateway after a pending product
+        Agent Token completes one successful `tools/list` request in a
+        protocol-negotiated MCP session. Requires the dedicated Gateway Core
+        API credential. Browser sessions, Agent Tokens, Box Tokens, ordinary
+        `/auth/me`, current `server/discover`, and legacy `initialize` cannot
+        create verification evidence on their own.
+      operationId: auth.agent_tokens.verification.record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordAgentTokenVerificationRequest"
+      responses:
+        "200":
+          description: Durable evidence bound to the pending Token, Agent, and Project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTokenVerificationEvidence"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
   /v1/projects:
     get:
@@ -1896,6 +1940,677 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HomeAggregate"
+  /v1/projects/{projectId}/agent-instances:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Agent]
+      summary: List Agent instances granted to a project
+      operationId: agent.instances.list
+      responses:
+        "200":
+          description: Agent instances with redacted configuration state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInstanceList"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Agent]
+      summary: Create and bind an Agent instance
+      description: |
+        Creates a Hermes-backed instance and Project Grant. Manual mode may
+        return one Agent Token plaintext exactly once; auto mode never returns
+        Agent Token plaintext to the browser.
+      operationId: agent.instances.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentInstanceRequest"
+      responses:
+        "201":
+          description: Instance created or auto provisioning completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInstanceProvisioningResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+    get:
+      tags: [Agent]
+      summary: Get an Agent instance
+      operationId: agent.instances.get
+      responses:
+        "200":
+          description: Agent instance without credential plaintext.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInstance"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Agent]
+      summary: Update Agent runtime or management configuration
+      description: |
+        Ordinary configuration changes return only the updated instance.
+        Changing allowed_tools starts a two-phase Agent Token rotation: the old
+        Token remains active until the new scope is verified; manual mode may
+        return the new Token once, while auto mode never returns plaintext.
+      operationId: agent.instances.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentInstanceRequest"
+      responses:
+        "200":
+          description: Updated instance and, only when required in manual mode, one-time rotation material.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentInstanceProvisioningResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Agent]
+      summary: Disable an Agent instance and revoke Project access
+      description: Disables the local instance and credentials without deleting Hermes message history.
+      operationId: agent.instances.disable
+      responses:
+        "204":
+          description: Instance disabled and credentials revoked.
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/checks:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Run bounded Agent runtime and management checks
+      operationId: agent.instances.check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunAgentChecksRequest"
+      responses:
+        "200":
+          description: Independent runtime, management, and project-access results.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentChecksResult"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Verify Hermes can reach the scoped mmdash MCP endpoint
+      description: Verification is distinct from runtime and Dashboard connectivity.
+      operationId: agent.project_access.verify
+      responses:
+        "200":
+          description: Actual reverse-connection verification result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentProjectAccessVerificationResult"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Begin a two-phase Agent Token rotation
+      description: The old active Token remains valid until the new pending Token is verified and activated.
+      operationId: agent.tokens.rotate
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateAgentTokenRequest"
+      responses:
+        "201":
+          description: Rotation created; manual mode may return the new Token once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTokenRotationResult"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentTokenId"
+    post:
+      tags: [Agent]
+      summary: Verify and activate a pending Agent Token
+      description: Revokes the previous Token only after a real MCP access using the pending Token succeeds.
+      operationId: agent.tokens.verify
+      responses:
+        "200":
+          description: Pending Token activated and previous Token safely revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTokenVerificationResult"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentTokenId"
+    post:
+      tags: [Agent]
+      summary: Abort a pending Agent Token rotation
+      operationId: agent.tokens.abort
+      responses:
+        "200":
+          description: Pending Token revoked while the old Token remains active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTokenAbortResult"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentTokenId"
+    delete:
+      tags: [Agent]
+      summary: Immediately revoke an Agent Token
+      operationId: agent.tokens.revoke
+      responses:
+        "204":
+          description: Token revoked; Hermes can no longer use it to access mmdash.
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+    get:
+      tags: [Agent]
+      summary: Get the generated and effective project Agent prompt
+      operationId: agent.prompt.get
+      responses:
+        "200":
+          description: Default, custom, and effective prompt state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentPrompt"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Agent]
+      summary: Set a project-specific Agent prompt override
+      operationId: agent.prompt.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentPromptRequest"
+      responses:
+        "200":
+          description: Updated effective prompt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentPrompt"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt/reset:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Restore the generated default project Agent prompt
+      operationId: agent.prompt.reset
+      responses:
+        "200":
+          description: Custom override removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentPrompt"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+    get:
+      tags: [Agent]
+      summary: List indexed Agent sessions
+      operationId: agent.sessions.list
+      responses:
+        "200":
+          description: Local indexes mapped to Hermes remote Session IDs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSessionList"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Agent]
+      summary: Create a main, progress, or experiment Agent session
+      description: Stage 5 does not attach automatic triggers to progress sessions.
+      operationId: agent.sessions.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentSessionRequest"
+      responses:
+        "201":
+          description: Local and remote Session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+    get:
+      tags: [Agent]
+      summary: Get an indexed Agent session
+      operationId: agent.sessions.get
+      responses:
+        "200":
+          description: Agent Session index.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      tags: [Agent]
+      summary: Rename an Agent session
+      operationId: agent.sessions.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentSessionRequest"
+      responses:
+        "200":
+          description: Local and remote title updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/end:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: End an Agent session without deleting history
+      operationId: agent.sessions.end
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EndAgentSessionRequest"
+      responses:
+        "200":
+          description: Session ended in mmdash and Hermes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/continue:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Continue an ended Agent session
+      operationId: agent.sessions.continue
+      responses:
+        "200":
+          description: Session is active and ready for another Run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/fork:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Fork an Agent session and preserve lineage
+      operationId: agent.sessions.fork
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForkAgentSessionRequest"
+      responses:
+        "201":
+          description: Child Session created with the source transcript.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/default:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Make an Agent session the project default
+      operationId: agent.sessions.default
+      responses:
+        "200":
+          description: Default Session index updated without a Hermes mutation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentSession"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/messages:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+    get:
+      tags: [Agent]
+      summary: Read the message history retained by Hermes
+      operationId: agent.sessions.messages.list
+      responses:
+        "200":
+          description: Normalized messages and safe Tool Call summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMessageList"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Start a stoppable Agent Run for a user message
+      operationId: agent.runs.start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartAgentRunRequest"
+      responses:
+        "202":
+          description: Hermes Run accepted; subscribe to the Run event stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRunLaunch"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+      - $ref: "#/components/parameters/AgentRunId"
+    get:
+      tags: [Agent]
+      summary: Get current Agent Run status
+      operationId: agent.runs.get
+      responses:
+        "200":
+          description: Normalized Run status and safe Tool Call state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/events:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+      - $ref: "#/components/parameters/AgentRunId"
+    get:
+      tags: [Agent]
+      summary: Stream normalized Agent Run events
+      operationId: agent.runs.events
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Unbuffered Runtime-neutral SSE; each data payload conforms to AgentStreamEvent.
+          headers:
+            X-Accel-Buffering:
+              schema:
+                type: string
+                const: "no"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+      - $ref: "#/components/parameters/AgentRunId"
+      - $ref: "#/components/parameters/AgentApprovalId"
+    post:
+      tags: [Agent]
+      summary: Respond to a pending Agent Run approval
+      description: Applies a normalized approval choice without exposing raw Tool arguments or provider state.
+      operationId: agent.runs.approve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RespondAgentRunApprovalRequest"
+      responses:
+        "200":
+          description: Approval recorded and the latest Run status returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+      - $ref: "#/components/parameters/AgentRunId"
+    post:
+      tags: [Agent]
+      summary: Stop a running Agent Run
+      operationId: agent.runs.stop
+      responses:
+        "200":
+          description: Stop requested; terminal status becomes stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+      - $ref: "#/components/parameters/AgentRunId"
+    post:
+      tags: [Agent]
+      summary: Regenerate a Run in a non-destructive fork
+      description: Hermes has no native regenerate endpoint; mmdash forks the Session and replays the selected or latest user turn.
+      operationId: agent.runs.regenerate
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayAgentRunRequest"
+      responses:
+        "202":
+          description: Fork and replacement Run accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRunLaunch"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/AgentInstanceId"
+      - $ref: "#/components/parameters/AgentSessionId"
+      - $ref: "#/components/parameters/AgentRunId"
+    post:
+      tags: [Agent]
+      summary: Re-execute a prior user turn in the current Session
+      operationId: agent.runs.rerun
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayAgentRunRequest"
+      responses:
+        "202":
+          description: Replacement Run accepted in the current Session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRunLaunch"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /v1/audit/events:
     get:
       tags: [Audit]
@@ -2824,6 +3539,42 @@ components:
       schema:
         type: string
         format: uuid
+    AgentInstanceId:
+      name: agentInstanceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AgentSessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AgentRunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AgentApprovalId:
+      name: approvalId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 500
+    AgentTokenId:
+      name: tokenId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     UserId:
       name: userId
       in: path
@@ -3022,14 +3773,25 @@ components:
     Identity:
       type: object
       additionalProperties: false
-      required: [kind, user]
+      required: [kind]
       properties:
         kind:
           type: string
           enum: [session, api, agent, box]
+        agent_instance_id:
+          type: string
+          format: uuid
         project_id:
           type: string
           format: uuid
+        allowed_tools:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        credential_status:
+          type: string
+          enum: [pending, active]
         session_id:
           type: string
           format: uuid
@@ -3074,6 +3836,10 @@ components:
         kind:
           type: string
           enum: [api, agent, box]
+          description: >-
+            `agent` is retained only for request-contract compatibility and is
+            rejected by this generic endpoint. Product Agent Tokens must be
+            issued through the project-scoped Agent credential lifecycle.
         name:
           type: string
           minLength: 1
@@ -3092,6 +3858,66 @@ components:
           type: string
         credential:
           $ref: "#/components/schemas/AccessToken"
+    RecordAgentTokenVerificationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [project_id, agent_instance_id, mcp_method, mcp_session_id, request_id]
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        agent_instance_id:
+          type: string
+          format: uuid
+        mcp_method:
+          type: string
+          const: tools/list
+        mcp_session_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+    AgentTokenVerificationEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        - evidence_id
+        - token_id
+        - agent_instance_id
+        - project_id
+        - mcp_method
+        - mcp_session_id
+        - request_id
+        - verified_at
+      properties:
+        evidence_id:
+          type: string
+          format: uuid
+        token_id:
+          type: string
+          format: uuid
+        agent_instance_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        mcp_method:
+          type: string
+          const: tools/list
+        mcp_session_id:
+          type: string
+        request_id:
+          type: string
+        verified_at:
+          type: string
+          format: date-time
     ProjectRole:
       type: string
       enum: [owner, maintainer, editor, viewer, agent, box]
@@ -5324,6 +6150,9 @@ components:
       type: object
       additionalProperties: false
       required: [title, content, context_type]
+      dependentRequired:
+        agent_session_id: [agent_run_id]
+        agent_run_id: [agent_session_id]
       properties:
         title:
           type: string
@@ -5346,6 +6175,14 @@ components:
         rationale:
           type: string
           maxLength: 2000
+        agent_session_id:
+          type: string
+          format: uuid
+          description: Optional local mmdash Agent Session provenance; must be paired with agent_run_id and validated against the caller.
+        agent_run_id:
+          type: string
+          format: uuid
+          description: Optional local mmdash Agent Run provenance; must belong to agent_session_id and the authenticated Agent/Project.
     ReviewContextProposalRequest:
       type: object
       additionalProperties: false
@@ -5394,6 +6231,21 @@ components:
         rationale:
           type: string
         proposed_by:
+          type: string
+          format: uuid
+          description: Stable proposer ID retained for existing clients; Agent proposals use the Agent instance ID.
+        proposed_by_actor_id:
+          type: string
+          format: uuid
+          description: Explicit actor ID for clients that distinguish human and Agent proposers.
+        proposed_by_actor_kind:
+          type: string
+          enum: [session, api, agent]
+          description: Explicit actor kind paired with proposed_by_actor_id.
+        agent_session_id:
+          type: string
+          format: uuid
+        agent_run_id:
           type: string
           format: uuid
         status:
@@ -6112,6 +6964,753 @@ components:
       additionalProperties: false
       required: [reason]
       properties: { reason: { type: string, minLength: 1, maxLength: 1000 } }
+    AgentAdapterType:
+      type: string
+      enum: [hermes]
+    AgentManagementMode:
+      type: string
+      enum: [manual, auto]
+    AgentInstanceStatus:
+      type: string
+      enum: [setup_pending, configuring, active, degraded, disabled]
+    AgentManagementPath:
+      type: string
+      enum: [direct, cloudflare_access, unreachable, unsupported_auth]
+    AgentProjectAccessStatus:
+      type: string
+      enum: [pending, verified, failed, rotation_failed, revoked]
+    AgentTokenStatus:
+      type: string
+      enum: [pending, active, revoked]
+    AgentSessionType:
+      type: string
+      enum: [main, progress, experiment]
+    AgentSessionStatus:
+      type: string
+      enum: [active, ended]
+    AgentRunStatus:
+      type: string
+      enum:
+        [queued, running, waiting_for_approval, stopping, completed, failed, stopped]
+    AgentRunSource:
+      type: string
+      enum: [message, regenerate, rerun]
+    AgentProjectAccessCapabilities:
+      type: object
+      additionalProperties: false
+      required: [verify, configure, rotate]
+      properties:
+        verify: { type: boolean }
+        configure: { type: boolean }
+        rotate: { type: boolean }
+    AgentCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - sessions
+        - message_history
+        - session_fork
+        - session_chat_stream
+        - runs
+        - run_status
+        - run_events
+        - run_stop
+        - run_approval
+        - jobs
+        - project_access
+      properties:
+        sessions: { type: boolean }
+        message_history: { type: boolean }
+        session_fork: { type: boolean }
+        session_chat_stream: { type: boolean }
+        runs: { type: boolean }
+        run_status: { type: boolean }
+        run_events: { type: boolean }
+        run_stop: { type: boolean }
+        run_approval: { type: boolean }
+        jobs:
+          type: boolean
+          description: Adapter mapping capability only; Stage 5 does not create automatic progress Jobs.
+        project_access:
+          $ref: "#/components/schemas/AgentProjectAccessCapabilities"
+    AgentSecretConfigurationStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - hermes_api_key_configured
+        - dashboard_session_token_configured
+        - cloudflare_access_configured
+      properties:
+        hermes_api_key_configured: { type: boolean }
+        dashboard_session_token_configured: { type: boolean }
+        cloudflare_access_configured: { type: boolean }
+    AgentCheck:
+      type: object
+      additionalProperties: false
+      required: [kind, status, code, checked_at]
+      properties:
+        kind:
+          type: string
+          enum: [runtime, authentication, capabilities, sessions, messages, sse, runs, jobs, management, project_access]
+        status:
+          type: string
+          enum: [passed, failed, unsupported, not_configured]
+        code:
+          type: string
+          maxLength: 100
+        message:
+          type: string
+          maxLength: 1000
+          description: Browser-safe diagnostic that never includes credentials or raw provider errors.
+        checked_at:
+          type: string
+          format: date-time
+    AgentProjectGrant:
+      type: object
+      additionalProperties: false
+      required:
+        [grant_id, agent_instance_id, project_id, status, allowed_tools, version, created_at, updated_at]
+      properties:
+        grant_id: { type: string, format: uuid }
+        agent_instance_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [active, revoked]
+        allowed_tools:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[a-z][a-z0-9_.-]*$"
+        project_access_status:
+          $ref: "#/components/schemas/AgentProjectAccessStatus"
+        default_session_id: { type: string, format: uuid }
+        last_access_at: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+    AgentCredential:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - agent_instance_id
+        - grant_id
+        - project_id
+        - name
+        - allowed_tools
+        - status
+        - created_at
+      properties:
+        id: { type: string, format: uuid }
+        agent_instance_id: { type: string, format: uuid }
+        grant_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        name: { type: string }
+        allowed_tools:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        status:
+          $ref: "#/components/schemas/AgentTokenStatus"
+        replaces_token_id: { type: string, format: uuid }
+        expires_at: { type: string, format: date-time }
+        activated_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    AgentInstance:
+      type: object
+      additionalProperties: false
+      required:
+        - agent_instance_id
+        - project_id
+        - adapter_type
+        - display_name
+        - management_mode
+        - runtime_url
+        - request_timeout_seconds
+        - status
+        - management_path
+        - capabilities
+        - secrets
+        - grant
+        - credentials
+        - version
+        - created_by
+        - created_at
+        - updated_at
+      properties:
+        agent_instance_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        adapter_type:
+          $ref: "#/components/schemas/AgentAdapterType"
+        display_name: { type: string }
+        management_mode:
+          $ref: "#/components/schemas/AgentManagementMode"
+        runtime_url:
+          type: string
+          format: uri
+        profile: { type: string }
+        request_timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+        management_url:
+          type: string
+          format: uri
+          description: Optional manual dashboard link or auto management endpoint after server-side validation.
+        status:
+          $ref: "#/components/schemas/AgentInstanceStatus"
+        management_path:
+          $ref: "#/components/schemas/AgentManagementPath"
+        capabilities:
+          $ref: "#/components/schemas/AgentCapabilities"
+        secrets:
+          $ref: "#/components/schemas/AgentSecretConfigurationStatus"
+        runtime_check:
+          $ref: "#/components/schemas/AgentCheck"
+        management_check:
+          $ref: "#/components/schemas/AgentCheck"
+        project_access_check:
+          $ref: "#/components/schemas/AgentCheck"
+        grant:
+          $ref: "#/components/schemas/AgentProjectGrant"
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentCredential"
+        version: { type: integer, format: int64, minimum: 1 }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        disabled_at: { type: string, format: date-time }
+    AgentInstanceList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentInstance"
+    CreateAgentInstanceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [display_name, management_mode, runtime_url, hermes_api_key, allowed_tools]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        adapter_type:
+          $ref: "#/components/schemas/AgentAdapterType"
+        management_mode:
+          $ref: "#/components/schemas/AgentManagementMode"
+        runtime_url:
+          type: string
+          format: uri
+          maxLength: 2048
+        hermes_api_key:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        profile:
+          type: string
+          minLength: 1
+          maxLength: 120
+        request_timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          description: >-
+            Per-instance Hermes request timeout. The Adapter may apply a lower
+            deployment-configured maximum.
+        management_url:
+          type: string
+          format: uri
+          maxLength: 2048
+        dashboard_session_token:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        cloudflare_access_client_id:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        cloudflare_access_client_secret:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        allowed_tools:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[a-z][a-z0-9_.-]*$"
+          description: Exact reviewed MCP tool names; product Agent grants do not accept wildcards.
+    UpdateAgentInstanceRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        management_mode:
+          $ref: "#/components/schemas/AgentManagementMode"
+        runtime_url:
+          type: string
+          format: uri
+          maxLength: 2048
+        hermes_api_key:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        profile:
+          type: string
+          minLength: 1
+          maxLength: 120
+        request_timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          description: >-
+            Per-instance Hermes request timeout. The Adapter may apply a lower
+            deployment-configured maximum.
+        management_url:
+          type: string
+          format: uri
+          maxLength: 2048
+        dashboard_session_token:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        cloudflare_access_client_id:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+        cloudflare_access_client_secret:
+          type: string
+          minLength: 16
+          maxLength: 4096
+          writeOnly: true
+        allowed_tools:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[a-z][a-z0-9_.-]*$"
+    OneTimeAgentToken:
+      type: object
+      additionalProperties: false
+      required: [token, credential, mcp_endpoint]
+      properties:
+        token:
+          type: string
+          minLength: 32
+          readOnly: true
+          description: Opaque Agent Token returned exactly once in manual mode.
+        credential:
+          $ref: "#/components/schemas/AgentCredential"
+        mcp_endpoint:
+          type: string
+          format: uri
+        server_name:
+          type: string
+          description: Recommended Hermes MCP server name.
+    AgentInstanceProvisioningResult:
+      type: object
+      additionalProperties: false
+      required: [instance]
+      properties:
+        instance:
+          $ref: "#/components/schemas/AgentInstance"
+        one_time_credential:
+          $ref: "#/components/schemas/OneTimeAgentToken"
+          description: Present only for manual provisioning; auto mode never returns Agent Token plaintext to the browser.
+    RunAgentChecksRequest:
+      type: object
+      additionalProperties: false
+      required: [scope]
+      properties:
+        scope:
+          type: string
+          enum: [runtime, management, project_access, all]
+    AgentChecksResult:
+      type: object
+      additionalProperties: false
+      required: [status, checked_at, checks, instance]
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, partial]
+        checked_at: { type: string, format: date-time }
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentCheck"
+        instance:
+          $ref: "#/components/schemas/AgentInstance"
+    AgentProjectAccessVerificationResult:
+      type: object
+      additionalProperties: false
+      required: [verified, checked_at, check, instance]
+      properties:
+        verified: { type: boolean }
+        checked_at: { type: string, format: date-time }
+        check:
+          $ref: "#/components/schemas/AgentCheck"
+        instance:
+          $ref: "#/components/schemas/AgentInstance"
+    RotateAgentTokenRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        expires_at:
+          type: string
+          format: date-time
+    AgentTokenRotationResult:
+      type: object
+      additionalProperties: false
+      required: [credential, rotation_status, old_credential_remains_active]
+      properties:
+        credential:
+          $ref: "#/components/schemas/AgentCredential"
+        rotation_status:
+          type: string
+          enum: [awaiting_user, configuring, verifying, completed, failed, cancelled]
+        old_credential_remains_active:
+          type: boolean
+        one_time_credential:
+          $ref: "#/components/schemas/OneTimeAgentToken"
+          description: Present only for manual rotation; auto mode never returns plaintext.
+        safe_error_code:
+          type: string
+          maxLength: 100
+    AgentTokenVerificationResult:
+      type: object
+      additionalProperties: false
+      required: [verified, credential, old_credential_revoked, instance]
+      properties:
+        verified: { type: boolean }
+        credential:
+          $ref: "#/components/schemas/AgentCredential"
+        old_credential_revoked: { type: boolean }
+        instance:
+          $ref: "#/components/schemas/AgentInstance"
+    AgentTokenAbortResult:
+      type: object
+      additionalProperties: false
+      required: [credential, old_credential_remains_active]
+      properties:
+        credential:
+          $ref: "#/components/schemas/AgentCredential"
+        old_credential_remains_active: { type: boolean }
+    AgentPrompt:
+      type: object
+      additionalProperties: false
+      required:
+        [agent_instance_id, project_id, default_prompt, effective_prompt, custom, version]
+      properties:
+        agent_instance_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        default_prompt: { type: string }
+        effective_prompt: { type: string }
+        custom_prompt: { type: string }
+        custom: { type: boolean }
+        version: { type: integer, format: int64, minimum: 1 }
+        updated_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+    UpdateAgentPromptRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 50000
+    AgentSession:
+      type: object
+      additionalProperties: false
+      required:
+        - session_id
+        - agent_instance_id
+        - project_id
+        - remote_session_id
+        - session_type
+        - title
+        - status
+        - default
+        - version
+        - created_at
+        - updated_at
+      properties:
+        session_id: { type: string, format: uuid }
+        agent_instance_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        remote_session_id: { type: string }
+        session_type:
+          $ref: "#/components/schemas/AgentSessionType"
+        title: { type: string }
+        status:
+          $ref: "#/components/schemas/AgentSessionStatus"
+        default: { type: boolean }
+        parent_session_id: { type: string, format: uuid }
+        end_reason: { type: string }
+        last_run_id: { type: string, format: uuid }
+        last_message_at: { type: string, format: date-time }
+        last_run_at: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+    AgentSessionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentSession"
+    CreateAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [title, session_type]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        session_type:
+          $ref: "#/components/schemas/AgentSessionType"
+        default: { type: boolean }
+    UpdateAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+    EndAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+    ForkAgentSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        default: { type: boolean }
+    AgentToolCall:
+      type: object
+      additionalProperties: false
+      required: [tool_call_id, name, status]
+      properties:
+        tool_call_id: { type: string }
+        name: { type: string }
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        input_summary:
+          type: string
+          maxLength: 4000
+        output_summary:
+          type: string
+          maxLength: 10000
+        safe_error_code:
+          type: string
+          maxLength: 100
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+    AgentMessage:
+      type: object
+      additionalProperties: false
+      required: [message_id, role, content]
+      properties:
+        message_id: { type: string }
+        role:
+          type: string
+          enum: [user, assistant, tool, system]
+        content: { type: string }
+        tool_call_id: { type: string }
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentToolCall"
+        created_at: { type: string, format: date-time }
+    AgentMessageList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentMessage"
+    AgentUsage:
+      type: object
+      additionalProperties: false
+      properties:
+        input_tokens: { type: integer, minimum: 0 }
+        output_tokens: { type: integer, minimum: 0 }
+        total_tokens: { type: integer, minimum: 0 }
+    AgentRun:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - session_id
+        - remote_run_id
+        - status
+        - source
+        - tool_calls
+        - version
+        - created_at
+        - updated_at
+      properties:
+        run_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        remote_run_id: { type: string }
+        status:
+          $ref: "#/components/schemas/AgentRunStatus"
+        source:
+          $ref: "#/components/schemas/AgentRunSource"
+        source_run_id: { type: string, format: uuid }
+        safe_error_code: { type: string, maxLength: 100 }
+        safe_error_message: { type: string, maxLength: 1000 }
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentToolCall"
+        usage:
+          $ref: "#/components/schemas/AgentUsage"
+        version: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AgentRunLaunch:
+      type: object
+      additionalProperties: false
+      required: [session, run]
+      properties:
+        session:
+          $ref: "#/components/schemas/AgentSession"
+        run:
+          $ref: "#/components/schemas/AgentRun"
+    StartAgentRunRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 100000
+    ReplayAgentRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        message_id:
+          type: string
+          minLength: 1
+          maxLength: 500
+    AgentApprovalChoice:
+      type: string
+      enum: [once, session, always, deny]
+    RespondAgentRunApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [choice]
+      properties:
+        choice:
+          $ref: "#/components/schemas/AgentApprovalChoice"
+    AgentApproval:
+      type: object
+      additionalProperties: false
+      required: [approval_id, choices]
+      properties:
+        approval_id: { type: string }
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentApprovalChoice"
+    AgentStreamEventType:
+      type: string
+      enum:
+        - run.started
+        - run.status
+        - message.started
+        - message.delta
+        - message.completed
+        - tool.progress
+        - tool.started
+        - tool.completed
+        - tool.failed
+        - approval.required
+        - approval.responded
+        - subagent.started
+        - subagent.completed
+        - run.completed
+        - run.failed
+        - run.stopped
+        - heartbeat
+        - done
+        - error
+    AgentStreamEvent:
+      type: object
+      additionalProperties: false
+      required: [event, event_id, sequence, occurred_at, run_id, session_id]
+      properties:
+        event:
+          $ref: "#/components/schemas/AgentStreamEventType"
+        event_id: { type: string }
+        sequence: { type: integer, format: int64, minimum: 1 }
+        occurred_at: { type: string, format: date-time }
+        run_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        message_id: { type: string }
+        delta: { type: string }
+        tool_call:
+          $ref: "#/components/schemas/AgentToolCall"
+        run:
+          $ref: "#/components/schemas/AgentRun"
+        approval:
+          $ref: "#/components/schemas/AgentApproval"
+        safe_error_code: { type: string, maxLength: 100 }
+        safe_error_message: { type: string, maxLength: 1000 }
     Liveness:
       type: object
       additionalProperties: false
