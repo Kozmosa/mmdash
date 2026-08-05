@@ -8,7 +8,10 @@ export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler((error, request, reply) => {
     const mapped = mapError(error);
     if (mapped.status >= 500) {
-      request.log.error({ err: error }, "request failed");
+      request.log.error(
+        { code: mapped.code, error_name: errorName(error), status: mapped.status },
+        "request failed",
+      );
     } else {
       request.log.info(
         { code: mapped.code, status: mapped.status },
@@ -44,7 +47,7 @@ function mapError(error: unknown): {
     }
     return {
       code: error.body.code ?? "CORE_REQUEST_FAILED",
-      message: error.body.message ?? "Core request failed",
+      message: safeCoreMessage(error.body.message),
       status: error.status,
     };
   }
@@ -87,4 +90,18 @@ function mapError(error: unknown): {
     message: "An unexpected error occurred",
     status: 500,
   };
+}
+
+const sensitiveMessagePattern =
+  /(?:api[_ -]?key|authorization|bearer|cloudflare|credential|dashboard[_ -]?(?:session[_ -]?)?token|hermes[_ -]?api[_ -]?key|refresh[_ -]?token|secret|token[_ -]?hash)/i;
+
+function safeCoreMessage(message: string | undefined): string {
+  if (!message || sensitiveMessagePattern.test(message)) {
+    return "Core rejected the request";
+  }
+  return message.slice(0, 1_000);
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : "UnknownError";
 }
