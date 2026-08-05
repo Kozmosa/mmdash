@@ -6,11 +6,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotificationSettingsPanel } from "@/features/notification/notification-settings-panel";
 
 const mocks = vi.hoisted(() => ({
+  projectRole: "owner" as
+    "agent" | "box" | "editor" | "maintainer" | "owner" | "viewer",
   request: vi.fn(),
 }));
 
 vi.mock("@/components/providers/project-provider", () => ({
-  useCurrentProject: () => ({ id: "project-1", name: "Project" }),
+  useCurrentProject: () => ({
+    id: "project-1",
+    name: "Project",
+    role: mocks.projectRole,
+  }),
 }));
 
 vi.mock("@/lib/api-client", () => ({
@@ -35,6 +41,7 @@ describe("notification delivery diagnostics", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    mocks.projectRole = "owner";
   });
 
   it("offers manual retry only for failed deliveries", async () => {
@@ -99,4 +106,24 @@ describe("notification delivery diagnostics", () => {
     expect(retryingRow).not.toContainElement(retryButton);
     expect(screen.getAllByRole("button", { name: "重试" })).toHaveLength(1);
   });
+
+  it.each(["editor", "viewer", "agent"] as const)(
+    "does not expose diagnostics to %s projects",
+    (role) => {
+      mocks.projectRole = role;
+
+      render(<NotificationSettingsPanel />, { wrapper: Providers });
+
+      expect(
+        screen.getByText(/仅 Project owner 或 maintainer/),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "保存" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "重试" }),
+      ).not.toBeInTheDocument();
+      expect(mocks.request).not.toHaveBeenCalled();
+    },
+  );
 });

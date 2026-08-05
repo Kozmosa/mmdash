@@ -556,7 +556,7 @@ func humanInboxCaller(identity auth.Identity) error {
 	return nil
 }
 func (service Service) GetRule(ctx context.Context, identity auth.Identity, projectID, typeKey string) (Rule, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return Rule{}, err
 	}
 	if service.Registry == nil {
@@ -616,7 +616,7 @@ func (service Service) UpsertRule(ctx context.Context, identity auth.Identity, r
 	return result, err
 }
 func (service Service) ListDeliveries(ctx context.Context, identity auth.Identity, projectID, channelKey string, page pagination.Request) (DeliveryPage, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return DeliveryPage{}, err
 	}
 	page, err := page.Normalize()
