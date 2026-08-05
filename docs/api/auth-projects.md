@@ -38,26 +38,43 @@ Local Compose creates the configurable bootstrap account declared by
 
 ## Non-browser tokens
 
-Core supports three revocable opaque token kinds:
+The generic `auth.tokens.create` operation issues two revocable opaque token
+kinds:
 
 | Kind    | Intended caller                  | Project scope                        |
 | ------- | -------------------------------- | ------------------------------------ |
 | `api`   | Human automation and API clients | Optional                             |
-| `agent` | MCP Gateway and project agents   | Required by callers for project work |
 | `box`   | Registered Box capability nodes  | Required by callers for project work |
 
 Only a SHA-256 token hash is stored. The secret is returned once by
 `auth.tokens.create`; list operations expose metadata only.
 
-The `agent` kind is the generic Auth credential primitive. Product-level
-Hermes onboarding is a later Agent-stage capability: an Agent instance receives
-a high-entropy token bound to that instance, one Project grant, and an allowed
-MCP tool set. In `manual` management mode the user stores the one-time secret in
-Hermes; in `auto` mode the Hermes Adapter writes it through an authenticated,
-server-reachable Hermes management endpoint. Hermes then presents the secret
-directly to the remote MCP Gateway. Rotation temporarily keeps the old and new
-token valid until the new credential passes an actual MCP call. The user-device
-CLI is neither a hop in that request path nor a holder of the Hermes Agent Token.
+Stage 5 product Agent Tokens use a separate Auth-owned lifecycle so an Agent
+instance, Project Grant, exact Tool allowlist, pending verification, and safe
+rotation cannot be omitted by a generic caller. An Agent instance receives a
+high-entropy opaque Token through the project-scoped Agent API. In `manual`
+management mode the user stores the one-time secret in Hermes; in `auto` mode
+the Hermes Adapter writes it through an authenticated, server-reachable Hermes
+management endpoint. Hermes then presents the secret directly to the remote
+MCP Gateway. The user-device CLI is neither a hop in that request path nor a
+holder of the Hermes Agent Token.
+
+The Gateway authenticates a pending product Token through `auth.me`, but that
+authentication alone is not verification. After a protocol-negotiated MCP
+Session successfully performs `tools/list`, the Gateway records durable
+evidence through `auth.agent_tokens.verification.record`. Core accepts that
+callback only from the specifically configured admin API Token ID; an ordinary
+admin API Token, browser Session, product Agent Token, `auth.me` request,
+current `server/discover`, or legacy `initialize` cannot create evidence.
+Activation then atomically promotes the
+pending Token and revokes its predecessor. Any verification or transaction
+failure leaves the old Token active.
+
+The generic request and `AccessToken.kind` schemas continue to recognize the
+historical `agent` value for wire and stored-data compatibility, but
+`auth.tokens.create` rejects that value with `400 INVALID_REQUEST`. New product
+Agent credentials can be created only through the project-scoped Agent
+lifecycle.
 
 The static `MCP_AGENT_TOKEN` accepted by the current foundation Gateway is a
 development and boundary-test credential. It is not the product Agent Token

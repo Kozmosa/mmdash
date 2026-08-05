@@ -1,5 +1,11 @@
 # API endpoint catalog
 
+Stage 5 Agent operations are documented in
+[`agent.md`](agent.md). Core and Web BFF expose one-to-one instance, project
+access, Token, Prompt, Session, message, Run, and Run-SSE routes under their
+project-scoped Agent prefixes. The MCP catalog additionally exposes
+`context.promote` through the existing Context Proposal boundary.
+
 Stage 4 Progress operations:
 
 - Core: `progress.get`, `progress.milestones.list`, `progress.milestones.create`, `progress.milestones.update`, `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`, `progress.tasks.delete`, `progress.dependencies.list`, `progress.dependencies.create`, `progress.dependencies.delete`, `progress.reminders.list`, `progress.reminders.create`, `progress.reminders.trigger`, `progress.proposals.list`, `progress.proposals.create`, `progress.proposals.review`, `progress.settings.get`, and `progress.settings.update`.
@@ -56,6 +62,7 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Core        | HTTP          | `GET`         | `/v1/auth/tokens`                                                                | `auth.tokens.list`                         | auth                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/auth/tokens`                                                                | `auth.tokens.create`                       | auth                 | `core.yaml`        |
 | Core        | HTTP          | `DELETE`      | `/v1/auth/tokens/{tokenId}`                                                      | `auth.tokens.revoke`                       | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/agent-tokens/{tokenId}/verification`                                   | `auth.agent_tokens.verification.record`    | auth                 | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects`                                                                   | `projects.list`                            | project              | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/projects`                                                                   | `projects.create`                          | project              | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/trash`                                                             | `projects.trash.list`                      | project              | `core.yaml`        |
@@ -231,6 +238,67 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews` | `bff.artifact.previews.list`               | artifact             | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/artifacts/{artifactId}/restore`                       | `bff.artifact.restore`                     | artifact             | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/artifacts/{artifactId}/purge`                         | `bff.artifact.purge`                       | artifact             | `web-bff.yaml`     |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances`                                       | `agent.instances.list`                     | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances`                                       | `agent.instances.create`                   | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}`                     | `agent.instances.get`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}`                     | `agent.instances.update`                   | agent                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}`                     | `agent.instances.disable`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/checks`              | `agent.instances.check`                    | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify` | `agent.project_access.verify`            | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate`       | `agent.tokens.rotate`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify` | `agent.tokens.verify`                   | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort` | `agent.tokens.abort`                     | agent                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}`    | `agent.tokens.revoke`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`              | `agent.prompt.get`                         | agent                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`              | `agent.prompt.update`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt/reset`        | `agent.prompt.reset`                       | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`            | `agent.sessions.list`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`            | `agent.sessions.create`                    | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `agent.sessions.get`                     | agent                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `agent.sessions.update`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/end` | `agent.sessions.end`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/continue` | `agent.sessions.continue`        | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/fork` | `agent.sessions.fork`                | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/default` | `agent.sessions.default`          | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/messages` | `agent.sessions.messages.list`  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs` | `agent.runs.start`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}` | `agent.runs.get`             | agent                | `core.yaml`        |
+| Core        | SSE           | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/events` | `agent.runs.events`  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}` | `agent.runs.approve` | agent | `core.yaml` |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop` | `agent.runs.stop`       | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate` | `agent.runs.regenerate` | agent          | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun` | `agent.runs.rerun`     | agent                | `core.yaml`        |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances`                                      | `bff.agent.instances.list`                 | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances`                                      | `bff.agent.instances.create`               | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}`                    | `bff.agent.instances.get`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/agent-instances/{agentInstanceId}`                    | `bff.agent.instances.update`               | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/agent-instances/{agentInstanceId}`                    | `bff.agent.instances.disable`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/checks`             | `bff.agent.instances.check`                | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify` | `bff.agent.project_access.verify`        | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate`      | `bff.agent.tokens.rotate`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify` | `bff.agent.tokens.verify`               | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort` | `bff.agent.tokens.abort`                 | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}`   | `bff.agent.tokens.revoke`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`             | `bff.agent.prompt.get`                     | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`             | `bff.agent.prompt.update`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt/reset`       | `bff.agent.prompt.reset`                   | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`           | `bff.agent.sessions.list`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`           | `bff.agent.sessions.create`                | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `bff.agent.sessions.get`                 | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `bff.agent.sessions.update`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/end` | `bff.agent.sessions.end`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/continue` | `bff.agent.sessions.continue`    | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/fork` | `bff.agent.sessions.fork`            | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/default` | `bff.agent.sessions.default`      | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/messages` | `bff.agent.sessions.messages.list` | agent              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs` | `bff.agent.runs.start`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}` | `bff.agent.runs.get`         | agent                | `web-bff.yaml`     |
+| Web BFF     | SSE           | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/events` | `bff.agent.runs.events` | agent            | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}` | `bff.agent.runs.approve` | agent | `web-bff.yaml` |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop` | `bff.agent.runs.stop`   | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate` | `bff.agent.runs.regenerate` | agent      | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun` | `bff.agent.runs.rerun` | agent                | `web-bff.yaml`     |
+| MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `context.promote`                          | datahub proposal     | `context.promote.json` |
 | MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `system.echo`                              | engineering baseline | `system.echo.json` |
 
 ## Browser BFF conventions

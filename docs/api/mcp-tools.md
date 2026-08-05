@@ -9,6 +9,7 @@ machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 | `project.get`  | Read one authorized Project              | Yes            | CLI, Agent  | `project.get.json`    | Stage 3 read         |
 | `data.list`    | List Data Hub object projections         | Yes            | CLI, Agent  | `data.list.json`      | Stage 1 read         |
 | `data.read`    | Read through the authoritative adapter   | Yes            | CLI, Agent  | `data.read.json`      | Stage 1 read         |
+| `context.promote` | Submit a pending Context Proposal     | Yes            | CLI, Agent  | `context.promote.json` | Stage 5 proposal    |
 | `system.echo`  | Verify the complete MCP Gateway boundary | Yes            | CLI, Agent  | `system.echo.json`    | Foundation test tool |
 
 ## Client and principal paths
@@ -22,7 +23,7 @@ Hermes             -> remote MCP Gateway
 ```
 
 The first path delegates the locally signed-in user's CLI identity. The second
-path, added in the later Agent stage, uses a revocable Agent Token bound to the
+path uses a revocable Agent Token bound to the
 Hermes Agent instance, Project, and allowed tools. Hermes never reaches MCP
 through the CLI, and its Agent Token is not a user CLI credential. The Agent
 stage supports `manual` onboarding, where the user installs and rotates the
@@ -35,6 +36,12 @@ and forwards that same token on business reads. Static `MCP_CLI_TOKEN` remains a
 development fixture only. `project.list` is the one account-scoped discovery
 tool; every other business tool requires an explicit `project_id` and current
 Core RBAC.
+
+For the product Agent path, Gateway forwards the Agent Token as the primary
+Core identity and separately attests the relay with the dedicated
+`MCP_CORE_ACCESS_TOKEN`. Direct Agent access is limited to `GET /v1/auth/me`;
+other Core `/v1` routes reject a missing, ordinary, or cross-Project
+attestation. Tool authorization is never inferred from an HTTP header.
 
 ## `project.list` and `project.get`
 
@@ -60,6 +67,20 @@ advertised as standalone Data Hub object types yet.
 For `repo_file`, the returned content remains pinned to the full commit SHA
 stored in the projection. Binary, oversized, LFS, symlink, and submodule
 objects return safe metadata rather than editable text.
+
+## `context.promote`
+
+`context.promote` submits a title, explicit content, context type, optional
+rationale, and optional source Data Hub object IDs to Core's existing Context
+Proposal boundary. The proposal remains `pending` until a human with
+`project.context.review` accepts or rejects it. An Agent Token must grant the
+exact `context.promote` Tool name, and the Gateway passes the authenticated
+Agent instance to Core. Optional `agent_session_id` and `agent_run_id`
+provenance must appear together. Core accepts them only when both belong to
+the authenticated Agent and Project and the Run belongs to the Session;
+mmdash-started Runs receive these local IDs through safe instructions.
+External Runs may omit both. The Tool cannot review proposals and never copies
+full Agent conversation history into the Project Data Hub.
 
 ## `system.echo`
 

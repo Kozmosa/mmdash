@@ -65,6 +65,7 @@ pnpm --filter @mmdash/core-client generate
 ## Related documents
 
 - [Endpoint catalog](endpoints.md)
+- [Agent sessions API and runtime boundary](agent.md)
 - [Auth, Project, and RBAC](auth-projects.md)
 - [Settings and secret management](settings.md)
 - [Repo API and safety contract](repo.md)
