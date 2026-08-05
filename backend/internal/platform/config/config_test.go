@@ -31,6 +31,19 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	if config.Outbox.PollInterval != 500*time.Millisecond {
 		t.Fatalf("unexpected Outbox poll interval: %s", config.Outbox.PollInterval)
 	}
+	if config.Progress.ReminderBatchSize != 20 ||
+		config.Progress.ReminderLease != 30*time.Second ||
+		config.Progress.ReminderPollInterval != time.Second ||
+		config.Progress.ReminderRetryDelay != 2*time.Second {
+		t.Fatalf("unexpected Progress reminder defaults: %+v", config.Progress)
+	}
+	if config.Project.InvitationExpiryBatchSize != 100 ||
+		config.Project.InvitationExpiryPollInterval != 30*time.Second {
+		t.Fatalf("unexpected Project invitation expiry defaults: %+v", config.Project)
+	}
+	if config.Notification.WebhookAllowHTTPLoopback {
+		t.Fatal("insecure loopback Webhooks must be disabled by default")
+	}
 	if config.Artifact.StorageBackend != "minio" ||
 		config.Artifact.MultipartPartBytes != 16*1024*1024 ||
 		config.Artifact.UploadMaxBytes != 10*1024*1024*1024 ||
@@ -114,6 +127,29 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected invalid Outbox interval to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":                    "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY":       "access",
+		"OBJECT_STORAGE_ENDPOINT":         "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":       "secret",
+		"PROGRESS_REMINDER_BATCH_SIZE":    "0",
+		"PROGRESS_REMINDER_POLL_INTERVAL": "0s",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid Progress reminder processor configuration to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL": "postgres://localhost/mmdash",
+		"NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK": "sometimes",
+		"OBJECT_STORAGE_ACCESS_KEY":                "access",
+		"OBJECT_STORAGE_ENDPOINT":                  "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":                "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected invalid Notification Webhook policy to fail")
 	}
 
 	_, err = Load(mapLookup(map[string]string{
@@ -268,6 +304,22 @@ func TestLoadAppliesExplicitAgentConnectorPolicy(t *testing.T) {
 		loaded.Agent.Runtime.MaxResponseBytes != 2*1024*1024 ||
 		loaded.Agent.ManagementMinimumInterval != 750*time.Millisecond {
 		t.Fatalf("unexpected explicit Agent runtime policy: %+v", loaded.Agent.Runtime)
+	}
+}
+
+func TestLoadAllowsExplicitLocalWebhookPolicy(t *testing.T) {
+	config, err := Load(mapLookup(map[string]string{
+		"DATABASE_URL": "postgres://localhost/mmdash",
+		"NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK": "true",
+		"OBJECT_STORAGE_ACCESS_KEY":                "access",
+		"OBJECT_STORAGE_ENDPOINT":                  "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY":                "secret",
+	}))
+	if err != nil {
+		t.Fatalf("load explicit local Webhook policy: %v", err)
+	}
+	if !config.Notification.WebhookAllowHTTPLoopback {
+		t.Fatal("explicit local Webhook policy was not enabled")
 	}
 }
 

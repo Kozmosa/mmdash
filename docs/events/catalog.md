@@ -102,6 +102,10 @@ events into its canonical Notification/Recipient/Inbox model. External delivery
 remains behind the Core Delivery Processor and registered Feishu/Generic Webhook
 adapters; Progress never sends provider requests.
 
+`progress.reminder.due` uses the Reminder UUID as its stable event ID. Progress
+commits the Reminder `triggered` state and Outbox row together; automatic and
+manual triggering share the same leased PostgreSQL claim path.
+
 When adding an event:
 
 1. choose a stable lowercase dotted event type;

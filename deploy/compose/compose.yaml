@@ -130,12 +130,22 @@ services:
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-mmdash-local-admin}
       # Settings AES-GCM 加密主密钥；生产必须替换为稳定的 Secret，轮换需有迁移方案。
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-development-settings-encryption-key-change-me}
+      # 生产保持 false；仅本机开发接收器可显式开启，且 Core 仍只允许明确 loopback 主机。
+      NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK: ${NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK:-false}
       # Core 使用的 PostgreSQL DSN；生产必须使用生产主机、账号、密码和 TLS。
       DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
       # 空闲数据库连接上限；生产按数据库容量与副本数调优。
       DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
       # 数据库连接池总上限；生产必须按数据库容量与 Core 副本数调优。
       DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
+      # Progress 到期提醒由 Core 多副本共享 PostgreSQL 租约队列处理。
+      PROGRESS_REMINDER_POLL_INTERVAL: ${PROGRESS_REMINDER_POLL_INTERVAL:-1s}
+      PROGRESS_REMINDER_BATCH_SIZE: ${PROGRESS_REMINDER_BATCH_SIZE:-20}
+      PROGRESS_REMINDER_LEASE: ${PROGRESS_REMINDER_LEASE:-30s}
+      PROGRESS_REMINDER_RETRY_DELAY: ${PROGRESS_REMINDER_RETRY_DELAY:-2s}
+      # Project 邀请过期由 Core 多副本使用 PostgreSQL SKIP LOCKED 分批推进。
+      PROJECT_INVITATION_EXPIRY_POLL_INTERVAL: ${PROJECT_INVITATION_EXPIRY_POLL_INTERVAL:-30s}
+      PROJECT_INVITATION_EXPIRY_BATCH_SIZE: ${PROJECT_INVITATION_EXPIRY_BATCH_SIZE:-100}
       # S3/MinIO 服务地址；生产必须替换为受控对象存储的内部 HTTPS 地址。
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}

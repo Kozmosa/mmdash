@@ -2369,7 +2369,7 @@ export interface paths {
     put?: never;
     /**
      * Create a reminder
-     * @description Reminder delivery is delegated to the NotificationAdapter boundary.
+     * @description The Core reminder processor automatically publishes the due event at remind_at; delivery remains delegated to Notification.
      */
     post: operations["progress.reminders.create"];
     delete?: never;
@@ -2391,8 +2391,8 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Trigger a due reminder
-     * @description Emits progress.reminder.due; Progress never calls Feishu or Webhook directly.
+     * Manually trigger a pending reminder
+     * @description Uses the same leased claim path as the automatic processor and emits progress.reminder.due; Progress never calls Feishu or Webhook directly.
      */
     post: operations["progress.reminders.trigger"];
     delete?: never;
@@ -4061,7 +4061,7 @@ export interface components {
       /** Format: date-time */
       remind_at: string;
       /** @enum {string} */
-      status: "pending" | "triggered" | "cancelled";
+      status: "pending" | "processing" | "triggered" | "failed" | "cancelled";
       note: string;
       /** @enum {string} */
       source: "human" | "system";
@@ -9084,7 +9084,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description New retry delivery */
+      /** @description Idempotently created retry delivery */
       200: {
         headers: {
           [name: string]: unknown;
@@ -9093,6 +9093,8 @@ export interface operations {
           "application/json": components["schemas"]["NotificationDelivery"];
         };
       };
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
     };
   };
 }

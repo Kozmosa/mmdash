@@ -84,7 +84,7 @@ func (store PostgresStore) GetObject(
 		       title, summary, status, version, metadata, occurred_at,
 		       created_at, updated_at
 		FROM data_objects
-		WHERE project_id = $1 AND object_id = $2
+		WHERE project_id = $1 AND object_id = $2 AND status <> 'hidden'
 	`, projectID, objectID).Scan)
 	return object, mapNotFound("get data object", err)
 }

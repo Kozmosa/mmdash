@@ -23,6 +23,14 @@ Settings type. Sends are performed by the Go Core Delivery Processor with
 PostgreSQL leases and provider classification; Python Worker and Progress do
 not participate.
 
+Webhook configuration is validated before Settings persistence, during the
+safe connection test, and again before delivery. HTTPS is required by default.
+The deployment-only `NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK` exception is
+disabled by default and permits HTTP only for explicit loopback hostnames or IP
+literals in local development. Embedded URL credentials and fragments are
+rejected, query strings remain supported for provider endpoints, and redirects
+are returned as rejected provider responses rather than followed.
+
 Invitation Inbox records carry the typed browser-safe action
 `project.invitation.accept` with the invitation ID only. The Web action calls
 Project's protected invitation command; Notification never mutates Project
@@ -35,6 +43,9 @@ the update never overwrites a newer Rule. A rule that has not been materialized
 yet returns version `0` and omits update metadata until its first PUT.
 
 Delivery diagnostics retain the project target key, Rule and Settings snapshot
-versions, bounded attempt count, and safe response summary metadata. Explicit
-retry creates a new `retry:{id}` delivery key; it never reopens the original
-delivery.
+versions, bounded attempt count, and safe response summary metadata. Only a
+`failed` Delivery can be manually retried. The retry creates a new
+`retry:{sourceDeliveryId}` delivery key and never reopens the original
+Delivery. Repeated or concurrent requests for the same failed Delivery are
+idempotent and return the same retry Delivery. A non-failed Delivery returns
+`409 NOTIFICATION_DELIVERY_RETRY_CONFLICT`; a missing Delivery returns `404`.

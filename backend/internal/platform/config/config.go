@@ -21,7 +21,10 @@ type Config struct {
 	InternalURL     string
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
+	Notification    NotificationConfig
 	Outbox          OutboxConfig
+	Progress        ProgressConfig
+	Project         ProjectConfig
 	PublicURL       string
 	Repo            RepoConfig
 	Settings        SettingsConfig
@@ -96,12 +99,31 @@ type ObjectStorageConfig struct {
 	SecretKey      string
 }
 
+// NotificationConfig configures external notification delivery boundaries.
+type NotificationConfig struct {
+	WebhookAllowHTTPLoopback bool
+}
+
 // OutboxConfig configures durable event publication and delivery.
 type OutboxConfig struct {
 	DeliveryLease time.Duration
 	EventLease    time.Duration
 	PollInterval  time.Duration
 	RetryDelay    time.Duration
+}
+
+// ProgressConfig configures the in-Core due reminder processor.
+type ProgressConfig struct {
+	ReminderBatchSize    int
+	ReminderLease        time.Duration
+	ReminderPollInterval time.Duration
+	ReminderRetryDelay   time.Duration
+}
+
+// ProjectConfig configures Project-owned lifecycle processors.
+type ProjectConfig struct {
+	InvitationExpiryBatchSize    int
+	InvitationExpiryPollInterval time.Duration
 }
 
 // RepoConfig configures the managed Git runtime and synchronization loop.
@@ -137,6 +159,14 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	managementConnector, err := loadAgentConnector(
 		lookup, "AGENT_MANAGEMENT", []int{80, 443, 9119},
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	webhookAllowHTTPLoopback, err := boolOrDefault(
+		lookup,
+		"NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK",
+		false,
 	)
 	if err != nil {
 		return Config{}, err
@@ -226,6 +256,9 @@ func Load(lookup LookupEnv) (Config, error) {
 			Region:         envOrDefault(lookup, "OBJECT_STORAGE_REGION", "us-east-1"),
 			SecretKey:      envOrDefault(lookup, "OBJECT_STORAGE_SECRET_KEY", ""),
 		},
+		Notification: NotificationConfig{
+			WebhookAllowHTTPLoopback: webhookAllowHTTPLoopback,
+		},
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
 		InternalURL: envOrDefault(lookup, "CORE_INTERNAL_URL", "http://localhost:8080"),
 		PublicURL:   envOrDefault(lookup, "MMDASH_PUBLIC_URL", "http://localhost:3000"),
@@ -234,6 +267,24 @@ func Load(lookup LookupEnv) (Config, error) {
 			EventLease:    durationOrDefault(lookup, "OUTBOX_EVENT_LEASE", 30*time.Second),
 			PollInterval:  durationOrDefault(lookup, "OUTBOX_POLL_INTERVAL", 500*time.Millisecond),
 			RetryDelay:    durationOrDefault(lookup, "OUTBOX_RETRY_DELAY", 2*time.Second),
+		},
+		Progress: ProgressConfig{
+			ReminderBatchSize:    intOrDefault(lookup, "PROGRESS_REMINDER_BATCH_SIZE", 20),
+			ReminderLease:        durationOrDefault(lookup, "PROGRESS_REMINDER_LEASE", 30*time.Second),
+			ReminderPollInterval: durationOrDefault(lookup, "PROGRESS_REMINDER_POLL_INTERVAL", time.Second),
+			ReminderRetryDelay:   durationOrDefault(lookup, "PROGRESS_REMINDER_RETRY_DELAY", 2*time.Second),
+		},
+		Project: ProjectConfig{
+			InvitationExpiryBatchSize: intOrDefault(
+				lookup,
+				"PROJECT_INVITATION_EXPIRY_BATCH_SIZE",
+				100,
+			),
+			InvitationExpiryPollInterval: durationOrDefault(
+				lookup,
+				"PROJECT_INVITATION_EXPIRY_POLL_INTERVAL",
+				30*time.Second,
+			),
 		},
 		Repo: RepoConfig{
 			AskPassPath:       envOrDefault(lookup, "REPO_ASKPASS_PATH", "mmdash-git-askpass"),
@@ -401,6 +452,20 @@ func (config Config) Validate() error {
 		config.Outbox.PollInterval <= 0 ||
 		config.Outbox.RetryDelay <= 0 {
 		return fmt.Errorf("Outbox durations must be positive")
+	}
+	if config.Progress.ReminderBatchSize < 1 || config.Progress.ReminderBatchSize > 1000 {
+		return fmt.Errorf("PROGRESS_REMINDER_BATCH_SIZE must be between 1 and 1000")
+	}
+	if config.Progress.ReminderLease <= 0 ||
+		config.Progress.ReminderPollInterval <= 0 ||
+		config.Progress.ReminderRetryDelay <= 0 {
+		return fmt.Errorf("Progress reminder durations must be positive")
+	}
+	if config.Project.InvitationExpiryBatchSize < 1 || config.Project.InvitationExpiryBatchSize > 1000 {
+		return fmt.Errorf("PROJECT_INVITATION_EXPIRY_BATCH_SIZE must be between 1 and 1000")
+	}
+	if config.Project.InvitationExpiryPollInterval <= 0 {
+		return fmt.Errorf("PROJECT_INVITATION_EXPIRY_POLL_INTERVAL must be positive")
 	}
 	if strings.TrimSpace(config.Repo.StorageRoot) == "" {
 		return fmt.Errorf("REPO_STORAGE_ROOT must not be empty")

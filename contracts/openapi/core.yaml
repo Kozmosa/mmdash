@@ -2881,7 +2881,7 @@ paths:
     post:
       tags: [Progress]
       summary: Create a reminder
-      description: Reminder delivery is delegated to the NotificationAdapter boundary.
+      description: The Core reminder processor automatically publishes the due event at remind_at; delivery remains delegated to Notification.
       operationId: progress.reminders.create
       requestBody:
         required: true
@@ -2905,8 +2905,8 @@ paths:
         schema: { type: string, format: uuid }
     post:
       tags: [Progress]
-      summary: Trigger a due reminder
-      description: Emits progress.reminder.due; Progress never calls Feishu or Webhook directly.
+      summary: Manually trigger a pending reminder
+      description: Uses the same leased claim path as the automatic processor and emits progress.reminder.due; Progress never calls Feishu or Webhook directly.
       operationId: progress.reminders.trigger
       responses:
         "200":
@@ -3341,7 +3341,7 @@ paths:
         {
           "200":
             {
-              description: New retry delivery,
+              description: Idempotently created retry delivery,
               content:
                 {
                   application/json:
@@ -3351,6 +3351,8 @@ paths:
                     },
                 },
             },
+          "404": { $ref: "#/components/responses/Error" },
+          "409": { $ref: "#/components/responses/Error" },
         }
 components:
   securitySchemes:
@@ -6639,7 +6641,11 @@ components:
         task_id: { type: string, format: uuid }
         milestone_id: { type: string, format: uuid }
         remind_at: { type: string, format: date-time }
-        status: { type: string, enum: [pending, triggered, cancelled] }
+        status:
+          {
+            type: string,
+            enum: [pending, processing, triggered, failed, cancelled],
+          }
         note: { type: string, maxLength: 2000 }
         source: { type: string, enum: [human, system] }
         triggered_at: { type: string, format: date-time }
