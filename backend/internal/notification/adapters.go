@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -55,14 +56,15 @@ type ProviderError struct {
 func (err ProviderError) Error() string { return err.Code + ": " + err.Message }
 
 type GenericWebhook struct {
-	Client  HTTPDoer
-	Timeout time.Duration
-	Clock   func() time.Time
+	AllowHTTPLoopback bool
+	Client            HTTPDoer
+	Timeout           time.Duration
+	Clock             func() time.Time
 }
 
 func (adapter GenericWebhook) Key() string { return "notification.generic_webhook" }
 func (adapter GenericWebhook) ValidateConfig(config map[string]interface{}) error {
-	return validateWebhookConfig(config, true)
+	return validateWebhookConfig(config, true, adapter.AllowHTTPLoopback)
 }
 func (adapter GenericWebhook) Test(ctx context.Context, config map[string]interface{}) error {
 	return adapter.send(ctx, config, "test", "mmdash.notification.test", RenderedMessage{Body: []byte(`{"event":"mmdash.notification.test","version":1}`), ContentType: "application/json"})
@@ -75,18 +77,19 @@ func (adapter GenericWebhook) Send(ctx context.Context, config map[string]interf
 	return adapter.send(ctx, config, deliveryID, notificationType, message)
 }
 func (adapter GenericWebhook) send(ctx context.Context, config map[string]interface{}, deliveryID, notificationType string, message RenderedMessage) error {
-	return sendWebhook(ctx, adapter.Client, adapter.Timeout, adapter.Clock, config, deliveryID, notificationType, message, true)
+	return sendWebhook(ctx, adapter.Client, adapter.Timeout, adapter.Clock, config, deliveryID, notificationType, message, true, adapter.AllowHTTPLoopback)
 }
 
 type FeishuWebhook struct {
-	Client  HTTPDoer
-	Timeout time.Duration
-	Clock   func() time.Time
+	AllowHTTPLoopback bool
+	Client            HTTPDoer
+	Timeout           time.Duration
+	Clock             func() time.Time
 }
 
 func (adapter FeishuWebhook) Key() string { return "notification.feishu_webhook" }
 func (adapter FeishuWebhook) ValidateConfig(config map[string]interface{}) error {
-	return validateWebhookConfig(config, false)
+	return validateWebhookConfig(config, false, adapter.AllowHTTPLoopback)
 }
 func (adapter FeishuWebhook) Test(ctx context.Context, config map[string]interface{}) error {
 	return adapter.send(ctx, config, "test", "mmdash.notification.test", RenderedMessage{Body: []byte(`{"msg_type":"text","content":{"text":"mmdash notification test"}}`), ContentType: "application/json"})
@@ -103,16 +106,28 @@ func (adapter FeishuWebhook) Send(ctx context.Context, config map[string]interfa
 	return adapter.send(ctx, config, deliveryID, notificationType, message)
 }
 func (adapter FeishuWebhook) send(ctx context.Context, config map[string]interface{}, deliveryID, notificationType string, message RenderedMessage) error {
-	return sendWebhook(ctx, adapter.Client, adapter.Timeout, adapter.Clock, config, deliveryID, notificationType, message, false)
+	return sendWebhook(ctx, adapter.Client, adapter.Timeout, adapter.Clock, config, deliveryID, notificationType, message, false, adapter.AllowHTTPLoopback)
 }
 
-func validateWebhookConfig(config map[string]interface{}, signed bool) error {
+// NewWebhookHTTPClient returns an isolated client that never forwards a
+// Webhook payload or signature across an HTTP redirect.
+func NewWebhookHTTPClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	cloned := *client
+	cloned.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &cloned
+}
+
+func validateWebhookConfig(config map[string]interface{}, signed, allowHTTPLoopback bool) error {
 	endpoint, _ := config["endpoint"].(string)
 	if endpoint == "" {
 		endpoint, _ = config["webhook_url"].(string)
 	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Scheme != "https" && parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil {
+	if err := validateWebhookURL(endpoint, allowHTTPLoopback); err != nil {
 		return ErrInvalid
 	}
 	if signed {
@@ -124,11 +139,35 @@ func validateWebhookConfig(config map[string]interface{}, signed bool) error {
 	return nil
 }
 
-func sendWebhook(ctx context.Context, client HTTPDoer, timeout time.Duration, clockFn func() time.Time, config map[string]interface{}, deliveryID, notificationType string, message RenderedMessage, signed bool) error {
+func validateWebhookURL(endpoint string, allowHTTPLoopback bool) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
+		return ErrInvalid
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme == "https" {
+		return nil
+	}
+	if scheme != "http" || !allowHTTPLoopback || !explicitLoopbackHost(parsed.Hostname()) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func explicitLoopbackHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func sendWebhook(ctx context.Context, client HTTPDoer, timeout time.Duration, clockFn func() time.Time, config map[string]interface{}, deliveryID, notificationType string, message RenderedMessage, signed, allowHTTPLoopback bool) error {
 	if client == nil {
 		return ErrNotReady
 	}
-	if err := validateWebhookConfig(config, signed); err != nil {
+	if err := validateWebhookConfig(config, signed, allowHTTPLoopback); err != nil {
 		return ProviderError{Code: "configuration_error", Message: "invalid webhook configuration"}
 	}
 	endpoint, _ := config["endpoint"].(string)
