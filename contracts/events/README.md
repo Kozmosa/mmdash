@@ -16,6 +16,14 @@ Stage 2 Artifact payloads are defined by:
 - `artifact.available.schema.json`
 - `artifact.deleted.schema.json`
 
+Notification 3.17 invitation lifecycle payloads are defined by:
+
+- `project.member.invited.schema.json`
+- `project.member.joined.schema.json`
+- `project.invitation.revoked.schema.json`
+- `project.invitation.expired.schema.json`
+- `user.registered.schema.json`
+
 Artifact event payloads contain stable IDs and immutable metadata only. They
 never include signed URLs, provider upload IDs, object keys, credentials, file
 content, or preview output.

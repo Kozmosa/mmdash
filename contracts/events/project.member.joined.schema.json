@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/project.member.joined.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["project_id", "user_id", "role"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "invitation_id": { "type": "string", "format": "uuid" },
+    "user_id": { "type": "string", "format": "uuid" },
+    "role": { "type": "string" }
+  }
+}

@@ -563,6 +563,26 @@ func (service Service) AcceptInvitation(ctx context.Context, identity auth.Ident
 	return acceptedMember(member), nil
 }
 
+// AcceptInvitationByID is the authenticated Inbox action. It deliberately
+// accepts an invitation ID, not a token; the Project store rechecks the
+// invitation email, lifecycle, and one-time semantics in the same transaction.
+func (service Service) AcceptInvitationByID(ctx context.Context, identity auth.Identity, invitationID string) (auth.AcceptedMember, error) {
+	if identity.Kind == "agent" || identity.Kind == "box" {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	store, ok := service.Store.(interface {
+		AcceptInvitationByID(context.Context, string, string, string, time.Time) (Member, error)
+	})
+	if !ok || strings.TrimSpace(invitationID) == "" {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	member, err := store.AcceptInvitationByID(ctx, invitationID, identity.User.ID, identity.User.Email, service.now())
+	if err != nil {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	return acceptedMember(member), nil
+}
+
 func (service Service) AcceptRegistration(ctx context.Context, token string, user auth.User) (auth.AcceptedMember, error) {
 	member, err := service.Store.AcceptInvitation(ctx, hashInvitationToken(token), user.ID, user.Email, service.now())
 	if err != nil {

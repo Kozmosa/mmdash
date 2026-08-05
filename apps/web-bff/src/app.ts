@@ -23,6 +23,7 @@ import { registerProgressRoutes } from "./routes/progress.js";
 import { registerRepoRoutes } from "./routes/repo.js";
 import { registerRepoWebhookRoutes } from "./routes/repo-webhook.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
+import { registerNotificationRoutes } from "./routes/notification.js";
 
 export type BuildAppOptions = {
   config?: BffConfig;
@@ -81,6 +82,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerRepoRoutes(app, coreClient);
   registerRepoWebhookRoutes(app, coreClient);
   registerSettingsRoutes(app, coreClient);
+  registerNotificationRoutes(app, coreClient);
   registerPageRoutes(app, coreClient, pageRegistry);
   registerHttpStreamRoutes(app, coreClient);
   app.register(async function websocketRoutesScope(scopedApp) {

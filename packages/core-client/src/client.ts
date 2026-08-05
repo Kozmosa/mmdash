@@ -973,126 +973,366 @@ export class CoreClient {
   async listProgressMilestones(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["MilestoneList"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/milestones`,
-      { method: "GET" }, context,
+      { method: "GET" },
+      context,
     );
   }
 
-  async createProgressMilestone(projectId: string, input: components["schemas"]["CreateMilestoneRequest"], context: CoreRequestContext) {
+  async createProgressMilestone(
+    projectId: string,
+    input: components["schemas"]["CreateMilestoneRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["Milestone"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/milestones`,
-      { body: input, method: "POST" }, context,
+      { body: input, method: "POST" },
+      context,
     );
   }
 
-  async updateProgressMilestone(projectId: string, milestoneId: string, input: components["schemas"]["UpdateMilestoneRequest"], context: CoreRequestContext) {
+  async updateProgressMilestone(
+    projectId: string,
+    milestoneId: string,
+    input: components["schemas"]["UpdateMilestoneRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["Milestone"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/milestones/${encodeURIComponent(milestoneId)}`,
-      { body: input, method: "PATCH" }, context,
+      { body: input, method: "PATCH" },
+      context,
     );
   }
 
   async listProgressTasks(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["TaskList"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/tasks`,
-      { method: "GET" }, context,
+      { method: "GET" },
+      context,
     );
   }
 
-  async createProgressTask(projectId: string, input: components["schemas"]["CreateTaskRequest"], context: CoreRequestContext) {
+  async createProgressTask(
+    projectId: string,
+    input: components["schemas"]["CreateTaskRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["Task"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/tasks`,
-      { body: input, method: "POST" }, context,
+      { body: input, method: "POST" },
+      context,
     );
   }
 
-  async updateProgressTask(projectId: string, taskId: string, input: components["schemas"]["UpdateTaskRequest"], context: CoreRequestContext) {
+  async updateProgressTask(
+    projectId: string,
+    taskId: string,
+    input: components["schemas"]["UpdateTaskRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["Task"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/tasks/${encodeURIComponent(taskId)}`,
-      { body: input, method: "PATCH" }, context,
+      { body: input, method: "PATCH" },
+      context,
     );
   }
 
-  async deleteProgressTask(projectId: string, taskId: string, context: CoreRequestContext): Promise<void> {
+  async deleteProgressTask(
+    projectId: string,
+    taskId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
     return this.request(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/tasks/${encodeURIComponent(taskId)}`,
-      { method: "DELETE" }, context,
+      { method: "DELETE" },
+      context,
     );
   }
 
-  async listProgressDependencies(projectId: string, context: CoreRequestContext) {
+  async listProgressDependencies(
+    projectId: string,
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["DependencyList"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/dependencies`,
-      { method: "GET" }, context,
+      { method: "GET" },
+      context,
     );
   }
 
-  async createProgressDependency(projectId: string, input: components["schemas"]["CreateDependencyRequest"], context: CoreRequestContext) {
+  async createProgressDependency(
+    projectId: string,
+    input: components["schemas"]["CreateDependencyRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["Dependency"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/dependencies`,
-      { body: input, method: "POST" }, context,
+      { body: input, method: "POST" },
+      context,
     );
   }
 
-  async deleteProgressDependency(projectId: string, dependencyId: string, context: CoreRequestContext): Promise<void> {
+  async deleteProgressDependency(
+    projectId: string,
+    dependencyId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
     return this.request(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/dependencies/${encodeURIComponent(dependencyId)}`,
-      { method: "DELETE" }, context,
+      { method: "DELETE" },
+      context,
     );
   }
 
   async listProgressReminders(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["ReminderList"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/reminders`,
-      { method: "GET" }, context,
+      { method: "GET" },
+      context,
     );
   }
 
-  async createProgressReminder(projectId: string, input: components["schemas"]["CreateReminderRequest"], context: CoreRequestContext) {
+  async createProgressReminder(
+    projectId: string,
+    input: components["schemas"]["CreateReminderRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["Reminder"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/reminders`,
-      { body: input, method: "POST" }, context,
+      { body: input, method: "POST" },
+      context,
     );
   }
 
-  async triggerProgressReminder(projectId: string, reminderId: string, context: CoreRequestContext) {
+  async triggerProgressReminder(
+    projectId: string,
+    reminderId: string,
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["Reminder"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/reminders/${encodeURIComponent(reminderId)}/trigger`,
-      { method: "POST" }, context,
+      { method: "POST" },
+      context,
     );
   }
 
   async listProgressProposals(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["ProgressProposalList"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/proposals`,
-      { method: "GET" }, context,
+      { method: "GET" },
+      context,
     );
   }
 
-  async createProgressProposal(projectId: string, input: components["schemas"]["CreateProgressProposalRequest"], context: CoreRequestContext) {
+  async createProgressProposal(
+    projectId: string,
+    input: components["schemas"]["CreateProgressProposalRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["ProgressProposal"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/proposals`,
-      { body: input, method: "POST" }, context,
+      { body: input, method: "POST" },
+      context,
     );
   }
 
-  async reviewProgressProposal(projectId: string, proposalId: string, input: components["schemas"]["ReviewProgressProposalRequest"], context: CoreRequestContext) {
+  async reviewProgressProposal(
+    projectId: string,
+    proposalId: string,
+    input: components["schemas"]["ReviewProgressProposalRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["ProgressProposal"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/proposals/${encodeURIComponent(proposalId)}/review`,
-      { body: input, method: "POST" }, context,
+      { body: input, method: "POST" },
+      context,
     );
   }
 
   async getProgressSettings(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["ProgressSettings"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/settings`,
-      { method: "GET" }, context,
+      { method: "GET" },
+      context,
     );
   }
 
-  async updateProgressSettings(projectId: string, input: components["schemas"]["UpdateProgressSettingsRequest"], context: CoreRequestContext) {
+  async listInbox(
+    query: Record<string, string | number | undefined>,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["InboxPage"]> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query))
+      if (value !== undefined) params.set(key, String(value));
+    return this.request(
+      `/v1/inbox?${params.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async acceptInvitationById(
+    invitationId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProjectMember"]> {
+    return this.request(
+      `/v1/projects/invitations/${encodeURIComponent(invitationId)}/accept`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async getInbox(
+    inboxItemId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["InboxItem"]> {
+    return this.request(
+      `/v1/inbox/${encodeURIComponent(inboxItemId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateInbox(
+    inboxItemId: string,
+    input: components["schemas"]["UpdateInboxRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["InboxItem"]> {
+    return this.request(
+      `/v1/inbox/${encodeURIComponent(inboxItemId)}`,
+      { method: "PATCH", body: input },
+      context,
+    );
+  }
+
+  async unreadInboxCount(
+    projectId: string | undefined,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["UnreadCount"]> {
+    const suffix = projectId
+      ? `?project_id=${encodeURIComponent(projectId)}`
+      : "";
+    return this.request(
+      `/v1/inbox/unread-count${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async markAllInboxRead(
+    input: components["schemas"]["MarkAllInboxReadRequest"],
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      "/v1/inbox/mark-all-read",
+      { method: "POST", body: input },
+      context,
+    );
+  }
+
+  async getNotificationChannel(
+    projectId: string,
+    channelKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotificationChannel"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(channelKey)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+  async updateNotificationChannel(
+    projectId: string,
+    channelKey: string,
+    input: components["schemas"]["UpdateNotificationChannelRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotificationChannel"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(channelKey)}`,
+      { method: "PATCH", body: input },
+      context,
+    );
+  }
+  async deleteNotificationChannel(
+    projectId: string,
+    channelKey: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(channelKey)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+  async testNotificationChannel(
+    projectId: string,
+    channelKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ConnectionTestResult"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(channelKey)}/test`,
+      { method: "POST" },
+      context,
+    );
+  }
+  async getNotificationRule(
+    projectId: string,
+    typeKey: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotificationRule"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-rules/${encodeURIComponent(typeKey)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+  async updateNotificationRule(
+    projectId: string,
+    typeKey: string,
+    input: components["schemas"]["UpdateNotificationRuleRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotificationRule"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-rules/${encodeURIComponent(typeKey)}`,
+      { method: "PUT", body: input },
+      context,
+    );
+  }
+  async listNotificationDeliveries(
+    projectId: string,
+    query: Record<string, string | number | undefined>,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotificationDeliveryPage"]> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query))
+      if (value !== undefined) params.set(key, String(value));
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-deliveries?${params.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+  async retryNotificationDelivery(
+    projectId: string,
+    deliveryId: string,
+    input: components["schemas"]["RetryNotificationDeliveryRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotificationDelivery"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/notification-deliveries/${encodeURIComponent(deliveryId)}/retry`,
+      { method: "POST", body: input },
+      context,
+    );
+  }
+
+  async updateProgressSettings(
+    projectId: string,
+    input: components["schemas"]["UpdateProgressSettingsRequest"],
+    context: CoreRequestContext,
+  ) {
     return this.request<components["schemas"]["ProgressSettings"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/settings`,
-      { body: input, method: "PATCH" }, context,
+      { body: input, method: "PATCH" },
+      context,
     );
   }
 

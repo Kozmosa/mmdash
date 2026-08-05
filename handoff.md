@@ -3,8 +3,8 @@
 - Updated: 2026-08-05
 - Branch: `codex/stage-4-home-progress`
 - Base: `origin/main@23057c4ebbea43d62ef388a63144fc4dad55be68`
-- Delivery state: Stage 4 implementation complete; commit and PR handoff
-  pending
+- Delivery state: Stage 4 implementation complete in commit `2d8a5a5`; PR #30
+  remains open for review
 
 ## Status
 
@@ -41,18 +41,32 @@ into Progress-owned state.
 - Project-scoped RBAC, request/operation Audit coverage, stable Progress event
   envelopes, JSON Schemas, generated clients, API catalog entries, and module
   documentation.
-- Minimal Stage 4 Notification前置能力: `progress.reminder.due` is consumed
-  only by the NotificationAdapter, which persists an idempotent notification
-  intent keyed by `source_event_id`. Progress never sends Feishu or Webhook
-  requests directly.
+- Complete Stage 4 Notification 3.17: the Core Type Registry consumes stable
+  invitation, registration, invitation-lifecycle, and reminder events into
+  canonical Notification, Recipient, Inbox, Rule, Delivery, and Delivery
+  Attempt records. Invitation notifications persist only a typed,
+  browser-safe accept Action; invitation outcomes preserve read/archive state
+  and cancel pending/retrying deliveries. Project channel settings stay behind
+  encrypted Settings; the Core Delivery Processor owns leases, bounded retry,
+  safe provider errors, target/Rule/Settings snapshots, metrics, and
+  Feishu/Generic Webhook adapters. Progress still publishes events only and
+  never sends Feishu or Webhook requests directly.
 
 ## Contracts and persistence
 
 Migration `000016_progress` owns the Progress tables, constraints, indexes,
-and projections. Migration `000017_notification_stage4` owns only the minimal
-NotificationAdapter intent boundary required for Reminder acceptance. No
-Redis or other queue infrastructure was introduced; PostgreSQL remains the
-Job Queue backend.
+and projections. Migration `000017_notification_stage4` remains a compatibility
+bridge for old development data; migration `000018_notification_core` owns the
+canonical Notification, Recipient, Inbox, Rule, Delivery, and Delivery Attempt
+tables and backfills prior reminder intents. Migration
+`000019_notification_rule_channels_jsonb` converts the already-applied Rule
+`channel_keys` compatibility column from `text[]` to the design-baseline JSONB
+representation. Migrations `000020_notification_authoritative_fields` and
+`000021_notification_delivery_unique_target` add browser-safe Actions, target
+keys, recipient/rule/settings snapshots, bounded attempts, provider diagnostics,
+and the target-aware delivery idempotency key. Rule updates use optimistic
+version checks. No Redis or other queue infrastructure was introduced;
+PostgreSQL remains the Job Queue backend.
 
 Progress create/update/delete and proposal lifecycle events are defined under
 `contracts/events/`, included in the event catalog, and wired to the standard
@@ -70,7 +84,9 @@ Passed:
 - TypeScript lint, tests, and builds; Go formatting, lint, tests, and builds
   outside the existing Repo Git integration timeout suite; Python Worker
   lint/tests/build; and Web/BFF/MCP/CLI builds.
-- Progress, NotificationAdapter, Data Hub, BFF aggregation, and Web tests.
+- Progress, Notification registry/adapter/processor, PostgreSQL Delivery and
+  Core HTTP Rule/Action integration tests, invitation outcome cancellation,
+  Notification metrics, Data Hub, BFF aggregation, and Web tests.
 - Docker Compose image build and full Stage 4 smoke acceptance. Because the
   workstation already had ports 3000, 3001, 5432, 8080, 9000, and 9001 in
   use, the same Compose stack ran on isolated host ports 13000, 13001, 15432,
@@ -81,12 +97,16 @@ Passed:
   configured development credential values. The stack was stopped with
   `docker compose down`, never `down -v`, so named volumes were preserved.
 
-`pnpm check` reached the test stage but did not exit successfully because five
-pre-existing Repo Git integration cases repeatedly timed out in
-`repo.worktree.add/reset` and `repo.commit.finalize`. A fresh uncached run
-reproduced only those failures; all changed Stage 4 suites and the other Go,
-CLI, TypeScript, and Python checks passed. The Docker smoke needed a temporary
-`/tmp` Secret Service shim because this workstation has no writable Linux
+`pnpm check` reached the test stage but did not exit successfully because the
+pre-existing Repo Git integration cases timed out in `repo.worktree.add/reset`
+and related workspace tests (11 cases in the current run; the Repo package
+failed after about 200 seconds). All changed Stage 4 suites and the other Go,
+CLI, TypeScript, and Python checks passed; `pnpm build`, contract,
+compatibility and API-catalog checks passed separately. The latest
+`pnpm caddy:check` was blocked while Docker attempted to pull
+`caddy:2.10-alpine` and hit a network timeout; Caddy configuration was not
+changed by this work. The Docker smoke needed a temporary `/tmp` Secret
+Service shim because this workstation has no writable Linux
 keyring; the product CLI and its credential-store implementation were not
 changed.
 
@@ -95,10 +115,13 @@ changed.
 - Local bootstrap defaults remain `admin@mmdash.local` and
   `mmdash-local-admin` unless overridden by the documented environment
   variables.
-- Reminder delivery stops at the stable event and NotificationAdapter intent
-  boundary. Notification 3.17 still needs provider adapters (including
-  Feishu/Webhook), user preferences, delivery/retry policy, and its complete
-  operational surface in a later stage.
+- Notification 3.17 deliberately does not include user-level notification
+  preferences, Email/Slack/Teams adapters, or a general arbitrary publish API.
+  Reminder delivery stops at the stable Progress event boundary and enters
+  Notification; only Core's trusted adapters may perform provider I/O.
+- Project Notification settings now provide owner/maintainer channel save,
+  test, delete, and Rule channel selection. A Rule cannot reference a channel
+  unless that registered channel is configured and enabled.
 - Stage 5 Agent-session lifecycle, product Agent tokens, and Stage 6 automatic
   progress tracking are not implemented. The Stage 4 Task provenance rule is
   limited to the Progress mutation boundary and does not create a Stage 6

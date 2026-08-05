@@ -55,6 +55,8 @@ tags:
     description: Append-only security/activity audit ingestion and authorized search.
   - name: Progress
     description: Authoritative milestones, tasks, dependencies, reminders, and human-reviewed proposals.
+  - name: Notification
+    description: User Inbox, project notification routing, and safe delivery diagnostics.
   - name: Observability
     description: Service metrics and diagnostic metadata.
 paths:
@@ -2286,6 +2288,355 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProgressSettings"
+  /v1/inbox:
+    get:
+      tags: [Notification]
+      summary: List the authenticated user's Inbox
+      operationId: notification.inbox.list
+      parameters:
+        - {
+            name: project_id,
+            in: query,
+            required: false,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: type_key,
+            in: query,
+            required: false,
+            schema: { type: string },
+          }
+        - {
+            name: read_state,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [read, unread] },
+          }
+        - {
+            name: archived,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [true, false] },
+          }
+        - {
+            name: outcome,
+            in: query,
+            required: false,
+            schema:
+              { type: string, enum: [active, resolved, revoked, expired] },
+          }
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            required: false,
+            schema: { type: integer, minimum: 1, maximum: 200, default: 50 },
+          }
+      responses:
+        "200":
+          description: Inbox page.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/InboxPage" } },
+            }
+  /v1/projects/invitations/{invitationId}/accept:
+    post:
+      tags: [Projects]
+      summary: Accept a matching project invitation from the authenticated Inbox
+      operationId: projects.invitations.accept_by_id
+      parameters: [{ $ref: "#/components/parameters/InvitationId" }]
+      responses:
+        "200":
+          description: Joined project member.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ProjectMember" } },
+            }
+  /v1/inbox/unread-count:
+    get:
+      tags: [Notification]
+      summary: Count unread Inbox items
+      operationId: notification.inbox.unread_count
+      parameters:
+        - {
+            name: project_id,
+            in: query,
+            required: false,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200":
+          description: Unread count.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/UnreadCount" } },
+            }
+  /v1/inbox/mark-all-read:
+    post:
+      tags: [Notification]
+      summary: Mark matching Inbox items read
+      operationId: notification.inbox.mark_all_read
+      requestBody:
+        required: false
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/MarkAllInboxReadRequest" },
+              },
+          }
+      responses: { "204": { description: Items marked read. } }
+  /v1/inbox/{inboxItemId}:
+    parameters: [{ $ref: "#/components/parameters/InboxItemId" }]
+    get:
+      tags: [Notification]
+      summary: Read one Inbox item
+      operationId: notification.inbox.get
+      responses:
+        {
+          "200":
+            {
+              description: Inbox item,
+              content:
+                {
+                  application/json:
+                    { schema: { $ref: "#/components/schemas/InboxItem" } },
+                },
+            },
+        }
+    patch:
+      tags: [Notification]
+      summary: Change Inbox read or archive state
+      operationId: notification.inbox.update
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/UpdateInboxRequest" } },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Updated Inbox item,
+              content:
+                {
+                  application/json:
+                    { schema: { $ref: "#/components/schemas/InboxItem" } },
+                },
+            },
+        }
+  /v1/projects/{projectId}/notification-channels/{channelKey}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { $ref: "#/components/parameters/NotificationChannelKey" }
+    get:
+      tags: [Notification]
+      summary: Read a redacted project notification channel
+      operationId: notification.channels.get
+      responses:
+        {
+          "200":
+            {
+              description: Channel,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        { $ref: "#/components/schemas/NotificationChannel" },
+                    },
+                },
+            },
+        }
+    patch:
+      tags: [Notification]
+      summary: Update a project notification channel
+      operationId: notification.channels.update
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/UpdateNotificationChannelRequest",
+                  },
+              },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Channel,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        { $ref: "#/components/schemas/NotificationChannel" },
+                    },
+                },
+            },
+        }
+    delete:
+      tags: [Notification]
+      summary: Remove a project notification channel
+      operationId: notification.channels.delete
+      responses: { "204": { description: Channel removed. } }
+  /v1/projects/{projectId}/notification-channels/{channelKey}/test:
+    post:
+      tags: [Notification]
+      summary: Test a saved notification channel
+      operationId: notification.channels.test
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+        - { $ref: "#/components/parameters/NotificationChannelKey" }
+      responses:
+        {
+          "200":
+            {
+              description: Connection result,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        { $ref: "#/components/schemas/ConnectionTestResult" },
+                    },
+                },
+            },
+        }
+  /v1/projects/{projectId}/notification-rules/{typeKey}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { $ref: "#/components/parameters/NotificationTypeKey" }
+    get:
+      tags: [Notification]
+      summary: Read a project notification rule
+      operationId: notification.rules.get
+      responses:
+        {
+          "200":
+            {
+              description: Rule,
+              content:
+                {
+                  application/json:
+                    {
+                      schema: { $ref: "#/components/schemas/NotificationRule" },
+                    },
+                },
+            },
+        }
+    put:
+      tags: [Notification]
+      summary: Update a project notification rule
+      operationId: notification.rules.update
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/UpdateNotificationRuleRequest",
+                  },
+              },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Rule,
+              content:
+                {
+                  application/json:
+                    {
+                      schema: { $ref: "#/components/schemas/NotificationRule" },
+                    },
+                },
+            },
+        }
+  /v1/projects/{projectId}/notification-deliveries:
+    get:
+      tags: [Notification]
+      summary: List safe external delivery diagnostics
+      operationId: notification.deliveries.list
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+        - {
+            name: channel_key,
+            in: query,
+            required: false,
+            schema: { type: string },
+          }
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+        - {
+            name: limit,
+            in: query,
+            required: false,
+            schema: { type: integer, minimum: 1, maximum: 200, default: 50 },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Delivery page,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "#/components/schemas/NotificationDeliveryPage",
+                        },
+                    },
+                },
+            },
+        }
+  /v1/projects/{projectId}/notification-deliveries/{deliveryId}/retry:
+    post:
+      tags: [Notification]
+      summary: Explicitly retry a failed delivery
+      operationId: notification.deliveries.retry
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+        - { $ref: "#/components/parameters/NotificationDeliveryId" }
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/RetryNotificationDeliveryRequest",
+                  },
+              },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: New retry delivery,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        { $ref: "#/components/schemas/NotificationDelivery" },
+                    },
+                },
+            },
+        }
 components:
   securitySchemes:
     bearerAuth:
@@ -2300,6 +2651,35 @@ components:
       schema:
         type: string
         format: uuid
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    InboxItemId:
+      name: inboxItemId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    NotificationChannelKey:
+      name: channelKey
+      in: path
+      required: true
+      schema:
+        {
+          type: string,
+          enum: [notification.feishu_webhook, notification.generic_webhook],
+        }
+    NotificationTypeKey:
+      name: typeKey
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    NotificationDeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     ArtifactId:
       name: artifactId
       in: path
@@ -5152,15 +5532,37 @@ components:
     Progress:
       type: object
       additionalProperties: false
-      required: [project_id, generated_at, milestones, tasks, dependencies, reminders, proposals, today, overdue, blocked, board, gantt, settings]
+      required:
+        [
+          project_id,
+          generated_at,
+          milestones,
+          tasks,
+          dependencies,
+          reminders,
+          proposals,
+          today,
+          overdue,
+          blocked,
+          board,
+          gantt,
+          settings,
+        ]
       properties:
         project_id: { type: string, format: uuid }
         generated_at: { type: string, format: date-time }
-        milestones: { type: array, items: { $ref: "#/components/schemas/Milestone" } }
+        milestones:
+          { type: array, items: { $ref: "#/components/schemas/Milestone" } }
         tasks: { type: array, items: { $ref: "#/components/schemas/Task" } }
-        dependencies: { type: array, items: { $ref: "#/components/schemas/Dependency" } }
-        reminders: { type: array, items: { $ref: "#/components/schemas/Reminder" } }
-        proposals: { type: array, items: { $ref: "#/components/schemas/ProgressProposal" } }
+        dependencies:
+          { type: array, items: { $ref: "#/components/schemas/Dependency" } }
+        reminders:
+          { type: array, items: { $ref: "#/components/schemas/Reminder" } }
+        proposals:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ProgressProposal" },
+          }
         today: { type: array, items: { $ref: "#/components/schemas/Task" } }
         overdue: { type: array, items: { $ref: "#/components/schemas/Task" } }
         blocked: { type: array, items: { $ref: "#/components/schemas/Task" } }
@@ -5170,8 +5572,10 @@ components:
           required: [todo, in_progress, blocked, done]
           properties:
             todo: { type: array, items: { $ref: "#/components/schemas/Task" } }
-            in_progress: { type: array, items: { $ref: "#/components/schemas/Task" } }
-            blocked: { type: array, items: { $ref: "#/components/schemas/Task" } }
+            in_progress:
+              { type: array, items: { $ref: "#/components/schemas/Task" } }
+            blocked:
+              { type: array, items: { $ref: "#/components/schemas/Task" } }
             done: { type: array, items: { $ref: "#/components/schemas/Task" } }
         gantt:
           type: array
@@ -5191,13 +5595,27 @@ components:
     Milestone:
       type: object
       additionalProperties: false
-      required: [milestone_id, project_id, title, description, status, critical, source, created_by, updated_by, created_at, updated_at]
+      required:
+        [
+          milestone_id,
+          project_id,
+          title,
+          description,
+          status,
+          critical,
+          source,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         milestone_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status: { type: string, enum: [planned, in_progress, completed, cancelled] }
+        status:
+          { type: string, enum: [planned, in_progress, completed, cancelled] }
         critical: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
@@ -5213,7 +5631,8 @@ components:
       additionalProperties: false
       required: [items]
       properties:
-        items: { type: array, items: { $ref: "#/components/schemas/Milestone" } }
+        items:
+          { type: array, items: { $ref: "#/components/schemas/Milestone" } }
     CreateMilestoneRequest:
       type: object
       additionalProperties: false
@@ -5231,28 +5650,44 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status: { type: string, enum: [planned, in_progress, completed, cancelled] }
+        status:
+          { type: string, enum: [planned, in_progress, completed, cancelled] }
         critical: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
     Task:
       type: object
       additionalProperties: false
-      required: [task_id, project_id, title, description, status, related_object_ids, source, created_by, updated_by, created_at, updated_at]
+      required:
+        [
+          task_id,
+          project_id,
+          title,
+          description,
+          status,
+          related_object_ids,
+          source,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         task_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status: { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status:
+          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time }
         source: { type: string, enum: [human, agent, proposal] }
         source_run_id: { type: string, maxLength: 200 }
-        related_object_ids: { type: array, items: { type: string, format: uuid } }
+        related_object_ids:
+          { type: array, items: { type: string, format: uuid } }
         created_by: { type: string, format: uuid }
         updated_by: { type: string, format: uuid }
         created_at: { type: string, format: date-time }
@@ -5271,11 +5706,13 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status: { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status:
+          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
-        related_object_ids: { type: array, items: { type: string, format: uuid } }
+        related_object_ids:
+          { type: array, items: { type: string, format: uuid } }
         source_run_id: { type: string, maxLength: 200 }
     UpdateTaskRequest:
       type: object
@@ -5285,16 +5722,27 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status: { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status:
+          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
-        related_object_ids: { type: array, items: { type: string, format: uuid } }
+        related_object_ids:
+          { type: array, items: { type: string, format: uuid } }
         source_run_id: { type: string, maxLength: 200 }
     Dependency:
       type: object
       additionalProperties: false
-      required: [dependency_id, project_id, task_id, depends_on_task_id, kind, created_by, created_at]
+      required:
+        [
+          dependency_id,
+          project_id,
+          task_id,
+          depends_on_task_id,
+          kind,
+          created_by,
+          created_at,
+        ]
       properties:
         dependency_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5308,7 +5756,8 @@ components:
       additionalProperties: false
       required: [items]
       properties:
-        items: { type: array, items: { $ref: "#/components/schemas/Dependency" } }
+        items:
+          { type: array, items: { $ref: "#/components/schemas/Dependency" } }
     CreateDependencyRequest:
       type: object
       additionalProperties: false
@@ -5320,7 +5769,18 @@ components:
     Reminder:
       type: object
       additionalProperties: false
-      required: [reminder_id, project_id, remind_at, status, note, source, created_by, created_at, updated_at]
+      required:
+        [
+          reminder_id,
+          project_id,
+          remind_at,
+          status,
+          note,
+          source,
+          created_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         reminder_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5352,11 +5812,30 @@ components:
     ProgressProposal:
       type: object
       additionalProperties: false
-      required: [proposal_id, project_id, proposal_type, title, rationale, changes, source, proposed_by, status, review_note, created_at, updated_at]
+      required:
+        [
+          proposal_id,
+          project_id,
+          proposal_type,
+          title,
+          rationale,
+          changes,
+          source,
+          proposed_by,
+          status,
+          review_note,
+          created_at,
+          updated_at,
+        ]
       properties:
         proposal_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
-        proposal_type: { type: string, enum: [milestone.create, milestone.update, task.create, task.update] }
+        proposal_type:
+          {
+            type: string,
+            enum:
+              [milestone.create, milestone.update, task.create, task.update],
+          }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         rationale: { type: string, maxLength: 10000 }
@@ -5375,13 +5854,22 @@ components:
       additionalProperties: false
       required: [items]
       properties:
-        items: { type: array, items: { $ref: "#/components/schemas/ProgressProposal" } }
+        items:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ProgressProposal" },
+          }
     CreateProgressProposalRequest:
       type: object
       additionalProperties: false
       required: [proposal_type, title, changes]
       properties:
-        proposal_type: { type: string, enum: [milestone.create, milestone.update, task.create, task.update] }
+        proposal_type:
+          {
+            type: string,
+            enum:
+              [milestone.create, milestone.update, task.create, task.update],
+          }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         rationale: { type: string, maxLength: 10000 }
@@ -5409,6 +5897,221 @@ components:
       required: [auto_task_changes]
       properties:
         auto_task_changes: { type: boolean }
+    Notification:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          notification_id,
+          type_key,
+          template_version,
+          source_event_id,
+          priority,
+          data,
+          occurred_at,
+          created_at,
+        ]
+      properties:
+        notification_id: { type: string, format: uuid }
+        type_key: { type: string }
+        template_version: { type: integer, minimum: 1 }
+        source_event_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        priority: { type: string, enum: [low, normal, high, urgent] }
+        data: { type: object, additionalProperties: true }
+        rendered_snapshot: { type: object, additionalProperties: true }
+        action: { $ref: "#/components/schemas/NotificationAction" }
+        occurred_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    NotificationAction:
+      type: object
+      additionalProperties: false
+      required: [action_type, action_resource_id]
+      properties:
+        action_type: { type: string }
+        action_resource_id: { type: string }
+        route: { type: string }
+    NotificationRecipient:
+      type: object
+      additionalProperties: false
+      required: [recipient_id, notification_id, recipient_key]
+      properties:
+        recipient_id: { type: string, format: uuid }
+        notification_id: { type: string, format: uuid }
+        recipient_key: { type: string }
+        user_id: { type: string, format: uuid }
+        normalized_email: { type: string, format: email }
+        expires_at: { type: string, format: date-time }
+    InboxItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          inbox_item_id,
+          notification,
+          recipient,
+          read_state,
+          outcome,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        inbox_item_id: { type: string, format: uuid }
+        notification: { $ref: "#/components/schemas/Notification" }
+        recipient: { $ref: "#/components/schemas/NotificationRecipient" }
+        read_state: { type: string, enum: [read, unread] }
+        archived_at: { type: string, format: date-time }
+        outcome: { type: string, enum: [active, resolved, revoked, expired] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    InboxPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          { type: array, items: { $ref: "#/components/schemas/InboxItem" } }
+        next_cursor: { type: string }
+        has_more: { type: boolean }
+    UnreadCount:
+      type: object
+      additionalProperties: false
+      required: [count]
+      properties: { count: { type: integer, minimum: 0 } }
+    UpdateInboxRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        read_state: { type: string, enum: [read, unread] }
+        archived: { type: boolean }
+    MarkAllInboxReadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        project_id: { type: string, format: uuid }
+        type_key: { type: string }
+    NotificationChannel:
+      type: object
+      additionalProperties: false
+      required: [channel_key, enabled, configured, settings_version]
+      properties:
+        channel_key: { type: string }
+        enabled: { type: boolean }
+        configured: { type: boolean }
+        settings_version: { type: integer, minimum: 0 }
+    UpdateNotificationChannelRequest:
+      type: object
+      additionalProperties: false
+      required: [values]
+      properties:
+        values: { type: object, additionalProperties: true }
+    NotificationRule:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          project_id,
+          type_key,
+          inbox_enabled,
+          external_enabled,
+          channel_keys,
+          minimum_priority,
+          version,
+        ]
+      properties:
+        project_id: { type: string, format: uuid }
+        type_key: { type: string }
+        inbox_enabled: { type: boolean }
+        external_enabled: { type: boolean }
+        channel_keys:
+          type: array
+          items:
+            type: string
+            enum: [notification.feishu_webhook, notification.generic_webhook]
+        minimum_priority: { type: string, enum: [low, normal, high, urgent] }
+        version: { type: integer, minimum: 0 }
+        updated_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+    UpdateNotificationRuleRequest:
+      type: object
+      additionalProperties: false
+      required: [inbox_enabled, external_enabled, version]
+      properties:
+        inbox_enabled: { type: boolean }
+        external_enabled: { type: boolean }
+        channel_keys:
+          type: array
+          items:
+            type: string
+            enum: [notification.feishu_webhook, notification.generic_webhook]
+        minimum_priority: { type: string, enum: [low, normal, high, urgent] }
+        version: { type: integer, minimum: 0 }
+    NotificationDelivery:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          delivery_id,
+          notification_id,
+          project_id,
+          channel_key,
+          target_key,
+          rule_version,
+          settings_version,
+          delivery_key,
+          status,
+          attempts,
+          max_attempts,
+          available_at,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        delivery_id: { type: string, format: uuid }
+        notification_id: { type: string, format: uuid }
+        recipient_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        channel_key: { type: string }
+        target_key: { type: string }
+        rule_version: { type: integer, minimum: 0 }
+        settings_version: { type: integer, minimum: 0 }
+        delivery_key: { type: string }
+        status:
+          {
+            type: string,
+            enum: [pending, sending, delivered, retrying, failed, cancelled],
+          }
+        attempts: { type: integer, minimum: 0 }
+        max_attempts: { type: integer, minimum: 1 }
+        provider_message_id: { type: string }
+        last_error_code: { type: string }
+        last_error: { type: string }
+        response_summary: { type: string }
+        available_at: { type: string, format: date-time }
+        delivered_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    NotificationDeliveryPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/NotificationDelivery" },
+          }
+        next_cursor: { type: string }
+        has_more: { type: boolean }
+    RetryNotificationDeliveryRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: { reason: { type: string, minLength: 1, maxLength: 1000 } }
     Liveness:
       type: object
       additionalProperties: false

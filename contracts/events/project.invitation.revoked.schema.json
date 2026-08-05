@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/project.invitation.revoked.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["project_id", "invitation_id"],
+  "properties": { "project_id": { "type": "string", "format": "uuid" }, "invitation_id": { "type": "string", "format": "uuid" }, "reason": { "type": "string" } }
+}

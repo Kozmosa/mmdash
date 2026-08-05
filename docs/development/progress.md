@@ -37,14 +37,22 @@ transaction. PostgreSQL remains the queue and delivery backend.
 ## Notification boundary
 
 Progress publishes `progress.reminder.due` and never calls Feishu, Webhook, or
-another external channel. Migration `000017_notification_stage4` provides the
-minimal Stage 4 `NotificationAdapter` seam: its consumer accepts the stable
-event and stores an idempotent notification intent keyed by `source_event_id`.
-
-Full Notification 3.17 remains pending: Inbox recipients/read state, type and
-template registration, Project routing rules, channel credentials, retries,
-delivery attempts, Feishu/Webhook adapters, and their APIs are intentionally not
-implemented in Stage 4.
+another external channel. Migration `000017_notification_stage4` remains as a
+compatibility bridge for existing development data; `000018_notification_core`
+adds the canonical Notification, Recipient, Inbox, Rule, Delivery, and Delivery
+Attempt tables. Notification consumes invitation lifecycle, registration, and
+reminder events idempotently by `source_event_id + type_key`, claims pending
+email recipients after registration, and preserves read/archive state while
+applying invitation outcomes. Project channel secrets continue to use the
+encrypted Settings boundary, and external sends run in the Core Delivery
+Processor through the Feishu/Generic Webhook adapter registry.
+Migration `000019_notification_rule_channels_jsonb` upgrades the originally
+applied development `text[]` Rule channel column to the design-baseline JSONB
+shape; Rule PUT carries a version and rejects stale updates with `409`.
+Migrations `000020_notification_authoritative_fields` and
+`000021_notification_delivery_unique_target` persist typed browser-safe
+invitation Actions, target-aware Delivery idempotency, Rule/Settings snapshots,
+bounded retry limits, safe provider diagnostics, and Notification metrics.
 
 ## HTTP and views
 
@@ -60,10 +68,10 @@ States until their owning stages exist.
 
 The following object types are projected and have authoritative readers:
 
-| Object type | Owner |
-| --- | --- |
-| `milestone` | Progress |
-| `task` | Progress |
+| Object type         | Owner    |
+| ------------------- | -------- |
+| `milestone`         | Progress |
+| `task`              | Progress |
 | `progress_proposal` | Progress |
 
 Dependency and Reminder events remain domain events but are not projected as
@@ -77,6 +85,7 @@ existing Core-routed `data.list` and `data.read` tools.
 pnpm contracts:generate
 pnpm contracts:check
 go test ./backend/internal/progress ./backend/internal/notification ./backend/internal/datahub ./backend/internal/project
+MMDASH_TEST_DATABASE_URL=... MMDASH_TEST_CORE_URL=... go test ./backend/internal/notification -count=1
 pnpm api:check
 pnpm check
 ```

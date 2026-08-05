@@ -13,18 +13,25 @@ import (
 
 // Registry records bounded-label Core platform metrics.
 type Registry struct {
-	http              map[httpKey]*httpMetric
-	mu                sync.RWMutex
-	repo              map[repoKey]*httpMetric
-	repoDurations     map[repoDurationKey]*httpMetric
-	repoCheckouts     int64
-	repoQueue         int64
-	repoStorage       int64
-	artifact          map[artifactKey]*httpMetric
-	artifactDurations map[artifactDurationKey]*httpMetric
-	service           string
-	version           string
-	auditFailures     uint64
+	http                            map[httpKey]*httpMetric
+	mu                              sync.RWMutex
+	repo                            map[repoKey]*httpMetric
+	repoDurations                   map[repoDurationKey]*httpMetric
+	repoCheckouts                   int64
+	repoQueue                       int64
+	repoStorage                     int64
+	artifact                        map[artifactKey]*httpMetric
+	artifactDurations               map[artifactDurationKey]*httpMetric
+	service                         string
+	version                         string
+	auditFailures                   uint64
+	notificationCreated             uint64
+	notificationUnread              int64
+	notificationPending             int64
+	notificationRetries             uint64
+	notificationFailures            uint64
+	notificationDeliveryCount       uint64
+	notificationDeliveryDurationSec float64
 }
 
 type httpKey struct {
@@ -142,6 +149,46 @@ func (registry *Registry) IncrementAuditFailure() {
 	}
 	registry.mu.Lock()
 	registry.auditFailures++
+	registry.mu.Unlock()
+}
+
+// ObserveNotificationCreated records a durable Notification creation. Labels
+// such as project IDs, type keys, and user IDs are deliberately excluded.
+func (registry *Registry) ObserveNotificationCreated() {
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.notificationCreated++
+	registry.mu.Unlock()
+}
+
+// ObserveNotificationDelivery records one provider attempt using a bounded
+// outcome label represented by separate counters.
+func (registry *Registry) ObserveNotificationDelivery(outcome string, duration time.Duration) {
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.notificationDeliveryCount++
+	registry.notificationDeliveryDurationSec += duration.Seconds()
+	switch outcome {
+	case "retrying":
+		registry.notificationRetries++
+	case "failed":
+		registry.notificationFailures++
+	}
+	registry.mu.Unlock()
+}
+
+// SetNotificationGauges refreshes low-cardinality Notification gauges.
+func (registry *Registry) SetNotificationGauges(unread, pending int64) {
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.notificationUnread = nonNegative(unread)
+	registry.notificationPending = nonNegative(pending)
 	registry.mu.Unlock()
 }
 
@@ -280,6 +327,27 @@ func (registry *Registry) snapshot() string {
 	fmt.Fprintf(
 		&output, "mmdash_audit_write_failures_total %d\n", registry.auditFailures,
 	)
+	output.WriteString("# HELP mmdash_notification_created_total Durable Notifications created.\n")
+	output.WriteString("# TYPE mmdash_notification_created_total counter\n")
+	fmt.Fprintf(&output, "mmdash_notification_created_total %d\n", registry.notificationCreated)
+	output.WriteString("# HELP mmdash_notification_inbox_unread Current unread Inbox items.\n")
+	output.WriteString("# TYPE mmdash_notification_inbox_unread gauge\n")
+	fmt.Fprintf(&output, "mmdash_notification_inbox_unread %d\n", registry.notificationUnread)
+	output.WriteString("# HELP mmdash_notification_delivery_pending Pending Notification deliveries.\n")
+	output.WriteString("# TYPE mmdash_notification_delivery_pending gauge\n")
+	fmt.Fprintf(&output, "mmdash_notification_delivery_pending %d\n", registry.notificationPending)
+	output.WriteString("# HELP mmdash_notification_delivery_retries_total Notification delivery retries.\n")
+	output.WriteString("# TYPE mmdash_notification_delivery_retries_total counter\n")
+	fmt.Fprintf(&output, "mmdash_notification_delivery_retries_total %d\n", registry.notificationRetries)
+	output.WriteString("# HELP mmdash_notification_delivery_failures_total Terminal Notification delivery failures.\n")
+	output.WriteString("# TYPE mmdash_notification_delivery_failures_total counter\n")
+	fmt.Fprintf(&output, "mmdash_notification_delivery_failures_total %d\n", registry.notificationFailures)
+	output.WriteString("# HELP mmdash_notification_delivery_duration_seconds_sum Notification delivery duration.\n")
+	output.WriteString("# TYPE mmdash_notification_delivery_duration_seconds_sum counter\n")
+	fmt.Fprintf(&output, "mmdash_notification_delivery_duration_seconds_sum %s\n", strconv.FormatFloat(registry.notificationDeliveryDurationSec, 'f', 6, 64))
+	output.WriteString("# HELP mmdash_notification_delivery_duration_seconds_count Notification delivery attempts counted.\n")
+	output.WriteString("# TYPE mmdash_notification_delivery_duration_seconds_count counter\n")
+	fmt.Fprintf(&output, "mmdash_notification_delivery_duration_seconds_count %d\n", registry.notificationDeliveryCount)
 	output.WriteString("# HELP mmdash_repo_operations_total Completed Repo operations.\n")
 	output.WriteString("# TYPE mmdash_repo_operations_total counter\n")
 	output.WriteString(
