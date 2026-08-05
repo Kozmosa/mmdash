@@ -29,11 +29,17 @@ export function loadConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): McpGatewayConfig {
   const nodeEnv = environment.NODE_ENV ?? "development";
+  if (nodeEnv === "production" && environment.MCP_AGENT_TOKEN) {
+    throw new Error(
+      "MCP_AGENT_TOKEN is available only for development and tests",
+    );
+  }
   const config = configSchema.parse({
     agentProjects: parseList(environment.MCP_AGENT_PROJECTS, ["*"]),
     agentToken:
-      environment.MCP_AGENT_TOKEN ||
-      (nodeEnv === "production" ? undefined : developmentAgentToken),
+      nodeEnv === "production"
+        ? undefined
+        : environment.MCP_AGENT_TOKEN || developmentAgentToken,
     agentTools: parseList(environment.MCP_AGENT_TOOLS, ["*"]),
     allowedHosts: parseList(environment.MCP_ALLOWED_HOSTS, [
       "127.0.0.1",
