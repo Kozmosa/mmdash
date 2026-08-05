@@ -14,6 +14,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
@@ -68,10 +69,16 @@ func TestPostgresDeliveryStateMachinePersistsAttempts(t *testing.T) {
 	if notification.TypeKey != TypeReminderDue || claimed.Status != "sending" || claimed.Attempts != 1 {
 		t.Fatalf("claim state: delivery=%#v notification=%#v", claimed, notification)
 	}
-	if err := store.CompleteDelivery(ctx, completeID, "delivery-test-owner"); err != nil {
+	wantProviderResult := ProviderSendResult{ProviderMessageID: "provider-message-complete", ResponseSummary: "http_status=200; request_id=request-complete"}
+	if err := store.CompleteDelivery(ctx, completeID, "delivery-test-owner", wantProviderResult); err != nil {
 		t.Fatalf("complete delivery: %v", err)
 	}
 	assertDeliveryAttempt(t, ctx, db, completeID, "delivered", "", 0)
+	assertPersistedDeliveryResult(t, ctx, db, completeID, wantProviderResult, "delivered")
+	page, err := store.ListDeliveries(ctx, projectID, "", pagination.Request{Limit: 20})
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != completeID || page.Items[0].ProviderMessage != wantProviderResult.ProviderMessageID || page.Items[0].ResponseSummary != wantProviderResult.ResponseSummary {
+		t.Fatalf("list completed delivery result: page=%#v err=%v", page, err)
+	}
 
 	retryID := createDeliveryTestEvent(t, ctx, store, projectID, userID, "retry")
 	claimed, _, err = store.ClaimDelivery(ctx, "delivery-test-owner", time.Minute)
@@ -107,6 +114,55 @@ func TestPostgresDeliveryStateMachinePersistsAttempts(t *testing.T) {
 		// a provider call.
 		t.Fatalf("claim after cancellation: %v", err)
 	}
+}
+
+func TestPostgresCompleteDeliveryResultSafetyAndLeaseOwnership(t *testing.T) {
+	fixture := newDeliveryStoreFixture(t)
+	deliveryID := createDeliveryTestEvent(t, fixture.ctx, fixture.store, fixture.projectID, fixture.userID, "provider-result-safety")
+	claimed, _, err := fixture.store.ClaimDelivery(fixture.ctx, "result-owner", time.Minute)
+	if err != nil || claimed == nil || claimed.ID != deliveryID {
+		t.Fatalf("claim provider result delivery: delivery=%#v err=%v", claimed, err)
+	}
+
+	unsafe := ProviderSendResult{
+		ProviderMessageID: strings.Repeat("p", providerResultMaxRunes+25),
+		ResponseSummary: "http_status=200 Authorization: Bearer authorization-secret token=token-secret " +
+			"https://user:password@example.test/callback?access_token=query-secret#fragment person@example.test " +
+			strings.Repeat("界", providerResultMaxRunes),
+	}
+	if err := fixture.store.CompleteDelivery(fixture.ctx, deliveryID, "wrong-owner", unsafe); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("wrong owner completion: got %v, want %v", err, ErrNotFound)
+	}
+	assertPersistedDeliveryResult(t, fixture.ctx, fixture.db, deliveryID, ProviderSendResult{}, "sending")
+
+	want := sanitizeProviderResult(unsafe)
+	if err := fixture.store.CompleteDelivery(fixture.ctx, deliveryID, "result-owner", unsafe); err != nil {
+		t.Fatalf("complete provider result delivery: %v", err)
+	}
+	assertPersistedDeliveryResult(t, fixture.ctx, fixture.db, deliveryID, want, "delivered")
+	if len([]rune(want.ProviderMessageID)) != providerResultMaxRunes || len([]rune(want.ResponseSummary)) != providerResultMaxRunes {
+		t.Fatalf("provider result limits: %#v", want)
+	}
+	for _, forbidden := range []string{"authorization-secret", "token-secret", "query-secret", "password", "fragment", "person@example.test"} {
+		if strings.Contains(want.ResponseSummary, forbidden) {
+			t.Fatalf("persisted provider result leaked %q: %q", forbidden, want.ResponseSummary)
+		}
+	}
+
+	if err := fixture.store.CompleteDelivery(fixture.ctx, deliveryID, "result-owner", ProviderSendResult{ProviderMessageID: "overwritten", ResponseSummary: "overwritten"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("repeat completion: got %v, want %v", err, ErrNotFound)
+	}
+	assertPersistedDeliveryResult(t, fixture.ctx, fixture.db, deliveryID, want, "delivered")
+
+	emptyID := createDeliveryTestEvent(t, fixture.ctx, fixture.store, fixture.projectID, fixture.userID, "provider-result-empty")
+	claimed, _, err = fixture.store.ClaimDelivery(fixture.ctx, "empty-result-owner", time.Minute)
+	if err != nil || claimed == nil || claimed.ID != emptyID {
+		t.Fatalf("claim empty provider result delivery: delivery=%#v err=%v", claimed, err)
+	}
+	if err := fixture.store.CompleteDelivery(fixture.ctx, emptyID, "empty-result-owner", ProviderSendResult{}); err != nil {
+		t.Fatalf("complete empty provider result delivery: %v", err)
+	}
+	assertPersistedDeliveryResult(t, fixture.ctx, fixture.db, emptyID, ProviderSendResult{}, "delivered")
 }
 
 func TestPostgresManualRetryRequiresFailedAndIsConcurrentSafe(t *testing.T) {
@@ -277,5 +333,24 @@ func assertDeliveryAttempt(t *testing.T, ctx context.Context, db *sql.DB, delive
 	}
 	if outcome != wantOutcome || code != wantCode || (wantStatus == 0 && providerStatus.Valid) || (wantStatus != 0 && (!providerStatus.Valid || providerStatus.Int64 != int64(wantStatus))) {
 		t.Fatalf("delivery attempt: outcome=%s code=%s provider_status=%#v", outcome, code, providerStatus)
+	}
+}
+
+func assertPersistedDeliveryResult(t *testing.T, ctx context.Context, db *sql.DB, deliveryID string, want ProviderSendResult, wantOutcome string) {
+	t.Helper()
+	var status, providerMessageID, deliverySummary, attemptOutcome, attemptSummary string
+	if err := db.QueryRowContext(ctx, `
+		SELECT delivery.status,COALESCE(delivery.provider_message_id,''),COALESCE(delivery.response_summary,''),
+		       attempt.outcome,COALESCE(attempt.response_summary,'')
+		FROM notification_deliveries delivery
+		JOIN notification_delivery_attempts attempt USING(delivery_id)
+		WHERE delivery.delivery_id=$1
+		ORDER BY attempt.attempt_number DESC
+		LIMIT 1
+	`, deliveryID).Scan(&status, &providerMessageID, &deliverySummary, &attemptOutcome, &attemptSummary); err != nil {
+		t.Fatalf("read persisted provider result: %v", err)
+	}
+	if status != wantOutcome || attemptOutcome != wantOutcome || providerMessageID != want.ProviderMessageID || deliverySummary != want.ResponseSummary || attemptSummary != want.ResponseSummary {
+		t.Fatalf("persisted provider result: status=%q provider_message_id=%q delivery_summary=%q attempt_outcome=%q attempt_summary=%q want=%#v outcome=%q", status, providerMessageID, deliverySummary, attemptOutcome, attemptSummary, want, wantOutcome)
 	}
 }

@@ -319,3 +319,37 @@ func TestNotificationDiagnosticsHTTPForbiddenDoesNotDiscloseData(t *testing.T) {
 		})
 	}
 }
+
+func TestNotificationDiagnosticsHTTPReturnsSafeProviderResult(t *testing.T) {
+	const (
+		projectID      = "00000000-0000-4000-8000-000000000001"
+		deliveryID     = "00000000-0000-4000-8000-000000000002"
+		notificationID = "00000000-0000-4000-8000-000000000003"
+	)
+	now := time.Date(2026, time.August, 6, 9, 0, 0, 0, time.UTC)
+	store := &notificationStoreStub{deliveries: DeliveryPage{Items: []Delivery{{
+		ID: deliveryID, NotificationID: notificationID, ProjectID: projectID,
+		ChannelKey: "notification.feishu_webhook", TargetKey: "project-channel:notification.feishu_webhook",
+		DeliveryKey: "live", Status: "delivered", Attempts: 1, MaxAttempts: 5,
+		ProviderMessage: "provider-message-safe", ResponseSummary: "http_status=200; code=0; msg=success",
+		AvailableAt: now, DeliveredAt: &now, CreatedAt: now, UpdatedAt: now,
+	}}}}
+	module := Module{
+		Auth:    notificationAuthenticatorStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "owner-1"}}},
+		Service: Service{Store: store, Access: &notificationProjectAccessStub{}},
+	}
+	response := httptest.NewRecorder()
+	module.ProjectHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/projects/"+projectID+"/notification-deliveries?limit=10", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("delivery diagnostics status: got %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, wanted := range []string{`"provider_message_id":"provider-message-safe"`, `"response_summary":"http_status=200; code=0; msg=success"`} {
+		if !strings.Contains(body, wanted) {
+			t.Fatalf("delivery diagnostics missing %s: %s", wanted, body)
+		}
+	}
+	if strings.Contains(body, "secret") {
+		t.Fatalf("delivery diagnostics disclosed unsafe data: %s", body)
+	}
+}

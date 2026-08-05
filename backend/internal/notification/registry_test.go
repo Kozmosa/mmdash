@@ -47,6 +47,7 @@ func TestRegistryRejectsUnsafeAndIncompleteDescriptors(t *testing.T) {
 
 type notificationStoreStub struct {
 	created           []Notification
+	deliveries        DeliveryPage
 	invitationOutcome InvitationOutcome
 	getRuleHit        bool
 	listInboxHit      bool
@@ -97,7 +98,7 @@ func (stub *notificationStoreStub) UpsertRule(_ context.Context, rule Rule) (Rul
 }
 func (stub *notificationStoreStub) ListDeliveries(context.Context, string, string, pagination.Request) (DeliveryPage, error) {
 	stub.listDeliveriesHit = true
-	return DeliveryPage{}, nil
+	return stub.deliveries, nil
 }
 func (stub *notificationStoreStub) CreateRetry(context.Context, string, string, string) (Delivery, error) {
 	return stub.retry, stub.retryErr
