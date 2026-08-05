@@ -262,7 +262,7 @@ type SettingsResolver interface {
 type DeliveryStore interface {
 	EnqueueDelivery(context.Context, Notification, string, int64) (Delivery, error)
 	ClaimDelivery(context.Context, string, time.Duration) (*Delivery, Notification, error)
-	CompleteDelivery(context.Context, string, string) error
+	CompleteDelivery(context.Context, string, string, ProviderSendResult) error
 	FailDelivery(context.Context, string, string, string, int, string, bool, time.Duration) error
 	CancelDelivery(context.Context, string, string, string) error
 	CancelPending(context.Context, string, string) error
@@ -731,7 +731,11 @@ type ProviderAdapter interface {
 	ValidateConfig(map[string]interface{}) error
 	Test(context.Context, map[string]interface{}) error
 	Render(context.Context, Notification, int) (RenderedMessage, error)
-	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) error
+	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) (ProviderSendResult, error)
+}
+type ProviderSendResult struct {
+	ProviderMessageID string
+	ResponseSummary   string
 }
 type RenderedMessage struct {
 	Body        []byte

@@ -386,13 +386,14 @@ func (store PostgresStore) ClaimDelivery(ctx context.Context, owner string, leas
 	return delivery, notification, nil
 }
 
-func (store PostgresStore) CompleteDelivery(ctx context.Context, deliveryID, owner string) error {
+func (store PostgresStore) CompleteDelivery(ctx context.Context, deliveryID, owner string, providerResult ProviderSendResult) error {
 	if store.Transaction.DB == nil {
 		return ErrNotReady
 	}
+	providerResult = sanitizeProviderResult(providerResult)
 	now := store.now()
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		result, err := tx.ExecContext(ctx, `UPDATE notification_deliveries SET status='delivered',delivered_at=$1,locked_by=NULL,lease_expires_at=NULL,updated_at=$1 WHERE delivery_id=$2 AND status='sending' AND locked_by=$3`, now, deliveryID, owner)
+		result, err := tx.ExecContext(ctx, `UPDATE notification_deliveries SET status='delivered',delivered_at=$1,locked_by=NULL,lease_expires_at=NULL,provider_message_id=NULLIF($2,''),response_summary=NULLIF($3,''),updated_at=$1 WHERE delivery_id=$4 AND status='sending' AND locked_by=$5`, now, providerResult.ProviderMessageID, providerResult.ResponseSummary, deliveryID, owner)
 		if err != nil {
 			return err
 		}
@@ -401,7 +402,7 @@ func (store PostgresStore) CompleteDelivery(ctx context.Context, deliveryID, own
 		} else if affected == 0 {
 			return ErrNotFound
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE notification_delivery_attempts SET outcome='delivered',finished_at=$1 WHERE delivery_id=$2 AND outcome='sending'`, now, deliveryID)
+		_, err = tx.ExecContext(ctx, `UPDATE notification_delivery_attempts SET outcome='delivered',finished_at=$1,response_summary=NULLIF($2,'') WHERE delivery_id=$3 AND outcome='sending'`, now, providerResult.ResponseSummary, deliveryID)
 		return err
 	})
 }
