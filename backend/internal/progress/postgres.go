@@ -15,11 +15,13 @@ import (
 )
 
 type PostgresStore struct {
-	Clock       clock.Clock
-	DB          *sql.DB
-	Generator   identity.Generator
-	Outbox      outbox.Writer
-	Transaction transaction.Manager
+	Clock              clock.Clock
+	DB                 *sql.DB
+	Generator          identity.Generator
+	Outbox             outbox.Writer
+	ReminderLease      time.Duration
+	ReminderRetryDelay time.Duration
+	Transaction        transaction.Manager
 }
 
 func (store PostgresStore) ListMilestones(ctx context.Context, projectID string) ([]Milestone, error) {
@@ -276,7 +278,7 @@ func (store PostgresStore) DeleteDependency(ctx context.Context, projectID, id, 
 }
 
 func (store PostgresStore) ListReminders(ctx context.Context, projectID string) ([]Reminder, error) {
-	rows, err := store.DB.QueryContext(ctx, `SELECT reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at FROM progress_reminders WHERE project_id=$1 ORDER BY remind_at,reminder_id`, projectID)
+	rows, err := store.DB.QueryContext(ctx, reminderSelect+` WHERE project_id=$1 ORDER BY remind_at,reminder_id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -298,9 +300,9 @@ func (store PostgresStore) CreateReminder(ctx context.Context, projectID, actorI
 		return Reminder{}, err
 	}
 	now := store.now()
-	item := Reminder{ID: id, ProjectID: projectID, TaskID: input.TaskID, MilestoneID: input.MilestoneID, RemindAt: input.RemindAt, Status: "pending", Note: input.Note, Source: "human", CreatedBy: actorID, CreatedAt: now, UpdatedAt: now}
+	item := Reminder{ID: id, ProjectID: projectID, TaskID: input.TaskID, MilestoneID: input.MilestoneID, RemindAt: input.RemindAt, Status: ReminderPending, Note: input.Note, Source: "human", CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, AvailableAt: input.RemindAt, MaxAttempts: 5}
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_reminders(reminder_id,project_id,task_id,milestone_id,remind_at,status,note,source,created_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,$10)`, item.ID, projectID, item.TaskID, item.MilestoneID, item.RemindAt, item.Status, item.Note, item.Source, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_reminders(reminder_id,project_id,task_id,milestone_id,remind_at,status,note,source,created_by,available_at,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$5,$10,$10)`, item.ID, projectID, item.TaskID, item.MilestoneID, item.RemindAt, item.Status, item.Note, item.Source, actorID, now); err != nil {
 			return err
 		}
 		title := strings.TrimSpace(input.Note)
@@ -313,21 +315,188 @@ func (store PostgresStore) CreateReminder(ctx context.Context, projectID, actorI
 }
 
 func (store PostgresStore) TriggerReminder(ctx context.Context, projectID, id, actorID string) (Reminder, error) {
+	ownerID, err := store.Generator.New()
+	if err != nil {
+		return Reminder{}, err
+	}
+	item, err := store.claimReminder(ctx, projectID, id, "manual-progress-reminder-"+ownerID, store.reminderLease())
+	if err != nil {
+		return Reminder{}, err
+	}
+	completed, err := store.CompleteReminder(ctx, item.ID, item.LockedBy, actorID)
+	if err == nil {
+		return completed, nil
+	}
+	_, releaseErr := store.FailReminder(ctx, item.ID, item.LockedBy, "event_write_failed", "Progress reminder event could not be recorded", store.reminderRetryDelay())
+	return Reminder{}, errors.Join(err, releaseErr)
+}
+
+// ClaimDueReminders leases one deterministic batch of globally due reminders.
+func (store PostgresStore) ClaimDueReminders(ctx context.Context, owner string, lease time.Duration, limit int) ([]Reminder, error) {
+	return store.claimReminders(ctx, owner, lease, limit, "", "", true)
+}
+
+func (store PostgresStore) claimReminder(ctx context.Context, projectID, id, owner string, lease time.Duration) (Reminder, error) {
+	items, err := store.claimReminders(ctx, owner, lease, 1, projectID, id, false)
+	if err != nil {
+		return Reminder{}, err
+	}
+	if len(items) == 1 {
+		return items[0], nil
+	}
+	var status string
+	err = store.DB.QueryRowContext(ctx, `SELECT status FROM progress_reminders WHERE project_id=$1 AND reminder_id=$2`, projectID, id).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Reminder{}, ErrNotFound
+	}
+	if err != nil {
+		return Reminder{}, err
+	}
+	return Reminder{}, ErrConflict
+}
+
+func (store PostgresStore) claimReminders(ctx context.Context, owner string, lease time.Duration, limit int, projectID, reminderID string, dueOnly bool) ([]Reminder, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" || lease <= 0 || limit < 1 {
+		return nil, ErrInvalid
+	}
+	now := store.now()
+	items := []Reminder{}
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if err := recoverExpiredReminders(ctx, tx, now, reminderID); err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `
+			WITH candidates AS (
+				SELECT reminder_id
+				FROM progress_reminders
+				WHERE status='pending'
+				  AND (NOT $5::boolean OR (remind_at <= $1 AND available_at <= $1))
+				  AND ($6 = '' OR project_id = NULLIF($6, '')::uuid)
+				  AND ($7 = '' OR reminder_id = NULLIF($7, '')::uuid)
+				  AND attempts < max_attempts
+				ORDER BY remind_at, reminder_id
+				FOR UPDATE SKIP LOCKED
+				LIMIT $4
+			)
+			UPDATE progress_reminders AS reminder
+			SET status='processing', attempts=reminder.attempts+1,
+			    locked_by=$2, lease_expires_at=$3,
+			    last_error_code='', last_error_message='', updated_at=$1
+			FROM candidates
+			WHERE reminder.reminder_id=candidates.reminder_id
+			RETURNING `+claimedReminderColumns,
+			now, owner, now.Add(lease), limit, dueOnly, projectID, reminderID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			item, scanErr := scanReminder(rows.Scan)
+			if scanErr != nil {
+				return scanErr
+			}
+			items = append(items, item)
+		}
+		return rows.Err()
+	})
+	return items, err
+}
+
+// CompleteReminder atomically commits the triggered state and stable due event.
+func (store PostgresStore) CompleteReminder(ctx context.Context, id, owner, actorID string) (Reminder, error) {
 	var item Reminder
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		now := store.now()
-		updated, err := scanReminder(tx.QueryRowContext(ctx, `UPDATE progress_reminders SET status='triggered',triggered_at=$3,updated_at=$3 WHERE project_id=$1 AND reminder_id=$2 AND status='pending' RETURNING reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at`, projectID, id, now).Scan)
+		updated, err := scanReminder(tx.QueryRowContext(ctx, `
+			UPDATE progress_reminders
+			SET status='triggered', triggered_at=$3, locked_by=NULL,
+			    lease_expires_at=NULL, last_error_code='', last_error_message='',
+			    updated_at=$3
+			WHERE reminder_id=$1 AND status='processing' AND locked_by=$2
+			  AND lease_expires_at > $3
+			RETURNING `+reminderColumns, id, owner, now).Scan)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrReminderLeaseLost
+		}
 		if err != nil {
-			return mapConflict(err)
+			return err
 		}
 		item = updated
+		metadata := map[string]interface{}{"reminder_id": item.ID}
+		if item.TaskID != "" {
+			metadata["task_id"] = item.TaskID
+		}
+		if item.MilestoneID != "" {
+			metadata["milestone_id"] = item.MilestoneID
+		}
 		title := strings.TrimSpace(item.Note)
 		if title == "" {
 			title = "Progress reminder"
 		}
-		return store.progressEvent(ctx, tx, "progress.reminder.due", projectID, actorID, id, "reminder", title, item.Status, map[string]interface{}{"reminder_id": id, "task_id": item.TaskID, "milestone_id": item.MilestoneID})
+		return store.progressEventWithID(ctx, tx, item.ID, "progress.reminder.due", item.ProjectID, actorID, item.ID, "reminder", title, item.Status, metadata)
 	})
 	return item, err
+}
+
+// FailReminder releases an owned lease for retry or terminal failure.
+func (store PostgresStore) FailReminder(ctx context.Context, id, owner, code, message string, retryDelay time.Duration) (Reminder, error) {
+	now := store.now()
+	if retryDelay < 0 {
+		retryDelay = 0
+	}
+	code = safeReminderError(code, 100)
+	message = safeReminderError(message, 500)
+	item, err := scanReminder(store.DB.QueryRowContext(ctx, `
+		UPDATE progress_reminders
+		SET status=CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
+		    available_at=CASE WHEN attempts < max_attempts THEN $3 ELSE available_at END,
+		    locked_by=NULL, lease_expires_at=NULL,
+		    last_error_code=$4, last_error_message=$5, updated_at=$2
+		WHERE reminder_id=$1 AND status='processing' AND locked_by=$6
+		RETURNING `+reminderColumns,
+		id, now, now.Add(retryDelay), code, message, owner).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Reminder{}, ErrReminderLeaseLost
+	}
+	return item, err
+}
+
+func recoverExpiredReminders(ctx context.Context, tx transaction.Tx, now time.Time, reminderID string) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE progress_reminders
+		SET status=CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
+		    available_at=CASE WHEN attempts < max_attempts THEN $1 ELSE available_at END,
+		    locked_by=NULL, lease_expires_at=NULL,
+		    last_error_code='lease_expired',
+		    last_error_message='Progress reminder processing lease expired',
+		    updated_at=$1
+		WHERE status='processing' AND lease_expires_at <= $1
+		  AND ($2 = '' OR reminder_id = NULLIF($2, '')::uuid)
+	`, now, reminderID)
+	return err
+}
+
+func (store PostgresStore) reminderLease() time.Duration {
+	if store.ReminderLease <= 0 {
+		return 30 * time.Second
+	}
+	return store.ReminderLease
+}
+
+func (store PostgresStore) reminderRetryDelay() time.Duration {
+	if store.ReminderRetryDelay <= 0 {
+		return 2 * time.Second
+	}
+	return store.ReminderRetryDelay
+}
+
+func safeReminderError(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if len(value) > limit {
+		value = value[:limit]
+	}
+	return value
 }
 
 func (store PostgresStore) ListProposals(ctx context.Context, projectID string) ([]Proposal, error) {
@@ -530,12 +699,16 @@ func (store PostgresStore) UpdateSettings(ctx context.Context, projectID, actorI
 }
 
 func (store PostgresStore) progressEvent(ctx context.Context, tx transaction.Tx, eventType, projectID, actorID, resourceID, resourceType, title, status string, metadata map[string]interface{}) error {
+	return store.progressEventWithID(ctx, tx, "", eventType, projectID, actorID, resourceID, resourceType, title, status, metadata)
+}
+
+func (store PostgresStore) progressEventWithID(ctx context.Context, tx transaction.Tx, eventID, eventType, projectID, actorID, resourceID, resourceType, title, status string, metadata map[string]interface{}) error {
 	if metadata == nil {
 		metadata = map[string]interface{}{}
 	}
 	metadata["resource_id"], metadata["resource_type"] = resourceID, resourceType
 	metadata["title"], metadata["status"] = title, status
-	returnEvent := outbox.Event{Actor: map[string]string{"user_id": actorID}, EventType: eventType, Payload: metadata, Producer: "progress", ProjectID: projectID}
+	returnEvent := outbox.Event{Actor: map[string]string{"user_id": actorID}, EventID: eventID, EventType: eventType, Payload: metadata, Producer: "progress", ProjectID: projectID}
 	_, err := store.Outbox.Write(ctx, tx, returnEvent)
 	return err
 }
@@ -549,6 +722,9 @@ func (store PostgresStore) now() time.Time {
 
 const milestoneSelect = `SELECT milestone_id,project_id,title,description,status,critical,start_at,target_at,completed_at,source,source_run_id,created_by,updated_by,created_at,updated_at FROM progress_milestones`
 const taskSelect = `SELECT task_id,project_id,COALESCE(milestone_id::text,''),title,description,status,COALESCE(assignee_id::text,''),start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at FROM progress_tasks`
+const reminderColumns = `reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at,available_at,attempts,max_attempts,COALESCE(locked_by,''),lease_expires_at,last_error_code,last_error_message`
+const claimedReminderColumns = `reminder.reminder_id,reminder.project_id,COALESCE(reminder.task_id::text,''),COALESCE(reminder.milestone_id::text,''),reminder.remind_at,reminder.status,reminder.note,reminder.source,reminder.triggered_at,reminder.created_by,reminder.created_at,reminder.updated_at,reminder.available_at,reminder.attempts,reminder.max_attempts,COALESCE(reminder.locked_by,''),reminder.lease_expires_at,reminder.last_error_code,reminder.last_error_message`
+const reminderSelect = `SELECT ` + reminderColumns + ` FROM progress_reminders`
 const proposalSelect = `SELECT proposal_id,project_id,proposal_type,COALESCE(target_id::text,''),title,rationale,changes,source,source_run_id,proposed_by,status,COALESCE(reviewed_by::text,''),reviewed_at,review_note,created_at,updated_at FROM progress_proposals`
 
 type scanFunc func(...interface{}) error
@@ -573,7 +749,7 @@ func scanTask(scan scanFunc) (Task, error) {
 }
 func scanReminder(scan scanFunc) (Reminder, error) {
 	var item Reminder
-	if err := scan(&item.ID, &item.ProjectID, &item.TaskID, &item.MilestoneID, &item.RemindAt, &item.Status, &item.Note, &item.Source, &item.TriggeredAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := scan(&item.ID, &item.ProjectID, &item.TaskID, &item.MilestoneID, &item.RemindAt, &item.Status, &item.Note, &item.Source, &item.TriggeredAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.AvailableAt, &item.Attempts, &item.MaxAttempts, &item.LockedBy, &item.LeaseExpiresAt, &item.LastErrorCode, &item.LastErrorMessage); err != nil {
 		return Reminder{}, err
 	}
 	return item, nil

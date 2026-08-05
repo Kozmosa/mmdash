@@ -709,7 +709,7 @@ paths:
         schema: { type: string, format: uuid }
     post:
       tags: [Progress]
-      summary: Trigger a Progress reminder event
+      summary: Manually trigger a pending Progress reminder
       operationId: bff.progress.reminders.trigger
       responses:
         "200":
