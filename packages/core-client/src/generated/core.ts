@@ -7140,7 +7140,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description New retry delivery */
+      /** @description Idempotently created retry delivery */
       200: {
         headers: {
           [name: string]: unknown;
@@ -7149,6 +7149,8 @@ export interface operations {
           "application/json": components["schemas"]["NotificationDelivery"];
         };
       };
+      404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
     };
   };
 }

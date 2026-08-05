@@ -2121,7 +2121,7 @@ paths:
   /api/projects/{projectId}/notification-deliveries/{deliveryId}/retry:
     post:
       tags: [Notification]
-      summary: Explicitly retry a delivery
+      summary: Explicitly retry a failed delivery
       operationId: bff.notification.deliveries.retry
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
@@ -2131,8 +2131,12 @@ paths:
         content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/RetryNotificationDeliveryRequest" } } }
       responses:
         "200":
-          description: Retry delivery.
+          description: Idempotently created retry delivery.
           content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/NotificationDelivery" } } }
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     browserSession:

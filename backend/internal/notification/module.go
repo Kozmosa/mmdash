@@ -384,6 +384,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, apperror.New(http.StatusNotFound, "NOT_FOUND", "Notification not found"))
 	case errors.Is(err, ErrInvalid):
 		httpx.WriteError(w, r, apperror.New(http.StatusBadRequest, "INVALID_REQUEST", "Notification input is invalid"))
+	case errors.Is(err, ErrDeliveryRetryConflict):
+		httpx.WriteError(w, r, apperror.New(http.StatusConflict, "NOTIFICATION_DELIVERY_RETRY_CONFLICT", "Only failed deliveries can be manually retried"))
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(w, r, apperror.New(http.StatusConflict, "NOTIFICATION_RULE_CONFLICT", "Notification rule was changed by another request"))
 	case errors.Is(err, project.ErrForbidden):

@@ -714,10 +714,11 @@ func containsVersion(values []int64, wanted int64) bool {
 }
 
 var (
-	ErrInvalid  = errors.New("invalid notification request")
-	ErrNotFound = errors.New("notification not found")
-	ErrNotReady = errors.New("notification service is not ready")
-	ErrConflict = errors.New("notification rule version conflict")
+	ErrInvalid               = errors.New("invalid notification request")
+	ErrNotFound              = errors.New("notification not found")
+	ErrNotReady              = errors.New("notification service is not ready")
+	ErrConflict              = errors.New("notification rule version conflict")
+	ErrDeliveryRetryConflict = errors.New("notification delivery cannot be manually retried")
 )
 
 // Adapter is retained as the small Progress seam for compatibility with the

@@ -52,6 +52,8 @@ type notificationStoreStub struct {
 	markAllReadCalled bool
 	markAllReadFilter Filter
 	markAllReadUserID string
+	retry             Delivery
+	retryErr          error
 	upsertedRule      Rule
 }
 
@@ -93,8 +95,8 @@ func (stub *notificationStoreStub) UpsertRule(_ context.Context, rule Rule) (Rul
 func (*notificationStoreStub) ListDeliveries(context.Context, string, string, pagination.Request) (DeliveryPage, error) {
 	return DeliveryPage{}, nil
 }
-func (*notificationStoreStub) CreateRetry(context.Context, string, string, string) (Delivery, error) {
-	return Delivery{}, nil
+func (stub *notificationStoreStub) CreateRetry(context.Context, string, string, string) (Delivery, error) {
+	return stub.retry, stub.retryErr
 }
 
 func TestHandleEventCreatesEveryRegisteredTypeForOneEvent(t *testing.T) {

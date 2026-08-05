@@ -3,8 +3,10 @@ package notification
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,6 +106,138 @@ func TestPostgresDeliveryStateMachinePersistsAttempts(t *testing.T) {
 		// assertion intentionally exercises the no-work path without requiring
 		// a provider call.
 		t.Fatalf("claim after cancellation: %v", err)
+	}
+}
+
+func TestPostgresManualRetryRequiresFailedAndIsConcurrentSafe(t *testing.T) {
+	fixture := newDeliveryStoreFixture(t)
+
+	failedID := createDeliveryTestEvent(t, fixture.ctx, fixture.store, fixture.projectID, fixture.userID, "manual-failed")
+	setDeliveryStatus(t, fixture, failedID, "failed")
+	first, err := fixture.store.CreateRetry(fixture.ctx, fixture.projectID, failedID, "first operator retry")
+	if err != nil {
+		t.Fatalf("retry failed delivery: %v", err)
+	}
+	second, err := fixture.store.CreateRetry(fixture.ctx, fixture.projectID, failedID, "replayed operator retry")
+	if err != nil {
+		t.Fatalf("replay failed delivery retry: %v", err)
+	}
+	if first.ID == "" || second.ID != first.ID || first.DeliveryKey != "retry:"+failedID || second.Status != "pending" {
+		t.Fatalf("idempotent retry result: first=%#v second=%#v", first, second)
+	}
+	assertManualRetryCount(t, fixture, failedID, 1)
+
+	for _, status := range []string{"pending", "sending", "delivered", "retrying", "cancelled"} {
+		t.Run("reject "+status, func(t *testing.T) {
+			deliveryID := createDeliveryTestEvent(t, fixture.ctx, fixture.store, fixture.projectID, fixture.userID, "manual-"+status)
+			setDeliveryStatus(t, fixture, deliveryID, status)
+			if _, err := fixture.store.CreateRetry(fixture.ctx, fixture.projectID, deliveryID, "invalid state retry"); !errors.Is(err, ErrDeliveryRetryConflict) {
+				t.Fatalf("retry %s delivery: got %v, want %v", status, err, ErrDeliveryRetryConflict)
+			}
+			assertManualRetryCount(t, fixture, deliveryID, 0)
+		})
+	}
+
+	missingID := fixture.store.Generator.MustNew()
+	if _, err := fixture.store.CreateRetry(fixture.ctx, fixture.projectID, missingID, "missing delivery retry"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("retry missing delivery: got %v, want %v", err, ErrNotFound)
+	}
+
+	concurrentID := createDeliveryTestEvent(t, fixture.ctx, fixture.store, fixture.projectID, fixture.userID, "manual-concurrent")
+	setDeliveryStatus(t, fixture, concurrentID, "failed")
+	const callers = 8
+	start := make(chan struct{})
+	results := make(chan Delivery, callers)
+	errorsCh := make(chan error, callers)
+	var wait sync.WaitGroup
+	for range callers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			delivery, retryErr := fixture.store.CreateRetry(fixture.ctx, fixture.projectID, concurrentID, "concurrent operator retry")
+			results <- delivery
+			errorsCh <- retryErr
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	close(errorsCh)
+	for retryErr := range errorsCh {
+		if retryErr != nil {
+			t.Fatalf("concurrent retry: %v", retryErr)
+		}
+	}
+	var retryID string
+	for delivery := range results {
+		if retryID == "" {
+			retryID = delivery.ID
+		}
+		if delivery.ID != retryID || delivery.DeliveryKey != "retry:"+concurrentID {
+			t.Fatalf("concurrent retry result: %#v, want delivery %s", delivery, retryID)
+		}
+	}
+	assertManualRetryCount(t, fixture, concurrentID, 1)
+}
+
+type deliveryStoreFixture struct {
+	ctx       context.Context
+	db        *sql.DB
+	projectID string
+	store     PostgresStore
+	userID    string
+}
+
+func newDeliveryStoreFixture(t *testing.T) deliveryStoreFixture {
+	t.Helper()
+	databaseURL := os.Getenv("MMDASH_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("MMDASH_TEST_DATABASE_URL is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("ping postgres: %v", err)
+	}
+	generator := identity.Generator{}
+	userID := generator.MustNew()
+	projectID := generator.MustNew()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(user_id,email,display_name,password_hash,status,created_at,updated_at) VALUES($1,$2,'Manual Retry Test','test','active',$3,$3)`, userID, userID+"@manual-retry.test", now); err != nil {
+		t.Fatalf("insert manual retry user: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO projects(project_id,name,created_by,created_at,updated_at) VALUES($1,'Manual Retry Test',$2,$3,$3)`, projectID, userID, now); err != nil {
+		t.Fatalf("insert manual retry project: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM projects WHERE project_id=$1`, projectID)
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM auth_users WHERE user_id=$1`, userID)
+	})
+	store := PostgresStore{Clock: clock.Fixed{Time: now}, DB: db, Generator: generator, Transaction: transaction.Manager{DB: transaction.SQLBeginner{DB: db}}}
+	return deliveryStoreFixture{ctx: ctx, db: db, projectID: projectID, store: store, userID: userID}
+}
+
+func setDeliveryStatus(t *testing.T, fixture deliveryStoreFixture, deliveryID, status string) {
+	t.Helper()
+	if _, err := fixture.db.ExecContext(fixture.ctx, `UPDATE notification_deliveries SET status=$2 WHERE delivery_id=$1`, deliveryID, status); err != nil {
+		t.Fatalf("set delivery %s status %s: %v", deliveryID, status, err)
+	}
+}
+
+func assertManualRetryCount(t *testing.T, fixture deliveryStoreFixture, sourceDeliveryID string, want int) {
+	t.Helper()
+	var count int
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT COUNT(*) FROM notification_deliveries WHERE delivery_key=$1`, "retry:"+sourceDeliveryID).Scan(&count); err != nil {
+		t.Fatalf("count manual retries: %v", err)
+	}
+	if count != want {
+		t.Fatalf("manual retry count for %s: got %d, want %d", sourceDeliveryID, count, want)
 	}
 }
 

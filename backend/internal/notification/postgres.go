@@ -293,11 +293,20 @@ func (store PostgresStore) CreateRetry(ctx context.Context, projectID, deliveryI
 	if err != nil {
 		return Delivery{}, err
 	}
-	key := "retry:" + newID
+	key := "retry:" + deliveryID
+	now := store.now()
 	var d Delivery
-	err = store.DB.QueryRowContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,created_at,updated_at) SELECT $1,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,$2,'pending',max_attempts,NOW(),NOW(),NOW() FROM notification_deliveries WHERE delivery_id=$3 AND project_id=$4 AND status IN ('failed','retrying') RETURNING delivery_id,notification_id,COALESCE(recipient_id::text,''),project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,attempts,max_attempts,COALESCE(provider_message_id,''),last_error_code,last_error_message,COALESCE(response_summary,''),available_at,delivered_at,created_at,updated_at`, newID, key, deliveryID, projectID).Scan(&d.ID, &d.NotificationID, &d.RecipientID, &d.ProjectID, &d.ChannelKey, &d.TargetKey, &d.RuleVersion, &d.SettingsVersion, &d.DeliveryKey, &d.Status, &d.Attempts, &d.MaxAttempts, &d.ProviderMessage, &d.LastErrorCode, &d.LastError, &d.ResponseSummary, &d.AvailableAt, &d.DeliveredAt, &d.CreatedAt, &d.UpdatedAt)
+	err = store.DB.QueryRowContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,created_at,updated_at) SELECT $1,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,$2,'pending',max_attempts,$3,$3,$3 FROM notification_deliveries WHERE delivery_id=$4 AND project_id=$5 AND status='failed' ON CONFLICT(notification_id,channel_key,target_key,delivery_key) DO UPDATE SET delivery_key=EXCLUDED.delivery_key RETURNING delivery_id,notification_id,COALESCE(recipient_id::text,''),project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,attempts,max_attempts,COALESCE(provider_message_id,''),last_error_code,last_error_message,COALESCE(response_summary,''),available_at,delivered_at,created_at,updated_at`, newID, key, now, deliveryID, projectID).Scan(&d.ID, &d.NotificationID, &d.RecipientID, &d.ProjectID, &d.ChannelKey, &d.TargetKey, &d.RuleVersion, &d.SettingsVersion, &d.DeliveryKey, &d.Status, &d.Attempts, &d.MaxAttempts, &d.ProviderMessage, &d.LastErrorCode, &d.LastError, &d.ResponseSummary, &d.AvailableAt, &d.DeliveredAt, &d.CreatedAt, &d.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Delivery{}, ErrNotFound
+		var status string
+		statusErr := store.DB.QueryRowContext(ctx, `SELECT status FROM notification_deliveries WHERE delivery_id=$1 AND project_id=$2`, deliveryID, projectID).Scan(&status)
+		if errors.Is(statusErr, sql.ErrNoRows) {
+			return Delivery{}, ErrNotFound
+		}
+		if statusErr != nil {
+			return Delivery{}, statusErr
+		}
+		return Delivery{}, ErrDeliveryRetryConflict
 	}
 	return d, err
 }
