@@ -190,7 +190,7 @@ func (store PostgresStore) AcceptInvitationByID(ctx context.Context, invitationI
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		var projectID string
 		var role Role
-		if err := tx.QueryRowContext(ctx, `SELECT project_id,role FROM project_invitations WHERE invitation_id=$1 AND LOWER(email)=LOWER($2) AND status='pending' AND expires_at>$3 FOR UPDATE`, invitationID, email, now).Scan(&projectID, &role); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT invitation.project_id,invitation.role FROM project_invitations AS invitation JOIN projects AS project USING(project_id) WHERE invitation.invitation_id=$1 AND LOWER(invitation.email)=LOWER($2) AND invitation.status='pending' AND invitation.expires_at>$3 AND project.deleted_at IS NULL FOR UPDATE OF invitation`, invitationID, email, now).Scan(&projectID, &role); err != nil {
 			return err
 		}
 		if !isInvitableHumanRole(role) {
