@@ -69,6 +69,10 @@ describe("isolated Pixi development environment", () => {
 
     expect(configuration.databaseUrl).toContain("127.0.0.1:15432");
     expect(configuration.coreUrl).toBe("http://127.0.0.1:18080");
+    expect(
+      configuration.environments.core
+        .NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK,
+    ).toBe("true");
     expect(configuration.environments.webBff.BFF_HOST).toBe("127.0.0.1");
     expect(configuration.environments.mcp.MCP_GATEWAY_HOST).toBe("127.0.0.1");
     expect(configuration.environments.web).toMatchObject({

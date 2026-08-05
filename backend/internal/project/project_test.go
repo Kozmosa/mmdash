@@ -33,6 +33,7 @@ func (stub agentGrantResolverStub) ResolveAgentRole(
 }
 
 type storeStub struct {
+	acceptByIDErr      error
 	invitationCreated  bool
 	invitationDeclined bool
 	memberRemoved      bool
@@ -65,6 +66,9 @@ func (stub *storeStub) AcceptInvitation(context.Context, string, string, string,
 	return Member{UserID: "user-2", Role: RoleViewer}, nil
 }
 func (stub *storeStub) AcceptInvitationByID(context.Context, string, string, string, time.Time) (Member, error) {
+	if stub.acceptByIDErr != nil {
+		return Member{}, stub.acceptByIDErr
+	}
 	return Member{UserID: "user-2", Role: RoleViewer}, nil
 }
 func (stub *storeStub) CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error) {
@@ -439,6 +443,31 @@ func TestModuleRoutesInboxInvitationAcceptByID(t *testing.T) {
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("invitation accept route: got %d, want %d", response.Code, http.StatusOK)
+	}
+}
+
+func TestModuleRejectsInvalidInboxInvitationWithoutProjectDisclosure(t *testing.T) {
+	module := Module{Service: Service{
+		Auth: authStub{identity: auth.Identity{Kind: "session", User: auth.User{
+			ID: "user-2", Email: "invitee@example.com",
+		}}},
+		Store: &storeStub{acceptByIDErr: errors.New("deleted project invitation")},
+	}}
+	mux := http.NewServeMux()
+	module.RegisterRoutes(mux)
+	request := httptest.NewRequest(http.MethodPost, "/v1/projects/invitations/invitation-deleted/accept", nil)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invitation accept: got %d, want %d: %s", response.Code, http.StatusBadRequest, response.Body.String())
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"code":"INVALID_INVITATION"`) {
+		t.Fatalf("invitation error code: %s", body)
+	}
+	if strings.Contains(body, "deleted project") || strings.Contains(body, "invitation-deleted") {
+		t.Fatalf("invitation error disclosed project state: %s", body)
 	}
 }
 

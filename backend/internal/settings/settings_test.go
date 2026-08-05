@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +71,12 @@ func (allowAccess) Authorize(
 
 type secretCheckingTester struct {
 	expectedSecret string
+}
+
+type configValidatorFunc func(map[string]interface{}) error
+
+func (validator configValidatorFunc) ValidateConfig(values map[string]interface{}) error {
+	return validator(values)
 }
 
 func (tester secretCheckingTester) Test(
@@ -178,7 +185,14 @@ func TestSecretCodecUsesAuthenticatedEncryption(t *testing.T) {
 
 func TestServiceRedactsHTTPProjectionAndResolvesForModules(t *testing.T) {
 	registry := NewRegistry()
-	if err := registry.Register(fixtureDefinition(secretCheckingTester{expectedSecret: "replacement-secret"})); err != nil {
+	definition := fixtureDefinition(secretCheckingTester{expectedSecret: "replacement-secret"})
+	definition.Validator = configValidatorFunc(func(values map[string]interface{}) error {
+		if values["token"] == "" {
+			return errors.New("token is required")
+		}
+		return nil
+	})
+	if err := registry.Register(definition); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	codec, err := NewSecretCodec("test-settings-encryption-key-with-32-characters")
@@ -268,6 +282,43 @@ func TestServiceRedactsHTTPProjectionAndResolvesForModules(t *testing.T) {
 		len(testResult.Checks) != 1 ||
 		testResult.Checks[0].Name != "authentication" {
 		t.Fatalf("unexpected test result: %#v", testResult)
+	}
+}
+
+func TestServiceRejectsInvalidResolvedConfigBeforePersistence(t *testing.T) {
+	registry := NewRegistry()
+	definition := fixtureDefinition(nil)
+	secret := "credential-that-must-not-leak"
+	definition.Validator = configValidatorFunc(func(values map[string]interface{}) error {
+		if values["endpoint"] == "http://example.test" {
+			return errors.New("invalid endpoint containing " + secret)
+		}
+		return nil
+	})
+	if err := registry.Register(definition); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	codec, err := NewSecretCodec("test-settings-encryption-key-with-32-characters")
+	if err != nil {
+		t.Fatalf("codec: %v", err)
+	}
+	service := Service{Access: allowAccess{}, Codec: codec, Registry: registry, Store: &memoryStore{}}
+	_, err = service.Update(
+		context.Background(),
+		auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}},
+		ScopeProject,
+		"project-1",
+		definition.Key,
+		map[string]interface{}{"endpoint": "http://example.test", "token": secret},
+	)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid resolved config: got %v, want ErrInvalid", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("validator error leaked a credential: %v", err)
+	}
+	if service.Store.(*memoryStore).setting.TypeKey != "" {
+		t.Fatal("invalid candidate was persisted")
 	}
 }
 

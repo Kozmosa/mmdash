@@ -3,9 +3,14 @@ package progress
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgconn"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -199,5 +204,41 @@ func TestHumanReviewDelegatesToProgressStoreAndAudits(t *testing.T) {
 	}
 	if len(auditRecorder.events) != 1 || auditRecorder.events[0].Action != "progress.proposal.reviewed" {
 		t.Fatalf("proposal review audit missing: %#v", auditRecorder.events)
+	}
+}
+
+func TestReferenceErrorsUseStableSafeAPIResponse(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/projects/project-a/progress/tasks", nil)
+	response := httptest.NewRecorder()
+	writeError(response, request, ErrReferenceInvalid)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("reference error status=%d, want 400", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"code":"PROGRESS_REFERENCE_INVALID"`) || !strings.Contains(body, `"message":"Progress reference is invalid"`) {
+		t.Fatalf("unsafe or unstable reference response: %s", body)
+	}
+	if ErrorCode(ErrReferenceInvalid) != "PROGRESS_REFERENCE_INVALID" {
+		t.Fatalf("audit error code=%s", ErrorCode(ErrReferenceInvalid))
+	}
+}
+
+func TestPostgresConstraintErrorsMapWithoutReferenceDisclosure(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		err  error
+		want error
+	}{
+		{name: "foreign key", err: &pgconn.PgError{Code: "23503", ConstraintName: "progress_tasks_project_milestone_fk"}, want: ErrReferenceInvalid},
+		{name: "uuid cast", err: &pgconn.PgError{Code: "22P02"}, want: ErrReferenceInvalid},
+		{name: "related shape", err: &pgconn.PgError{Code: "23514", ConstraintName: "progress_tasks_related_object_ids_uuid_array_check"}, want: ErrReferenceInvalid},
+		{name: "duplicate dependency", err: &pgconn.PgError{Code: "23505"}, want: ErrConflict},
+		{name: "ordinary check", err: &pgconn.PgError{Code: "23514", ConstraintName: "progress_tasks_status_check"}, want: ErrInvalid},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := mapPostgresMutationError(testCase.err); !errors.Is(got, testCase.want) {
+				t.Fatalf("mapped error=%v, want %v", got, testCase.want)
+			}
+		})
 	}
 }

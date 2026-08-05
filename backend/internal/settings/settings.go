@@ -63,6 +63,12 @@ type TypeDefinition struct {
 	Scopes      []Scope           `json:"scopes"`
 	Tester      ConnectionTester  `json:"-"`
 	Title       string            `json:"title"`
+	Validator   ConfigValidator   `json:"-"`
+}
+
+// ConfigValidator checks one complete resolved candidate before it is saved.
+type ConfigValidator interface {
+	ValidateConfig(map[string]interface{}) error
 }
 
 // TypeDescriptor is the serializable type-registry projection.
@@ -380,6 +386,9 @@ func (service Service) Update(
 	if err := service.applyPatch(definition, &stored, patch); err != nil {
 		return Setting{}, err
 	}
+	if err := service.validateStoredConfig(definition, stored); err != nil {
+		return Setting{}, err
+	}
 	updated, err := service.Store.Upsert(ctx, identity.User.ID, stored)
 	if err != nil {
 		return Setting{}, err
@@ -683,6 +692,27 @@ func (service Service) applyPatch(
 		} else if _, exists := stored.PublicValues[field.Key]; !exists {
 			return fmt.Errorf("%w: %s is required", ErrInvalid, field.Key)
 		}
+	}
+	return nil
+}
+
+func (service Service) validateStoredConfig(
+	definition TypeDefinition,
+	stored StoredSetting,
+) error {
+	if definition.Validator == nil {
+		return nil
+	}
+	values := cloneValues(stored.PublicValues)
+	for key, encrypted := range stored.EncryptedSecrets {
+		plaintext, err := service.Codec.Decrypt(encrypted)
+		if err != nil {
+			return fmt.Errorf("decrypt setting %s for validation: %w", key, err)
+		}
+		values[key] = plaintext
+	}
+	if err := definition.Validator.ValidateConfig(values); err != nil {
+		return fmt.Errorf("%w: configuration is invalid", ErrInvalid)
 	}
 	return nil
 }

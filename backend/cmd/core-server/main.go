@@ -159,18 +159,19 @@ func run(logger *logging.Logger) error {
 	}); err != nil {
 		return err
 	}
+	projectStore := project.PostgresStore{
+		Clock:       systemClock,
+		DB:          db,
+		Generator:   idGenerator,
+		Outbox:      outboxWriter,
+		Transaction: transactionManager,
+	}
 	projectService := &project.Service{
 		Auth:           authService,
 		Clock:          systemClock,
 		InvitationTTL:  72 * time.Hour,
 		TrashRetention: 30 * 24 * time.Hour,
-		Store: project.PostgresStore{
-			Clock:       systemClock,
-			DB:          db,
-			Generator:   idGenerator,
-			Outbox:      outboxWriter,
-			Transaction: transactionManager,
-		},
+		Store:          projectStore,
 	}
 	jobStore := jobs.PostgresStore{
 		Clock:       systemClock,
@@ -214,7 +215,10 @@ func run(logger *logging.Logger) error {
 	}
 	progressStore := progress.PostgresStore{
 		Clock: systemClock, DB: db, Generator: idGenerator,
-		Outbox: outboxWriter, Transaction: transactionManager,
+		Outbox: outboxWriter, ReminderLease: processConfig.Progress.ReminderLease,
+		References:         dataStore,
+		ReminderRetryDelay: processConfig.Progress.ReminderRetryDelay,
+		Transaction:        transactionManager,
 	}
 	progressService := &progress.Service{
 		Access: projectService, Audit: auditRecorder, Clock: systemClock,
@@ -308,6 +312,17 @@ func run(logger *logging.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initialize settings encryption: %w", err)
 	}
+	webhookHTTPClient := notification.NewWebhookHTTPClient(http.DefaultClient)
+	feishuWebhookAdapter := notification.FeishuWebhook{
+		AllowHTTPLoopback: processConfig.Notification.WebhookAllowHTTPLoopback,
+		Client:            webhookHTTPClient,
+		Clock:             func() time.Time { return systemClock.Now().UTC() },
+	}
+	genericWebhookAdapter := notification.GenericWebhook{
+		AllowHTTPLoopback: processConfig.Notification.WebhookAllowHTTPLoopback,
+		Client:            webhookHTTPClient,
+		Clock:             func() time.Time { return systemClock.Now().UTC() },
+	}
 	settingsRegistry := settings.NewRegistry()
 	if err := settingsRegistry.Register(settings.TypeDefinition{
 		Description: "Controls public account registration.",
@@ -327,7 +342,7 @@ func run(logger *logging.Logger) error {
 			{Key: "enabled", Kind: settings.FieldBoolean, Label: "Enabled", Required: true},
 			{Key: "webhook_url", Kind: settings.FieldSecret, Label: "Webhook URL", Required: true},
 		},
-		Key: "notification.feishu_webhook", Order: 70, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Title: "Feishu Webhook", Tester: notification.SettingTester{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }},
+		Key: "notification.feishu_webhook", Order: 70, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Title: "Feishu Webhook", Tester: notification.SettingTester{Adapter: feishuWebhookAdapter}, Validator: feishuWebhookAdapter,
 	}); err != nil {
 		return err
 	}
@@ -338,7 +353,7 @@ func run(logger *logging.Logger) error {
 			{Key: "endpoint", Kind: settings.FieldURL, Label: "Endpoint", Required: true},
 			{Key: "signing_secret", Kind: settings.FieldSecret, Label: "Signing secret", Required: true},
 		},
-		Key: "notification.generic_webhook", Order: 71, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Tester: notification.SettingTester{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }}, Title: "Generic Webhook",
+		Key: "notification.generic_webhook", Order: 71, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Tester: notification.SettingTester{Adapter: genericWebhookAdapter}, Title: "Generic Webhook", Validator: genericWebhookAdapter,
 	}); err != nil {
 		return err
 	}
@@ -697,11 +712,38 @@ func run(logger *logging.Logger) error {
 			"error": processorErr.Error(),
 		})
 	})
+	progressReminderProcessorID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Progress reminder processor identity: %w", err)
+	}
+	startProgressReminderProcessor(ctx, progress.ReminderProcessor{
+		BatchSize:  processConfig.Progress.ReminderBatchSize,
+		Lease:      processConfig.Progress.ReminderLease,
+		Metrics:    metricRegistry,
+		Owner:      "core-progress-reminder-" + progressReminderProcessorID,
+		Poll:       processConfig.Progress.ReminderPollInterval,
+		RetryDelay: processConfig.Progress.ReminderRetryDelay,
+		Store:      progressStore,
+	}, func(processorErr error) {
+		logger.Error("progress.reminder.processor.failed", map[string]interface{}{
+			"error": processorErr.Error(),
+		})
+	})
+	startInvitationExpiryProcessor(ctx, project.InvitationExpiryProcessor{
+		BatchSize: processConfig.Project.InvitationExpiryBatchSize,
+		Clock:     systemClock,
+		Poll:      processConfig.Project.InvitationExpiryPollInterval,
+		Store:     projectStore,
+	}, func(processorErr error) {
+		logger.Error("project.invitation.expiry.failed", map[string]interface{}{
+			"error": processorErr.Error(),
+		})
+	})
 	notificationAdapters := notification.NewAdapterRegistry()
-	if err := notificationAdapters.Register(notification.FeishuWebhook{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }}); err != nil {
+	if err := notificationAdapters.Register(feishuWebhookAdapter); err != nil {
 		return err
 	}
-	if err := notificationAdapters.Register(notification.GenericWebhook{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }}); err != nil {
+	if err := notificationAdapters.Register(genericWebhookAdapter); err != nil {
 		return err
 	}
 	notificationProcessorID, err := idGenerator.New()
@@ -785,6 +827,32 @@ func run(logger *logging.Logger) error {
 		logger,
 		processConfig.ShutdownTimeout,
 	).Run(ctx)
+}
+
+type progressReminderRunner interface {
+	Run(context.Context, func(error))
+}
+
+func startProgressReminderProcessor(ctx context.Context, runner progressReminderRunner, onError func(error)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Run(ctx, onError)
+	}()
+	return done
+}
+
+type invitationExpiryRunner interface {
+	Run(context.Context, func(error))
+}
+
+func startInvitationExpiryProcessor(ctx context.Context, runner invitationExpiryRunner, onError func(error)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Run(ctx, onError)
+	}()
+	return done
 }
 
 func serviceBackend(storage artifact.BlobStore) string {

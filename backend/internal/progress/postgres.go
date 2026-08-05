@@ -5,21 +5,33 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgconn"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
+// ObjectReferenceValidator checks visible Data Hub objects through the
+// Data Hub-owned persistence boundary using the caller's transaction.
+type ObjectReferenceValidator interface {
+	ValidateProgressReferences(context.Context, transaction.Tx, string, []string) (bool, error)
+}
+
 type PostgresStore struct {
-	Clock       clock.Clock
-	DB          *sql.DB
-	Generator   identity.Generator
-	Outbox      outbox.Writer
-	Transaction transaction.Manager
+	Clock              clock.Clock
+	DB                 *sql.DB
+	Generator          identity.Generator
+	Outbox             outbox.Writer
+	References         ObjectReferenceValidator
+	ReminderLease      time.Duration
+	ReminderRetryDelay time.Duration
+	Transaction        transaction.Manager
 }
 
 func (store PostgresStore) ListMilestones(ctx context.Context, projectID string) ([]Milestone, error) {
@@ -130,6 +142,19 @@ func (store PostgresStore) GetTask(ctx context.Context, projectID, id string) (T
 }
 
 func (store PostgresStore) CreateTask(ctx context.Context, projectID, actorID string, input CreateTaskInput, source string) (Task, error) {
+	var err error
+	input.MilestoneID, err = normalizeReferenceID(input.MilestoneID)
+	if err != nil {
+		return Task{}, err
+	}
+	input.AssigneeID, err = normalizeReferenceID(input.AssigneeID)
+	if err != nil {
+		return Task{}, err
+	}
+	input.RelatedObjectIDs, err = normalizeRelatedObjectIDs(input.RelatedObjectIDs)
+	if err != nil {
+		return Task{}, err
+	}
 	id, err := store.Generator.New()
 	if err != nil {
 		return Task{}, err
@@ -147,17 +172,42 @@ func (store PostgresStore) CreateTask(ctx context.Context, projectID, actorID st
 	}
 	metadata, _ := json.Marshal(item.RelatedObjectIDs)
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_tasks(task_id,project_id,milestone_id,title,description,status,assignee_id,start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,$12,$13,$14,$14,$15,$15)`, item.ID, projectID, item.MilestoneID, item.Title, item.Description, item.Status, item.AssigneeID, item.StartAt, item.DueAt, item.CompletedAt, item.Source, item.SourceRunID, metadata, actorID, now); err != nil {
+		if err := store.validateTaskReferences(ctx, tx, projectID, item.MilestoneID, item.AssigneeID, item.RelatedObjectIDs, true, true, true); err != nil {
 			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_tasks(task_id,project_id,milestone_id,title,description,status,assignee_id,start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,$12,$13,$14,$14,$15,$15)`, item.ID, projectID, item.MilestoneID, item.Title, item.Description, item.Status, item.AssigneeID, item.StartAt, item.DueAt, item.CompletedAt, item.Source, item.SourceRunID, metadata, actorID, now); err != nil {
+			return mapPostgresMutationError(err)
 		}
 		return store.progressEvent(ctx, tx, "progress.task.created", projectID, actorID, item.ID, "task", item.Title, item.Status, map[string]interface{}{"source": item.Source, "source_run_id": item.SourceRunID})
 	})
-	return item, err
+	return item, mapPostgresMutationError(err)
 }
 
 func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorID string, input UpdateTaskInput, source string) (Task, error) {
+	var err error
+	if input.MilestoneID != nil {
+		value, normalizeErr := normalizeReferenceID(*input.MilestoneID)
+		if normalizeErr != nil {
+			return Task{}, normalizeErr
+		}
+		input.MilestoneID = &value
+	}
+	if input.AssigneeID != nil {
+		value, normalizeErr := normalizeReferenceID(*input.AssigneeID)
+		if normalizeErr != nil {
+			return Task{}, normalizeErr
+		}
+		input.AssigneeID = &value
+	}
+	if input.RelatedObjectIDs != nil {
+		values, normalizeErr := normalizeRelatedObjectIDs(*input.RelatedObjectIDs)
+		if normalizeErr != nil {
+			return Task{}, normalizeErr
+		}
+		input.RelatedObjectIDs = &values
+	}
 	var item Task
-	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		current, err := scanTask(tx.QueryRowContext(ctx, taskSelect+` WHERE project_id=$1 AND task_id=$2 FOR UPDATE`, projectID, id).Scan)
 		if err != nil {
 			return mapNotFound(err)
@@ -192,6 +242,9 @@ func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorI
 		if current.Title == "" || !validTaskStatus(current.Status) || current.DueAt != nil && current.StartAt != nil && current.DueAt.Before(*current.StartAt) {
 			return ErrInvalid
 		}
+		if err := store.validateTaskReferences(ctx, tx, projectID, current.MilestoneID, current.AssigneeID, current.RelatedObjectIDs, input.MilestoneID != nil, input.AssigneeID != nil, input.RelatedObjectIDs != nil); err != nil {
+			return err
+		}
 		now := store.now()
 		if current.Status == TaskDone {
 			current.CompletedAt = &now
@@ -201,7 +254,7 @@ func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorI
 		current.Source, current.UpdatedBy, current.UpdatedAt = source, actorID, now
 		metadata, _ := json.Marshal(nonNilStrings(current.RelatedObjectIDs))
 		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,assignee_id=NULLIF($7,'')::uuid,start_at=$8,due_at=$9,completed_at=$10,source=$11,source_run_id=$12,related_object_ids=$13,updated_by=$14,updated_at=$15 WHERE project_id=$1 AND task_id=$2`, projectID, id, current.MilestoneID, current.Title, current.Description, current.Status, current.AssigneeID, current.StartAt, current.DueAt, current.CompletedAt, current.Source, current.SourceRunID, metadata, actorID, now); err != nil {
-			return err
+			return mapPostgresMutationError(err)
 		}
 		if err := store.progressEvent(ctx, tx, "progress.task.updated", projectID, actorID, id, "task", current.Title, current.Status, map[string]interface{}{"source": current.Source, "source_run_id": current.SourceRunID}); err != nil {
 			return err
@@ -209,7 +262,7 @@ func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorI
 		item = current
 		return nil
 	})
-	return item, err
+	return item, mapPostgresMutationError(err)
 }
 
 func (store PostgresStore) DeleteTask(ctx context.Context, projectID, id, actorID string) error {
@@ -243,6 +296,15 @@ func (store PostgresStore) CreateDependency(ctx context.Context, projectID, acto
 	if input.TaskID == "" || input.DependsOnTaskID == "" || input.TaskID == input.DependsOnTaskID {
 		return Dependency{}, ErrInvalid
 	}
+	var err error
+	input.TaskID, err = normalizeReferenceID(input.TaskID)
+	if err != nil {
+		return Dependency{}, err
+	}
+	input.DependsOnTaskID, err = normalizeReferenceID(input.DependsOnTaskID)
+	if err != nil {
+		return Dependency{}, err
+	}
 	id, err := store.Generator.New()
 	if err != nil {
 		return Dependency{}, err
@@ -250,19 +312,18 @@ func (store PostgresStore) CreateDependency(ctx context.Context, projectID, acto
 	now := store.now()
 	item := Dependency{ID: id, ProjectID: projectID, TaskID: input.TaskID, DependsOnTaskID: input.DependsOnTaskID, Kind: input.Kind, CreatedBy: actorID, CreatedAt: now}
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		var count int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM progress_tasks WHERE project_id=$1 AND task_id IN ($2,$3)`, projectID, input.TaskID, input.DependsOnTaskID).Scan(&count); err != nil {
+		if err := validateTaskReference(ctx, tx, projectID, input.TaskID); err != nil {
 			return err
 		}
-		if count != 2 {
-			return ErrNotFound
+		if err := validateTaskReference(ctx, tx, projectID, input.DependsOnTaskID); err != nil {
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_dependencies(dependency_id,project_id,task_id,depends_on_task_id,kind,created_by,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, projectID, item.TaskID, item.DependsOnTaskID, item.Kind, actorID, now); err != nil {
-			return mapConflict(err)
+			return mapPostgresMutationError(err)
 		}
 		return store.progressEvent(ctx, tx, "progress.dependency.created", projectID, actorID, id, "dependency", item.TaskID, item.Kind, map[string]interface{}{"task_id": item.TaskID, "depends_on_task_id": item.DependsOnTaskID})
 	})
-	return item, err
+	return item, mapPostgresMutationError(err)
 }
 
 func (store PostgresStore) DeleteDependency(ctx context.Context, projectID, id, actorID string) error {
@@ -276,7 +337,7 @@ func (store PostgresStore) DeleteDependency(ctx context.Context, projectID, id, 
 }
 
 func (store PostgresStore) ListReminders(ctx context.Context, projectID string) ([]Reminder, error) {
-	rows, err := store.DB.QueryContext(ctx, `SELECT reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at FROM progress_reminders WHERE project_id=$1 ORDER BY remind_at,reminder_id`, projectID)
+	rows, err := store.DB.QueryContext(ctx, reminderSelect+` WHERE project_id=$1 ORDER BY remind_at,reminder_id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -293,15 +354,31 @@ func (store PostgresStore) ListReminders(ctx context.Context, projectID string) 
 }
 
 func (store PostgresStore) CreateReminder(ctx context.Context, projectID, actorID string, input CreateReminderInput) (Reminder, error) {
+	var err error
+	input.TaskID, err = normalizeReferenceID(input.TaskID)
+	if err != nil {
+		return Reminder{}, err
+	}
+	input.MilestoneID, err = normalizeReferenceID(input.MilestoneID)
+	if err != nil {
+		return Reminder{}, err
+	}
 	id, err := store.Generator.New()
 	if err != nil {
 		return Reminder{}, err
 	}
 	now := store.now()
-	item := Reminder{ID: id, ProjectID: projectID, TaskID: input.TaskID, MilestoneID: input.MilestoneID, RemindAt: input.RemindAt, Status: "pending", Note: input.Note, Source: "human", CreatedBy: actorID, CreatedAt: now, UpdatedAt: now}
+	item := Reminder{ID: id, ProjectID: projectID, TaskID: input.TaskID, MilestoneID: input.MilestoneID, RemindAt: input.RemindAt, Status: ReminderPending, Note: input.Note, Source: "human", CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, AvailableAt: input.RemindAt, MaxAttempts: 5}
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_reminders(reminder_id,project_id,task_id,milestone_id,remind_at,status,note,source,created_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,$10)`, item.ID, projectID, item.TaskID, item.MilestoneID, item.RemindAt, item.Status, item.Note, item.Source, actorID, now); err != nil {
+		if item.TaskID != "" {
+			if err := validateTaskReference(ctx, tx, projectID, item.TaskID); err != nil {
+				return err
+			}
+		} else if err := validateMilestoneReference(ctx, tx, projectID, item.MilestoneID); err != nil {
 			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_reminders(reminder_id,project_id,task_id,milestone_id,remind_at,status,note,source,created_by,available_at,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$5,$10,$10)`, item.ID, projectID, item.TaskID, item.MilestoneID, item.RemindAt, item.Status, item.Note, item.Source, actorID, now); err != nil {
+			return mapPostgresMutationError(err)
 		}
 		title := strings.TrimSpace(input.Note)
 		if title == "" {
@@ -309,25 +386,192 @@ func (store PostgresStore) CreateReminder(ctx context.Context, projectID, actorI
 		}
 		return store.progressEvent(ctx, tx, "progress.reminder.created", projectID, actorID, id, "reminder", title, item.Status, map[string]interface{}{"remind_at": item.RemindAt.Format(time.RFC3339)})
 	})
-	return item, err
+	return item, mapPostgresMutationError(err)
 }
 
 func (store PostgresStore) TriggerReminder(ctx context.Context, projectID, id, actorID string) (Reminder, error) {
+	ownerID, err := store.Generator.New()
+	if err != nil {
+		return Reminder{}, err
+	}
+	item, err := store.claimReminder(ctx, projectID, id, "manual-progress-reminder-"+ownerID, store.reminderLease())
+	if err != nil {
+		return Reminder{}, err
+	}
+	completed, err := store.CompleteReminder(ctx, item.ID, item.LockedBy, actorID)
+	if err == nil {
+		return completed, nil
+	}
+	_, releaseErr := store.FailReminder(ctx, item.ID, item.LockedBy, "event_write_failed", "Progress reminder event could not be recorded", store.reminderRetryDelay())
+	return Reminder{}, errors.Join(err, releaseErr)
+}
+
+// ClaimDueReminders leases one deterministic batch of globally due reminders.
+func (store PostgresStore) ClaimDueReminders(ctx context.Context, owner string, lease time.Duration, limit int) ([]Reminder, error) {
+	return store.claimReminders(ctx, owner, lease, limit, "", "", true)
+}
+
+func (store PostgresStore) claimReminder(ctx context.Context, projectID, id, owner string, lease time.Duration) (Reminder, error) {
+	items, err := store.claimReminders(ctx, owner, lease, 1, projectID, id, false)
+	if err != nil {
+		return Reminder{}, err
+	}
+	if len(items) == 1 {
+		return items[0], nil
+	}
+	var status string
+	err = store.DB.QueryRowContext(ctx, `SELECT status FROM progress_reminders WHERE project_id=$1 AND reminder_id=$2`, projectID, id).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Reminder{}, ErrNotFound
+	}
+	if err != nil {
+		return Reminder{}, err
+	}
+	return Reminder{}, ErrConflict
+}
+
+func (store PostgresStore) claimReminders(ctx context.Context, owner string, lease time.Duration, limit int, projectID, reminderID string, dueOnly bool) ([]Reminder, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" || lease <= 0 || limit < 1 {
+		return nil, ErrInvalid
+	}
+	now := store.now()
+	items := []Reminder{}
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if err := recoverExpiredReminders(ctx, tx, now, reminderID); err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `
+			WITH candidates AS (
+				SELECT reminder_id
+				FROM progress_reminders
+				WHERE status='pending'
+				  AND (NOT $5::boolean OR (remind_at <= $1 AND available_at <= $1))
+				  AND ($6 = '' OR project_id = NULLIF($6, '')::uuid)
+				  AND ($7 = '' OR reminder_id = NULLIF($7, '')::uuid)
+				  AND attempts < max_attempts
+				ORDER BY remind_at, reminder_id
+				FOR UPDATE SKIP LOCKED
+				LIMIT $4
+			)
+			UPDATE progress_reminders AS reminder
+			SET status='processing', attempts=reminder.attempts+1,
+			    locked_by=$2, lease_expires_at=$3,
+			    last_error_code='', last_error_message='', updated_at=$1
+			FROM candidates
+			WHERE reminder.reminder_id=candidates.reminder_id
+			RETURNING `+claimedReminderColumns,
+			now, owner, now.Add(lease), limit, dueOnly, projectID, reminderID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			item, scanErr := scanReminder(rows.Scan)
+			if scanErr != nil {
+				return scanErr
+			}
+			items = append(items, item)
+		}
+		return rows.Err()
+	})
+	return items, err
+}
+
+// CompleteReminder atomically commits the triggered state and stable due event.
+func (store PostgresStore) CompleteReminder(ctx context.Context, id, owner, actorID string) (Reminder, error) {
 	var item Reminder
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		now := store.now()
-		updated, err := scanReminder(tx.QueryRowContext(ctx, `UPDATE progress_reminders SET status='triggered',triggered_at=$3,updated_at=$3 WHERE project_id=$1 AND reminder_id=$2 AND status='pending' RETURNING reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at`, projectID, id, now).Scan)
+		updated, err := scanReminder(tx.QueryRowContext(ctx, `
+			UPDATE progress_reminders
+			SET status='triggered', triggered_at=$3, locked_by=NULL,
+			    lease_expires_at=NULL, last_error_code='', last_error_message='',
+			    updated_at=$3
+			WHERE reminder_id=$1 AND status='processing' AND locked_by=$2
+			  AND lease_expires_at > $3
+			RETURNING `+reminderColumns, id, owner, now).Scan)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrReminderLeaseLost
+		}
 		if err != nil {
-			return mapConflict(err)
+			return err
 		}
 		item = updated
+		metadata := map[string]interface{}{"reminder_id": item.ID}
+		if item.TaskID != "" {
+			metadata["task_id"] = item.TaskID
+		}
+		if item.MilestoneID != "" {
+			metadata["milestone_id"] = item.MilestoneID
+		}
 		title := strings.TrimSpace(item.Note)
 		if title == "" {
 			title = "Progress reminder"
 		}
-		return store.progressEvent(ctx, tx, "progress.reminder.due", projectID, actorID, id, "reminder", title, item.Status, map[string]interface{}{"reminder_id": id, "task_id": item.TaskID, "milestone_id": item.MilestoneID})
+		return store.progressEventWithID(ctx, tx, item.ID, "progress.reminder.due", item.ProjectID, actorID, item.ID, "reminder", title, item.Status, metadata)
 	})
 	return item, err
+}
+
+// FailReminder releases an owned lease for retry or terminal failure.
+func (store PostgresStore) FailReminder(ctx context.Context, id, owner, code, message string, retryDelay time.Duration) (Reminder, error) {
+	now := store.now()
+	if retryDelay < 0 {
+		retryDelay = 0
+	}
+	code = safeReminderError(code, 100)
+	message = safeReminderError(message, 500)
+	item, err := scanReminder(store.DB.QueryRowContext(ctx, `
+		UPDATE progress_reminders
+		SET status=CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
+		    available_at=CASE WHEN attempts < max_attempts THEN $3 ELSE available_at END,
+		    locked_by=NULL, lease_expires_at=NULL,
+		    last_error_code=$4, last_error_message=$5, updated_at=$2
+		WHERE reminder_id=$1 AND status='processing' AND locked_by=$6
+		RETURNING `+reminderColumns,
+		id, now, now.Add(retryDelay), code, message, owner).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Reminder{}, ErrReminderLeaseLost
+	}
+	return item, err
+}
+
+func recoverExpiredReminders(ctx context.Context, tx transaction.Tx, now time.Time, reminderID string) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE progress_reminders
+		SET status=CASE WHEN attempts < max_attempts THEN 'pending' ELSE 'failed' END,
+		    available_at=CASE WHEN attempts < max_attempts THEN $1 ELSE available_at END,
+		    locked_by=NULL, lease_expires_at=NULL,
+		    last_error_code='lease_expired',
+		    last_error_message='Progress reminder processing lease expired',
+		    updated_at=$1
+		WHERE status='processing' AND lease_expires_at <= $1
+		  AND ($2 = '' OR reminder_id = NULLIF($2, '')::uuid)
+	`, now, reminderID)
+	return err
+}
+
+func (store PostgresStore) reminderLease() time.Duration {
+	if store.ReminderLease <= 0 {
+		return 30 * time.Second
+	}
+	return store.ReminderLease
+}
+
+func (store PostgresStore) reminderRetryDelay() time.Duration {
+	if store.ReminderRetryDelay <= 0 {
+		return 2 * time.Second
+	}
+	return store.ReminderRetryDelay
+}
+
+func safeReminderError(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if len(value) > limit {
+		value = value[:limit]
+	}
+	return value
 }
 
 func (store PostgresStore) ListProposals(ctx context.Context, projectID string) ([]Proposal, error) {
@@ -359,14 +603,22 @@ func (store PostgresStore) CreateProposal(ctx context.Context, projectID, actorI
 	}
 	now := store.now()
 	item := Proposal{ID: id, ProjectID: projectID, ProposalType: input.ProposalType, TargetID: input.TargetID, Title: input.Title, Rationale: input.Rationale, Changes: input.Changes, Source: "agent", SourceRunID: input.SourceRunID, ProposedBy: actorID, Status: "pending", ReviewNote: "", CreatedAt: now, UpdatedAt: now}
-	changes, _ := json.Marshal(item.Changes)
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_proposals(proposal_id,project_id,proposal_type,target_id,title,rationale,changes,source,source_run_id,proposed_by,status,review_note,created_at,updated_at) VALUES($1,$2,$3,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`, item.ID, projectID, item.ProposalType, item.TargetID, item.Title, item.Rationale, changes, item.Source, item.SourceRunID, actorID, item.Status, item.ReviewNote, now); err != nil {
-			return err
+		targetID, changes, validateErr := store.validateProposalReferences(ctx, tx, projectID, item.ProposalType, item.TargetID, item.Changes)
+		if validateErr != nil {
+			return validateErr
+		}
+		item.TargetID, item.Changes = targetID, changes
+		rawChanges, marshalErr := json.Marshal(item.Changes)
+		if marshalErr != nil {
+			return ErrInvalid
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_proposals(proposal_id,project_id,proposal_type,target_id,title,rationale,changes,source,source_run_id,proposed_by,status,review_note,created_at,updated_at) VALUES($1,$2,$3,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`, item.ID, projectID, item.ProposalType, item.TargetID, item.Title, item.Rationale, rawChanges, item.Source, item.SourceRunID, actorID, item.Status, item.ReviewNote, now); err != nil {
+			return mapPostgresMutationError(err)
 		}
 		return store.progressEvent(ctx, tx, "progress.proposal.created", projectID, actorID, id, "progress_proposal", item.Title, item.Status, map[string]interface{}{"proposal_type": item.ProposalType, "source": item.Source, "source_run_id": item.SourceRunID})
 	})
-	return item, err
+	return item, mapPostgresMutationError(err)
 }
 
 func (store PostgresStore) ReviewProposal(ctx context.Context, projectID, id, reviewerID string, input ReviewProposalInput) (Proposal, error) {
@@ -381,6 +633,11 @@ func (store PostgresStore) ReviewProposal(ctx context.Context, projectID, id, re
 		}
 		now := store.now()
 		if input.Decision == "accepted" {
+			targetID, changes, validateErr := store.validateProposalReferences(ctx, tx, projectID, proposal.ProposalType, proposal.TargetID, proposal.Changes)
+			if validateErr != nil {
+				return validateErr
+			}
+			proposal.TargetID, proposal.Changes = targetID, changes
 			if err := store.applyProposal(ctx, tx, proposal, reviewerID, now); err != nil {
 				return err
 			}
@@ -392,7 +649,7 @@ func (store PostgresStore) ReviewProposal(ctx context.Context, projectID, id, re
 		result = proposal
 		return store.progressEvent(ctx, tx, "progress.proposal.reviewed", projectID, reviewerID, id, "progress_proposal", proposal.Title, proposal.Status, map[string]interface{}{"proposal_type": proposal.ProposalType, "decision": input.Decision})
 	})
-	return result, err
+	return result, mapPostgresMutationError(err)
 }
 
 func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx, proposal Proposal, actorID string, now time.Time) error {
@@ -449,18 +706,25 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 		}
 		return store.progressEvent(ctx, tx, "progress.milestone.updated", proposal.ProjectID, actorID, proposal.TargetID, "milestone", current.Title, current.Status, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID})
 	case "task.create":
-		input := CreateTaskInput{MilestoneID: stringChange(changes, "milestone_id"), Title: stringChange(changes, "title"), Description: stringChange(changes, "description"), Status: stringChange(changes, "status"), AssigneeID: stringChange(changes, "assignee_id"), StartAt: timeChange(changes, "start_at"), DueAt: timeChange(changes, "due_at"), SourceRunID: proposal.SourceRunID}
+		relatedObjectIDs, _, err := relatedObjectIDsChange(changes)
+		if err != nil {
+			return err
+		}
+		input := CreateTaskInput{MilestoneID: stringChange(changes, "milestone_id"), Title: stringChange(changes, "title"), Description: stringChange(changes, "description"), Status: stringChange(changes, "status"), AssigneeID: stringChange(changes, "assignee_id"), StartAt: timeChange(changes, "start_at"), DueAt: timeChange(changes, "due_at"), RelatedObjectIDs: relatedObjectIDs, SourceRunID: proposal.SourceRunID}
 		if input.Title == "" {
 			return ErrInvalid
 		}
 		if input.Status == "" {
 			input.Status = TaskTodo
 		}
+		if !validTaskStatus(input.Status) || input.DueAt != nil && input.StartAt != nil && input.DueAt.Before(*input.StartAt) {
+			return ErrInvalid
+		}
 		id, err := store.Generator.New()
 		if err != nil {
 			return err
 		}
-		metadata, _ := json.Marshal([]string{})
+		metadata, _ := json.Marshal(nonNilStrings(input.RelatedObjectIDs))
 		var completed interface{}
 		if input.Status == TaskDone {
 			completed = now
@@ -492,20 +756,26 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 		if value, ok := changes["milestone_id"].(string); ok {
 			current.MilestoneID = value
 		}
+		if values, present, err := relatedObjectIDsChange(changes); err != nil {
+			return err
+		} else if present {
+			current.RelatedObjectIDs = values
+		}
 		if value := timeChange(changes, "start_at"); value != nil {
 			current.StartAt = value
 		}
 		if value := timeChange(changes, "due_at"); value != nil {
 			current.DueAt = value
 		}
-		if current.Title == "" || !validTaskStatus(current.Status) {
+		if current.Title == "" || !validTaskStatus(current.Status) || current.DueAt != nil && current.StartAt != nil && current.DueAt.Before(*current.StartAt) {
 			return ErrInvalid
 		}
 		var completed interface{}
 		if current.Status == TaskDone {
 			completed = now
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,assignee_id=NULLIF($7,'')::uuid,start_at=$8,due_at=$9,completed_at=$10,source='proposal',source_run_id=$11,updated_by=$12,updated_at=$13 WHERE project_id=$1 AND task_id=$2`, proposal.ProjectID, proposal.TargetID, current.MilestoneID, current.Title, current.Description, current.Status, current.AssigneeID, current.StartAt, current.DueAt, completed, proposal.SourceRunID, actorID, now); err != nil {
+		metadata, _ := json.Marshal(nonNilStrings(current.RelatedObjectIDs))
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,assignee_id=NULLIF($7,'')::uuid,start_at=$8,due_at=$9,completed_at=$10,source='proposal',source_run_id=$11,related_object_ids=$12,updated_by=$13,updated_at=$14 WHERE project_id=$1 AND task_id=$2`, proposal.ProjectID, proposal.TargetID, current.MilestoneID, current.Title, current.Description, current.Status, current.AssigneeID, current.StartAt, current.DueAt, completed, proposal.SourceRunID, metadata, actorID, now); err != nil {
 			return err
 		}
 		return store.progressEvent(ctx, tx, "progress.task.updated", proposal.ProjectID, actorID, proposal.TargetID, "task", current.Title, current.Status, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID})
@@ -530,12 +800,16 @@ func (store PostgresStore) UpdateSettings(ctx context.Context, projectID, actorI
 }
 
 func (store PostgresStore) progressEvent(ctx context.Context, tx transaction.Tx, eventType, projectID, actorID, resourceID, resourceType, title, status string, metadata map[string]interface{}) error {
+	return store.progressEventWithID(ctx, tx, "", eventType, projectID, actorID, resourceID, resourceType, title, status, metadata)
+}
+
+func (store PostgresStore) progressEventWithID(ctx context.Context, tx transaction.Tx, eventID, eventType, projectID, actorID, resourceID, resourceType, title, status string, metadata map[string]interface{}) error {
 	if metadata == nil {
 		metadata = map[string]interface{}{}
 	}
 	metadata["resource_id"], metadata["resource_type"] = resourceID, resourceType
 	metadata["title"], metadata["status"] = title, status
-	returnEvent := outbox.Event{Actor: map[string]string{"user_id": actorID}, EventType: eventType, Payload: metadata, Producer: "progress", ProjectID: projectID}
+	returnEvent := outbox.Event{Actor: map[string]string{"user_id": actorID}, EventID: eventID, EventType: eventType, Payload: metadata, Producer: "progress", ProjectID: projectID}
 	_, err := store.Outbox.Write(ctx, tx, returnEvent)
 	return err
 }
@@ -549,6 +823,9 @@ func (store PostgresStore) now() time.Time {
 
 const milestoneSelect = `SELECT milestone_id,project_id,title,description,status,critical,start_at,target_at,completed_at,source,source_run_id,created_by,updated_by,created_at,updated_at FROM progress_milestones`
 const taskSelect = `SELECT task_id,project_id,COALESCE(milestone_id::text,''),title,description,status,COALESCE(assignee_id::text,''),start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at FROM progress_tasks`
+const reminderColumns = `reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at,available_at,attempts,max_attempts,COALESCE(locked_by,''),lease_expires_at,last_error_code,last_error_message`
+const claimedReminderColumns = `reminder.reminder_id,reminder.project_id,COALESCE(reminder.task_id::text,''),COALESCE(reminder.milestone_id::text,''),reminder.remind_at,reminder.status,reminder.note,reminder.source,reminder.triggered_at,reminder.created_by,reminder.created_at,reminder.updated_at,reminder.available_at,reminder.attempts,reminder.max_attempts,COALESCE(reminder.locked_by,''),reminder.lease_expires_at,reminder.last_error_code,reminder.last_error_message`
+const reminderSelect = `SELECT ` + reminderColumns + ` FROM progress_reminders`
 const proposalSelect = `SELECT proposal_id,project_id,proposal_type,COALESCE(target_id::text,''),title,rationale,changes,source,source_run_id,proposed_by,status,COALESCE(reviewed_by::text,''),reviewed_at,review_note,created_at,updated_at FROM progress_proposals`
 
 type scanFunc func(...interface{}) error
@@ -573,7 +850,7 @@ func scanTask(scan scanFunc) (Task, error) {
 }
 func scanReminder(scan scanFunc) (Reminder, error) {
 	var item Reminder
-	if err := scan(&item.ID, &item.ProjectID, &item.TaskID, &item.MilestoneID, &item.RemindAt, &item.Status, &item.Note, &item.Source, &item.TriggeredAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := scan(&item.ID, &item.ProjectID, &item.TaskID, &item.MilestoneID, &item.RemindAt, &item.Status, &item.Note, &item.Source, &item.TriggeredAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.AvailableAt, &item.Attempts, &item.MaxAttempts, &item.LockedBy, &item.LeaseExpiresAt, &item.LastErrorCode, &item.LastErrorMessage); err != nil {
 		return Reminder{}, err
 	}
 	return item, nil
@@ -596,11 +873,232 @@ func mapNotFound(err error) error {
 	}
 	return err
 }
-func mapConflict(err error) error {
+
+func mapPostgresMutationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) {
+		switch postgresError.Code {
+		case "23503", "22P02":
+			return ErrReferenceInvalid
+		case "23505":
+			return ErrConflict
+		case "23514":
+			if postgresError.ConstraintName == "progress_tasks_related_object_ids_uuid_array_check" ||
+				postgresError.ConstraintName == "progress_proposals_target_shape_check" ||
+				postgresError.ConstraintName == "progress_proposals_task_reference_shapes_check" {
+				return ErrReferenceInvalid
+			}
+			return ErrInvalid
+		}
+	}
+	return err
+}
+
+func normalizeReferenceID(value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(value) != value {
+		return "", ErrReferenceInvalid
+	}
+	parsed, err := uuid.Parse(value)
+	if err != nil || !strings.EqualFold(parsed.String(), value) {
+		return "", ErrReferenceInvalid
+	}
+	return parsed.String(), nil
+}
+
+func normalizeRelatedObjectIDs(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized, err := normalizeReferenceID(value)
+		if err != nil || normalized == "" {
+			return nil, ErrReferenceInvalid
+		}
+		result = append(result, normalized)
+	}
+	return result, nil
+}
+
+func validateMilestoneReference(ctx context.Context, tx transaction.Tx, projectID, milestoneID string) error {
+	if milestoneID == "" {
+		return nil
+	}
+	var found string
+	err := tx.QueryRowContext(ctx, `SELECT milestone_id::text FROM progress_milestones WHERE project_id=$1 AND milestone_id=$2 FOR KEY SHARE`, projectID, milestoneID).Scan(&found)
+	return mapReferenceLookupError(err)
+}
+
+func validateTaskReference(ctx context.Context, tx transaction.Tx, projectID, taskID string) error {
+	if taskID == "" {
+		return nil
+	}
+	var found string
+	err := tx.QueryRowContext(ctx, `SELECT task_id::text FROM progress_tasks WHERE project_id=$1 AND task_id=$2 FOR KEY SHARE`, projectID, taskID).Scan(&found)
+	return mapReferenceLookupError(err)
+}
+
+func validateAssigneeReference(ctx context.Context, tx transaction.Tx, projectID, assigneeID string) error {
+	if assigneeID == "" {
+		return nil
+	}
+	var found string
+	err := tx.QueryRowContext(ctx, `SELECT user_id::text FROM project_members WHERE project_id=$1 AND user_id=$2 FOR KEY SHARE`, projectID, assigneeID).Scan(&found)
+	return mapReferenceLookupError(err)
+}
+
+func mapReferenceLookupError(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrReferenceInvalid
+	}
+	return mapPostgresMutationError(err)
+}
+
+func (store PostgresStore) validateTaskReferences(
+	ctx context.Context,
+	tx transaction.Tx,
+	projectID string,
+	milestoneID string,
+	assigneeID string,
+	relatedObjectIDs []string,
+	validateMilestone bool,
+	validateAssignee bool,
+	validateRelatedObjects bool,
+) error {
+	if validateMilestone {
+		if err := validateMilestoneReference(ctx, tx, projectID, milestoneID); err != nil {
+			return err
+		}
+	}
+	if validateAssignee {
+		if err := validateAssigneeReference(ctx, tx, projectID, assigneeID); err != nil {
+			return err
+		}
+	}
+	if !validateRelatedObjects || len(relatedObjectIDs) == 0 {
+		return nil
+	}
+	if store.References == nil {
+		return fmt.Errorf("Progress object reference validator is not configured")
+	}
+	valid, err := store.References.ValidateProgressReferences(ctx, tx, projectID, relatedObjectIDs)
 	if err != nil {
-		return ErrConflict
+		return mapPostgresMutationError(err)
+	}
+	if !valid {
+		return ErrReferenceInvalid
 	}
 	return nil
+}
+
+func (store PostgresStore) validateProposalReferences(
+	ctx context.Context,
+	tx transaction.Tx,
+	projectID string,
+	proposalType string,
+	targetID string,
+	changes map[string]interface{},
+) (string, map[string]interface{}, error) {
+	normalizedChanges := make(map[string]interface{}, len(changes))
+	for key, value := range changes {
+		normalizedChanges[key] = value
+	}
+	normalizedTarget, err := normalizeReferenceID(targetID)
+	if err != nil {
+		return "", nil, err
+	}
+	switch proposalType {
+	case "milestone.create", "task.create":
+		if normalizedTarget != "" {
+			return "", nil, ErrReferenceInvalid
+		}
+	case "milestone.update":
+		if normalizedTarget == "" {
+			return "", nil, ErrReferenceInvalid
+		}
+		if err := validateMilestoneReference(ctx, tx, projectID, normalizedTarget); err != nil {
+			return "", nil, err
+		}
+	case "task.update":
+		if normalizedTarget == "" {
+			return "", nil, ErrReferenceInvalid
+		}
+		if err := validateTaskReference(ctx, tx, projectID, normalizedTarget); err != nil {
+			return "", nil, err
+		}
+	default:
+		return "", nil, ErrInvalid
+	}
+
+	if proposalType != "task.create" && proposalType != "task.update" {
+		return normalizedTarget, normalizedChanges, nil
+	}
+	milestoneID, milestonePresent, err := referenceChange(normalizedChanges, "milestone_id")
+	if err != nil {
+		return "", nil, err
+	}
+	if milestonePresent {
+		normalizedChanges["milestone_id"] = milestoneID
+	}
+	assigneeID, assigneePresent, err := referenceChange(normalizedChanges, "assignee_id")
+	if err != nil {
+		return "", nil, err
+	}
+	if assigneePresent {
+		normalizedChanges["assignee_id"] = assigneeID
+	}
+	relatedObjectIDs, relatedPresent, err := relatedObjectIDsChange(normalizedChanges)
+	if err != nil {
+		return "", nil, err
+	}
+	if relatedPresent {
+		normalizedChanges["related_object_ids"] = relatedObjectIDs
+	}
+	if err := store.validateTaskReferences(ctx, tx, projectID, milestoneID, assigneeID, relatedObjectIDs, milestonePresent, assigneePresent, relatedPresent); err != nil {
+		return "", nil, err
+	}
+	return normalizedTarget, normalizedChanges, nil
+}
+
+func referenceChange(changes map[string]interface{}, key string) (string, bool, error) {
+	raw, exists := changes[key]
+	if !exists {
+		return "", false, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", true, ErrReferenceInvalid
+	}
+	normalized, err := normalizeReferenceID(value)
+	return normalized, true, err
+}
+
+func relatedObjectIDsChange(changes map[string]interface{}) ([]string, bool, error) {
+	raw, exists := changes["related_object_ids"]
+	if !exists {
+		return nil, false, nil
+	}
+	var values []string
+	switch typed := raw.(type) {
+	case []string:
+		values = typed
+	case []interface{}:
+		values = make([]string, 0, len(typed))
+		for _, item := range typed {
+			value, ok := item.(string)
+			if !ok {
+				return nil, true, ErrReferenceInvalid
+			}
+			values = append(values, value)
+		}
+	default:
+		return nil, true, ErrReferenceInvalid
+	}
+	normalized, err := normalizeRelatedObjectIDs(values)
+	return normalized, true, err
 }
 func validMilestoneStatus(value string) bool {
 	return value == StatusPlanned || value == StatusInProgress || value == StatusCompleted || value == StatusCancelled

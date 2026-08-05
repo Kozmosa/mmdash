@@ -32,13 +32,28 @@ func (store PostgresStore) CreateInvitation(ctx context.Context, actorID string,
 	}
 	var invitation Invitation
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `
+		var expiredInvitationID string
+		if err := tx.QueryRowContext(ctx, `
 			UPDATE project_invitations
 			SET status = 'expired', updated_at = $3
 			WHERE project_id = $1 AND LOWER(email) = LOWER($2)
 			  AND status = 'pending' AND expires_at <= $3
-		`, projectID, email, now); err != nil {
+			RETURNING invitation_id
+		`, projectID, email, now).Scan(&expiredInvitationID); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		if expiredInvitationID != "" {
+			if _, err := store.Outbox.Write(ctx, tx, outbox.Event{
+				EventType: "project.invitation.expired",
+				Payload: map[string]interface{}{
+					"invitation_id": expiredInvitationID,
+					"project_id":    projectID,
+				},
+				Producer:  "project",
+				ProjectID: projectID,
+			}); err != nil {
+				return err
+			}
 		}
 		var memberExists bool
 		if err := tx.QueryRowContext(ctx, `
@@ -106,26 +121,7 @@ func (store PostgresStore) CreateInvitation(ctx context.Context, actorID string,
 	return IssuedInvitation{Invitation: invitation, Token: token}, nil
 }
 
-func (store PostgresStore) ListInvitations(ctx context.Context, projectID string, now time.Time) ([]Invitation, error) {
-	if err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		rows, err := tx.QueryContext(ctx, `UPDATE project_invitations SET status='expired', updated_at=$2 WHERE project_id=$1 AND status='pending' AND expires_at <= $2 RETURNING invitation_id`, projectID, now)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var invitationID string
-			if err := rows.Scan(&invitationID); err != nil {
-				return err
-			}
-			if _, err := store.Outbox.Write(ctx, tx, outbox.Event{EventType: "project.invitation.expired", Payload: map[string]interface{}{"invitation_id": invitationID, "project_id": projectID}, Producer: "project", ProjectID: projectID}); err != nil {
-				return err
-			}
-		}
-		return rows.Err()
-	}); err != nil {
-		return nil, err
-	}
+func (store PostgresStore) ListInvitations(ctx context.Context, projectID string, _ time.Time) ([]Invitation, error) {
 	rows, err := store.DB.QueryContext(ctx, `SELECT i.invitation_id,i.project_id,p.name,i.email,i.role,i.status,i.invited_by,i.expires_at,i.created_at FROM project_invitations i JOIN projects p USING(project_id) WHERE i.project_id=$1 ORDER BY i.created_at DESC`, projectID)
 	if err != nil {
 		return nil, err
@@ -140,6 +136,72 @@ func (store PostgresStore) ListInvitations(ctx context.Context, projectID string
 		items = append(items, i)
 	}
 	return items, rows.Err()
+}
+
+// ExpireInvitations advances one batch of due pending invitations and records
+// each lifecycle event in the same transaction. Concurrent Core replicas skip
+// rows already locked by another batch.
+func (store PostgresStore) ExpireInvitations(ctx context.Context, now time.Time, limit int) (int, error) {
+	if limit < 1 {
+		return 0, ErrInvalid
+	}
+	expired := 0
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		type expiredInvitation struct {
+			id        string
+			projectID string
+		}
+		rows, err := tx.QueryContext(ctx, `
+			WITH candidates AS (
+				SELECT invitation_id
+				FROM project_invitations
+				WHERE status='pending' AND expires_at <= $1
+				ORDER BY expires_at, invitation_id
+				FOR UPDATE SKIP LOCKED
+				LIMIT $2
+			)
+			UPDATE project_invitations AS invitation
+			SET status='expired', updated_at=$1
+			FROM candidates
+			WHERE invitation.invitation_id=candidates.invitation_id
+			RETURNING invitation.invitation_id, invitation.project_id
+		`, now, limit)
+		if err != nil {
+			return err
+		}
+		invitations := []expiredInvitation{}
+		for rows.Next() {
+			var invitation expiredInvitation
+			if err := rows.Scan(&invitation.id, &invitation.projectID); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			invitations = append(invitations, invitation)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, invitation := range invitations {
+			if _, err := store.Outbox.Write(ctx, tx, outbox.Event{
+				EventType: "project.invitation.expired",
+				Payload: map[string]interface{}{
+					"invitation_id": invitation.id,
+					"project_id":    invitation.projectID,
+				},
+				Producer:  "project",
+				ProjectID: invitation.projectID,
+			}); err != nil {
+				return err
+			}
+			expired++
+		}
+		return nil
+	})
+	return expired, err
 }
 
 func (store PostgresStore) PreviewInvitation(ctx context.Context, tokenHash string, now time.Time) (Invitation, error) {
@@ -190,7 +252,7 @@ func (store PostgresStore) AcceptInvitationByID(ctx context.Context, invitationI
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		var projectID string
 		var role Role
-		if err := tx.QueryRowContext(ctx, `SELECT project_id,role FROM project_invitations WHERE invitation_id=$1 AND LOWER(email)=LOWER($2) AND status='pending' AND expires_at>$3 FOR UPDATE`, invitationID, email, now).Scan(&projectID, &role); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT invitation.project_id,invitation.role FROM project_invitations AS invitation JOIN projects AS project USING(project_id) WHERE invitation.invitation_id=$1 AND LOWER(invitation.email)=LOWER($2) AND invitation.status='pending' AND invitation.expires_at>$3 AND project.deleted_at IS NULL FOR UPDATE OF invitation`, invitationID, email, now).Scan(&projectID, &role); err != nil {
 			return err
 		}
 		if !isInvitableHumanRole(role) {

@@ -262,7 +262,7 @@ type SettingsResolver interface {
 type DeliveryStore interface {
 	EnqueueDelivery(context.Context, Notification, string, int64) (Delivery, error)
 	ClaimDelivery(context.Context, string, time.Duration) (*Delivery, Notification, error)
-	CompleteDelivery(context.Context, string, string) error
+	CompleteDelivery(context.Context, string, string, ProviderSendResult) error
 	FailDelivery(context.Context, string, string, string, int, string, bool, time.Duration) error
 	CancelDelivery(context.Context, string, string, string) error
 	CancelPending(context.Context, string, string) error
@@ -556,7 +556,7 @@ func humanInboxCaller(identity auth.Identity) error {
 	return nil
 }
 func (service Service) GetRule(ctx context.Context, identity auth.Identity, projectID, typeKey string) (Rule, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return Rule{}, err
 	}
 	if service.Registry == nil {
@@ -616,7 +616,7 @@ func (service Service) UpsertRule(ctx context.Context, identity auth.Identity, r
 	return result, err
 }
 func (service Service) ListDeliveries(ctx context.Context, identity auth.Identity, projectID, channelKey string, page pagination.Request) (DeliveryPage, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return DeliveryPage{}, err
 	}
 	page, err := page.Normalize()
@@ -714,10 +714,11 @@ func containsVersion(values []int64, wanted int64) bool {
 }
 
 var (
-	ErrInvalid  = errors.New("invalid notification request")
-	ErrNotFound = errors.New("notification not found")
-	ErrNotReady = errors.New("notification service is not ready")
-	ErrConflict = errors.New("notification rule version conflict")
+	ErrInvalid               = errors.New("invalid notification request")
+	ErrNotFound              = errors.New("notification not found")
+	ErrNotReady              = errors.New("notification service is not ready")
+	ErrConflict              = errors.New("notification rule version conflict")
+	ErrDeliveryRetryConflict = errors.New("notification delivery cannot be manually retried")
 )
 
 // Adapter is retained as the small Progress seam for compatibility with the
@@ -730,7 +731,11 @@ type ProviderAdapter interface {
 	ValidateConfig(map[string]interface{}) error
 	Test(context.Context, map[string]interface{}) error
 	Render(context.Context, Notification, int) (RenderedMessage, error)
-	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) error
+	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) (ProviderSendResult, error)
+}
+type ProviderSendResult struct {
+	ProviderMessageID string
+	ResponseSummary   string
 }
 type RenderedMessage struct {
 	Body        []byte

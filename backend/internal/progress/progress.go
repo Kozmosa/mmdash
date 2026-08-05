@@ -26,6 +26,12 @@ const (
 	TaskBlocked    = "blocked"
 	TaskDone       = "done"
 	TaskCancelled  = "cancelled"
+
+	ReminderPending    = "pending"
+	ReminderProcessing = "processing"
+	ReminderTriggered  = "triggered"
+	ReminderFailed     = "failed"
+	ReminderCancelled  = "cancelled"
 )
 
 type Milestone struct {
@@ -77,18 +83,25 @@ type Dependency struct {
 }
 
 type Reminder struct {
-	ID          string     `json:"reminder_id"`
-	ProjectID   string     `json:"project_id"`
-	TaskID      string     `json:"task_id,omitempty"`
-	MilestoneID string     `json:"milestone_id,omitempty"`
-	RemindAt    time.Time  `json:"remind_at"`
-	Status      string     `json:"status"`
-	Note        string     `json:"note"`
-	Source      string     `json:"source"`
-	TriggeredAt *time.Time `json:"triggered_at,omitempty"`
-	CreatedBy   string     `json:"created_by"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID               string     `json:"reminder_id"`
+	ProjectID        string     `json:"project_id"`
+	TaskID           string     `json:"task_id,omitempty"`
+	MilestoneID      string     `json:"milestone_id,omitempty"`
+	RemindAt         time.Time  `json:"remind_at"`
+	Status           string     `json:"status"`
+	Note             string     `json:"note"`
+	Source           string     `json:"source"`
+	TriggeredAt      *time.Time `json:"triggered_at,omitempty"`
+	CreatedBy        string     `json:"created_by"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	AvailableAt      time.Time  `json:"-"`
+	Attempts         int        `json:"-"`
+	MaxAttempts      int        `json:"-"`
+	LockedBy         string     `json:"-"`
+	LeaseExpiresAt   *time.Time `json:"-"`
+	LastErrorCode    string     `json:"-"`
+	LastErrorMessage string     `json:"-"`
 }
 
 type Proposal struct {
@@ -642,12 +655,14 @@ func nonNilTasks(items []Task) []Task {
 }
 
 var (
-	ErrInvalid          = errors.New("invalid progress input")
-	ErrNotFound         = errors.New("progress record not found")
-	ErrConflict         = errors.New("progress conflict")
-	ErrHumanRequired    = errors.New("human confirmation required")
-	ErrProposalRequired = errors.New("progress proposal required")
-	ErrForbidden        = errors.New("progress permission denied")
+	ErrInvalid           = errors.New("invalid progress input")
+	ErrReferenceInvalid  = errors.New("progress reference is invalid")
+	ErrNotFound          = errors.New("progress record not found")
+	ErrConflict          = errors.New("progress conflict")
+	ErrHumanRequired     = errors.New("human confirmation required")
+	ErrProposalRequired  = errors.New("progress proposal required")
+	ErrForbidden         = errors.New("progress permission denied")
+	ErrReminderLeaseLost = errors.New("progress reminder processing lease lost")
 )
 
 func ErrorCode(err error) string {
@@ -656,6 +671,8 @@ func ErrorCode(err error) string {
 		return "HUMAN_REVIEW_REQUIRED"
 	case errors.Is(err, ErrProposalRequired):
 		return "PROGRESS_PROPOSAL_REQUIRED"
+	case errors.Is(err, ErrReferenceInvalid):
+		return "PROGRESS_REFERENCE_INVALID"
 	case errors.Is(err, ErrConflict):
 		return "PROGRESS_CONFLICT"
 	case errors.Is(err, ErrNotFound):

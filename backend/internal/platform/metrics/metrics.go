@@ -37,6 +37,9 @@ type Registry struct {
 	notificationFailures            uint64
 	notificationDeliveryCount       uint64
 	notificationDeliveryDurationSec float64
+	progressReminderTriggered       uint64
+	progressReminderRetries         uint64
+	progressReminderFailures        uint64
 }
 
 type agentKey struct {
@@ -290,6 +293,24 @@ func (registry *Registry) SetNotificationGauges(unread, pending int64) {
 	registry.mu.Unlock()
 }
 
+// ObserveProgressReminder records one bounded reminder processing outcome.
+// Reminder, Project, user, note, and error values are deliberately excluded.
+func (registry *Registry) ObserveProgressReminder(outcome string) {
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	switch outcome {
+	case "triggered":
+		registry.progressReminderTriggered++
+	case "pending":
+		registry.progressReminderRetries++
+	case "failed":
+		registry.progressReminderFailures++
+	}
+}
+
 // ObserveRepoOperation records one bounded Repo operation. Callers supply only
 // module constants; unexpected labels collapse to a fixed fallback.
 func (registry *Registry) ObserveRepoOperation(
@@ -502,6 +523,15 @@ func (registry *Registry) snapshot() string {
 	output.WriteString("# HELP mmdash_notification_delivery_duration_seconds_count Notification delivery attempts counted.\n")
 	output.WriteString("# TYPE mmdash_notification_delivery_duration_seconds_count counter\n")
 	fmt.Fprintf(&output, "mmdash_notification_delivery_duration_seconds_count %d\n", registry.notificationDeliveryCount)
+	output.WriteString("# HELP mmdash_progress_reminders_triggered_total Progress reminders committed to the Outbox.\n")
+	output.WriteString("# TYPE mmdash_progress_reminders_triggered_total counter\n")
+	fmt.Fprintf(&output, "mmdash_progress_reminders_triggered_total %d\n", registry.progressReminderTriggered)
+	output.WriteString("# HELP mmdash_progress_reminder_retries_total Progress reminder processing retries.\n")
+	output.WriteString("# TYPE mmdash_progress_reminder_retries_total counter\n")
+	fmt.Fprintf(&output, "mmdash_progress_reminder_retries_total %d\n", registry.progressReminderRetries)
+	output.WriteString("# HELP mmdash_progress_reminder_failures_total Terminal Progress reminder processing failures.\n")
+	output.WriteString("# TYPE mmdash_progress_reminder_failures_total counter\n")
+	fmt.Fprintf(&output, "mmdash_progress_reminder_failures_total %d\n", registry.progressReminderFailures)
 	output.WriteString("# HELP mmdash_repo_operations_total Completed Repo operations.\n")
 	output.WriteString("# TYPE mmdash_repo_operations_total counter\n")
 	output.WriteString(
