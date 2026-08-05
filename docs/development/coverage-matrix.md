@@ -21,3 +21,4 @@ evidence. It is expanded as product modules are implemented.
 | Reliable domain-event delivery              | Event Bus, Outbox Processor, delivery/replay tables               | events/outbox        | Go Bus, Processor, idempotency, and API tests      |
 | Managed project Git repositories            | Core Repo, BFF read/manage routes, read-only Web, MCP             | repo                 | Go real-Git tests, Web/BFF/MCP tests, Repo E2E     |
 | Project Home and Progress                    | Core Progress, Data Hub, BFF, Web Home/Progress, NotificationAdapter | progress          | Progress/Data Hub/Notification Go tests, API checks, Docker smoke |
+| Notification 3.17 Inbox and external delivery | Core Notification tables, Type/Adapter Registry, Settings, Outbox events, BFF, Web Inbox/settings | notification | Notification/Project Go + PostgreSQL/HTTP tests, adapter/metrics tests, OpenAPI/API checks, Docker smoke |

@@ -1897,6 +1897,188 @@ export interface paths {
     patch: operations["progress.settings.update"];
     trace?: never;
   };
+  "/v1/inbox": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the authenticated user's Inbox */
+    get: operations["notification.inbox.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/invitations/{invitationId}/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept a matching project invitation from the authenticated Inbox */
+    post: operations["projects.invitations.accept_by_id"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/inbox/unread-count": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Count unread Inbox items */
+    get: operations["notification.inbox.unread_count"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/inbox/mark-all-read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark matching Inbox items read */
+    post: operations["notification.inbox.mark_all_read"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/inbox/{inboxItemId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        inboxItemId: components["parameters"]["InboxItemId"];
+      };
+      cookie?: never;
+    };
+    /** Read one Inbox item */
+    get: operations["notification.inbox.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Change Inbox read or archive state */
+    patch: operations["notification.inbox.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/notification-channels/{channelKey}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        channelKey: components["parameters"]["NotificationChannelKey"];
+      };
+      cookie?: never;
+    };
+    /** Read a redacted project notification channel */
+    get: operations["notification.channels.get"];
+    put?: never;
+    post?: never;
+    /** Remove a project notification channel */
+    delete: operations["notification.channels.delete"];
+    options?: never;
+    head?: never;
+    /** Update a project notification channel */
+    patch: operations["notification.channels.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/notification-channels/{channelKey}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test a saved notification channel */
+    post: operations["notification.channels.test"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/notification-rules/{typeKey}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["NotificationTypeKey"];
+      };
+      cookie?: never;
+    };
+    /** Read a project notification rule */
+    get: operations["notification.rules.get"];
+    /** Update a project notification rule */
+    put: operations["notification.rules.update"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/notification-deliveries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List safe external delivery diagnostics */
+    get: operations["notification.deliveries.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/notification-deliveries/{deliveryId}/retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Explicitly retry a failed delivery */
+    post: operations["notification.deliveries.retry"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3338,6 +3520,168 @@ export interface components {
     UpdateProgressSettingsRequest: {
       auto_task_changes: boolean;
     };
+    Notification: {
+      /** Format: uuid */
+      notification_id: string;
+      type_key: string;
+      template_version: number;
+      /** Format: uuid */
+      source_event_id: string;
+      /** Format: uuid */
+      project_id?: string;
+      /** Format: uuid */
+      actor_id?: string;
+      resource_type?: string;
+      resource_id?: string;
+      /** @enum {string} */
+      priority: "low" | "normal" | "high" | "urgent";
+      data: {
+        [key: string]: unknown;
+      };
+      rendered_snapshot?: {
+        [key: string]: unknown;
+      };
+      action?: components["schemas"]["NotificationAction"];
+      /** Format: date-time */
+      occurred_at: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    NotificationAction: {
+      action_type: string;
+      action_resource_id: string;
+      route?: string;
+    };
+    NotificationRecipient: {
+      /** Format: uuid */
+      recipient_id: string;
+      /** Format: uuid */
+      notification_id: string;
+      recipient_key: string;
+      /** Format: uuid */
+      user_id?: string;
+      /** Format: email */
+      normalized_email?: string;
+      /** Format: date-time */
+      expires_at?: string;
+    };
+    InboxItem: {
+      /** Format: uuid */
+      inbox_item_id: string;
+      notification: components["schemas"]["Notification"];
+      recipient: components["schemas"]["NotificationRecipient"];
+      /** @enum {string} */
+      read_state: "read" | "unread";
+      /** Format: date-time */
+      archived_at?: string;
+      /** @enum {string} */
+      outcome: "active" | "resolved" | "revoked" | "expired";
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    InboxPage: {
+      items: components["schemas"]["InboxItem"][];
+      next_cursor?: string;
+      has_more: boolean;
+    };
+    UnreadCount: {
+      count: number;
+    };
+    UpdateInboxRequest: {
+      /** @enum {string} */
+      read_state?: "read" | "unread";
+      archived?: boolean;
+    };
+    MarkAllInboxReadRequest: {
+      /** Format: uuid */
+      project_id?: string;
+      type_key?: string;
+    };
+    NotificationChannel: {
+      channel_key: string;
+      enabled: boolean;
+      configured: boolean;
+      settings_version: number;
+    };
+    UpdateNotificationChannelRequest: {
+      values: {
+        [key: string]: unknown;
+      };
+    };
+    NotificationRule: {
+      /** Format: uuid */
+      project_id: string;
+      type_key: string;
+      inbox_enabled: boolean;
+      external_enabled: boolean;
+      channel_keys: (
+        "notification.feishu_webhook" | "notification.generic_webhook"
+      )[];
+      /** @enum {string} */
+      minimum_priority: "low" | "normal" | "high" | "urgent";
+      version: number;
+      /** Format: uuid */
+      updated_by?: string;
+      /** Format: date-time */
+      updated_at?: string;
+    };
+    UpdateNotificationRuleRequest: {
+      inbox_enabled: boolean;
+      external_enabled: boolean;
+      channel_keys?: (
+        "notification.feishu_webhook" | "notification.generic_webhook"
+      )[];
+      /** @enum {string} */
+      minimum_priority?: "low" | "normal" | "high" | "urgent";
+      version: number;
+    };
+    NotificationDelivery: {
+      /** Format: uuid */
+      delivery_id: string;
+      /** Format: uuid */
+      notification_id: string;
+      /** Format: uuid */
+      recipient_id?: string;
+      /** Format: uuid */
+      project_id: string;
+      channel_key: string;
+      target_key: string;
+      rule_version: number;
+      settings_version: number;
+      delivery_key: string;
+      /** @enum {string} */
+      status:
+        | "pending"
+        | "sending"
+        | "delivered"
+        | "retrying"
+        | "failed"
+        | "cancelled";
+      attempts: number;
+      max_attempts: number;
+      provider_message_id?: string;
+      last_error_code?: string;
+      last_error?: string;
+      response_summary?: string;
+      /** Format: date-time */
+      available_at: string;
+      /** Format: date-time */
+      delivered_at?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    NotificationDeliveryPage: {
+      items: components["schemas"]["NotificationDelivery"][];
+      next_cursor?: string;
+      has_more: boolean;
+    };
+    RetryNotificationDeliveryRequest: {
+      reason: string;
+    };
     Liveness: {
       /** @constant */
       service: "core";
@@ -3381,6 +3725,12 @@ export interface components {
   };
   parameters: {
     ProjectId: string;
+    InvitationId: string;
+    InboxItemId: string;
+    NotificationChannelKey:
+      "notification.feishu_webhook" | "notification.generic_webhook";
+    NotificationTypeKey: string;
+    NotificationDeliveryId: string;
     ArtifactId: string;
     ArtifactUploadId: string;
     ArtifactVersionId: string;
@@ -6458,6 +6808,345 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProgressSettings"];
+        };
+      };
+    };
+  };
+  "notification.inbox.list": {
+    parameters: {
+      query?: {
+        project_id?: string;
+        type_key?: string;
+        read_state?: "read" | "unread";
+        archived?: true | false;
+        outcome?: "active" | "resolved" | "revoked" | "expired";
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Inbox page. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InboxPage"];
+        };
+      };
+    };
+  };
+  "projects.invitations.accept_by_id": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        invitationId: components["parameters"]["InvitationId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Joined project member. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectMember"];
+        };
+      };
+    };
+  };
+  "notification.inbox.unread_count": {
+    parameters: {
+      query?: {
+        project_id?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Unread count. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UnreadCount"];
+        };
+      };
+    };
+  };
+  "notification.inbox.mark_all_read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["MarkAllInboxReadRequest"];
+      };
+    };
+    responses: {
+      /** @description Items marked read. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "notification.inbox.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        inboxItemId: components["parameters"]["InboxItemId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Inbox item */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InboxItem"];
+        };
+      };
+    };
+  };
+  "notification.inbox.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        inboxItemId: components["parameters"]["InboxItemId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateInboxRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Inbox item */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InboxItem"];
+        };
+      };
+    };
+  };
+  "notification.channels.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        channelKey: components["parameters"]["NotificationChannelKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Channel */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotificationChannel"];
+        };
+      };
+    };
+  };
+  "notification.channels.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        channelKey: components["parameters"]["NotificationChannelKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Channel removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "notification.channels.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        channelKey: components["parameters"]["NotificationChannelKey"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateNotificationChannelRequest"];
+      };
+    };
+    responses: {
+      /** @description Channel */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotificationChannel"];
+        };
+      };
+    };
+  };
+  "notification.channels.test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        channelKey: components["parameters"]["NotificationChannelKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Connection result */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectionTestResult"];
+        };
+      };
+    };
+  };
+  "notification.rules.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["NotificationTypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Rule */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotificationRule"];
+        };
+      };
+    };
+  };
+  "notification.rules.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        typeKey: components["parameters"]["NotificationTypeKey"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateNotificationRuleRequest"];
+      };
+    };
+    responses: {
+      /** @description Rule */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotificationRule"];
+        };
+      };
+    };
+  };
+  "notification.deliveries.list": {
+    parameters: {
+      query?: {
+        channel_key?: string;
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Delivery page */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotificationDeliveryPage"];
+        };
+      };
+    };
+  };
+  "notification.deliveries.retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        deliveryId: components["parameters"]["NotificationDeliveryId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RetryNotificationDeliveryRequest"];
+      };
+    };
+    responses: {
+      /** @description New retry delivery */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotificationDelivery"];
         };
       };
     };

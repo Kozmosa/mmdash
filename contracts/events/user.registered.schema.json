@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/user.registered.schema.json",
+  "type": "object", "additionalProperties": false,
+  "required": ["user_id", "email", "display_name"],
+  "properties": { "user_id": { "type": "string", "format": "uuid" }, "email": { "type": "string", "format": "email" }, "display_name": { "type": "string" } }
+}

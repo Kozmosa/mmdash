@@ -771,6 +771,91 @@ func (request UpdateProgressSettingsRequest) Validate() error {
 
 }
 
+// UpdateInboxRequest is generated from the Core request-body schema.
+type UpdateInboxRequest struct {
+	ReadState *string `json:"read_state,omitempty"`
+	Archived  *bool   `json:"archived,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateInboxRequest) Validate() error {
+	if request.ReadState == nil && request.Archived == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.ReadState != nil {
+		if *request.ReadState != "read" && *request.ReadState != "unread" {
+			return fmt.Errorf("read_state has an unsupported value")
+		}
+	}
+	return nil
+}
+
+// MarkAllInboxReadRequest is generated from the Core request-body schema.
+type MarkAllInboxReadRequest struct {
+	ProjectID *string `json:"project_id,omitempty"`
+	TypeKey   *string `json:"type_key,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request MarkAllInboxReadRequest) Validate() error {
+	return nil
+
+}
+
+// UpdateNotificationChannelRequest is generated from the Core request-body schema.
+type UpdateNotificationChannelRequest struct {
+	Values map[string]interface{} `json:"values"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateNotificationChannelRequest) Validate() error {
+	if request.Values == nil {
+		return fmt.Errorf("values is required")
+	}
+	return nil
+}
+
+// UpdateNotificationRuleRequest is generated from the Core request-body schema.
+type UpdateNotificationRuleRequest struct {
+	InboxEnabled    bool      `json:"inbox_enabled"`
+	ExternalEnabled bool      `json:"external_enabled"`
+	ChannelKeys     *[]string `json:"channel_keys,omitempty"`
+	MinimumPriority *string   `json:"minimum_priority,omitempty"`
+	Version         int64     `json:"version"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateNotificationRuleRequest) Validate() error {
+	if request.MinimumPriority != nil {
+		if *request.MinimumPriority != "low" && *request.MinimumPriority != "normal" && *request.MinimumPriority != "high" && *request.MinimumPriority != "urgent" {
+			return fmt.Errorf("minimum_priority has an unsupported value")
+		}
+	}
+	if request.Version < 0 {
+		return fmt.Errorf("version is below its minimum")
+	}
+	return nil
+}
+
+// RetryNotificationDeliveryRequest is generated from the Core request-body schema.
+type RetryNotificationDeliveryRequest struct {
+	Reason string `json:"reason"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RetryNotificationDeliveryRequest) Validate() error {
+	if request.Reason == "" {
+		return fmt.Errorf("reason is required")
+	}
+	if len(request.Reason) < 1 {
+		return fmt.Errorf("reason is too short")
+	}
+	if len(request.Reason) > 1000 {
+		return fmt.Errorf("reason is too long")
+	}
+	return nil
+}
+
 // RecordAuditEventRequest is generated from the Core request-body schema.
 type RecordAuditEventRequest struct {
 	Category     string                  `json:"category"`
