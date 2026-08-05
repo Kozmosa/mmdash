@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
+  Bot,
   FileQuestion,
   Gauge,
   ListChecks,
@@ -19,6 +20,7 @@ import type {
   ArtifactPreview,
 } from "@/features/artifact/types";
 import { formatBytes } from "@/features/artifact/artifact-uploader";
+import type { AgentInstance } from "@/features/agent/types";
 
 type ProblemItem =
   | {
@@ -186,9 +188,75 @@ export default function ProjectHomePage() {
       >
         <ProgressHomeCard aggregate={aggregate} projectId={project.id} />
         <EmptyModule label="模型、实验与论文" />
-        <EmptyModule label="Agent 状态" />
+        <AgentHomeCard projectId={project.id} />
       </section>
     </div>
+  );
+}
+
+function AgentHomeCard({ projectId }: Readonly<{ projectId: string }>) {
+  const instances = useQuery({
+    queryFn: () =>
+      apiClient.request<{ items: AgentInstance[] }>(
+        `/projects/${encodeURIComponent(projectId)}/agent-instances`,
+      ),
+    queryKey: ["agent-instances", projectId],
+  });
+  const instance =
+    instances.data?.items?.find((item) => item.status === "active") ??
+    instances.data?.items?.find((item) => item.status !== "disabled") ??
+    instances.data?.items?.[0];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Bot aria-hidden="true" className="size-4" />
+          Agent
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {instances.isLoading ? (
+          <p className="text-muted-foreground">正在读取 Hermes 状态…</p>
+        ) : null}
+        {instances.isError ? (
+          <p className="text-destructive">Agent 状态暂时不可用。</p>
+        ) : null}
+        {!instances.isLoading && !instance ? (
+          <>
+            <p className="text-muted-foreground">尚未配置 Hermes Agent。</p>
+            <Link
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+              href={`/projects/${encodeURIComponent(projectId)}/settings#agent-settings`}
+            >
+              配置连接 <ArrowRight aria-hidden="true" className="size-3" />
+            </Link>
+          </>
+        ) : null}
+        {instance ? (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate font-medium">{instance.display_name}</span>
+              <Badge>{instance.status}</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">管理模式</span>
+              <span>{instance.management_mode}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">MCP 访问</span>
+              <span>{instance.grant.project_access_status ?? "pending"}</span>
+            </div>
+            <Link
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+              href={`/projects/${encodeURIComponent(projectId)}/agent`}
+            >
+              打开 Agent <ArrowRight aria-hidden="true" className="size-3" />
+            </Link>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
