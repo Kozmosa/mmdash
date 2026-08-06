@@ -132,6 +132,28 @@ describe("Agent settings", () => {
     expect(screen.queryByText("auto-token-must-not-enter-dom")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("disables auto management when the adapter does not declare configure and rotate", async () => {
+    mocks.listInstances.mockResolvedValue({
+      items: [
+        instanceFixture({
+          capabilities: {
+            ...instanceFixture().capabilities,
+            project_access: { configure: false, rotate: false, verify: true },
+          },
+        }),
+      ],
+    });
+
+    render(<AgentSettingsPanel />, { wrapper: Providers });
+
+    const auto = await screen.findByRole("radio", { name: /^自动管理/ });
+    expect(auto).toBeDisabled();
+    expect(
+      screen.getByText("此 Adapter 未声明自动管理能力，仅支持手动管理。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^手动管理/ })).toBeEnabled();
+  });
 });
 
 function Providers({ children }: Readonly<{ children: ReactNode }>) {

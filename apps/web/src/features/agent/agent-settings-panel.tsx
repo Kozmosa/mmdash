@@ -427,28 +427,38 @@ function AgentConnectionForm({
           <fieldset className="space-y-2 md:col-span-2">
             <legend className="text-sm font-medium">MCP 管理模式</legend>
             <div className="grid gap-2 sm:grid-cols-2">
-              {(["manual", "auto"] as const).map((mode) => (
-                <label
-                  className="flex cursor-pointer gap-3 rounded-md border border-border p-3 text-sm"
-                  key={mode}
-                >
-                  <input
-                    checked={form.managementMode === mode}
-                    disabled={!canManage}
-                    name="management-mode"
-                    onChange={() => set("managementMode", mode)}
-                    type="radio"
-                  />
-                  <span>
-                    <strong>{mode === "manual" ? "手动管理" : "自动管理"}</strong>
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      {mode === "manual"
-                        ? "Token 只显示一次，由用户写入 Hermes。"
-                        : "服务端通过受控 Dashboard 连接配置和轮换。"}
+              {(["manual", "auto"] as const).map((mode) => {
+                const projectAccess = instance?.capabilities.project_access;
+                const autoSupported =
+                  !instance ||
+                  Boolean(projectAccess?.configure && projectAccess?.rotate);
+                return (
+                  <label
+                    className="flex cursor-pointer gap-3 rounded-md border border-border p-3 text-sm"
+                    key={mode}
+                  >
+                    <input
+                      checked={form.managementMode === mode}
+                      disabled={
+                        !canManage || (mode === "auto" && !autoSupported)
+                      }
+                      name="management-mode"
+                      onChange={() => set("managementMode", mode)}
+                      type="radio"
+                    />
+                    <span>
+                      <strong>{mode === "manual" ? "手动管理" : "自动管理"}</strong>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {mode === "manual"
+                          ? "Token 只显示一次，由用户写入 Hermes。"
+                          : autoSupported
+                            ? "服务端通过受控 Dashboard 连接配置和轮换。"
+                            : "此 Adapter 未声明自动管理能力，仅支持手动管理。"}
+                      </span>
                     </span>
-                  </span>
-                </label>
-              ))}
+                  </label>
+                );
+              })}
             </div>
           </fieldset>
           <Field
