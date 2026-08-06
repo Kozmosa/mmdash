@@ -147,11 +147,11 @@ func (store PostgresStore) ResolveAgentRole(
 ) (project.Role, error) {
 	var role project.Role
 	err := store.DB.QueryRowContext(ctx, `
-		SELECT grant.role
-		FROM agent_project_grants AS grant
+		SELECT grant_row.role
+		FROM agent_project_grants AS grant_row
 		JOIN agent_instances AS instance USING (agent_instance_id)
-		WHERE grant.agent_instance_id = $1 AND grant.project_id = $2
-		  AND grant.status = 'active' AND instance.status <> 'disabled'
+		WHERE grant_row.agent_instance_id = $1 AND grant_row.project_id = $2
+		  AND grant_row.status = 'active' AND instance.status <> 'disabled'
 	`, agentInstanceID, projectID).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrForbidden
@@ -172,12 +172,12 @@ func (store PostgresStore) ValidateProvenance(
 			SELECT 1
 			FROM agent_sessions AS session
 			JOIN agent_runs AS run ON run.session_id = session.session_id
-			JOIN agent_project_grants AS grant ON grant.grant_id = session.grant_id
+			JOIN agent_project_grants AS grant_row ON grant_row.grant_id = session.grant_id
 			JOIN agent_instances AS instance
 			  ON instance.agent_instance_id = session.agent_instance_id
 			WHERE session.session_id=$1 AND run.run_id=$2
 			  AND session.project_id=$3 AND session.agent_instance_id=$4
-			  AND grant.status='active' AND instance.status <> 'disabled'
+			  AND grant_row.status='active' AND instance.status <> 'disabled'
 		)
 	`, sessionID, runID, projectID, agentInstanceID).Scan(&exists)
 	if err != nil {
@@ -250,7 +250,7 @@ func (store PostgresStore) CreateInstance(
 
 func (store PostgresStore) ListInstances(ctx context.Context, projectID string) ([]Instance, error) {
 	rows, err := store.DB.QueryContext(ctx, instanceSelect+`
-		WHERE grant.project_id = $1
+		WHERE grant_row.project_id = $1
 		ORDER BY instance.created_at, instance.agent_instance_id
 	`, projectID)
 	if err != nil {
@@ -270,7 +270,7 @@ func (store PostgresStore) ListInstances(ctx context.Context, projectID string) 
 
 func (store PostgresStore) GetInstance(ctx context.Context, projectID, instanceID string) (Instance, error) {
 	item, err := scanInstance(store.DB.QueryRowContext(ctx, instanceSelect+`
-		WHERE grant.project_id = $1 AND instance.agent_instance_id = $2
+		WHERE grant_row.project_id = $1 AND instance.agent_instance_id = $2
 	`, projectID, instanceID).Scan)
 	return item, mapNotFound(err)
 }
@@ -292,7 +292,7 @@ func (store PostgresStore) UpdateInstance(
 	capabilities, _ := json.Marshal(nonNilMap(instance.Capabilities))
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		updated, err := scanInstance(tx.QueryRowContext(ctx, instanceSelect+`
-			WHERE grant.project_id = $1 AND instance.agent_instance_id = $2
+			WHERE grant_row.project_id = $1 AND instance.agent_instance_id = $2
 			FOR UPDATE OF instance
 		`, instance.Grant.ProjectID, instance.ID).Scan)
 		if err != nil {
@@ -588,12 +588,12 @@ func (store PostgresStore) SetDefaultSession(
 ) error {
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		result, err := tx.ExecContext(ctx, `
-			UPDATE agent_project_grants AS grant
+			UPDATE agent_project_grants AS grant_row
 			SET default_session_id=$3, updated_at=$4, version=version+1
 			WHERE project_id=$1 AND agent_instance_id=$2 AND status='active'
 			  AND EXISTS (
 				SELECT 1 FROM agent_sessions
-				WHERE session_id=$3 AND grant_id=grant.grant_id
+				WHERE session_id=$3 AND grant_id=grant_row.grant_id
 			  )
 		`, projectID, instanceID, sessionID, now)
 		if err := requireAffected(result, err); err != nil {
@@ -960,12 +960,12 @@ const instanceSelect = `
 	       instance.project_access_check, instance.created_by,
 	       instance.created_at, instance.updated_at, instance.disabled_at,
 	       instance.version,
-	       grant.grant_id, grant.agent_instance_id, grant.project_id, grant.role,
-	       grant.status, grant.allowed_tools, COALESCE(grant.remote_access_id,''),
-	       COALESCE(grant.default_session_id::text,''), grant.last_access_at,
-	       grant.created_by, grant.created_at, grant.updated_at, grant.version
+	       grant_row.grant_id, grant_row.agent_instance_id, grant_row.project_id, grant_row.role,
+	       grant_row.status, grant_row.allowed_tools, COALESCE(grant_row.remote_access_id,''),
+	       COALESCE(grant_row.default_session_id::text,''), grant_row.last_access_at,
+	       grant_row.created_by, grant_row.created_at, grant_row.updated_at, grant_row.version
 	FROM agent_instances AS instance
-	JOIN agent_project_grants AS grant USING (agent_instance_id)
+	JOIN agent_project_grants AS grant_row USING (agent_instance_id)
 `
 
 const grantSelect = `

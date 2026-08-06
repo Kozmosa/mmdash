@@ -197,9 +197,10 @@ func (store PostgresStore) CreateProposal(
 			INSERT INTO data_objects (
 				object_id, project_id, object_type, source_module, source_id,
 				title, summary, status, metadata, occurred_at, created_at, updated_at
-			) VALUES ($1, $2, 'context-proposal', 'datahub', $1, $3, $4,
+			) VALUES ($1, $2, 'context-proposal', 'datahub', $6, $3, $4,
 			          'pending', '{}'::jsonb, $5, $5, $5)
-		`, proposal.ID, projectID, proposal.Title, proposal.Rationale, now); err != nil {
+		`, proposal.ID, projectID, proposal.Title, proposal.Rationale, now,
+			proposal.ID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
