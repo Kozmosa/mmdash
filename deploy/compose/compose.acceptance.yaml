@@ -1,0 +1,74 @@
+# Docker Compose acceptance override for Stage 5.
+#
+# Usage (from the repository root):
+#
+#   docker compose -f deploy/compose/compose.yaml \
+#     -f deploy/compose/compose.acceptance.yaml up --build -d
+#   pnpm smoke
+#   node scripts/agent-smoke.mjs
+#   docker compose -f deploy/compose/compose.yaml \
+#     -f deploy/compose/compose.acceptance.yaml down
+#
+# The override isolates every host port so the stack does not collide with a
+# running development stack, and adds the pinned mock Hermes server as the
+# Adapter runtime and Dashboard target. Private network access is enabled for
+# the Agent Connectors only because this stack runs inside a private Compose
+# network; production deployments keep the secure defaults.
+#
+# The Agent verification callback needs a dedicated Core admin API token:
+# create one after the first start (POST /v1/auth/tokens, kind=api, name for
+# gateway attestation), then restart core and mcp-gateway with
+# AUTH_AGENT_VERIFICATION_TOKEN_ID=<token id> and
+# MCP_CORE_ACCESS_TOKEN=<token plaintext> before running agent-smoke.mjs.
+
+name: mmdash-acceptance
+
+services:
+  mock-hermes:
+    image: node:24-alpine
+    command: ["node", "/app/mock-hermes.mjs"]
+    environment:
+      MOCK_HERMES_PORT: "8642"
+      MOCK_HERMES_RUNTIME_KEY: hermes-runtime-key
+      MOCK_HERMES_DASHBOARD_TOKEN: hermes-dashboard-token
+    volumes:
+      - ../../scripts/mock-hermes.mjs:/app/mock-hermes.mjs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8642/api/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports: !override
+      - "18642:8642"
+
+  postgres:
+    ports: !override
+      - "15432:5432"
+
+  minio:
+    ports: !override
+      - "19000:9000"
+      - "19001:9001"
+
+  core:
+    environment:
+      AGENT_MCP_GATEWAY_URL: http://mcp-gateway:3002/mcp
+      AGENT_RUNTIME_ALLOW_LOOPBACK: "true"
+      AGENT_RUNTIME_ALLOW_PRIVATE: "true"
+      AGENT_MANAGEMENT_ALLOW_LOOPBACK: "true"
+      AGENT_MANAGEMENT_ALLOW_PRIVATE: "true"
+      AGENT_MANAGEMENT_ALLOWED_PORTS: "80,443,9119,8642"
+    ports: !override
+      - "18080:8080"
+
+  web-bff:
+    ports: !override
+      - "13001:3001"
+
+  web:
+    ports: !override
+      - "13000:3000"
+
+  mcp-gateway:
+    ports: !override
+      - "19002:3002"
