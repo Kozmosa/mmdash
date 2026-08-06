@@ -346,7 +346,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (rest === "/chat/stream" && request.method === "POST") {
-      const body = await readBody(request);
+      await readBody(request);
       const runId = `run-${Date.now()}`;
       runs.set(runId, runFixture(runId, sessionId, "running"));
       streamRunSequence(response, runId, sessionId);
