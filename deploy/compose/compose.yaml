@@ -253,7 +253,9 @@ services:
       # Agent Token 可访问项目范围；生产必须收敛为显式项目 ID，禁止使用 *。
       MCP_AGENT_PROJECTS: ${MCP_AGENT_PROJECTS:-*}
       # Agent 调用鉴权 Token；生产必须使用 Secret 管理器注入的强随机值。
-      MCP_AGENT_TOKEN: ${MCP_AGENT_TOKEN:-local-agent-token-change-before-production}
+      # 生产镜像以 NODE_ENV=production 运行，静态 Agent Token 被拒绝；
+      # 产品 Agent Token 必须由 Core 签发并经 MCP_CORE_ACCESS_TOKEN 校验。
+      MCP_AGENT_TOKEN: ${MCP_AGENT_TOKEN:-}
       # Agent 可调用 Tool 范围；生产必须设置最小权限清单，禁止使用 *。
       MCP_AGENT_TOOLS: ${MCP_AGENT_TOOLS:-*}
       # 允许的 Host Header；生产必须仅包含正式域名。
