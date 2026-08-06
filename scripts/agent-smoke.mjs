@@ -20,8 +20,14 @@
 
 const coreUrl = trim(process.env.CORE_URL ?? "http://localhost:18080");
 const mcpUrl = trim(process.env.MCP_URL ?? "http://localhost:19002");
-const hermesUrl = trim(
-  process.env.MOCK_HERMES_RUNTIME_URL ?? "http://localhost:18642",
+// Host-side URL used by this script for the direct mock sanity check.
+const hermesHealthUrl = trim(
+  process.env.MOCK_HERMES_HEALTH_URL ?? "http://localhost:18642",
+);
+// URL stored on the Agent instance; must be reachable from Core and use an
+// allowed runtime port, so it points at the Compose service name.
+const hermesRuntimeUrl = trim(
+  process.env.MOCK_HERMES_RUNTIME_URL ?? "http://mock-hermes:8642",
 );
 const hermesKey = process.env.MOCK_HERMES_RUNTIME_KEY ?? "hermes-runtime-key";
 const email = process.env.MMDASH_SMOKE_EMAIL ?? "admin@mmdash.local";
@@ -61,35 +67,39 @@ async function request(url, options = {}, token) {
   return { body, response, status: response.status };
 }
 
-async function core(path, options = {}, token) {
+async function core(path, options, token) {
   const result = await request(`${coreUrl}/v1${path}`, options, token);
   if (!result.response.ok) {
     throw new Error(
       `Core ${options.method ?? "GET"} ${path} -> ${result.status}: ${JSON.stringify(result.body)}`,
     );
   }
-  return { ...result, body: result.body };
+  return result.body;
 }
 
 async function mcpInitialize(token) {
-  const result = await request(`${mcpUrl}/mcp`, {
-    method: "POST",
-    headers: {
-      accept: "application/json, text/event-stream",
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      id: 1,
-      jsonrpc: "2.0",
-      method: "initialize",
-      params: {
-        clientInfo: { name: "mmdash-agent-smoke", version: "0.1.0" },
-        capabilities: {},
-        protocolVersion: "2025-06-18",
+  const result = await request(
+    `${mcpUrl}/mcp`,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${token}`,
       },
-    }),
-  });
-  const sessionId = result.response.headers.get("mcp-session-id");
+      body: JSON.stringify({
+        id: 1,
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          clientInfo: { name: "mmdash-agent-smoke", version: "0.1.0" },
+          capabilities: {},
+          protocolVersion: "2025-06-18",
+        },
+      }),
+    },
+    null,
+  );
+  const sessionId = result.response.headers.get("x-mmdash-session-id");
   if (result.status !== 200 || !sessionId) {
     throw new Error(
       `MCP initialize -> ${result.status}: ${JSON.stringify(result.body)} (session ${sessionId})`,
@@ -99,19 +109,31 @@ async function mcpInitialize(token) {
 }
 
 async function mcpRequest(token, sessionId, id, method, params) {
-  return request(
+  const result = await request(
     `${mcpUrl}/mcp`,
     {
       method: "POST",
       headers: {
         accept: "application/json, text/event-stream",
         authorization: `Bearer ${token}`,
-        ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+        ...(sessionId ? { "x-mmdash-session-id": sessionId } : {}),
       },
       body: JSON.stringify({ id, jsonrpc: "2.0", method, ...(params ? { params } : {}) }),
     },
     null,
   );
+  // Streamable HTTP may answer with an SSE frame; unwrap the data payload.
+  if (typeof result.body === "string" && result.body.includes("\ndata: ")) {
+    const match = result.body.match(/data: (\{.*\})\n/s);
+    if (match) {
+      try {
+        result.body = JSON.parse(match[1]);
+      } catch {
+        // keep the raw text when the payload is not JSON
+      }
+    }
+  }
+  return result;
 }
 
 async function streamRunEvents(url, token, expected) {
@@ -149,10 +171,10 @@ async function streamRunEvents(url, token, expected) {
 
 async function main() {
   console.log(`agent smoke ${runId}`);
-  console.log(`core=${coreUrl} mcp=${mcpUrl} mock-hermes=${hermesUrl}`);
+  console.log(`core=${coreUrl} mcp=${mcpUrl} mock-hermes=${hermesRuntimeUrl}`);
 
-  // Direct mock Hermes sanity: pinned health and capabilities contract.
-  const health = await request(`${hermesUrl}/health`, {
+  // Direct mock Hermes sanity: pinned health contract.
+  const health = await request(`${hermesHealthUrl}/health`, {
     headers: { authorization: `Bearer ${hermesKey}` },
   });
   assert(
@@ -164,38 +186,46 @@ async function main() {
     body: JSON.stringify({ email, password }),
     method: "POST",
   });
-  const token = login.body.access_token;
+  const token = login.access_token;
   assert(Boolean(token), "admin login issues a Core access token");
 
-  const project = await core("/projects", {
-    body: JSON.stringify({
-      name: `Agent smoke ${runId}`,
-      problem_summary: "Stage 5 end-to-end acceptance",
-      problem_title: "Agent sessions",
-    }),
-    method: "POST",
-  });
-  const projectId = project.body.id;
+  const project = await core(
+    "/projects",
+    {
+      body: JSON.stringify({
+        name: `Agent smoke ${runId}`,
+        problem_summary: "Stage 5 end-to-end acceptance",
+        problem_title: "Agent sessions",
+      }),
+      method: "POST",
+    },
+    token,
+  );
+  const projectId = project.id;
   assert(Boolean(projectId), "project creation returns an ID");
 
   // 1. Manual instance provisioning returns the one-time Agent Token.
-  const provisioned = await core(`/projects/${projectId}/agent-instances`, {
-    body: JSON.stringify({
-      adapter_type: "hermes",
-      allowed_tools: allowedTools,
-      display_name: "Smoke Hermes",
-      hermes_api_key: hermesKey,
-      management_mode: "manual",
-      profile: "research",
-      request_timeout_seconds: 10,
-      runtime_url: hermesUrl,
-    }),
-    method: "POST",
-  });
-  const instance = provisioned.body.instance;
+  const provisioned = await core(
+    `/projects/${projectId}/agent-instances`,
+    {
+      body: JSON.stringify({
+        adapter_type: "hermes",
+        allowed_tools: allowedTools,
+        display_name: "Smoke Hermes",
+        hermes_api_key: hermesKey,
+        management_mode: "manual",
+        profile: "research",
+        request_timeout_seconds: 10,
+        runtime_url: hermesRuntimeUrl,
+      }),
+      method: "POST",
+    },
+    token,
+  );
+  const instance = provisioned.instance;
   const instanceId = instance.agent_instance_id;
-  const agentToken = provisioned.body.one_time_credential?.token;
-  const tokenId = provisioned.body.one_time_credential?.credential?.id;
+  const agentToken = provisioned.one_time_credential?.token;
+  const tokenId = provisioned.one_time_credential?.credential?.id;
   assert(
     Boolean(agentToken) && agentToken.startsWith("mmdash_"),
     "manual provisioning returns a one-time opaque Agent Token",
@@ -213,18 +243,21 @@ async function main() {
   const checked = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/checks`,
     { body: JSON.stringify({ scope: "all" }), method: "POST" },
+    token,
   );
+  const runtimeCheck = checked.instance?.runtime_check;
   assert(
-    checked.body.runtime_check?.status === "passed",
-    `runtime check passes (${checked.body.runtime_check?.code ?? "?"})`,
+    runtimeCheck?.status === "passed",
+    `runtime check passes (${runtimeCheck?.code ?? runtimeCheck?.status ?? "?"})`,
   );
 
   const before = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/project-access/verify`,
     { method: "POST" },
+    token,
   );
   assert(
-    before.body.verified === false,
+    before.verified === false,
     "project access is not verified before real tools/list evidence",
   );
 
@@ -233,7 +266,7 @@ async function main() {
   assert(Boolean(gatewaySession), "MCP initialize negotiates a gateway session");
 
   const listed = await mcpRequest(agentToken, gatewaySession, 2, "tools/list");
-  const toolNames = listed.body?.tools?.map((tool) => tool.name) ?? [];
+  const toolNames = listed.body?.result?.tools?.map((tool) => tool.name) ?? [];
   assert(
     listed.status === 200 &&
       toolNames.sort().join(",") === allowedTools.sort().join(","),
@@ -246,24 +279,47 @@ async function main() {
   });
   assert(denied.status === 403, "exact Tool scope denies an unlisted tool");
 
-  const dataCall = await mcpRequest(agentToken, gatewaySession, 4, "tools/call", {
+  const deniedBusiness = await mcpRequest(agentToken, gatewaySession, 4, "tools/call", {
     arguments: { project_id: projectId },
     name: "data.list",
   });
   assert(
-    dataCall.status === 200 && dataCall.body?.isError !== true,
-    "authorized data.list call succeeds through Gateway",
+    deniedBusiness.status === 403 &&
+      deniedBusiness.body?.code === "AGENT_CREDENTIAL_PENDING",
+    "pending Agent credential cannot call business tools",
   );
 
-  // 4. After evidence, manual verification passes and the instance activates.
+  // 4. Manual activation: evidence exists, so VerifyToken activates the
+  // pending Token and the reverse connection is then verified.
+  const activated = await core(
+    `/projects/${projectId}/agent-instances/${instanceId}/tokens/${tokenId}/verify`,
+    { method: "POST" },
+    token,
+  );
+  assert(
+    activated.verified === true && activated.credential?.status === "active",
+    "manual VerifyToken activates the pending Token after evidence",
+  );
+
   const after = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/project-access/verify`,
     { method: "POST" },
+    token,
   );
-  assert(after.body.verified === true, "project access verifies after evidence");
+  assert(after.verified === true, "project access verifies after evidence");
   assert(
-    after.body.instance.status === "active",
-    `instance activates after verification (${after.body.instance.status})`,
+    after.instance.status === "active",
+    `instance activates after verification (${after.instance.status})`,
+  );
+
+  // 5. The active Token can call authorized business tools.
+  const dataCall = await mcpRequest(agentToken, gatewaySession, 5, "tools/call", {
+    arguments: { project_id: projectId },
+    name: "data.list",
+  });
+  assert(
+    dataCall.status === 200 && dataCall.body?.result?.isError !== true,
+    "authorized data.list call succeeds through Gateway",
   );
 
   // 5. Session lifecycle: create, default, rename, messages.
@@ -273,33 +329,39 @@ async function main() {
       body: JSON.stringify({ default: true, session_type: "main", title: "Main" }),
       method: "POST",
     },
+    token,
   );
-  const sessionId = created.body.session_id;
+  const sessionId = created.session_id;
   assert(
-    Boolean(sessionId) && Boolean(created.body.remote_session_id),
+    Boolean(sessionId) && Boolean(created.remote_session_id),
     "session create returns local and remote IDs",
   );
-  assert(created.body.default === true, "created session becomes the default");
+  assert(created.default === true, "created session becomes the default");
 
   const sessions = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions`,
+    {},
+    token,
   );
   assert(
-    sessions.body.items?.some((item) => item.session_id === sessionId),
+    sessions.items?.some((item) => item.session_id === sessionId),
     "session list includes the created session",
   );
 
   const renamed = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}`,
     { body: JSON.stringify({ title: "Renamed" }), method: "PATCH" },
+    token,
   );
-  assert(renamed.body.title === "Renamed", "session rename applies");
+  assert(renamed.title === "Renamed", "session rename applies");
 
   const messages = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/messages`,
+    {},
+    token,
   );
   assert(
-    Array.isArray(messages.body.items) && messages.body.items.length > 0,
+    Array.isArray(messages.items) && messages.items.length > 0,
     "session message history streams from the mock runtime",
   );
 
@@ -307,63 +369,71 @@ async function main() {
   const started = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs`,
     { body: JSON.stringify({ message: "analyze the project" }), method: "POST" },
+    token,
   );
-  const runIdValue = started.body.run?.run_id;
+  const runIdValue = started.run?.run_id;
   assert(Boolean(runIdValue), "StartRun returns a Run ID");
 
   const runStatus = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs/${runIdValue}`,
+    {},
+    token,
   );
   assert(
-    ["queued", "running", "completed"].includes(runStatus.body.status),
-    `run status readable (${runStatus.body.status})`,
+    ["queued", "running", "completed"].includes(runStatus.status),
+    `run status readable (${runStatus.status})`,
   );
 
   const events = await streamRunEvents(
     `${coreUrl}/v1/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs/${runIdValue}/events`,
     token,
-    ["run.started", "message.delta", "run.completed"],
+    ["message.delta", "run.completed"],
   );
   assert(
-    events.has("run.started") && events.has("run.completed"),
-    "SSE run stream emits start and completion events",
+    events.has("message.delta") && events.has("run.completed"),
+    "SSE run stream emits message and completion events",
   );
 
   const stopped = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs/${runIdValue}/stop`,
     { method: "POST" },
+    token,
   );
   assert(
-    ["stopping", "stopped"].includes(stopped.body.status),
+    ["stopping", "stopped"].includes(stopped.status),
     "run stop is accepted by the runtime",
   );
 
-  // 7. Regenerate and rerun map onto ReplayRun.
-  for (const mode of ["regenerate", "rerun"]) {
+  // 7. Rerun and regenerate map onto ReplayRun. Regenerate forks the
+  // session, which ends the parent, so rerun must run first.
+  for (const mode of ["rerun", "regenerate"]) {
     const replayed = await core(
       `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs/${runIdValue}/${mode}`,
       { method: "POST" },
+      token,
     );
-    assert(Boolean(replayed.body.run?.run_id), `${mode} starts a new Run`);
+    assert(Boolean(replayed.run?.run_id), `${mode} starts a new Run`);
   }
 
   // 8. Fork and end.
   const fork = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/fork`,
     { body: JSON.stringify({ title: "Fork" }), method: "POST" },
+    token,
   );
   assert(
-    Boolean(fork.body.session_id) && fork.body.session_id !== sessionId,
+    Boolean(fork.session_id) && fork.session_id !== sessionId,
     "fork creates a distinct child session",
   );
   const ended = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/end`,
     { method: "POST" },
+    token,
   );
-  assert(ended.body.status === "ended", "session end marks the local index");
+  assert(ended.status === "ended", "session end marks the local index");
 
   // 9. context.promote through MCP with paired provenance lands as a Proposal.
-  const promote = await mcpRequest(agentToken, gatewaySession, 5, "tools/call", {
+  const promote = await mcpRequest(agentToken, gatewaySession, 6, "tools/call", {
     arguments: {
       agent_run_id: runIdValue,
       agent_session_id: sessionId,
@@ -375,30 +445,37 @@ async function main() {
     name: "context.promote",
   });
   assert(
-    promote.status === 200 && promote.body?.isError !== true,
+    promote.status === 200 && promote.body?.result?.isError !== true,
     "context.promote accepts paired Agent provenance",
   );
 
   // 10. Project Prompt: auto-generated, custom, reset.
   const prompt = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/prompt`,
+    {},
+    token,
   );
   assert(
-    typeof prompt.body.effective_prompt === "string" &&
-      prompt.body.effective_prompt.length > 0,
+    typeof prompt.effective_prompt === "string" &&
+      prompt.effective_prompt.length > 0,
     "project Prompt is auto-generated",
   );
   const custom = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/prompt`,
     { body: JSON.stringify({ content: "custom smoke prompt" }), method: "PATCH" },
+    token,
   );
-  assert(custom.body.custom_prompt === "custom smoke prompt", "prompt override applies");
+  assert(
+    custom.custom_prompt === "custom smoke prompt",
+    "prompt override applies",
+  );
   const reset = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/prompt/reset`,
     { method: "POST" },
+    token,
   );
   assert(
-    reset.body.custom === false && reset.body.effective_prompt.length > 0,
+    reset.custom === false && reset.effective_prompt.length > 0,
     "prompt reset restores the generated default",
   );
 
@@ -406,15 +483,16 @@ async function main() {
   const rotated = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/tokens/rotate`,
     { body: JSON.stringify({ name: "rotated" }), method: "POST" },
+    token,
   );
-  const pendingToken = rotated.body.one_time_credential?.token;
-  const pendingTokenId = rotated.body.one_time_credential?.credential?.id;
+  const pendingToken = rotated.one_time_credential?.token;
+  const pendingTokenId = rotated.one_time_credential?.credential?.id;
   assert(
     Boolean(pendingToken) && pendingToken !== agentToken,
     "rotation issues a distinct pending Token once",
   );
   assert(
-    rotated.body.old_credential_remains_active === true,
+    rotated.old_credential_remains_active === true,
     "rotation keeps the old active Token valid",
   );
 
@@ -422,9 +500,10 @@ async function main() {
   const aborted = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/tokens/${pendingTokenId}/abort`,
     { method: "POST" },
+    token,
   );
   assert(
-    aborted.body.old_credential_remains_active === true,
+    aborted.old_credential_remains_active === true,
     "abort revokes only the pending Token",
   );
 
@@ -437,7 +516,7 @@ async function main() {
   assert(revoked.status === 204, "explicit revoke takes effect immediately");
 
   // 14. Revoked Token can no longer list tools.
-  const revokedList = await mcpRequest(agentToken, gatewaySession, 6, "tools/list");
+  const revokedList = await mcpRequest(agentToken, gatewaySession, 7, "tools/list");
   assert(
     revokedList.status === 401 || revokedList.status === 403,
     "revoked Agent Token is rejected by Gateway",

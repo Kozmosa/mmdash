@@ -177,3 +177,11 @@ health/readiness, and recent log inspection, then stops with `docker compose
 ... down` without `-v`. When no real Hermes instance is available, run the
 pinned mock HTTP/SSE acceptance and report explicitly that real Hermes
 interoperability was not executed.
+
+The pinned mock acceptance lives in `scripts/mock-hermes.mjs` and
+`scripts/agent-smoke.mjs` with the port-isolated
+`deploy/compose/compose.acceptance.yaml` override. Agent smoke needs the
+paired Gateway attestation credential: create a Core admin API token after
+the first start, then restart `core` and `mcp-gateway` with
+`AUTH_AGENT_VERIFICATION_TOKEN_ID` and `MCP_CORE_ACCESS_TOKEN` before running
+`node scripts/agent-smoke.mjs`.

@@ -316,12 +316,19 @@ const server = createServer(async (request, response) => {
       writeJSON(response, 200, {
         data: [
           {
+            id: "m0",
+            session_id: sessionId,
+            role: "user",
+            content: "analyze the project",
+            timestamp: Date.now() / 1000,
+          },
+          {
             id: "m1",
             session_id: sessionId,
             role: "assistant",
             content: "safe answer",
             tool_calls: [{ id: "call-1", function: { name: "data.read", arguments: "{}" } }],
-            timestamp: Date.now() / 1000,
+            timestamp: Date.now() / 1000 + 1,
           },
         ],
       });
