@@ -1735,7 +1735,7 @@ export interface paths {
     put?: never;
     /**
      * Verify Hermes can reach the scoped mmdash MCP endpoint
-     * @description Verification is distinct from runtime and Dashboard connectivity.
+     * @description Verification is distinct from runtime and Dashboard connectivity. In auto mode the Adapter exercises the reverse connection through the managed Dashboard API. In manual mode mmdash cannot drive Hermes, so verification passes only when MCP Gateway has recorded a real credential-owned tools/list evidence callback for an active Agent Token; until then the endpoint returns verified=false with check code gateway_verification_missing and the instance stays setup_pending.
      */
     post: operations["agent.project_access.verify"];
     delete?: never;

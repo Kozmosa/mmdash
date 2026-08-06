@@ -58,6 +58,15 @@ API responses return only configuration booleans and safe check categories.
 They never return a stored Hermes API Key, Dashboard Session Token,
 Cloudflare Secret, provider response body, or credential-bearing URL.
 
+`POST agent.project_access.verify` re-runs the reverse-connection check and
+returns `verified=false` until evidence actually exists. In `manual` mode
+mmdash cannot drive Hermes, so the endpoint stays at
+`gateway_verification_missing` and the instance remains `setup_pending` until
+MCP Gateway records a real credential-owned `tools/list` evidence callback for
+an active Agent Token (see the Token lifecycle below). In `auto` mode the
+Adapter exercises the reverse connection through the managed Dashboard API.
+Runtime and management checks never satisfy this requirement on their own.
+
 ## Product Agent Token lifecycle
 
 Agent Tokens are Auth-issued high-entropy opaque credentials. Core stores only

@@ -58,6 +58,12 @@ Hermes Jobs are mapped and probed in this stage but are not scheduled by the
 product. Do not add automatic Progress evaluation, Cron creation, event
 consumers, debounce, or Stage 6 triggers here.
 
+`StreamChat` is a tested interface port (session event streaming). The current
+product message path executes through StartRun plus StreamRun so that Run
+status, Tool Calls, and stop/regenerate/rerun stay consistent; StreamChat
+remains available for a future session-event-stream path. A new Runtime
+Adapter still must implement the whole interface, including StreamChat.
+
 ## Connector safety
 
 Runtime and management connectors use deployment-owned network policy. Tests
