@@ -95,6 +95,7 @@ async function executeDataTool(
     }
     const result = await operation({
       accessToken: context.coreAccessToken,
+      gatewayAccessToken: context.coreGatewayAccessToken,
       projectId,
       requestId: context.requestId,
     });

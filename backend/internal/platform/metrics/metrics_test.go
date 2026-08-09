@@ -18,11 +18,20 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 	registry.ObserveArtifactOperation(
 		"artifact-id", "denied", "bucket-name", time.Millisecond,
 	)
+	registry.ObserveAgentOperation("hermes", "stream", "success")
+	registry.ObserveAgentOperation("secret-runtime-url", "secret-operation", "secret-outcome")
+	registry.ObserveAgentConnectionCheck("project_access", "passed")
+	registry.ObserveAgentRun("waiting_for_approval")
+	registry.AddAgentStream(1)
+	registry.ObserveAgentToken("rotate", "error")
 	registry.SetRepoGauges(3, 2, 4096)
 	registry.ObserveNotificationCreated()
 	registry.ObserveNotificationDelivery("retrying", 300*time.Millisecond)
 	registry.ObserveNotificationDelivery("failed", 200*time.Millisecond)
 	registry.SetNotificationGauges(4, 5)
+	registry.ObserveProgressReminder("triggered")
+	registry.ObserveProgressReminder("pending")
+	registry.ObserveProgressReminder("failed")
 	mux := http.NewServeMux()
 	registry.RegisterRoutes(mux)
 	response := httptest.NewRecorder()
@@ -45,15 +54,29 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 		`mmdash_artifact_operations_total{backend="minio",operation="confirm",outcome="success"} 1`,
 		`mmdash_artifact_operations_total{backend="unknown",operation="other",outcome="error"} 1`,
 		`mmdash_artifact_operation_duration_seconds{backend="minio",operation="confirm"} 0.250000`,
+		`mmdash_agent_adapter_requests_total{adapter="hermes",operation="stream",outcome="success"} 1`,
+		`mmdash_agent_adapter_requests_total{adapter="unknown",operation="other",outcome="error"} 1`,
+		`mmdash_agent_connection_checks_total{kind="project_access",outcome="passed"} 1`,
+		`mmdash_agent_runs_total{status="waiting_for_approval"} 1`,
+		`mmdash_agent_sse_streams_active 1`,
+		`mmdash_agent_token_lifecycle_total{action="rotate",outcome="error"} 1`,
 		`mmdash_notification_created_total 1`,
 		`mmdash_notification_inbox_unread 4`,
 		`mmdash_notification_delivery_pending 5`,
 		`mmdash_notification_delivery_retries_total 1`,
 		`mmdash_notification_delivery_failures_total 1`,
 		`mmdash_notification_delivery_duration_seconds_count 2`,
+		`mmdash_progress_reminders_triggered_total 1`,
+		`mmdash_progress_reminder_retries_total 1`,
+		`mmdash_progress_reminder_failures_total 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q:\n%s", expected, body)
+		}
+	}
+	for _, secret := range []string{"secret-runtime-url", "secret-operation", "secret-outcome"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("metrics leaked unbounded Agent label %q:\n%s", secret, body)
 		}
 	}
 }

@@ -16,6 +16,7 @@ import { registerWebSocketRoutes } from "./proxy/websocket.js";
 import { registerExampleRoutes } from "./routes/example.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerContextProposalRoutes } from "./routes/context-proposals.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPageRoutes } from "./routes/pages.js";
 import { registerProjectRoutes } from "./routes/projects.js";
@@ -25,6 +26,7 @@ import { registerRepoRoutes } from "./routes/repo.js";
 import { registerRepoWebhookRoutes } from "./routes/repo-webhook.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
+import { registerAgentRoutes } from "./routes/agent.js";
 
 export type BuildAppOptions = {
   config?: BffConfig;
@@ -78,6 +80,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerAuthRoutes(app, coreClient, config);
   registerExampleRoutes(app, coreClient);
   registerArtifactRoutes(app, coreClient);
+  registerAgentRoutes(app, coreClient);
+  registerContextProposalRoutes(app, coreClient);
   registerProjectRoutes(app, coreClient);
   registerProgressRoutes(app, coreClient);
   registerModelRoutes(app, coreClient);

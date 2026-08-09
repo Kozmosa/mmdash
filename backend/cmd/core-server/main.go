@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mmdash/mmdash/backend/internal/agent"
+	"github.com/mmdash/mmdash/backend/internal/agent/hermes"
 	"github.com/mmdash/mmdash/backend/internal/artifact"
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -123,15 +125,16 @@ func run(logger *logging.Logger) error {
 	systemClock := clock.System{}
 	idGenerator := identity.Generator{}
 	authService := &auth.Service{
-		AccessTokenTTL:         processConfig.Auth.AccessTokenTTL,
-		Clock:                  systemClock,
-		DeviceAuthorizationTTL: processConfig.Auth.DeviceAuthorizationTTL,
-		DevicePollInterval:     processConfig.Auth.DevicePollInterval,
-		DeviceVerificationURI:  strings.TrimRight(processConfig.PublicURL, "/") + "/cli/authorize",
-		Generator:              idGenerator,
-		JWTSecret:              []byte(processConfig.Auth.JWTSecret),
-		SessionTTL:             processConfig.Auth.SessionTTL,
-		Store:                  auth.PostgresStore{DB: db},
+		AccessTokenTTL:           processConfig.Auth.AccessTokenTTL,
+		AgentVerificationTokenID: processConfig.Auth.AgentVerificationTokenID,
+		Clock:                    systemClock,
+		DeviceAuthorizationTTL:   processConfig.Auth.DeviceAuthorizationTTL,
+		DevicePollInterval:       processConfig.Auth.DevicePollInterval,
+		DeviceVerificationURI:    strings.TrimRight(processConfig.PublicURL, "/") + "/cli/authorize",
+		Generator:                idGenerator,
+		JWTSecret:                []byte(processConfig.Auth.JWTSecret),
+		SessionTTL:               processConfig.Auth.SessionTTL,
+		Store:                    auth.PostgresStore{DB: db},
 	}
 	transactionManager := transaction.Manager{DB: transaction.SQLBeginner{DB: db}}
 	outboxWriter := outbox.Writer{Clock: systemClock, Generator: idGenerator}
@@ -177,18 +180,19 @@ func run(logger *logging.Logger) error {
 	}); err != nil {
 		return err
 	}
+	projectStore := project.PostgresStore{
+		Clock:       systemClock,
+		DB:          db,
+		Generator:   idGenerator,
+		Outbox:      outboxWriter,
+		Transaction: transactionManager,
+	}
 	projectService := &project.Service{
 		Auth:           authService,
 		Clock:          systemClock,
 		InvitationTTL:  72 * time.Hour,
 		TrashRetention: 30 * 24 * time.Hour,
-		Store: project.PostgresStore{
-			Clock:       systemClock,
-			DB:          db,
-			Generator:   idGenerator,
-			Outbox:      outboxWriter,
-			Transaction: transactionManager,
-		},
+		Store:          projectStore,
 	}
 	jobStore := jobs.PostgresStore{
 		Clock:       systemClock,
@@ -232,7 +236,10 @@ func run(logger *logging.Logger) error {
 	}
 	progressStore := progress.PostgresStore{
 		Clock: systemClock, DB: db, Generator: idGenerator,
-		Outbox: outboxWriter, Transaction: transactionManager,
+		Outbox: outboxWriter, ReminderLease: processConfig.Progress.ReminderLease,
+		References:         dataStore,
+		ReminderRetryDelay: processConfig.Progress.ReminderRetryDelay,
+		Transaction:        transactionManager,
 	}
 	progressService := &progress.Service{
 		Access: projectService, Audit: auditRecorder, Clock: systemClock,
@@ -342,6 +349,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := settingsRegistry.Register(model.SettingDefinition(notionClient)); err != nil {
+		return err
+	}
+	if err := settingsRegistry.Register(agent.SettingDefinition()); err != nil {
 		return err
 	}
 	if err := settingsRegistry.Register(settings.TypeDefinition{
@@ -473,6 +483,34 @@ func run(logger *logging.Logger) error {
 	}
 	notificationService.Settings = settingsService
 	authService.Policy = registrationSettingsPolicy{Store: settingsService.Store}
+	agentStore := agent.PostgresStore{
+		Audit: auditRecorder, Clock: systemClock, DB: db, Generator: idGenerator,
+		Outbox: outboxWriter, Transaction: transactionManager,
+	}
+	authService.Store = auth.PostgresStore{
+		AgentCredentials: agentStore,
+		DB:               db,
+		Outbox:           outboxWriter,
+		Transaction:      transactionManager,
+	}
+	agentAdapters := agent.NewRegistry()
+	if err := hermes.Register(agentAdapters, hermes.FactoryOptions{
+		RuntimePolicy:             hermesNetworkPolicy(processConfig.Agent.Runtime),
+		ManagementPolicy:          hermesNetworkPolicy(processConfig.Agent.Management),
+		ManagementMinimumInterval: processConfig.Agent.ManagementMinimumInterval,
+	}); err != nil {
+		return fmt.Errorf("register Hermes Agent adapter: %w", err)
+	}
+	agentService := &agent.Service{
+		Adapters: agentAdapters, Audit: auditRecorder, Auth: authService,
+		Clock: systemClock, GatewayURL: processConfig.Agent.GatewayURL,
+		Generator: idGenerator, Metrics: metricRegistry, Projects: projectService,
+		Settings: &settingsService, Store: agentStore,
+	}
+	agentModule := agent.Module{Service: *agentService}
+	projectService.AgentGrants = agentStore
+	dataService.Agent = agentService
+	dataService.AgentProvenance = agentStore
 	repoStore := repo.PostgresStore{
 		Clock: systemClock, DB: db, Generator: idGenerator,
 		Outbox: outboxWriter, Transaction: transactionManager,
@@ -648,6 +686,7 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(project.Module{
+		Agent:        agentModule.ProjectHandler(),
 		Artifact:     artifactModule.ProjectHandler(),
 		Model:        modelModule.ProjectHandler(),
 		Notification: notification.Module{Auth: authService, Service: notificationService, Settings: settingsService}.ProjectHandler(),
@@ -655,6 +694,9 @@ func run(logger *logging.Logger) error {
 		Repository:   repoModule.ProjectHandler(),
 		Service:      *projectService,
 	}); err != nil {
+		return err
+	}
+	if err := modules.Register(agentModule); err != nil {
 		return err
 	}
 	if err := modules.Register(notification.Module{Auth: authService, Service: notificationService, Settings: settingsService}); err != nil {
@@ -691,6 +733,7 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	handler := coreapp.NewHandler(coreapp.Options{
+		AgentRequestGuard: authService.AuthorizeAgentRequest,
 		Audit: func(ctx context.Context, observation coreapp.HTTPObservation) error {
 			outcome := "success"
 			if observation.Status == 401 || observation.Status == 403 {
@@ -742,6 +785,33 @@ func run(logger *logging.Logger) error {
 	}
 	go eventProcessor.Run(ctx, func(processorErr error) {
 		logger.Error("outbox.processor.failed", map[string]interface{}{
+			"error": processorErr.Error(),
+		})
+	})
+	progressReminderProcessorID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Progress reminder processor identity: %w", err)
+	}
+	startProgressReminderProcessor(ctx, progress.ReminderProcessor{
+		BatchSize:  processConfig.Progress.ReminderBatchSize,
+		Lease:      processConfig.Progress.ReminderLease,
+		Metrics:    metricRegistry,
+		Owner:      "core-progress-reminder-" + progressReminderProcessorID,
+		Poll:       processConfig.Progress.ReminderPollInterval,
+		RetryDelay: processConfig.Progress.ReminderRetryDelay,
+		Store:      progressStore,
+	}, func(processorErr error) {
+		logger.Error("progress.reminder.processor.failed", map[string]interface{}{
+			"error": processorErr.Error(),
+		})
+	})
+	startInvitationExpiryProcessor(ctx, project.InvitationExpiryProcessor{
+		BatchSize: processConfig.Project.InvitationExpiryBatchSize,
+		Clock:     systemClock,
+		Poll:      processConfig.Project.InvitationExpiryPollInterval,
+		Store:     projectStore,
+	}, func(processorErr error) {
+		logger.Error("project.invitation.expiry.failed", map[string]interface{}{
 			"error": processorErr.Error(),
 		})
 	})
@@ -855,9 +925,48 @@ func runModelScheduler(ctx context.Context, service *model.Service, owner string
 	}
 }
 
+type progressReminderRunner interface {
+	Run(context.Context, func(error))
+}
+
+func startProgressReminderProcessor(ctx context.Context, runner progressReminderRunner, onError func(error)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Run(ctx, onError)
+	}()
+	return done
+}
+
+type invitationExpiryRunner interface {
+	Run(context.Context, func(error))
+}
+
+func startInvitationExpiryProcessor(ctx context.Context, runner invitationExpiryRunner, onError func(error)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Run(ctx, onError)
+	}()
+	return done
+}
+
 func serviceBackend(storage artifact.BlobStore) string {
 	if storage == nil {
 		return "unknown"
 	}
 	return storage.Backend()
+}
+
+func hermesNetworkPolicy(config config.AgentConnectorConfig) hermes.NetworkPolicy {
+	return hermes.NetworkPolicy{
+		AllowLoopback:         config.AllowLoopback,
+		AllowPrivate:          config.AllowPrivate,
+		AllowedPorts:          append([]int(nil), config.AllowedPorts...),
+		ConnectTimeout:        config.ConnectTimeout,
+		MaxRedirects:          config.MaxRedirects,
+		MaxResponseBytes:      config.MaxResponseBytes,
+		RequestTimeout:        config.RequestTimeout,
+		ResponseHeaderTimeout: config.ResponseHeaderTimeout,
+	}
 }

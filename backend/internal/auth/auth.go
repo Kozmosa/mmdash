@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -77,13 +78,78 @@ type Token struct {
 	UserID    string     `json:"user_id"`
 }
 
+// AgentToken is a product credential bound to exactly one Agent instance,
+// Project grant, and reviewed set of MCP tools. The opaque secret is never
+// persisted or returned after issuance.
+type AgentToken struct {
+	ActivatedAt     *time.Time                      `json:"activated_at,omitempty"`
+	AgentInstanceID string                          `json:"agent_instance_id"`
+	AllowedTools    []string                        `json:"allowed_tools"`
+	CreatedAt       time.Time                       `json:"created_at"`
+	ExpiresAt       *time.Time                      `json:"expires_at,omitempty"`
+	GrantID         string                          `json:"grant_id"`
+	ID              string                          `json:"id"`
+	IssuedBy        string                          `json:"issued_by"`
+	LastUsedAt      *time.Time                      `json:"last_used_at,omitempty"`
+	Name            string                          `json:"name"`
+	ProjectID       string                          `json:"project_id"`
+	ReplacesTokenID string                          `json:"replaces_token_id,omitempty"`
+	RevokedAt       *time.Time                      `json:"revoked_at,omitempty"`
+	Status          string                          `json:"status"`
+	TokenHash       string                          `json:"-"`
+	Verification    *AgentTokenVerificationEvidence `json:"-"`
+}
+
+const (
+	AgentGatewayAuthorizationHeader = "X-Mmdash-Gateway-Authorization"
+	AgentTokenVerificationMethod    = "tools/list"
+)
+
+// AgentTokenVerificationEvidence is durable proof that MCP Gateway observed a
+// real, successful tools/list in a protocol-negotiated MCP session with the
+// pending credential. Ordinary authentication, current server/discover, and
+// legacy initialize never create this evidence on their own.
+type AgentTokenVerificationEvidence struct {
+	AgentInstanceID   string    `json:"agent_instance_id"`
+	EvidenceID        string    `json:"evidence_id"`
+	MCPSessionID      string    `json:"mcp_session_id"`
+	ProjectID         string    `json:"project_id"`
+	RequestID         string    `json:"request_id"`
+	TokenID           string    `json:"token_id"`
+	MCPMethod         string    `json:"mcp_method"`
+	VerifiedAt        time.Time `json:"verified_at"`
+	VerifiedByTokenID string    `json:"-"`
+}
+
+// RecordAgentTokenVerificationInput is supplied only by the trusted MCP
+// Gateway callback after tools/list succeeds in a protocol-negotiated session.
+type RecordAgentTokenVerificationInput struct {
+	AgentInstanceID string
+	MCPSessionID    string
+	ProjectID       string
+	RequestID       string
+	MCPMethod       string
+}
+
 // Identity is the authenticated caller used by domain authorization.
 type Identity struct {
-	Kind      string `json:"kind"`
-	ProjectID string `json:"project_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
-	TokenID   string `json:"token_id,omitempty"`
-	User      User   `json:"user"`
+	AgentInstanceID  string   `json:"agent_instance_id,omitempty"`
+	AllowedTools     []string `json:"allowed_tools,omitempty"`
+	CredentialStatus string   `json:"credential_status,omitempty"`
+	Kind             string   `json:"kind"`
+	ProjectID        string   `json:"project_id,omitempty"`
+	SessionID        string   `json:"session_id,omitempty"`
+	TokenID          string   `json:"token_id,omitempty"`
+	User             User     `json:"user,omitempty"`
+}
+
+// ActorID is the stable audit principal. Agent token rotation deliberately
+// keeps this value stable by using the Agent instance rather than token ID.
+func (identity Identity) ActorID() string {
+	if identity.Kind == "agent" {
+		return identity.AgentInstanceID
+	}
+	return identity.User.ID
 }
 
 // LoginResult returns the JWT only at login time.
@@ -138,6 +204,24 @@ type IssuedToken struct {
 	Token  Token  `json:"credential"`
 }
 
+// IssuedAgentToken returns the opaque Agent secret exactly once.
+type IssuedAgentToken struct {
+	Secret string     `json:"token"`
+	Token  AgentToken `json:"credential"`
+}
+
+// IssueAgentTokenInput is supplied by the Agent domain after it has created a
+// Project grant and authorized the human manager.
+type IssueAgentTokenInput struct {
+	AgentInstanceID string
+	AllowedTools    []string
+	ExpiresAt       *time.Time
+	GrantID         string
+	Name            string
+	ProjectID       string
+	ReplacesTokenID string
+}
+
 // Store is the persistence boundary for the auth domain.
 type Store interface {
 	CreateDeviceAuthorization(context.Context, DeviceAuthorization) error
@@ -158,6 +242,29 @@ type Store interface {
 	UpdatePassword(context.Context, string, string, time.Time) error
 	UpdateUser(context.Context, string, string, string, time.Time) (User, error)
 	DeleteUser(context.Context, string) error
+}
+
+// AgentTokenStore is kept separate from Store so lightweight Auth test doubles
+// and non-product deployments do not accidentally implement the Agent token
+// lifecycle with generic user token semantics.
+type AgentTokenStore interface {
+	ActivateAgentToken(context.Context, string, string, string, time.Time) (AgentToken, error)
+	CreateAgentToken(context.Context, AgentToken) error
+	FindAgentToken(context.Context, string, time.Time) (AgentToken, error)
+	GetAgentToken(context.Context, string) (AgentToken, error)
+	ListAgentTokens(context.Context, string) ([]AgentToken, error)
+	MarkAgentTokenVerified(context.Context, AgentTokenVerificationEvidence) (AgentTokenVerificationEvidence, error)
+	RevokeAgentToken(context.Context, string, time.Time) error
+	TouchAgentToken(context.Context, string, time.Time) error
+}
+
+// AgentCredentialLifecycle lets the Agent module synchronize its Project
+// Grant, opaque remote-access mapping, and durable lifecycle events inside the
+// Auth-owned token transaction. Auth remains the sole owner of token hashes
+// and status mutations and does not interpret the remote-access identifier.
+type AgentCredentialLifecycle interface {
+	ActivateAgentCredential(context.Context, transaction.Tx, AgentToken, string, string, time.Time) error
+	RevokeAgentCredential(context.Context, transaction.Tx, AgentToken, time.Time) error
 }
 
 // RegistrationPolicy resolves whether users may register without an invitation.
@@ -199,18 +306,19 @@ type ProjectTokenAuthorizer interface {
 
 // Service contains credential policy and token cryptography.
 type Service struct {
-	AccessTokenTTL         time.Duration
-	Clock                  clock.Clock
-	DeviceAuthorizationTTL time.Duration
-	DevicePollInterval     time.Duration
-	DeviceVerificationURI  string
-	Generator              identity.Generator
-	JWTSecret              []byte
-	Invitations            InvitationService
-	Policy                 RegistrationPolicy
-	ProjectTokens          ProjectTokenAuthorizer
-	SessionTTL             time.Duration
-	Store                  Store
+	AccessTokenTTL           time.Duration
+	AgentVerificationTokenID string
+	Clock                    clock.Clock
+	DeviceAuthorizationTTL   time.Duration
+	DevicePollInterval       time.Duration
+	DeviceVerificationURI    string
+	Generator                identity.Generator
+	JWTSecret                []byte
+	Invitations              InvitationService
+	Policy                   RegistrationPolicy
+	ProjectTokens            ProjectTokenAuthorizer
+	SessionTTL               time.Duration
+	Store                    Store
 }
 
 // Register creates an active account and immediately creates a session.
@@ -561,8 +669,8 @@ func (service Service) accessExpiresAt(now time.Time, sessionExpiresAt time.Time
 
 // Authenticate validates a session JWT or opaque service token.
 func (service Service) Authenticate(ctx context.Context, authorization string) (Identity, error) {
-	secret := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
-	if secret == "" || secret == authorization {
+	secret, ok := bearerSecret(authorization)
+	if !ok {
 		return Identity{}, ErrUnauthenticated
 	}
 	now := service.Clock.Now().UTC()
@@ -580,20 +688,102 @@ func (service Service) Authenticate(ctx context.Context, authorization string) (
 		return identity, nil
 	}
 	token, user, err := service.Store.FindToken(ctx, hashToken(secret), now)
-	if err != nil {
+	if err == nil {
+		identity := Identity{
+			Kind:      token.Kind,
+			ProjectID: token.ProjectID,
+			TokenID:   token.ID,
+			User:      user,
+		}
+		requestctx.SetActor(ctx, identity.User.ID, identity.Kind)
+		if identity.ProjectID != "" {
+			requestctx.SetProject(ctx, identity.ProjectID)
+		}
+		return identity, nil
+	}
+	agentStore, ok := service.Store.(AgentTokenStore)
+	if !ok {
+		return Identity{}, ErrUnauthenticated
+	}
+	agentToken, agentErr := agentStore.FindAgentToken(ctx, hashToken(secret), now)
+	if agentErr != nil {
 		return Identity{}, ErrUnauthenticated
 	}
 	identity := Identity{
-		Kind:      token.Kind,
-		ProjectID: token.ProjectID,
-		TokenID:   token.ID,
-		User:      user,
+		AgentInstanceID:  agentToken.AgentInstanceID,
+		AllowedTools:     append([]string(nil), agentToken.AllowedTools...),
+		CredentialStatus: agentToken.Status,
+		Kind:             "agent",
+		ProjectID:        agentToken.ProjectID,
+		TokenID:          agentToken.ID,
 	}
-	requestctx.SetActor(ctx, identity.User.ID, identity.Kind)
-	if identity.ProjectID != "" {
-		requestctx.SetProject(ctx, identity.ProjectID)
+	requestctx.SetActor(ctx, identity.AgentInstanceID, identity.Kind)
+	requestctx.SetProject(ctx, identity.ProjectID)
+	if agentToken.Status == "active" {
+		_ = agentStore.TouchAgentToken(ctx, agentToken.ID, now)
 	}
 	return identity, nil
+}
+
+// AuthorizeAgentRequest requires a second, dedicated Gateway-to-Core
+// credential for product Agent requests outside the identity introspection
+// endpoint. The Agent Token remains the primary identity used by domain RBAC,
+// exact Tool checks, request context, and Audit. The secondary credential is
+// only an attestation that the request passed through the trusted MCP Gateway.
+func (service Service) AuthorizeAgentRequest(
+	ctx context.Context,
+	method string,
+	path string,
+	authorization string,
+	gatewayAuthorization string,
+) error {
+	identity, err := service.Authenticate(ctx, authorization)
+	if err != nil || identity.Kind != "agent" {
+		// Authentication and its public error mapping remain owned by the
+		// destination handler. This guard only adds the Agent relay invariant.
+		return nil
+	}
+	if method == http.MethodGet && path == "/v1/auth/me" {
+		return nil
+	}
+	return service.authorizeAgentGatewayCredential(
+		ctx, gatewayAuthorization, identity.ProjectID,
+	)
+}
+
+func (service Service) authorizeAgentGatewayCredential(
+	ctx context.Context,
+	authorization string,
+	projectID string,
+) error {
+	secret, ok := bearerSecret(authorization)
+	if !ok || strings.Count(secret, ".") == 2 {
+		return ErrForbidden
+	}
+	token, user, err := service.Store.FindToken(
+		ctx, hashToken(secret), service.Clock.Now().UTC(),
+	)
+	if err != nil {
+		return ErrForbidden
+	}
+	return service.authorizeAgentGatewayIdentity(Identity{
+		Kind: token.Kind, ProjectID: token.ProjectID, TokenID: token.ID, User: user,
+	}, projectID)
+}
+
+func (service Service) authorizeAgentGatewayIdentity(
+	identity Identity,
+	projectID string,
+) error {
+	trustedTokenID := strings.TrimSpace(service.AgentVerificationTokenID)
+	if trustedTokenID == "" || identity.Kind != "api" ||
+		identity.TokenID != trustedTokenID || identity.User.SystemRole != "admin" {
+		return ErrForbidden
+	}
+	if identity.ProjectID != "" && identity.ProjectID != projectID {
+		return ErrForbidden
+	}
+	return nil
 }
 
 // Logout revokes the current browser session.
@@ -605,7 +795,9 @@ func (service Service) Logout(ctx context.Context, authorization string) error {
 	return service.Store.RevokeSession(ctx, identity.SessionID, service.Clock.Now().UTC())
 }
 
-// IssueToken creates an API, Agent, or Box token.
+// IssueToken creates a generic API or Box token. Product Agent credentials are
+// issued only through IssueAgentToken so an instance, grant, and exact tools
+// cannot be omitted by a legacy caller.
 func (service Service) IssueToken(
 	ctx context.Context,
 	identity Identity,
@@ -617,10 +809,10 @@ func (service Service) IssueToken(
 	if identity.Kind != "session" && identity.Kind != "api" {
 		return IssuedToken{}, ErrForbidden
 	}
-	if kind != "api" && kind != "agent" && kind != "box" {
+	if kind != "api" && kind != "box" {
 		return IssuedToken{}, ErrInvalid
 	}
-	if (kind == "agent" || kind == "box") && projectID == "" {
+	if kind == "box" && projectID == "" {
 		return IssuedToken{}, ErrInvalid
 	}
 	if projectID != "" {
@@ -658,6 +850,275 @@ func (service Service) IssueToken(
 		return IssuedToken{}, fmt.Errorf("create token: %w", err)
 	}
 	return IssuedToken{Secret: secret, Token: token}, nil
+}
+
+// IssueAgentToken creates a pending, high-entropy product Agent credential.
+// The plaintext secret is returned exactly once and only its SHA-256 hash is
+// passed to persistence.
+func (service Service) IssueAgentToken(
+	ctx context.Context,
+	identity Identity,
+	input IssueAgentTokenInput,
+) (IssuedAgentToken, error) {
+	if identity.Kind != "session" && identity.Kind != "api" {
+		return IssuedAgentToken{}, ErrForbidden
+	}
+	input.AgentInstanceID = strings.TrimSpace(input.AgentInstanceID)
+	input.GrantID = strings.TrimSpace(input.GrantID)
+	input.ProjectID = strings.TrimSpace(input.ProjectID)
+	input.Name = strings.TrimSpace(input.Name)
+	tools, err := normalizeAllowedTools(input.AllowedTools)
+	if err != nil || input.AgentInstanceID == "" || input.GrantID == "" ||
+		input.ProjectID == "" || input.Name == "" {
+		return IssuedAgentToken{}, ErrInvalid
+	}
+	if service.ProjectTokens == nil ||
+		service.ProjectTokens.AuthorizeTokenManagement(ctx, identity, input.ProjectID) != nil {
+		return IssuedAgentToken{}, ErrForbidden
+	}
+	store, ok := service.Store.(AgentTokenStore)
+	if !ok {
+		return IssuedAgentToken{}, fmt.Errorf("agent token store is not configured")
+	}
+	tokenID, err := service.Generator.New()
+	if err != nil {
+		return IssuedAgentToken{}, err
+	}
+	secret, err := randomSecret("mmdash_agent_")
+	if err != nil {
+		return IssuedAgentToken{}, err
+	}
+	now := service.Clock.Now().UTC()
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(now) {
+		return IssuedAgentToken{}, ErrInvalid
+	}
+	token := AgentToken{
+		AgentInstanceID: input.AgentInstanceID,
+		AllowedTools:    tools,
+		CreatedAt:       now,
+		ExpiresAt:       input.ExpiresAt,
+		GrantID:         input.GrantID,
+		ID:              tokenID,
+		IssuedBy:        identity.User.ID,
+		Name:            input.Name,
+		ProjectID:       input.ProjectID,
+		ReplacesTokenID: strings.TrimSpace(input.ReplacesTokenID),
+		Status:          "pending",
+		TokenHash:       hashToken(secret),
+	}
+	if err := store.CreateAgentToken(ctx, token); err != nil {
+		return IssuedAgentToken{}, fmt.Errorf("create agent token: %w", err)
+	}
+	return IssuedAgentToken{Secret: secret, Token: token}, nil
+}
+
+// ActivateAgentToken atomically activates the verified pending token and, when
+// supplied, revokes the previous active token. The opaque newRemoteAccessID is
+// passed unchanged to the Agent-owned credential lifecycle in that same
+// transaction. A failed transaction preserves the old credential and mapping.
+func (service Service) ActivateAgentToken(
+	ctx context.Context,
+	identity Identity,
+	projectID string,
+	tokenID string,
+	oldTokenID string,
+	newRemoteAccessID string,
+) (AgentToken, error) {
+	if identity.Kind != "session" && identity.Kind != "api" {
+		return AgentToken{}, ErrForbidden
+	}
+	if service.ProjectTokens == nil ||
+		service.ProjectTokens.AuthorizeTokenManagement(ctx, identity, projectID) != nil {
+		return AgentToken{}, ErrForbidden
+	}
+	store, ok := service.Store.(AgentTokenStore)
+	if !ok {
+		return AgentToken{}, fmt.Errorf("agent token store is not configured")
+	}
+	token, err := store.GetAgentToken(ctx, strings.TrimSpace(tokenID))
+	if err != nil {
+		return AgentToken{}, err
+	}
+	now := service.Clock.Now().UTC()
+	if token.ProjectID != strings.TrimSpace(projectID) {
+		return AgentToken{}, ErrNotFound
+	}
+	if token.Status != "pending" || token.RevokedAt != nil ||
+		(token.ExpiresAt != nil && !token.ExpiresAt.After(now)) {
+		return AgentToken{}, ErrConflict
+	}
+	if !hasTrustedAgentTokenVerification(
+		token, strings.TrimSpace(service.AgentVerificationTokenID),
+	) {
+		return AgentToken{}, ErrConflict
+	}
+	return store.ActivateAgentToken(
+		ctx, strings.TrimSpace(tokenID), strings.TrimSpace(oldTokenID),
+		newRemoteAccessID, now,
+	)
+}
+
+// RecordAgentTokenVerification persists trusted proof from MCP Gateway. The
+// dedicated Gateway Core API credential is intentionally distinct from the
+// pending Agent Token being verified; browser, Agent, and Box identities are
+// never accepted here.
+func (service Service) RecordAgentTokenVerification(
+	ctx context.Context,
+	identity Identity,
+	tokenID string,
+	input RecordAgentTokenVerificationInput,
+) (AgentTokenVerificationEvidence, error) {
+	tokenID = strings.TrimSpace(tokenID)
+	input.AgentInstanceID = strings.TrimSpace(input.AgentInstanceID)
+	input.MCPSessionID = strings.TrimSpace(input.MCPSessionID)
+	input.ProjectID = strings.TrimSpace(input.ProjectID)
+	input.RequestID = strings.TrimSpace(input.RequestID)
+	input.MCPMethod = strings.TrimSpace(input.MCPMethod)
+	if err := service.authorizeAgentGatewayIdentity(
+		identity, input.ProjectID,
+	); err != nil {
+		return AgentTokenVerificationEvidence{}, ErrForbidden
+	}
+	if tokenID == "" || input.AgentInstanceID == "" || input.ProjectID == "" ||
+		input.MCPSessionID == "" || input.RequestID == "" ||
+		input.MCPMethod != AgentTokenVerificationMethod ||
+		len(input.MCPSessionID) > 200 || len(input.RequestID) > 200 {
+		return AgentTokenVerificationEvidence{}, ErrInvalid
+	}
+	store, ok := service.Store.(AgentTokenStore)
+	if !ok {
+		return AgentTokenVerificationEvidence{}, fmt.Errorf("agent token store is not configured")
+	}
+	token, err := store.GetAgentToken(ctx, tokenID)
+	if err != nil || token.AgentInstanceID != input.AgentInstanceID ||
+		token.ProjectID != input.ProjectID {
+		return AgentTokenVerificationEvidence{}, ErrNotFound
+	}
+	now := service.Clock.Now().UTC()
+	if token.Status != "pending" || token.RevokedAt != nil ||
+		(token.ExpiresAt != nil && !token.ExpiresAt.After(now)) {
+		return AgentTokenVerificationEvidence{}, ErrConflict
+	}
+	if token.Verification != nil {
+		return *token.Verification, nil
+	}
+	evidenceID, err := service.Generator.New()
+	if err != nil {
+		return AgentTokenVerificationEvidence{}, err
+	}
+	return store.MarkAgentTokenVerified(ctx, AgentTokenVerificationEvidence{
+		AgentInstanceID:   input.AgentInstanceID,
+		EvidenceID:        evidenceID,
+		MCPSessionID:      input.MCPSessionID,
+		ProjectID:         input.ProjectID,
+		RequestID:         input.RequestID,
+		TokenID:           tokenID,
+		MCPMethod:         input.MCPMethod,
+		VerifiedAt:        now,
+		VerifiedByTokenID: identity.TokenID,
+	})
+}
+
+func (service Service) RevokeAgentToken(
+	ctx context.Context,
+	identity Identity,
+	projectID string,
+	tokenID string,
+) error {
+	if identity.Kind != "session" && identity.Kind != "api" {
+		return ErrForbidden
+	}
+	if service.ProjectTokens == nil ||
+		service.ProjectTokens.AuthorizeTokenManagement(ctx, identity, projectID) != nil {
+		return ErrForbidden
+	}
+	store, ok := service.Store.(AgentTokenStore)
+	if !ok {
+		return fmt.Errorf("agent token store is not configured")
+	}
+	tokenID = strings.TrimSpace(tokenID)
+	token, err := store.GetAgentToken(ctx, tokenID)
+	if err != nil {
+		return err
+	}
+	if token.ProjectID != strings.TrimSpace(projectID) {
+		return ErrNotFound
+	}
+	return store.RevokeAgentToken(ctx, tokenID, service.Clock.Now().UTC())
+}
+
+func (service Service) GetAgentToken(ctx context.Context, tokenID string) (AgentToken, error) {
+	store, ok := service.Store.(AgentTokenStore)
+	if !ok {
+		return AgentToken{}, fmt.Errorf("agent token store is not configured")
+	}
+	return store.GetAgentToken(ctx, strings.TrimSpace(tokenID))
+}
+
+func (service Service) ListAgentTokens(ctx context.Context, grantID string) ([]AgentToken, error) {
+	store, ok := service.Store.(AgentTokenStore)
+	if !ok {
+		return nil, fmt.Errorf("agent token store is not configured")
+	}
+	return store.ListAgentTokens(ctx, strings.TrimSpace(grantID))
+}
+
+// RequireAgentTool enforces the product token status and exact tool grant at
+// Core as a second boundary behind MCP Gateway.
+func RequireAgentTool(identity Identity, tool string) error {
+	if identity.Kind != "agent" {
+		return nil
+	}
+	if identity.CredentialStatus != "active" {
+		return ErrForbidden
+	}
+	for _, allowed := range identity.AllowedTools {
+		if allowed == tool {
+			return nil
+		}
+	}
+	return ErrForbidden
+}
+
+func bearerSecret(authorization string) (string, bool) {
+	secret := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	return secret, secret != "" && secret != authorization
+}
+
+func normalizeAllowedTools(values []string) ([]string, error) {
+	if len(values) == 0 || len(values) > 64 {
+		return nil, ErrInvalid
+	}
+	seen := map[string]bool{}
+	tools := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || value == "*" || len(value) > 100 || seen[value] {
+			return nil, ErrInvalid
+		}
+		for _, character := range value {
+			if !(character >= 'a' && character <= 'z') &&
+				!(character >= '0' && character <= '9') &&
+				character != '.' && character != '_' && character != '-' {
+				return nil, ErrInvalid
+			}
+		}
+		seen[value] = true
+		tools = append(tools, value)
+	}
+	return tools, nil
+}
+
+func hasTrustedAgentTokenVerification(token AgentToken, trustedTokenID string) bool {
+	evidence := token.Verification
+	return trustedTokenID != "" && evidence != nil &&
+		evidence.EvidenceID != "" &&
+		evidence.MCPMethod == AgentTokenVerificationMethod &&
+		evidence.MCPSessionID != "" && evidence.RequestID != "" &&
+		evidence.AgentInstanceID == token.AgentInstanceID &&
+		evidence.ProjectID == token.ProjectID && evidence.TokenID == token.ID &&
+		evidence.VerifiedByTokenID == trustedTokenID &&
+		!evidence.VerifiedAt.Before(token.CreatedAt)
 }
 
 // ListTokens returns metadata without token secrets.

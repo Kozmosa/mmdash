@@ -80,6 +80,7 @@ async function list(context: ToolRegistrationContext, projectId: string) {
     throw new Error("MCP Core access token is not configured");
   return context.coreClient.listProjectMembers(projectId, {
     accessToken: context.coreAccessToken,
+    gatewayAccessToken: context.coreGatewayAccessToken,
     projectId,
     requestId: context.requestId,
   });

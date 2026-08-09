@@ -17,6 +17,7 @@ describe("CoreClient", () => {
     const client = new CoreClient("http://core.test/", fetchImplementation);
 
     await client.checkExample({
+      gatewayAccessToken: "gateway-attestation-token",
       projectId: "project-1",
       requestId: "request-1",
       userId: "user-1",
@@ -32,6 +33,9 @@ describe("CoreClient", () => {
     const request = fetchImplementation.mock.calls[0]?.[1];
     const headers = new Headers(request?.headers);
     expect(headers.get("x-request-id")).toBe("request-1");
+    expect(headers.get("x-mmdash-gateway-authorization")).toBe(
+      "Bearer gateway-attestation-token",
+    );
     expect(headers.get("x-mmdash-project-id")).toBe("project-1");
     expect(headers.get("x-mmdash-user-id")).toBe("user-1");
   });
@@ -50,6 +54,48 @@ describe("CoreClient", () => {
     ).rejects.toMatchObject({
       body: { code: "NOT_FOUND", message: "Missing" },
       status: 404,
+    });
+  });
+
+  it("records trusted pending Agent Token verification evidence", async () => {
+    const evidence = {
+      agent_instance_id: "11111111-1111-4111-8111-111111111111",
+      evidence_id: "22222222-2222-4222-8222-222222222222",
+      mcp_method: "tools/list" as const,
+      mcp_session_id: "mcp-session-1",
+      project_id: "33333333-3333-4333-8333-333333333333",
+      request_id: "request-1",
+      token_id: "44444444-4444-4444-8444-444444444444",
+      verified_at: "2026-08-06T12:00:00Z",
+    };
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(evidence), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = new CoreClient("http://core.test", fetchImplementation);
+    const context = {
+      accessToken: "trusted-gateway-api-token",
+      projectId: evidence.project_id,
+      requestId: evidence.request_id,
+      userId: "gateway-service",
+    };
+    const input = {
+      agent_instance_id: evidence.agent_instance_id,
+      mcp_method: evidence.mcp_method,
+      mcp_session_id: evidence.mcp_session_id,
+      project_id: evidence.project_id,
+      request_id: evidence.request_id,
+    };
+
+    await expect(
+      client.recordAgentTokenVerification(evidence.token_id, input, context),
+    ).resolves.toEqual(evidence);
+    expectRequest(fetchImplementation.mock.calls[0], {
+      body: input,
+      context,
+      method: "POST",
+      url: `http://core.test/v1/auth/agent-tokens/${evidence.token_id}/verification`,
     });
   });
 

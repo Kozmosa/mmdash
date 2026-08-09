@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS project_invitations_pending_expiry_idx;
