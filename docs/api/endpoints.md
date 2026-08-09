@@ -25,14 +25,44 @@ Stage 5 Agent operations are documented in
 [`agent.md`](agent.md). Core and Web BFF expose one-to-one instance, project
 access, Token, Prompt, Session, message, Run, and Run-SSE routes under their
 project-scoped Agent prefixes. The MCP catalog additionally exposes
-`context.promote` through the existing Context Proposal boundary. Stage 5
-Agent Token scopes are closed to `project.get`, `data.list`, `data.read`, and
-`context.promote`; create and update contracts reject every other Tool name.
+`context.promote` through the existing Context Proposal boundary. Stage 6
+extends the closed Agent Token scope with `progress.get` and
+`progress.recalculate`; create and update contracts reject every other Tool
+name.
 
-Stage 4 Progress operations:
+Stage 4 and Stage 6 Progress operations:
 
-- Core: `progress.get`, `progress.milestones.list`, `progress.milestones.create`, `progress.milestones.update`, `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`, `progress.tasks.delete`, `progress.dependencies.list`, `progress.dependencies.create`, `progress.dependencies.delete`, `progress.reminders.list`, `progress.reminders.create`, `progress.reminders.trigger`, `progress.proposals.list`, `progress.proposals.create`, `progress.proposals.review`, `progress.settings.get`, and `progress.settings.update`.
-- Web BFF: `bff.progress.get`, `bff.progress.milestones.list`, `bff.progress.milestones.create`, `bff.progress.milestones.update`, `bff.progress.tasks.list`, `bff.progress.tasks.create`, `bff.progress.tasks.update`, `bff.progress.tasks.delete`, `bff.progress.dependencies.list`, `bff.progress.dependencies.create`, `bff.progress.dependencies.delete`, `bff.progress.reminders.list`, `bff.progress.reminders.create`, `bff.progress.reminders.trigger`, `bff.progress.proposals.list`, `bff.progress.proposals.create`, `bff.progress.proposals.review`, `bff.progress.settings.get`, and `bff.progress.settings.update`.
+- Core Stage 4: `progress.get`, `progress.milestones.list`,
+  `progress.milestones.create`, `progress.milestones.update`,
+  `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`,
+  `progress.tasks.delete`, `progress.dependencies.list`,
+  `progress.dependencies.create`, `progress.dependencies.delete`,
+  `progress.reminders.list`, `progress.reminders.create`,
+  `progress.reminders.trigger`, `progress.proposals.list`,
+  `progress.proposals.create`, `progress.proposals.review`,
+  `progress.settings.get`, and `progress.settings.update`.
+- Web BFF Stage 4: `bff.progress.get`, `bff.progress.milestones.list`,
+  `bff.progress.milestones.create`, `bff.progress.milestones.update`,
+  `bff.progress.tasks.list`, `bff.progress.tasks.create`,
+  `bff.progress.tasks.update`, `bff.progress.tasks.delete`,
+  `bff.progress.dependencies.list`, `bff.progress.dependencies.create`,
+  `bff.progress.dependencies.delete`, `bff.progress.reminders.list`,
+  `bff.progress.reminders.create`, `bff.progress.reminders.trigger`,
+  `bff.progress.proposals.list`, `bff.progress.proposals.create`,
+  `bff.progress.proposals.review`, `bff.progress.settings.get`, and
+  `bff.progress.settings.update`.
+- Core adds `progress.recalculate`, `progress.evaluations.list`,
+  `progress.evaluations.get`, `progress.evaluations.retry`,
+  `progress.stage_override.set`, `progress.stage_override.clear`, and the
+  leased-Worker-only `progress.worker.input` / `progress.worker.execute` to the
+  existing Stage 4 Progress operations.
+- Web BFF adds `bff.progress.recalculate`,
+  `bff.progress.evaluations.list`, `bff.progress.evaluations.get`,
+  `bff.progress.evaluations.retry`, `bff.progress.stage_override.set`, and
+  `bff.progress.stage_override.clear` to its existing one-to-one Progress
+  routes.
+- MCP Gateway exposes `progress.get` and `progress.recalculate` through exact
+  Agent Tool grants and the same Core RBAC boundary.
 
 Notification 3.17 operations:
 
@@ -358,7 +388,23 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop` | `bff.agent.runs.stop`   | agent                | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate` | `bff.agent.runs.regenerate` | agent      | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun` | `bff.agent.runs.rerun` | agent                | `web-bff.yaml`     |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/recalculate`                                  | `progress.recalculate`                     | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/progress/evaluations`                                  | `progress.evaluations.list`                | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/progress/evaluations/{evaluationId}`                   | `progress.evaluations.get`                 | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/evaluations/{evaluationId}/retry`             | `progress.evaluations.retry`               | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/stage-override`                               | `progress.stage_override.set`              | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/progress/stage-override`                               | `progress.stage_override.clear`            | progress tracking    | `core.yaml`        |
+| Core        | Internal HTTP | `GET`         | `/v1/internal/progress-evaluation-jobs/{jobId}/input`                            | `progress.worker.input`                    | progress tracking    | `core.yaml`        |
+| Core        | Internal HTTP | `POST`        | `/v1/internal/progress-evaluation-jobs/{jobId}/execute`                          | `progress.worker.execute`                  | progress tracking    | `core.yaml`        |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/recalculate`                                 | `bff.progress.recalculate`                 | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/progress/evaluations`                                 | `bff.progress.evaluations.list`            | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/progress/evaluations/{evaluationId}`                  | `bff.progress.evaluations.get`             | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/evaluations/{evaluationId}/retry`            | `bff.progress.evaluations.retry`           | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/stage-override`                              | `bff.progress.stage_override.set`          | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/progress/stage-override`                              | `bff.progress.stage_override.clear`        | progress tracking    | `web-bff.yaml`     |
 | MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `context.promote`                          | datahub proposal     | `context.promote.json` |
+| MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `progress.get`                             | progress tracking    | `progress.get.json` |
+| MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `progress.recalculate`                     | progress tracking    | `progress.recalculate.json` |
 | MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `system.echo`                              | engineering baseline | `system.echo.json` |
 
 ## Browser BFF conventions

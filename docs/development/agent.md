@@ -196,6 +196,13 @@ and Project and that the Run belongs to the Session. External Hermes Runs may
 omit both. The result is always a pending Context Proposal; an Agent cannot
 review it.
 
+Stage 6 uses the existing `progress` Session type and normal Run/Jobs APIs for
+automatic evaluation. Runs created by this path persist
+`source=progress_evaluation` plus the originating evaluation reference; their
+terminal events are excluded from automatic Progress triggers to prevent a
+self-loop. The reviewed Agent Tool scope now also includes `progress.get` and
+`progress.recalculate`; no wildcard or direct Progress-table path is added.
+
 ## Focused checks
 
 ```bash
