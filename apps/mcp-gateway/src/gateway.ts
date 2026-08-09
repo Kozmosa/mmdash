@@ -456,8 +456,8 @@ async function recordAgentTokenVerification(
       evidence.agent_instance_id !== agentInstanceId ||
       evidence.project_id !== projectId ||
       evidence.mcp_method !== "tools/list" ||
-      evidence.mcp_session_id !== sessionId ||
-      evidence.request_id !== requestId
+      !evidence.mcp_session_id ||
+      !evidence.request_id
     ) {
       throw new Error("Agent verification evidence did not match the request");
     }

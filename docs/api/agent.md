@@ -118,7 +118,11 @@ Session as negotiated and are insufficient on their own. After the first
 successful `tools/list` in a negotiated MCP Session, Gateway calls
 `auth.agent_tokens.verification.record` with the pending Token ID, Agent
 instance, Project, bounded mmdash Session ID, and request ID. Core stores the
-first evidence record and accepts the callback only when all of these are true:
+first evidence record. Repeated `tools/list` callbacks are idempotent: Core
+returns that original evidence, and Gateway accepts it only when the stable
+Token, Agent, Project, and `tools/list` binding still matches. The first
+Session and request IDs are never overwritten. Core accepts the callback only
+when all of these are true:
 
 - the caller is an admin `api` identity;
 - its Auth Token ID exactly equals `AUTH_AGENT_VERIFICATION_TOKEN_ID`;
