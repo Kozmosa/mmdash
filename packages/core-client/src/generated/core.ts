@@ -2728,7 +2728,7 @@ export interface components {
       agent_instance_id?: string;
       /** Format: uuid */
       project_id?: string;
-      allowed_tools?: string[];
+      allowed_tools?: components["schemas"]["AgentToolName"][];
       /** @enum {string} */
       credential_status?: "pending" | "active";
       /** Format: uuid */
@@ -4315,6 +4315,12 @@ export interface components {
     };
     /** @enum {string} */
     AgentAdapterType: "hermes";
+    /**
+     * @description Closed Stage 5 product Agent Tool scope. Additional MCP tools require a later-stage domain and contract change before they can be granted.
+     * @enum {string}
+     */
+    AgentToolName:
+      "project.get" | "data.list" | "data.read" | "context.promote";
     /** @enum {string} */
     AgentManagementMode: "manual" | "auto";
     /** @enum {string} */
@@ -4397,7 +4403,15 @@ export interface components {
       project_id: string;
       /** @enum {string} */
       status: "active" | "revoked";
-      allowed_tools: string[];
+      /**
+       * @example [
+       *       "project.get",
+       *       "data.list",
+       *       "data.read",
+       *       "context.promote"
+       *     ]
+       */
+      allowed_tools: components["schemas"]["AgentToolName"][];
       project_access_status?: components["schemas"]["AgentProjectAccessStatus"];
       /** Format: uuid */
       default_session_id?: string;
@@ -4422,7 +4436,15 @@ export interface components {
       /** Format: uuid */
       project_id: string;
       name: string;
-      allowed_tools: string[];
+      /**
+       * @example [
+       *       "project.get",
+       *       "data.list",
+       *       "data.read",
+       *       "context.promote"
+       *     ]
+       */
+      allowed_tools: components["schemas"]["AgentToolName"][];
       status: components["schemas"]["AgentTokenStatus"];
       /** Format: uuid */
       replaces_token_id?: string;
@@ -4492,8 +4514,16 @@ export interface components {
       dashboard_session_token?: string;
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
-      /** @description Exact reviewed MCP tool names; product Agent grants do not accept wildcards. */
-      allowed_tools: string[];
+      /**
+       * @description Exact reviewed Stage 5 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @example [
+       *       "project.get",
+       *       "data.list",
+       *       "data.read",
+       *       "context.promote"
+       *     ]
+       */
+      allowed_tools: components["schemas"]["AgentToolName"][];
     };
     UpdateAgentInstanceRequest: {
       display_name?: string;
@@ -4509,7 +4539,16 @@ export interface components {
       dashboard_session_token?: string;
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
-      allowed_tools?: string[];
+      /**
+       * @description Exact reviewed Stage 5 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @example [
+       *       "project.get",
+       *       "data.list",
+       *       "data.read",
+       *       "context.promote"
+       *     ]
+       */
+      allowed_tools?: components["schemas"]["AgentToolName"][];
     };
     OneTimeAgentToken: {
       /** @description Opaque Agent Token returned exactly once in manual mode. */

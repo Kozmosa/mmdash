@@ -3795,9 +3795,11 @@ components:
           format: uuid
         allowed_tools:
           type: array
+          minItems: 1
+          maxItems: 4
           uniqueItems: true
           items:
-            type: string
+            $ref: "#/components/schemas/AgentToolName"
         credential_status:
           type: string
           enum: [pending, active]
@@ -6980,6 +6982,12 @@ components:
     AgentAdapterType:
       type: string
       enum: [hermes]
+    AgentToolName:
+      type: string
+      enum: [project.get, data.list, data.read, context.promote]
+      description: >-
+        Closed Stage 5 product Agent Tool scope. Additional MCP tools require
+        a later-stage domain and contract change before they can be granted.
     AgentManagementMode:
       type: string
       enum: [manual, auto]
@@ -7093,11 +7101,11 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 100
+          maxItems: 4
           uniqueItems: true
           items:
-            type: string
-            pattern: "^[a-z][a-z0-9_.-]*$"
+            $ref: "#/components/schemas/AgentToolName"
+          example: [project.get, data.list, data.read, context.promote]
         project_access_status:
           $ref: "#/components/schemas/AgentProjectAccessStatus"
         default_session_id: { type: string, format: uuid }
@@ -7126,8 +7134,12 @@ components:
         name: { type: string }
         allowed_tools:
           type: array
+          minItems: 1
+          maxItems: 4
           uniqueItems: true
-          items: { type: string }
+          items:
+            $ref: "#/components/schemas/AgentToolName"
+          example: [project.get, data.list, data.read, context.promote]
         status:
           $ref: "#/components/schemas/AgentTokenStatus"
         replaces_token_id: { type: string, format: uuid }
@@ -7267,12 +7279,14 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 100
+          maxItems: 4
           uniqueItems: true
           items:
-            type: string
-            pattern: "^[a-z][a-z0-9_.-]*$"
-          description: Exact reviewed MCP tool names; product Agent grants do not accept wildcards.
+            $ref: "#/components/schemas/AgentToolName"
+          example: [project.get, data.list, data.read, context.promote]
+          description: >-
+            Exact reviewed Stage 5 MCP Tool names; product Agent grants do not
+            accept wildcards or tools outside the closed Agent scope.
     UpdateAgentInstanceRequest:
       type: object
       additionalProperties: false
@@ -7326,11 +7340,14 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 100
+          maxItems: 4
           uniqueItems: true
           items:
-            type: string
-            pattern: "^[a-z][a-z0-9_.-]*$"
+            $ref: "#/components/schemas/AgentToolName"
+          example: [project.get, data.list, data.read, context.promote]
+          description: >-
+            Exact reviewed Stage 5 MCP Tool names; product Agent grants do not
+            accept wildcards or tools outside the closed Agent scope.
     OneTimeAgentToken:
       type: object
       additionalProperties: false

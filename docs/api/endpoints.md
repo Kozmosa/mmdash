@@ -4,7 +4,9 @@ Stage 5 Agent operations are documented in
 [`agent.md`](agent.md). Core and Web BFF expose one-to-one instance, project
 access, Token, Prompt, Session, message, Run, and Run-SSE routes under their
 project-scoped Agent prefixes. The MCP catalog additionally exposes
-`context.promote` through the existing Context Proposal boundary.
+`context.promote` through the existing Context Proposal boundary. Stage 5
+Agent Token scopes are closed to `project.get`, `data.list`, `data.read`, and
+`context.promote`; create and update contracts reject every other Tool name.
 
 Stage 4 Progress operations:
 

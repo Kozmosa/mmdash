@@ -118,7 +118,12 @@ describe("Agent BFF routes", () => {
     apps.push(app);
     const cookie = await signedSessionCookie(app);
     const validCreate = {
-      allowed_tools: Array.from({ length: 100 }, (_, index) => `tool.${index}`),
+      allowed_tools: [
+        "project.get",
+        "data.list",
+        "data.read",
+        "context.promote",
+      ],
       display_name: "D".repeat(120),
       hermes_api_key: "k".repeat(16),
       management_mode: "manual",
@@ -160,16 +165,18 @@ describe("Agent BFF routes", () => {
         method: "POST" as const,
         payload: {
           ...validCreate,
-          allowed_tools: [
-            ...validCreate.allowed_tools,
-            "tool.overflow",
-          ],
+          allowed_tools: [...validCreate.allowed_tools, "project.get"],
         },
         url: `/api/projects/${projectId}/agent-instances`,
       },
       {
         method: "POST" as const,
         payload: { ...validCreate, allowed_tools: ["data.*"] },
+        url: `/api/projects/${projectId}/agent-instances`,
+      },
+      {
+        method: "POST" as const,
+        payload: { ...validCreate, allowed_tools: ["project.list"] },
         url: `/api/projects/${projectId}/agent-instances`,
       },
       {

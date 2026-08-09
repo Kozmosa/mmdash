@@ -54,13 +54,13 @@ const hermesApiKeySchema = z.string().min(16).max(4_096);
 const dashboardSessionTokenSchema = z.string().min(16).max(4_096);
 const cloudflareClientIdSchema = z.string().min(1).max(4_096);
 const cloudflareClientSecretSchema = z.string().min(16).max(4_096);
-const toolNameSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .regex(/^[a-z][a-z0-9_.-]*$/)
-  .refine((value) => !value.includes("*"), "Tool wildcards are not allowed");
-const allowedToolsSchema = z.array(toolNameSchema).min(1).max(100).superRefine(
+const toolNameSchema = z.enum([
+  "project.get",
+  "data.list",
+  "data.read",
+  "context.promote",
+]);
+const allowedToolsSchema = z.array(toolNameSchema).min(1).max(4).superRefine(
   (tools, context) => {
     if (new Set(tools).size !== tools.length) {
       context.addIssue({
