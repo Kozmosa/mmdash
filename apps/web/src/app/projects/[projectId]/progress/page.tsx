@@ -116,7 +116,7 @@ function ViewButton({ active, icon: Icon, label, onClick }: { active: boolean; i
 }
 
 function BoardView({ board }: { board: Progress["board"] }) {
-  const columns = [["待办", board.todo], ["进行中", board.in_progress], ["阻塞", board.blocked], ["完成", board.done]] as const;
+  const columns = [["待办", board.todo ?? []], ["进行中", board.in_progress ?? []], ["阻塞", board.blocked ?? []], ["完成", board.done ?? []]] as const;
   return <div className="grid gap-3 lg:grid-cols-4">{columns.map(([title, tasks]) => <Card key={title}><CardHeader><CardTitle className="flex items-center justify-between text-sm">{title}<Badge>{tasks.length}</Badge></CardTitle></CardHeader><CardContent className="space-y-2">{tasks.length ? tasks.map((task) => <TaskCard key={task.task_id} task={task} />) : <EmptyState className="min-h-28 p-4" description="没有符合条件的任务。" title="空" />}</CardContent></Card>)}</div>;
 }
 
@@ -130,7 +130,7 @@ function GanttView({ items }: { items: Progress["gantt"] }) {
 }
 
 function TodayView({ blocked, overdue, tasks }: { blocked: Task[]; overdue: Task[]; tasks: Task[] }) {
-  const groups = [["今日", tasks], ["逾期", overdue], ["阻塞", blocked]] as const;
+  const groups = [["今日", tasks ?? []], ["逾期", overdue ?? []], ["阻塞", blocked ?? []]] as const;
   return <div className="grid gap-3 md:grid-cols-3">{groups.map(([title, values]) => <Card key={title}><CardHeader><CardTitle className="flex items-center justify-between text-sm">{title}<Badge>{values.length}</Badge></CardTitle></CardHeader><CardContent className="space-y-2">{values.length ? values.map((task) => <TaskCard key={task.task_id} task={task} />) : <EmptyState className="min-h-28 p-4" description="暂无任务。" title="空" />}</CardContent></Card>)}</div>;
 }
 

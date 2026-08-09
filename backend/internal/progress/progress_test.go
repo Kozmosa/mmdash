@@ -164,6 +164,41 @@ func TestAgentTaskChangesObeySettingAndRequireRunSource(t *testing.T) {
 	}
 }
 
+func TestListSerializesEveryEmptyCollectionAsNonNil(t *testing.T) {
+	service := Service{
+		Access: &progressAccessTestStub{}, Store: &progressStoreTestStub{},
+	}
+	result, err := service.List(context.Background(), auth.Identity{}, "project-1")
+	if err != nil {
+		t.Fatalf("list empty progress: %v", err)
+	}
+	for name, value := range map[string]int{
+		"milestones":     len(result.Milestones),
+		"tasks":          len(result.Tasks),
+		"dependencies":   len(result.Dependencies),
+		"reminders":      len(result.Reminders),
+		"proposals":      len(result.Proposals),
+		"blocked":        len(result.Blocked),
+		"overdue":        len(result.Overdue),
+		"today":          len(result.Today),
+		"board.todo":     len(result.Board.Todo),
+		"board.progress": len(result.Board.InProgress),
+		"board.blocked":  len(result.Board.Blocked),
+		"board.done":     len(result.Board.Done),
+		"gantt":          len(result.Gantt),
+	} {
+		if value != 0 {
+			t.Fatalf("%s should be empty, got %d", name, value)
+		}
+	}
+	if result.Board.Todo == nil || result.Board.InProgress == nil ||
+		result.Board.Blocked == nil || result.Board.Done == nil ||
+		result.Blocked == nil || result.Overdue == nil || result.Today == nil ||
+		result.Gantt == nil || result.Reminders == nil || result.Proposals == nil {
+		t.Fatal("empty Progress collections must serialize as [] not null")
+	}
+}
+
 func TestProgressHomeItemsContainOpenTasksOnly(t *testing.T) {
 	store := &progressStoreTestStub{tasks: []Task{
 		{ID: "open", Status: TaskTodo},
