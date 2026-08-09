@@ -12,21 +12,28 @@ const mocks = vi.hoisted(() => ({
   getPrompt: vi.fn(),
   getRun: vi.fn(),
   listInstances: vi.fn(),
+  listContextProposals: vi.fn(),
   listMessages: vi.fn(),
   listSessions: vi.fn(),
   regenerateRun: vi.fn(),
   renameSession: vi.fn(),
   rerunRun: vi.fn(),
+  reviewContextProposal: vi.fn(),
   resetPrompt: vi.fn(),
   setDefaultSession: vi.fn(),
   startRun: vi.fn(),
   stopRun: vi.fn(),
   streamAgentRun: vi.fn(),
   updatePrompt: vi.fn(),
+  projectRole: { value: "owner" },
 }));
 
 vi.mock("@/components/providers/project-provider", () => ({
-  useCurrentProject: () => ({ id: "project-1", name: "Project", role: "owner" }),
+  useCurrentProject: () => ({
+    id: "project-1",
+    name: "Project",
+    role: mocks.projectRole.value,
+  }),
 }));
 
 vi.mock("@/features/agent/agent-api", () => ({
@@ -53,6 +60,13 @@ vi.mock("@/features/agent/agent-api", () => ({
   streamAgentRun: mocks.streamAgentRun,
 }));
 
+vi.mock("@/features/agent/context-proposal-api", () => ({
+  contextProposalApi: {
+    list: mocks.listContextProposals,
+    review: mocks.reviewContextProposal,
+  },
+}));
+
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
@@ -62,6 +76,7 @@ import { AgentWorkbench } from "@/features/agent/agent-workbench";
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mocks.projectRole.value = "owner";
 });
 
 describe("Agent workbench", () => {
@@ -196,6 +211,113 @@ describe("Agent workbench", () => {
       ),
     );
   });
+
+  it("reviews only pending Agent Context Proposals and retains Session and Run provenance", async () => {
+    const session = sessionFixture();
+    const acceptedProposal = contextProposalFixture({
+      proposal_id: "proposal-accepted",
+      status: "accepted",
+      title: "已审核结论",
+    });
+    const humanProposal = contextProposalFixture({
+      agent_run_id: undefined,
+      agent_session_id: undefined,
+      proposal_id: "proposal-human",
+      proposed_by_actor_id: "user-2",
+      proposed_by_actor_kind: "session",
+      title: "人工提议",
+    });
+    const first = contextProposalFixture({
+      proposal_id: "proposal-1",
+      title: "边界条件结论",
+    });
+    const second = contextProposalFixture({
+      agent_run_id: "run-2",
+      agent_session_id: "session-2",
+      proposal_id: "proposal-2",
+      title: "误差来源结论",
+    });
+    prepareQueries(session);
+    mocks.listContextProposals.mockResolvedValue({
+      items: [acceptedProposal, humanProposal, first, second],
+    });
+    mocks.reviewContextProposal
+      .mockResolvedValueOnce({
+        ...first,
+        review_note: "验证记录一致",
+        status: "accepted",
+      })
+      .mockResolvedValueOnce({
+        ...second,
+        review_note: "需要补充证据",
+        status: "rejected",
+      });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    expect(await screen.findByText("边界条件结论")).toBeInTheDocument();
+    expect(screen.getByText("误差来源结论")).toBeInTheDocument();
+    expect(screen.queryByText("已审核结论")).not.toBeInTheDocument();
+    expect(screen.queryByText("人工提议")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByText("查看 Agent / Session / Run 来源")[0]!);
+    expect(screen.getAllByText("instance-1")).toHaveLength(2);
+    expect(screen.getByText("session-1")).toBeInTheDocument();
+    expect(screen.getByText("run-context-1")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("审核备注：边界条件结论"), {
+      target: { value: "验证记录一致" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "接受提议：边界条件结论" }),
+    );
+    await waitFor(() =>
+      expect(mocks.reviewContextProposal).toHaveBeenNthCalledWith(
+        1,
+        "project-1",
+        "proposal-1",
+        "accepted",
+        "验证记录一致",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("边界条件结论")).not.toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText("审核备注：误差来源结论"), {
+      target: { value: "需要补充证据" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "拒绝提议：误差来源结论" }),
+    );
+    await waitFor(() =>
+      expect(mocks.reviewContextProposal).toHaveBeenNthCalledWith(
+        2,
+        "project-1",
+        "proposal-2",
+        "rejected",
+        "需要补充证据",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("误差来源结论")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("does not request Context Proposals for a viewer without review permission", async () => {
+    mocks.projectRole.value = "viewer";
+    prepareQueries(sessionFixture());
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    expect(
+      await screen.findByText("当前项目角色没有上下文审核权限。"),
+    ).toBeInTheDocument();
+    expect(mocks.listContextProposals).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: /接受提议/ }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 function Providers({ children }: Readonly<{ children: ReactNode }>) {
@@ -214,6 +336,7 @@ function Providers({ children }: Readonly<{ children: ReactNode }>) {
 
 function prepareQueries(session: ReturnType<typeof sessionFixture>) {
   mocks.listInstances.mockResolvedValue({ items: [instanceFixture()] });
+  mocks.listContextProposals.mockResolvedValue({ items: [] });
   mocks.listSessions.mockResolvedValue({ items: [session] });
   mocks.listMessages.mockResolvedValue({
     items: [
@@ -241,6 +364,28 @@ function prepareQueries(session: ReturnType<typeof sessionFixture>) {
     version: 1,
   });
   mocks.getRun.mockResolvedValue(runFixture({ status: "completed" }));
+}
+
+function contextProposalFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    agent_run_id: "run-context-1",
+    agent_session_id: "session-1",
+    content: "校准误差来自边界条件。",
+    context_type: "finding",
+    created_at: "2026-08-09T00:00:00Z",
+    project_id: "project-1",
+    proposal_id: "proposal-1",
+    proposed_by: "instance-1",
+    proposed_by_actor_id: "instance-1",
+    proposed_by_actor_kind: "agent",
+    rationale: "Run 汇总了验证结果。",
+    review_note: "",
+    source_object_ids: ["object-1"],
+    status: "pending",
+    title: "校准误差结论",
+    updated_at: "2026-08-09T00:00:00Z",
+    ...overrides,
+  };
 }
 
 function instanceFixture() {

@@ -33,6 +33,10 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
 import { agentApi, streamAgentRun } from "./agent-api";
+import {
+  ContextProposalReviewPanel,
+  contextProposalQueryKey,
+} from "./context-proposal-review";
 import type {
   AgentApproval,
   AgentApprovalChoice,
@@ -226,6 +230,9 @@ function AgentWorkspace({
       sessions.refetch(),
       queryClient.invalidateQueries({
         queryKey: ["agent-run", projectId, instanceId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: contextProposalQueryKey(projectId),
       }),
     ]);
     setOptimisticUser(null);
@@ -646,6 +653,11 @@ function AgentWorkspace({
 
         <aside className="space-y-4">
           <RunStatusCard run={run} toolCalls={toolCalls} />
+          <ContextProposalReviewPanel
+            canReview={canOperate}
+            instances={instances}
+            projectId={projectId}
+          />
           {instance ? (
             <PromptCard
               canOperate={canOperate}

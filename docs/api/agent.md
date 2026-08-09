@@ -214,6 +214,12 @@ External or otherwise non-mmdash Hermes Runs may omit both IDs. In every case,
 an Agent can create only a pending Proposal and cannot accept or reject it;
 review remains a human permission.
 
+The Agent workbench lists pending Agent-created Context Proposals without
+discarding their Agent, Session, Run, or source-object provenance. A signed
+browser session with `project.context.review` may accept or reject each item
+and add an optional review note; the browser never rewrites the proposed
+content or its provenance.
+
 ## Authorization, Audit, events, and diagnostics
 
 Project RBAC separates Agent read, use, instance management, and Token

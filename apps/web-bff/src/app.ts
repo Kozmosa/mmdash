@@ -16,6 +16,7 @@ import { registerWebSocketRoutes } from "./proxy/websocket.js";
 import { registerExampleRoutes } from "./routes/example.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerContextProposalRoutes } from "./routes/context-proposals.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPageRoutes } from "./routes/pages.js";
 import { registerProjectRoutes } from "./routes/projects.js";
@@ -79,6 +80,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerExampleRoutes(app, coreClient);
   registerArtifactRoutes(app, coreClient);
   registerAgentRoutes(app, coreClient);
+  registerContextProposalRoutes(app, coreClient);
   registerProjectRoutes(app, coreClient);
   registerProgressRoutes(app, coreClient);
   registerRepoRoutes(app, coreClient);
