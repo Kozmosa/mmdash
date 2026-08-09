@@ -118,6 +118,78 @@ function readBody(request) {
   });
 }
 
+function decodeMCPPayload(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const frames = text.split("\n\n");
+    for (const frame of frames) {
+      const data = frame
+        .split("\n")
+        .find((line) => line.startsWith("data: "))
+        ?.slice(6);
+      if (!data) continue;
+      try {
+        return JSON.parse(data);
+      } catch {
+        // Try the next SSE frame.
+      }
+    }
+  }
+  return null;
+}
+
+async function testMCPServer(server) {
+  const headers = {
+    accept: "application/json, text/event-stream",
+    authorization: `Bearer ${server.bearer_token}`,
+    "content-type": "application/json",
+  };
+  try {
+    const initialized = await fetch(server.url, {
+      body: JSON.stringify({
+        id: 1,
+        jsonrpc: "2.0",
+        method: "initialize",
+        params: {
+          capabilities: {},
+          clientInfo: { name: "mock-hermes-dashboard", version: "2026.8.3" },
+          protocolVersion: "2025-06-18",
+        },
+      }),
+      headers,
+      method: "POST",
+    });
+    const initializedBody = decodeMCPPayload(await initialized.text());
+    const sessionId = initialized.headers.get("x-mmdash-session-id");
+    if (!initialized.ok || initializedBody?.error || !sessionId) {
+      return { ok: false, error: "MCP initialize failed" };
+    }
+
+    const listed = await fetch(server.url, {
+      body: JSON.stringify({ id: 2, jsonrpc: "2.0", method: "tools/list" }),
+      headers: { ...headers, "x-mmdash-session-id": sessionId },
+      method: "POST",
+    });
+    const listedBody = decodeMCPPayload(await listed.text());
+    const tools = listedBody?.result?.tools;
+    if (!listed.ok || !Array.isArray(tools)) {
+      return { ok: false, error: "MCP tools/list failed" };
+    }
+    return {
+      ok: true,
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? "",
+      })),
+      prompts: 0,
+      resources: 0,
+    };
+  } catch {
+    return { ok: false, error: "MCP endpoint unavailable" };
+  }
+}
+
 function stripProfilePrefix(path) {
   const match = path.match(/^\/p\/[^/]+(\/.*)$/);
   return match ? match[1] : path;
@@ -194,7 +266,7 @@ const server = createServer(async (request, response) => {
 
   // Dashboard management endpoints.
   if (path === "/api/health") {
-    writeJSON(response, 200, { ok: true, version: "2026.8.3", auth_required: true });
+    writeJSON(response, 200, { ok: true, version: "2026.8.3", auth_required: false });
     return;
   }
   if (
@@ -227,19 +299,12 @@ const server = createServer(async (request, response) => {
     }
     if (path.endsWith("/test")) {
       const name = path.slice("/api/mcp/servers/".length, -"/test".length);
-      if (!mcpServers.has(name)) {
+      const server = mcpServers.get(name);
+      if (!server) {
         writeJSON(response, 404, { detail: "not found" });
         return;
       }
-      writeJSON(response, 200, {
-        ok: true,
-        tools: [
-          { name: "project.get", description: "" },
-          { name: "data.read", description: "" },
-        ],
-        prompts: 0,
-        resources: 0,
-      });
+      writeJSON(response, 200, await testMCPServer(server));
       return;
     }
     if (request.method === "DELETE") {
