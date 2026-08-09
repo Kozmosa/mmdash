@@ -226,7 +226,7 @@ export type AgentRun = {
   safe_error_code?: string;
   safe_error_message?: string;
   session_id: string;
-  source: "message" | "regenerate" | "rerun";
+  source: "message" | "regenerate" | "rerun" | "progress_evaluation";
   source_run_id?: string;
   started_at?: string;
   status: AgentRunStatus;
