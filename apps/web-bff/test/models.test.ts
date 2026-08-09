@@ -63,4 +63,40 @@ describe("Model browser routes", () => {
       "http://core.test/v1/projects/project-1/models/source/sync",
     );
   });
+
+  it("starts a state-bound Notion OAuth authorization", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({ authorization_url: "https://api.notion.com/v1/oauth/authorize?state=opaque", expires_at: "2026-08-09T10:10:00.000Z" }),
+    );
+    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+    const projectId = "00000000-0000-4000-8000-000000000001";
+
+    const response = await app.inject({
+      headers: { cookie }, method: "POST",
+      payload: { root_page_url: "https://nyaku.notion.site/3a4df00a545d801cae41e79dc52fbb51", auto_sync_enabled: true, auto_sync_interval_seconds: 300 },
+      url: `/api/projects/${projectId}/models/notion/oauth/authorizations`,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe(`http://core.test/v1/projects/${projectId}/models/notion/oauth/authorizations`);
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toMatchObject({ auto_sync_interval_seconds: 300 });
+  });
+
+  it("completes the Notion callback and redirects only to the state-bound Project", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000001";
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ project_id: projectId, status: "connected" }));
+    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+    const state = "s".repeat(43);
+
+    const response = await app.inject({ headers: { cookie }, method: "GET", url: `/api/integrations/notion/oauth/callback?state=${state}&code=one-time-code` });
+
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe(`/projects/${projectId}/settings?notion_oauth=connected#model-settings`);
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe("http://core.test/v1/model-notion/oauth/callback");
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toEqual({ state, code: "one-time-code" });
+  });
 });

@@ -302,43 +302,77 @@ func (store PostgresStore) UpdateSnapshot(ctx context.Context, projectID, questi
 
 func (store PostgresStore) CreateSync(ctx context.Context, item Sync, jobInput jobs.CreateInput, nextSyncAt *time.Time) (Sync, error) {
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		job, created, err := store.Jobs.CreateInTransaction(ctx, tx, item.RequestedBy, jobInput)
-		if err != nil {
-			return err
-		}
-		if !created {
-			existing, getErr := scanSync(tx.QueryRowContext(ctx, `SELECT `+syncColumns+` FROM model_syncs WHERE job_id=$1`, job.ID))
-			if getErr != nil {
-				return getErr
-			}
-			item = existing
-			return nil
-		}
-		item.JobID = job.ID
-		_, err = tx.ExecContext(ctx, `INSERT INTO model_syncs(sync_id,project_id,source_id,question_id,scope,trigger,status,job_id,requested_by,requested_at,updated_at) VALUES($1,$2,$3,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,$10)`, item.ID, item.ProjectID, item.SourceID, item.QuestionID, item.Scope, item.Trigger, item.Status, item.JobID, item.RequestedBy, item.RequestedAt)
-		if isUniqueViolation(err) {
-			return ErrConflict
-		}
-		if err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE model_sources SET sync_status='queued',last_sync_id=$2,last_error_code='',last_error_message='',next_sync_at=COALESCE($3,next_sync_at),updated_by=$4,updated_at=$5 WHERE source_id=$1`, item.SourceID, item.ID, nextSyncAt, item.RequestedBy, item.RequestedAt)
-		if err != nil {
-			return err
-		}
-		if item.QuestionID != "" {
-			_, err = tx.ExecContext(ctx, `UPDATE model_questions SET sync_status='queued',last_sync_id=$2,last_error_code='',last_error_message='',updated_by=$3,updated_at=$4 WHERE question_id=$1`, item.QuestionID, item.ID, item.RequestedBy, item.RequestedAt)
-			if err != nil {
-				return err
-			}
-		}
-		payload := map[string]interface{}{"sync_id": item.ID, "source_id": item.SourceID, "scope": item.Scope, "trigger": item.Trigger, "job_id": item.JobID, "requested_at": item.RequestedAt.Format(time.RFC3339Nano)}
-		if item.QuestionID != "" {
-			payload["question_id"] = item.QuestionID
-		}
-		_, err = store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": item.RequestedBy}, EventType: "model.sync.requested", Payload: payload, Producer: "model", ProjectID: item.ProjectID})
+		var err error
+		item, err = store.CreateSyncInTransaction(ctx, tx, item, jobInput, nextSyncAt)
 		return err
 	})
+	return item, err
+}
+
+func (store PostgresStore) CreateSyncInTransaction(ctx context.Context, tx transaction.Tx, item Sync, jobInput jobs.CreateInput, nextSyncAt *time.Time) (Sync, error) {
+	// All synchronization requests lock the source first. This keeps manual
+	// question clicks and discovery fan-out in one lock order and makes the
+	// countdown reset atomic with active-task reuse.
+	var sourceID string
+	if err := tx.QueryRowContext(ctx, `SELECT source_id::text FROM model_sources WHERE source_id=$1 FOR UPDATE`, item.SourceID).Scan(&sourceID); err != nil {
+		return Sync{}, mapModelNotFound(err)
+	}
+	if item.QuestionID != "" {
+		var questionID string
+		if err := tx.QueryRowContext(ctx, `SELECT question_id::text FROM model_questions WHERE question_id=$1 AND archived_at IS NULL FOR UPDATE`, item.QuestionID).Scan(&questionID); err != nil {
+			return Sync{}, mapModelNotFound(err)
+		}
+	}
+	if nextSyncAt != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE model_sources SET next_sync_at=CASE WHEN auto_sync_enabled THEN $2::timestamptz ELSE NULL END,updated_by=$3,updated_at=$4 WHERE source_id=$1`, item.SourceID, nextSyncAt, item.RequestedBy, item.RequestedAt); err != nil {
+			return Sync{}, err
+		}
+	}
+
+	activeQuery := `SELECT ` + syncColumns + ` FROM model_syncs WHERE source_id=$1 AND scope='source' AND status IN ('queued','running') ORDER BY requested_at DESC,sync_id DESC LIMIT 1`
+	activeArg := item.SourceID
+	if item.QuestionID != "" {
+		activeQuery = `SELECT ` + syncColumns + ` FROM model_syncs WHERE question_id=$1 AND scope='question' AND status IN ('queued','running') ORDER BY requested_at DESC,sync_id DESC LIMIT 1`
+		activeArg = item.QuestionID
+	}
+	active, err := scanSync(tx.QueryRowContext(ctx, activeQuery, activeArg))
+	if err == nil {
+		return active, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Sync{}, err
+	}
+
+	job, created, err := store.Jobs.CreateInTransaction(ctx, tx, item.RequestedBy, jobInput)
+	if err != nil {
+		return Sync{}, err
+	}
+	if !created {
+		return scanSync(tx.QueryRowContext(ctx, `SELECT `+syncColumns+` FROM model_syncs WHERE job_id=$1`, job.ID))
+	}
+	item.JobID = job.ID
+	_, err = tx.ExecContext(ctx, `INSERT INTO model_syncs(sync_id,project_id,source_id,question_id,scope,trigger,status,job_id,requested_by,requested_at,updated_at) VALUES($1,$2,$3,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,$10)`, item.ID, item.ProjectID, item.SourceID, item.QuestionID, item.Scope, item.Trigger, item.Status, item.JobID, item.RequestedBy, item.RequestedAt)
+	if isUniqueViolation(err) {
+		return Sync{}, ErrConflict
+	}
+	if err != nil {
+		return Sync{}, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE model_sources SET sync_status='queued',last_sync_id=$2,last_error_code='',last_error_message='',updated_by=$3,updated_at=$4 WHERE source_id=$1`, item.SourceID, item.ID, item.RequestedBy, item.RequestedAt)
+	if err != nil {
+		return Sync{}, err
+	}
+	if item.QuestionID != "" {
+		_, err = tx.ExecContext(ctx, `UPDATE model_questions SET sync_status='queued',last_sync_id=$2,last_error_code='',last_error_message='',updated_by=$3,updated_at=$4 WHERE question_id=$1`, item.QuestionID, item.ID, item.RequestedBy, item.RequestedAt)
+		if err != nil {
+			return Sync{}, err
+		}
+	}
+	payload := map[string]interface{}{"sync_id": item.ID, "source_id": item.SourceID, "scope": item.Scope, "trigger": item.Trigger, "job_id": item.JobID, "requested_at": item.RequestedAt.Format(time.RFC3339Nano)}
+	if item.QuestionID != "" {
+		payload["question_id"] = item.QuestionID
+	}
+	_, err = store.Outbox.Write(ctx, tx, outbox.Event{Actor: map[string]string{"user_id": item.RequestedBy}, EventType: "model.sync.requested", Payload: payload, Producer: "model", ProjectID: item.ProjectID})
 	return item, err
 }
 
@@ -374,16 +408,16 @@ func (store PostgresStore) ClaimSyncInTransaction(ctx context.Context, tx transa
 	return err
 }
 
-func (store PostgresStore) CompleteDiscoverInTransaction(ctx context.Context, tx transaction.Tx, job jobs.Job, result DiscoverResult, now time.Time) error {
+func (store PostgresStore) CompleteDiscoverInTransaction(ctx context.Context, tx transaction.Tx, job jobs.Job, result DiscoverResult, now time.Time) (Sync, error) {
 	sync, err := store.syncForUpdate(ctx, tx, job.ID)
 	if err != nil {
-		return err
+		return Sync{}, err
 	}
 	if sync.ID != result.SyncID || sync.Scope != SyncScopeSource {
-		return ErrInvalid
+		return Sync{}, ErrInvalid
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM model_source_pages WHERE source_id=$1`, sync.SourceID); err != nil {
-		return err
+		return Sync{}, err
 	}
 	for _, page := range result.Pages {
 		parent := ""
@@ -391,14 +425,45 @@ func (store PostgresStore) CompleteDiscoverInTransaction(ctx context.Context, tx
 			parent = *page.ParentPageID
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO model_source_pages(source_id,project_id,notion_page_id,parent_page_id,title,page_url,depth,has_children,last_seen_at) VALUES($1,$2,$3,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9)`, sync.SourceID, sync.ProjectID, page.PageID, parent, page.Title, page.URL, page.Depth, page.HasChildren, now); err != nil {
-			return err
+			return Sync{}, err
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE model_syncs SET status='succeeded',finished_at=$2,error_code='',error_message='',updated_at=$2 WHERE sync_id=$1`, sync.ID, now); err != nil {
-		return err
+		return Sync{}, err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE model_sources SET notion_root_title=$3,sync_status='succeeded',last_synced_at=$2,last_error_code='',last_error_message='',discovered_page_count=$4,updated_at=$2 WHERE source_id=$1`, sync.SourceID, now, result.RootTitle, len(result.Pages))
-	return err
+	return sync, err
+}
+
+func (store PostgresStore) ListDiscoveredQuestionsInTransaction(ctx context.Context, tx transaction.Tx, projectID string) ([]Question, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT q.question_id::text FROM model_questions q JOIN model_source_pages p ON p.source_id=q.source_id AND p.notion_page_id=q.notion_page_id WHERE q.project_id=$1 AND q.archived_at IS NULL ORDER BY q.position,q.created_at,q.question_id`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	questions := make([]Question, 0, len(ids))
+	for _, id := range ids {
+		question, err := scanQuestion(tx.QueryRowContext(ctx, `SELECT `+questionColumns+` FROM model_questions WHERE question_id=$1 AND archived_at IS NULL`, id))
+		if err != nil {
+			return nil, mapModelNotFound(err)
+		}
+		questions = append(questions, question)
+	}
+	return questions, nil
 }
 
 func (store PostgresStore) CompleteSnapshotInTransaction(ctx context.Context, tx transaction.Tx, job jobs.Job, result SnapshotResult, now time.Time) error {
@@ -609,6 +674,54 @@ func scanSnapshot(row rowScanner) (Snapshot, error) {
 		item.Tags = []string{}
 	}
 	return item, nil
+}
+
+func (store PostgresStore) CreateNotionOAuthAuthorization(ctx context.Context, item NotionOAuthAuthorization) error {
+	if _, err := store.DB.ExecContext(ctx, `DELETE FROM model_notion_oauth_authorizations WHERE expires_at<=$1 AND status='pending'`, item.CreatedAt); err != nil {
+		return err
+	}
+	_, err := store.DB.ExecContext(ctx, `
+		INSERT INTO model_notion_oauth_authorizations(
+			authorization_id,state_hash,project_id,user_id,root_page_id,root_page_url,
+			auto_sync_enabled,auto_sync_interval_seconds,status,expires_at,created_at,updated_at
+		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10,$10)
+	`, item.ID, item.StateHash, item.ProjectID, item.UserID, item.RootPageID, item.RootPageURL,
+		item.AutoSyncEnabled, item.AutoSyncIntervalSeconds, item.ExpiresAt, item.CreatedAt)
+	return err
+}
+
+func (store PostgresStore) ClaimNotionOAuthAuthorization(ctx context.Context, stateHash, userID string, now time.Time) (NotionOAuthAuthorization, error) {
+	var item NotionOAuthAuthorization
+	err := store.DB.QueryRowContext(ctx, `
+		UPDATE model_notion_oauth_authorizations
+		SET status='exchanging',consumed_at=$3,updated_at=$3
+		WHERE state_hash=$1 AND user_id=$2 AND status='pending' AND expires_at>$3
+		RETURNING authorization_id::text,state_hash,project_id::text,user_id::text,
+		          root_page_id::text,root_page_url,auto_sync_enabled,
+		          auto_sync_interval_seconds,status,expires_at,created_at,updated_at
+	`, stateHash, userID, now).Scan(
+		&item.ID, &item.StateHash, &item.ProjectID, &item.UserID, &item.RootPageID,
+		&item.RootPageURL, &item.AutoSyncEnabled, &item.AutoSyncIntervalSeconds,
+		&item.Status, &item.ExpiresAt, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NotionOAuthAuthorization{}, ErrConflict
+	}
+	return item, err
+}
+
+func (store PostgresStore) CompleteNotionOAuthAuthorization(ctx context.Context, authorizationID, status string, now time.Time) error {
+	if status != "succeeded" && status != "denied" && status != "failed" {
+		return ErrInvalid
+	}
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE model_notion_oauth_authorizations SET status=$2,updated_at=$3
+		WHERE authorization_id=$1 AND status='exchanging'
+	`, authorizationID, status, now)
+	if err != nil {
+		return err
+	}
+	return requireAffected(result)
 }
 
 func requireAffected(result sql.Result) error {

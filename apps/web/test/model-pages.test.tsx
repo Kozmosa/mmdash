@@ -124,7 +124,7 @@ describe("Model pages", () => {
     expect(screen.queryByText(/^\d+$/)).not.toBeInTheDocument();
   });
 
-  it("binds the single Notion source while preserving a redacted token and saving the interval", async () => {
+  it("shows the authorized Notion workspace and saves only public synchronization settings", async () => {
     const settingPath = `/projects/${projectId}/settings/model.notion`;
     apiRequest.mockImplementation(async (path: string, options?: { body?: unknown; method?: string }) => {
       if (path === settingPath && options?.method === "PATCH") {
@@ -132,11 +132,12 @@ describe("Model pages", () => {
       }
       if (path === settingPath) {
         return {
-          values: { integration_token: "********", root_page_url: "https://www.notion.so/Test-00000000000040008000000000000001", auto_sync_enabled: true, auto_sync_interval_seconds: 300 },
+          values: { access_token: "********", refresh_token: "********", root_page_url: "https://www.notion.so/Test-00000000000040008000000000000001", auto_sync_enabled: true, auto_sync_interval_seconds: 300 },
           version: 2,
           updated_at: "2026-08-09T00:00:00Z",
         };
       }
+      if (path.endsWith("/models/notion/oauth")) return { available: true, connected: true, workspace_id: "workspace-1", workspace_name: "研究组" };
       if (path.endsWith("/models")) {
         return {
           project_id: projectId,
@@ -154,10 +155,11 @@ describe("Model pages", () => {
 
     expect(await screen.findByDisplayValue("https://www.notion.so/Test-00000000000040008000000000000001")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("自动同步间隔（分钟）"), { target: { value: "10" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存并绑定" }));
+    expect(await screen.findByText(/已授权 Workspace：研究组/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存同步设置" }));
 
     await waitFor(() => expect(apiRequest).toHaveBeenCalledWith(settingPath, {
-      body: { values: { root_page_url: "https://www.notion.so/Test-00000000000040008000000000000001", auto_sync_enabled: true, auto_sync_interval_seconds: 600, integration_token: "********" } },
+      body: { values: { root_page_url: "https://www.notion.so/Test-00000000000040008000000000000001", auto_sync_enabled: true, auto_sync_interval_seconds: 600 } },
       method: "PATCH",
     }));
     expect(screen.getByText(/自动同步倒计时/)).toBeInTheDocument();

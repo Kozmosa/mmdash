@@ -20,12 +20,31 @@ const diffQuery = z.object({
   from_snapshot_id: z.string().uuid(),
   to_snapshot_id: z.string().uuid(),
 });
+const startNotionOAuth = z.object({
+  root_page_url: z.string().url().max(2_048),
+  auto_sync_enabled: z.boolean(),
+  auto_sync_interval_seconds: z.number().int().min(60).max(86_400),
+});
+const notionOAuthCallback = z.object({
+  state: z.string().min(32).max(512),
+  code: z.string().min(1).max(2_048).optional(),
+  error: z.string().min(1).max(200).optional(),
+}).refine((value) => Boolean(value.code) !== Boolean(value.error));
 
 export function registerModelRoutes(app: FastifyInstance, coreClient: CoreClient): void {
   const options = { config: { auth: "required" as const, project: "required" as const } };
   app.get("/api/projects/:projectId/models", options, async (request) => coreClient.getModels(request.currentProjectId!, context(request)));
   app.get("/api/projects/:projectId/models/source", options, async (request) => coreClient.getModelSource(request.currentProjectId!, context(request)));
   app.post("/api/projects/:projectId/models/source/sync", options, async (request, reply) => reply.code(202).send(await coreClient.syncModels(request.currentProjectId!, context(request))));
+  app.get("/api/projects/:projectId/models/notion/oauth", options, async (request) => coreClient.getNotionOAuthConnection(request.currentProjectId!, context(request)));
+  app.post("/api/projects/:projectId/models/notion/oauth/authorizations", options, async (request, reply) => reply.code(201).send(await coreClient.startNotionOAuth(request.currentProjectId!, startNotionOAuth.parse(request.body), context(request))));
+  app.delete("/api/projects/:projectId/models/notion/oauth/connection", options, async (request, reply) => { await coreClient.disconnectNotionOAuth(request.currentProjectId!, context(request)); return reply.code(204).send(); });
+  app.get("/api/integrations/notion/oauth/callback", { config: { auth: "required", project: "none" } }, async (request, reply) => {
+    const query = notionOAuthCallback.parse(request.query);
+    const result = await coreClient.completeNotionOAuth(query, context(request));
+    const params = new URLSearchParams({ notion_oauth: result.status });
+    return reply.redirect(`/projects/${encodeURIComponent(result.project_id)}/settings?${params.toString()}#model-settings`);
+  });
   app.get("/api/projects/:projectId/models/questions", options, async (request) => coreClient.listModelQuestions(request.currentProjectId!, context(request)));
   app.post("/api/projects/:projectId/models/questions", options, async (request, reply) => reply.code(201).send(await coreClient.createModelQuestion(request.currentProjectId!, createQuestion.parse(request.body), context(request))));
   app.get("/api/projects/:projectId/models/questions/:questionId", options, async (request) => { const params = question.parse(request.params); return coreClient.getModelQuestion(params.projectId, params.questionId, context(request)); });

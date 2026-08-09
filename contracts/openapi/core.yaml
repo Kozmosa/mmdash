@@ -2331,15 +2331,77 @@ paths:
       - $ref: "#/components/parameters/ProjectId"
     post:
       tags: [Model]
-      summary: Rediscover the configured Notion root and its descendant pages
+      summary: Rediscover the Notion descendants, then synchronize every bound Model question
+      description: Every human Project member may trigger this operation. It resets the automatic countdown and reuses an active discovery request when present.
       operationId: model.source.sync
       responses:
         "202":
-          description: Source discovery synchronization accepted.
+          description: Full Model synchronization accepted and automatic countdown reset.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelSync"
+  /v1/projects/{projectId}/models/notion/oauth:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Model]
+      summary: Read the public Notion integration and Project authorization status
+      operationId: model.notion.oauth.get
+      responses:
+        "200":
+          description: Browser-safe OAuth availability and workspace identity; no token is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotionOAuthConnection"
+  /v1/projects/{projectId}/models/notion/oauth/authorizations:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Model]
+      summary: Start a one-time Notion public integration authorization
+      operationId: model.notion.oauth.start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartNotionOAuthRequest"
+      responses:
+        "201":
+          description: Short-lived authorization URL bound to the user, Project, and root-page configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotionOAuthAuthorization"
+  /v1/projects/{projectId}/models/notion/oauth/connection:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    delete:
+      tags: [Model]
+      summary: Revoke and remove the Project Notion OAuth authorization
+      operationId: model.notion.oauth.disconnect
+      responses:
+        "204": { description: Local authorization removed; existing immutable Snapshots are retained. }
+  /v1/model-notion/oauth/callback:
+    post:
+      tags: [Model]
+      summary: Complete a browser Notion OAuth callback
+      operationId: model.notion.oauth.callback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteNotionOAuthRequest"
+      responses:
+        "200":
+          description: Callback status and the state-bound Project used for a safe relative browser redirect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotionOAuthCallbackResult"
   /v1/projects/{projectId}/models/questions:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -2416,7 +2478,7 @@ paths:
     post:
       tags: [Model]
       summary: Manually synchronize one Model question
-      description: A manual synchronization resets the project automatic synchronization countdown.
+      description: Every human Project member may trigger this operation. It resets the project automatic synchronization countdown and reuses an active request for the same question when present.
       operationId: model.questions.sync
       responses:
         "202":
@@ -5780,6 +5842,47 @@ components:
         questions:
           type: array
           items: { $ref: "#/components/schemas/ModelQuestion" }
+    NotionOAuthConnection:
+      type: object
+      additionalProperties: false
+      required: [available, connected]
+      properties:
+        available: { type: boolean }
+        connected: { type: boolean }
+        bot_id: { type: string, maxLength: 200 }
+        workspace_id: { type: string, maxLength: 200 }
+        workspace_name: { type: string, maxLength: 255 }
+        workspace_icon: { type: string, format: uri }
+    StartNotionOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [root_page_url, auto_sync_enabled, auto_sync_interval_seconds]
+      properties:
+        root_page_url: { type: string, format: uri, maxLength: 2048 }
+        auto_sync_enabled: { type: boolean }
+        auto_sync_interval_seconds: { type: integer, minimum: 60, maximum: 86400 }
+    NotionOAuthAuthorization:
+      type: object
+      additionalProperties: false
+      required: [authorization_url, expires_at]
+      properties:
+        authorization_url: { type: string, format: uri }
+        expires_at: { type: string, format: date-time }
+    CompleteNotionOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { type: string, minLength: 32, maxLength: 512 }
+        code: { type: string, minLength: 1, maxLength: 2048 }
+        error: { type: string, minLength: 1, maxLength: 200 }
+    NotionOAuthCallbackResult:
+      type: object
+      additionalProperties: false
+      required: [project_id, status]
+      properties:
+        project_id: { type: string, format: uuid }
+        status: { type: string, enum: [connected, denied] }
     ModelSource:
       type: object
       additionalProperties: false

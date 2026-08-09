@@ -97,6 +97,8 @@ function renderGoHandlerTypes(document) {
     "CreateModelQuestionRequest",
     "UpdateModelQuestionRequest",
     "UpdateModelSnapshotRequest",
+    "StartNotionOAuthRequest",
+    "CompleteNotionOAuthRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {

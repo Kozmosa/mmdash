@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -17,6 +18,8 @@ import (
 )
 
 const modelResultMaxBytes = 32 * 1024 * 1024
+
+var notionOAuthRefreshLock sync.Mutex
 
 // WorkerExport returns raw Notion page data only to the Worker holding the
 // live Job lease. The integration token is resolved and consumed inside Core.
@@ -46,7 +49,12 @@ func (service Service) WorkerExport(ctx context.Context, caller auth.Identity, j
 	if err != nil {
 		return NotionExport{}, err
 	}
-	token := settingString(resolved, "integration_token")
+	token := settingString(resolved, "access_token")
+	legacyToken := false
+	if token == "" {
+		token = settingString(resolved, "integration_token")
+		legacyToken = token != ""
+	}
 	if token == "" {
 		return NotionExport{}, ErrNotConfigured
 	}
@@ -63,7 +71,57 @@ func (service Service) WorkerExport(ctx context.Context, caller auth.Identity, j
 	default:
 		return NotionExport{}, ErrNotFound
 	}
-	return service.Notion.Export(ctx, token, request)
+	result, err := service.Notion.Export(ctx, token, request)
+	if !errors.Is(err, ErrNotionUnauthorized) || legacyToken {
+		return result, err
+	}
+	refreshedToken, refreshErr := service.refreshNotionOAuthCredential(ctx, source, token)
+	if refreshErr != nil {
+		return NotionExport{}, refreshErr
+	}
+	return service.Notion.Export(ctx, refreshedToken, request)
+}
+
+func (service Service) refreshNotionOAuthCredential(ctx context.Context, source Source, rejectedAccessToken string) (string, error) {
+	if service.OAuth == nil || !service.OAuth.Available() || service.OAuthSettings == nil || service.Settings == nil {
+		return "", ErrNotConfigured
+	}
+	// A Core process serializes rotations so concurrent Source and Question jobs
+	// reuse the first successful rotation instead of consuming the same refresh
+	// token twice.
+	notionOAuthRefreshLock.Lock()
+	defer notionOAuthRefreshLock.Unlock()
+	resolved, err := service.Settings.Resolve(ctx, settings.ScopeProject, source.ProjectID, SettingTypeNotion)
+	if err != nil {
+		return "", err
+	}
+	currentAccessToken := settingString(resolved, "access_token")
+	if currentAccessToken != "" && currentAccessToken != rejectedAccessToken {
+		return currentAccessToken, nil
+	}
+	refreshToken := settingString(resolved, "refresh_token")
+	if currentAccessToken == "" || refreshToken == "" {
+		return "", ErrNotConfigured
+	}
+	tokens, err := service.OAuth.Refresh(ctx, refreshToken)
+	if err != nil {
+		return "", ErrNotConfigured
+	}
+	actorID := source.UpdatedBy
+	if actorID == "" {
+		actorID = source.CreatedBy
+	}
+	if actorID == "" {
+		return "", ErrNotConfigured
+	}
+	if err := service.OAuthSettings.RotateSecrets(ctx, actorID, settings.ScopeProject, source.ProjectID, SettingTypeNotion, map[string]string{
+		"access_token": tokens.AccessToken, "refresh_token": tokens.RefreshToken,
+	}); err != nil {
+		service.record(ctx, auth.Identity{Kind: "system", User: auth.User{ID: actorID}}, source.ProjectID, "model.notion.oauth.refreshed", "error", source.ID, nil)
+		return "", err
+	}
+	service.record(ctx, auth.Identity{Kind: "system", User: auth.User{ID: actorID}}, source.ProjectID, "model.notion.oauth.refreshed", "success", source.ID, nil)
+	return tokens.AccessToken, nil
 }
 
 // PrepareComplete validates a bounded Worker result and transfers temporary
@@ -151,7 +209,21 @@ func (service Service) CompleteInTransaction(ctx context.Context, tx transaction
 		if err := decodeModelResult(raw, &result); err != nil {
 			return err
 		}
-		return service.Store.CompleteDiscoverInTransaction(ctx, tx, job, result, service.now())
+		parent, err := service.Store.CompleteDiscoverInTransaction(ctx, tx, job, result, service.now())
+		if err != nil {
+			return err
+		}
+		questions, err := service.Store.ListDiscoveredQuestionsInTransaction(ctx, tx, parent.ProjectID)
+		if err != nil {
+			return err
+		}
+		source := Source{ID: parent.SourceID, ProjectID: parent.ProjectID}
+		for _, question := range questions {
+			if _, err := service.requestSyncInTransaction(ctx, tx, parent.RequestedBy, source, question, SyncScopeQuestion, parent.Trigger); err != nil {
+				return err
+			}
+		}
+		return nil
 	case JobTypeSnapshot:
 		var result SnapshotResult
 		if err := decodeModelResult(raw, &result); err != nil {
@@ -170,8 +242,9 @@ func (service Service) FailInTransaction(ctx context.Context, tx transaction.Tx,
 	return service.Store.FailSyncInTransaction(ctx, tx, job, failure, service.now())
 }
 
-// RunScheduledSyncs claims due sources, schedules one discovery plus each
-// bound question, and advances the countdown from the actual trigger time.
+// RunScheduledSyncs claims due sources, schedules discovery, and advances the
+// countdown from the actual trigger time. Successful discovery fans out the
+// bound-question snapshots from the freshly persisted descendant set.
 func (service Service) RunScheduledSyncs(ctx context.Context, owner string, limit int) (int, error) {
 	owner = strings.TrimSpace(owner)
 	if owner == "" {
@@ -188,24 +261,18 @@ func (service Service) RunScheduledSyncs(ctx context.Context, owner string, limi
 		if actorID == "" {
 			actorID = source.CreatedBy
 		}
-		if _, err := service.requestSync(ctx, actorID, source, Question{}, SyncScopeSource, SyncTriggerScheduled, false); err != nil && !errors.Is(err, ErrConflict) {
-			return processed, err
-		}
-		questions, err := service.Store.ListQuestions(ctx, source.ProjectID)
+		active, err := service.sourceAuthorizationActive(ctx, source.ProjectID, actorID)
 		if err != nil {
 			return processed, err
 		}
-		pages, err := service.Store.ListSourcePages(ctx, source.ProjectID)
-		if err != nil {
-			return processed, err
-		}
-		for _, question := range questions {
-			if !questionPageDiscovered(question, pages) {
-				continue
-			}
-			if _, err := service.requestSync(ctx, actorID, source, question, SyncScopeQuestion, SyncTriggerScheduled, false); err != nil && !errors.Is(err, ErrConflict) {
+		if !active {
+			if err := service.Store.DisableSource(ctx, source.ProjectID, actorID, now); err != nil {
 				return processed, err
 			}
+			continue
+		}
+		if _, err := service.requestSync(ctx, actorID, source, Question{}, SyncScopeSource, SyncTriggerScheduled, false); err != nil && !errors.Is(err, ErrConflict) {
+			return processed, err
 		}
 		next := now.Add(time.Duration(source.AutoSyncIntervalSeconds) * time.Second)
 		if err := service.Store.AdvanceSchedule(ctx, source.ID, owner, next, now); err != nil {
@@ -214,6 +281,27 @@ func (service Service) RunScheduledSyncs(ctx context.Context, owner string, limi
 		processed++
 	}
 	return processed, nil
+}
+
+func (service Service) sourceAuthorizationActive(ctx context.Context, projectID, actorID string) (bool, error) {
+	// Tests and deliberately reduced embeddings may omit Settings. Production
+	// Core always wires it; there, a missing or invalid binding disables the
+	// schedule before any automatic Job can be created.
+	if service.Settings == nil {
+		return true, nil
+	}
+	resolved, err := service.Settings.Resolve(ctx, settings.ScopeProject, projectID, SettingTypeNotion)
+	if errors.Is(err, settings.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	_, err = sourceConfig(projectID, actorID, resolved)
+	if errors.Is(err, ErrNotConfigured) || errors.Is(err, ErrInvalid) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func decodeModelResult(raw map[string]interface{}, target interface{}) error {

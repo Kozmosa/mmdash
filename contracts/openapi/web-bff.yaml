@@ -883,6 +883,7 @@ paths:
     post:
       tags: [Model]
       summary: Manually synchronize the Model source and bound questions
+      description: Every human Project member may trigger fresh descendant discovery followed by all valid bound questions. The automatic countdown is reset even when an active discovery request is reused.
       operationId: bff.model.source.sync
       responses:
         "202":
@@ -890,6 +891,54 @@ paths:
           content:
             application/json:
               schema: { $ref: "./core.yaml#/components/schemas/ModelSync" }
+  /api/projects/{projectId}/models/notion/oauth:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: Read browser-safe Notion OAuth status
+      operationId: bff.model.notion.oauth.get
+      responses:
+        "200":
+          description: Public integration availability and authorized workspace.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/NotionOAuthConnection" }
+  /api/projects/{projectId}/models/notion/oauth/authorizations:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Model]
+      summary: Start a Notion public integration authorization
+      operationId: bff.model.notion.oauth.start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/StartNotionOAuthRequest" }
+      responses:
+        "201":
+          description: Authorization URL for top-level browser navigation.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/NotionOAuthAuthorization" }
+  /api/projects/{projectId}/models/notion/oauth/connection:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    delete:
+      tags: [Model]
+      summary: Revoke and remove the Project Notion authorization
+      operationId: bff.model.notion.oauth.disconnect
+      responses:
+        "204": { description: Disconnected while retaining existing Model history. }
+  /api/integrations/notion/oauth/callback:
+    get:
+      tags: [Model]
+      summary: Complete Notion OAuth and redirect to the state-bound Project settings
+      operationId: bff.model.notion.oauth.callback
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string, minLength: 32, maxLength: 512 } }
+        - { name: code, in: query, schema: { type: string, minLength: 1, maxLength: 2048 } }
+        - { name: error, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        "302": { description: Relative redirect to Model settings with a non-secret completion status. }
   /api/projects/{projectId}/models/questions:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
@@ -959,6 +1008,7 @@ paths:
     post:
       tags: [Model]
       summary: Manually synchronize one Model question
+      description: Every human Project member may trigger this operation. The automatic countdown is reset even when an active request for the question is reused.
       operationId: bff.model.questions.sync
       responses:
         "202":

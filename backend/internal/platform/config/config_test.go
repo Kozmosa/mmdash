@@ -49,6 +49,9 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	if config.InternalURL != "http://localhost:8080" {
 		t.Fatalf("unexpected internal Core URL: %s", config.InternalURL)
 	}
+	if config.Notion.OAuthRedirectURI != "http://localhost:3000/api/integrations/notion/oauth/callback" {
+		t.Fatalf("unexpected Notion OAuth redirect URI: %s", config.Notion.OAuthRedirectURI)
+	}
 	if config.Auth.AccessTokenTTL != 24*time.Hour ||
 		config.Auth.SessionTTL != 30*24*time.Hour ||
 		config.Auth.DeviceAuthorizationTTL != 10*time.Minute ||
@@ -181,6 +184,17 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected device authorization TTL no longer than its poll interval to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"NOTION_OAUTH_CLIENT_ID":    "client-id-without-secret",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected incomplete Notion OAuth credentials to fail")
 	}
 }
 

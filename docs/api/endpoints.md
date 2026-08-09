@@ -3,12 +3,16 @@
 Stage 7 Model operations:
 
 - Core: `model.get`, `model.source.get`, `model.source.sync`,
+  `model.notion.oauth.get`, `model.notion.oauth.start`,
+  `model.notion.oauth.disconnect`, `model.notion.oauth.callback`,
   `model.questions.list`, `model.questions.create`, `model.questions.get`,
   `model.questions.update`, `model.questions.delete`, `model.questions.sync`,
   `model.snapshots.list`, `model.snapshots.get`, `model.snapshots.update`,
   `model.snapshots.diff`, and the leased-Worker-only `model.worker.export`.
 - Web BFF: `bff.model.get`, `bff.model.source.get`,
-  `bff.model.source.sync`, `bff.model.questions.list`,
+  `bff.model.source.sync`, `bff.model.notion.oauth.get`,
+  `bff.model.notion.oauth.start`, `bff.model.notion.oauth.disconnect`,
+  `bff.model.notion.oauth.callback`, `bff.model.questions.list`,
   `bff.model.questions.create`, `bff.model.questions.get`,
   `bff.model.questions.update`, `bff.model.questions.delete`,
   `bff.model.questions.sync`, `bff.model.snapshots.list`,
@@ -178,6 +182,10 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models`                                                | `model.get`                                | model                | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/source`                                         | `model.source.get`                         | model                | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/source/sync`                                    | `model.source.sync`                        | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/notion/oauth`                                   | `model.notion.oauth.get`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/notion/oauth/authorizations`                    | `model.notion.oauth.start`                 | model                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/models/notion/oauth/connection`                        | `model.notion.oauth.disconnect`            | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/model-notion/oauth/callback`                                                | `model.notion.oauth.callback`              | model                | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions`                                      | `model.questions.list`                     | model                | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/questions`                                      | `model.questions.create`                   | model                | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}`                         | `model.questions.get`                      | model                | `core.yaml`        |
@@ -192,6 +200,10 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models`                                               | `bff.model.get`                            | model                | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/source`                                        | `bff.model.source.get`                     | model                | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/source/sync`                                   | `bff.model.source.sync`                    | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/notion/oauth`                                  | `bff.model.notion.oauth.get`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/notion/oauth/authorizations`                   | `bff.model.notion.oauth.start`             | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/models/notion/oauth/connection`                       | `bff.model.notion.oauth.disconnect`        | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/integrations/notion/oauth/callback`                                        | `bff.model.notion.oauth.callback`           | model                | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions`                                     | `bff.model.questions.list`                 | model                | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/questions`                                     | `bff.model.questions.create`               | model                | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}`                        | `bff.model.questions.get`                  | model                | `web-bff.yaml`     |

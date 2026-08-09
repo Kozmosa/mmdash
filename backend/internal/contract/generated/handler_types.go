@@ -1402,3 +1402,64 @@ func (request UpdateModelSnapshotRequest) Validate() error {
 	}
 	return nil
 }
+
+// StartNotionOAuthRequest is generated from the Core request-body schema.
+type StartNotionOAuthRequest struct {
+	RootPageURL             string `json:"root_page_url"`
+	AutoSyncEnabled         bool   `json:"auto_sync_enabled"`
+	AutoSyncIntervalSeconds int64  `json:"auto_sync_interval_seconds"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request StartNotionOAuthRequest) Validate() error {
+	if request.RootPageURL == "" {
+		return fmt.Errorf("root_page_url is required")
+	}
+	if len(request.RootPageURL) > 2048 {
+		return fmt.Errorf("root_page_url is too long")
+	}
+	if request.AutoSyncIntervalSeconds < 60 {
+		return fmt.Errorf("auto_sync_interval_seconds is below its minimum")
+	}
+	if request.AutoSyncIntervalSeconds > 86400 {
+		return fmt.Errorf("auto_sync_interval_seconds exceeds its maximum")
+	}
+	return nil
+}
+
+// CompleteNotionOAuthRequest is generated from the Core request-body schema.
+type CompleteNotionOAuthRequest struct {
+	State string  `json:"state"`
+	Code  *string `json:"code,omitempty"`
+	Error *string `json:"error,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CompleteNotionOAuthRequest) Validate() error {
+	if request.State == "" {
+		return fmt.Errorf("state is required")
+	}
+	if len(request.State) < 32 {
+		return fmt.Errorf("state is too short")
+	}
+	if len(request.State) > 512 {
+		return fmt.Errorf("state is too long")
+	}
+	if request.Code != nil {
+		if len(*request.Code) < 1 {
+			return fmt.Errorf("code is too short")
+		}
+		if len(*request.Code) > 2048 {
+			return fmt.Errorf("code is too long")
+		}
+	}
+	if request.Error != nil {
+		if len(*request.Error) < 1 {
+			return fmt.Errorf("error is too short")
+		}
+		if len(*request.Error) > 200 {
+			return fmt.Errorf("error is too long")
+		}
+	}
+	return nil
+}

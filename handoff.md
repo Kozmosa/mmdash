@@ -1,132 +1,115 @@
-# mmdash v0.1 Stage 4 Home and Progress handoff
+# mmdash v0.1 Stage 7 Model handoff
 
-- Updated: 2026-08-05
-- Branch: `codex/stage-4-home-progress`
-- Base: `origin/main@23057c4ebbea43d62ef388a63144fc4dad55be68`
-- Delivery state: Stage 4 implementation complete in commit `2d8a5a5`; PR #30
-  remains open for review
+- Updated: 2026-08-09
+- Branch: `main`
+- Base: `origin/main@f10733e`
+- Integration-token baseline: `b7150e3 feat(model): implement stage 7 model workflow`
+- Delivery state: Stage 7 complete, including localhost Notion OAuth and Docker acceptance
 
 ## Status
 
-Stage 4 is complete against the v0.1 implementation-order v0.4,
-technical-architecture v0.4, and product-design v0.1 baselines. Project Home
-now reads a real aggregate, and Progress is the authoritative Core boundary
-for Milestone, Task, Dependency, Reminder, and Proposal state. No Model,
-Experiment, Article, or Agent business behavior was introduced ahead of its
-stage.
+Stage 7 is complete against the v0.1 implementation-order v0.4,
+technical-architecture v0.4, and product-design v0.1 baselines. Model is a
+vertical Core-owned module with Web, BFF, PostgreSQL, Worker, Artifact, Data
+Hub, MCP, and native Go CLI integration. Each Project has one Notion Source;
+each active question binds one recursively discovered descendant page and owns
+an independent immutable Snapshot chain.
 
-Human-controlled milestones and critical task changes remain human-session
-operations. Agent-originated Task changes and Proposal creation go through
-Progress, require a non-empty `source_run_id`, and write source and Audit
-metadata. There is no direct database path from Web, BFF, MCP, or the Worker
-into Progress-owned state.
+The Integration Token implementation was frozen in `b7150e3`. The current
+delivery replaces new browser token entry with a public Notion OAuth flow.
+Legacy `integration_token` settings remain read-only upgrade compatibility and
+are removed atomically after a successful OAuth callback.
 
 ## Delivered behavior
 
-- Project Home aggregation for progress, todos, upcoming reminders,
-  proposals, and real Empty States for Model, Experiment, Article, and Agent
-  regions.
-- Progress Core models and APIs for Milestone, Task, Dependency, Reminder,
-  Proposal, and the Home aggregate, including human-only milestone/critical
-  change rules and idempotent operations.
-- Agent Task auto-change policy through the Progress service with mandatory
-  run provenance and Audit records; completed and cancelled Tasks are excluded
-  from Home todos.
-- Proposal create, review, and apply workflow with explicit human review for
-  critical changes.
-- Web BFF aggregation and Progress routes plus Web Project Home, board/list,
-  Gantt, today/reminder, and Proposal review views.
-- Data Hub authoritative readers/projections for Milestone, Task, and
-  Progress Proposal, with MCP `data.list`/`data.read` access through Core.
-- Project-scoped RBAC, request/operation Audit coverage, stable Progress event
-  envelopes, JSON Schemas, generated clients, API catalog entries, and module
-  documentation.
-- Complete Stage 4 Notification 3.17: the Core Type Registry consumes stable
-  invitation, registration, invitation-lifecycle, and reminder events into
-  canonical Notification, Recipient, Inbox, Rule, Delivery, and Delivery
-  Attempt records. Invitation notifications persist only a typed,
-  browser-safe accept Action; invitation outcomes preserve read/archive state
-  and cancel pending/retrying deliveries. Project channel settings stay behind
-  encrypted Settings; the Core Delivery Processor owns leases, bounded retry,
-  safe provider errors, target/Rule/Settings snapshots, metrics, and
-  Feishu/Generic Webhook adapters. Progress still publishes events only and
-  never sends Feishu or Webhook requests directly.
+- Single Project-scoped Notion Source with recursive child-page discovery,
+  explicit Q1/Q2-style bindings, one full-width question card per row, and
+  independent question histories.
+- Question detail layout with timeline, Notion-aligned document, document
+  information, and a viewport-bounded three-level outline card with vertical
+  scrolling.
+- Character-level Diff with contiguous operations, faded pink strikethrough
+  deletions, blue additions, normal unchanged text, and no line numbers.
+- Worker normalization for rich text, equations, tables, bookmarks, images,
+  files, and nested blocks. Changed Notion media is imported through Artifact
+  as `model_file` / **模型文件** before Snapshot commit; unchanged hashes skip
+  media transfer and Snapshot creation.
+- Editable multiple tags and version notes, with `初稿`, `修订中`, and `最终版`
+  as optional built-ins and no automatic tag lifecycle.
+- Model index and question refresh actions, synchronization progress, default
+  five-minute automatic schedule, configurable interval, and Settings
+  countdown.
+- Human-team `project.model.sync` permission. Model-index sync and automatic
+  sync both discover first and then fan out over the freshly persisted
+  question set; question sync affects only that question. Every manual click
+  resets the shared schedule, and an active task is reused without returning a
+  conflict.
+- Data Hub `model_source`, `model_question`, and `model_snapshot` projections,
+  MCP `data.list` / `data.read` access, and human CLI `model list`, `model show`,
+  and `model sync [question_id]` commands.
 
-## Contracts and persistence
+## OAuth and credentials
 
-Migration `000016_progress` owns the Progress tables, constraints, indexes,
-and projections. Migration `000017_notification_stage4` remains a compatibility
-bridge for old development data; migration `000018_notification_core` owns the
-canonical Notification, Recipient, Inbox, Rule, Delivery, and Delivery Attempt
-tables and backfills prior reminder intents. Migration
-`000019_notification_rule_channels_jsonb` converts the already-applied Rule
-`channel_keys` compatibility column from `text[]` to the design-baseline JSONB
-representation. Migrations `000020_notification_authoritative_fields` and
-`000021_notification_delivery_unique_target` add browser-safe Actions, target
-keys, recipient/rule/settings snapshots, bounded attempts, provider diagnostics,
-and the target-aware delivery idempotency key. Rule updates use optimistic
-version checks. No Redis or other queue infrastructure was introduced;
-PostgreSQL remains the Job Queue backend.
+Migration `000023_model_notion_oauth` stores only hashed, expiring, one-use
+authorization state. Core validates state, caller, Project permission, selected
+root access, and callback ownership before Settings encrypts provider tokens.
+Notion API, token exchange, refresh, and revocation endpoints are fixed in the
+adapter and are not caller-controlled. The Worker receives only a Job-bound
+export and never an OAuth credential.
 
-Progress create/update/delete and proposal lifecycle events are defined under
-`contracts/events/`, included in the event catalog, and wired to the standard
-Outbox/Data Hub path. OpenAPI source files, examples/catalog coverage,
-generated Go/TypeScript clients, and the Progress API/development guides are
-aligned. The coverage matrix and API/event indexes were updated.
+Local configuration uses `NOTION_OAUTH_CLIENT_ID`,
+`NOTION_OAUTH_CLIENT_SECRET`, and an exact localhost
+`NOTION_OAUTH_REDIRECT_URI`. Disconnect revokes credentials, disables future
+scheduling, and retains immutable Model and Artifact history.
+
+## Synchronization invariants
+
+The scheduler uses PostgreSQL `FOR UPDATE SKIP LOCKED`. Full synchronization
+queues one discovery Job; successful discovery replaces the descendant set and
+atomically creates question Jobs. A missing/disconnected Notion binding cannot
+schedule work. Manual task creation, active-task reuse, and countdown reset are
+one transaction. A PostgreSQL integration regression covers the timestamp
+parameter, active-task reuse, one-task invariant, and second-click countdown.
 
 ## Verification
 
-Passed:
+Passed on 2026-08-09:
 
-- `pnpm contracts:generate`
-- `pnpm contracts:check`
-- `pnpm api:check`
-- TypeScript lint, tests, and builds; Go formatting, lint, tests, and builds
-  outside the existing Repo Git integration timeout suite; Python Worker
-  lint/tests/build; and Web/BFF/MCP/CLI builds.
-- Progress, Notification registry/adapter/processor, PostgreSQL Delivery and
-  Core HTTP Rule/Action integration tests, invitation outcome cancellation,
-  Notification metrics, Data Hub, BFF aggregation, and Web tests.
-- Docker Compose image build and full Stage 4 smoke acceptance. Because the
-  workstation already had ports 3000, 3001, 5432, 8080, 9000, and 9001 in
-  use, the same Compose stack ran on isolated host ports 13000, 13001, 15432,
-  18080, 19000, and 19001. All services became healthy and `pnpm smoke`
-  passed, including Web/BFF/Core, login/project creation, Worker Job,
-  Outbox/Audit, Data Hub, MCP, and native CLI flows.
-- Compose logs had zero panic/fatal/error matches and zero matches for the
-  configured development credential values. The stack was stopped with
-  `docker compose down`, never `down -v`, so named volumes were preserved.
+- Real localhost Notion OAuth authorization and access to the selected root.
+- Recursive discovery of 6 child pages and three bound questions.
+- Model-index full sync: HTTP 202, `queued` → `running` → `succeeded`, followed
+  by three fresh question Jobs.
+- Question sync: UI `queued` state followed by `unchanged` when the semantic
+  hash did not change. Manual clicks reset `next_sync_at` to click time plus
+  five minutes.
+- Changed content created a new Q1 Snapshot; unchanged Q1/Q2/Q3 runs created no
+  duplicate Snapshot. Existing image/file Artifacts rendered through the
+  Model page.
+- Real PostgreSQL regression
+  `TestPostgresManualSyncReusesActiveTaskAndResetsCountdown`.
+- Complete `pnpm check`: TypeScript, Go, Python and CLI lint/tests/builds;
+  contracts and compatibility; API catalog covering 288 operations; and
+  Caddyfile-only validation reporting `Valid configuration`. No Caddy service
+  was started.
+- Docker Compose `--profile worker up -d --build`, repository smoke, and smoke
+  with `MMDASH_SMOKE_WORKER_MODE=docker`. Web, BFF, Core, MCP Gateway,
+  PostgreSQL, and MinIO were healthy; the Docker Worker completed a real Job.
+- Docker Model live run over the OAuth-bound project: source discovery
+  `succeeded`, and Q1/Q2/Q3 fan-out completed `unchanged` without Model error
+  codes. The temporary Worker token was revoked and Compose was stopped with
+  `down`, never `down -v`.
 
-`pnpm check` reached the test stage but did not exit successfully because the
-pre-existing Repo Git integration cases timed out in `repo.worktree.add/reset`
-and related workspace tests (11 cases in the current run; the Repo package
-failed after about 200 seconds). All changed Stage 4 suites and the other Go,
-CLI, TypeScript, and Python checks passed; `pnpm build`, contract,
-compatibility and API-catalog checks passed separately. The latest
-`pnpm caddy:check` was blocked while Docker attempted to pull
-`caddy:2.10-alpine` and hit a network timeout; Caddy configuration was not
-changed by this work. The Docker smoke needed a temporary `/tmp` Secret
-Service shim because this workstation has no writable Linux
-keyring; the product CLI and its credential-store implementation were not
-changed.
+An existing Notification Inbox unread-count SQL error was visible in shared
+logs during browser acceptance. Per user direction it is outside this Stage 7
+submission and was not modified here.
 
-## Operational notes and boundaries
+## Operational notes
 
+- The authoritative local launcher remains `.\.localscripts\dev.ps1`.
 - Local bootstrap defaults remain `admin@mmdash.local` and
-  `mmdash-local-admin` unless overridden by the documented environment
-  variables.
-- Notification 3.17 deliberately does not include user-level notification
-  preferences, Email/Slack/Teams adapters, or a general arbitrary publish API.
-  Reminder delivery stops at the stable Progress event boundary and enters
-  Notification; only Core's trusted adapters may perform provider I/O.
-- Project Notification settings now provide owner/maintainer channel save,
-  test, delete, and Rule channel selection. A Rule cannot reference a channel
-  unless that registered channel is configured and enabled.
-- Stage 5 Agent-session lifecycle, product Agent tokens, and Stage 6 automatic
-  progress tracking are not implemented. The Stage 4 Task provenance rule is
-  limited to the Progress mutation boundary and does not create a Stage 6
-  tracker.
-- Model, Experiment, Box, Sandbox, and Article remain honest Empty States on
-  Home; no temporary or fake records are created for them.
-
-The next implementation stage is Stage 5 Agent sessions.
+  `mmdash-local-admin` unless overridden by environment variables.
+- OAuth provider secrets and Worker tokens must remain in environment/Secret
+  injection. Do not put them in source control, CLI arguments, test fixtures,
+  or logs.
+- PostgreSQL and MinIO volumes were preserved.
+- The next product stage is Stage 8 Experiment, Box, and Sandbox.
