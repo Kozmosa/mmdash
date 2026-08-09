@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgconn"
 	_ "github.com/jackc/pgx/v4/stdlib"
 
+	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/datahub"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
@@ -106,6 +108,50 @@ func TestPostgresTaskProjectReferenceBoundaries(t *testing.T) {
 	}
 	if projectID != fixture.projectA || assigneeID != nil {
 		t.Fatalf("member removal changed wrong columns: project=%s assignee=%v", projectID, assigneeID)
+	}
+}
+
+func TestPostgresProgressAggregateExcludesTerminalTasksFromTodayAndOverdue(t *testing.T) {
+	fixture := newProgressReferenceFixture(t)
+	create := func(title, status string, dueAt time.Time) {
+		t.Helper()
+		fixture.createTask(t, fixture.projectA, fixture.ownerA, CreateTaskInput{Title: title, Status: status, DueAt: &dueAt})
+	}
+	create("done", TaskDone, fixture.now.Add(-7*time.Hour))
+	create("blocked-overdue", TaskBlocked, fixture.now.Add(-4*time.Hour))
+	create("day-start", TaskTodo, time.Date(2026, time.August, 6, 0, 0, 0, 0, time.UTC))
+	create("todo-overdue", TaskTodo, fixture.now.Add(-2*time.Hour))
+	create("cancelled", TaskCancelled, fixture.now.Add(-30*time.Minute))
+	create("blocked-now", TaskBlocked, fixture.now)
+	create("in-progress", TaskInProgress, fixture.now.Add(time.Hour))
+	create("tomorrow", TaskTodo, fixture.now.Add(21*time.Hour))
+
+	service := Service{Access: &progressAccessTestStub{}, Clock: clock.Fixed{Time: fixture.now}, Store: &fixture.store}
+	result, err := service.List(fixture.ctx, auth.Identity{}, fixture.projectA)
+	if err != nil {
+		t.Fatalf("list progress aggregate: %v", err)
+	}
+	titles := func(items []Task) []string {
+		values := make([]string, 0, len(items))
+		for _, item := range items {
+			values = append(values, item.Title)
+		}
+		return values
+	}
+	if got, want := titles(result.Tasks), []string{"done", "blocked-overdue", "day-start", "todo-overdue", "cancelled", "blocked-now", "in-progress", "tomorrow"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("task ordering changed: got=%v want=%v", got, want)
+	}
+	if got, want := titles(result.Today), []string{"day-start", "todo-overdue", "blocked-now", "in-progress"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("today tasks=%v, want %v", got, want)
+	}
+	if got, want := titles(result.Overdue), []string{"blocked-overdue", "day-start", "todo-overdue"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("overdue tasks=%v, want %v", got, want)
+	}
+	if got, want := titles(result.Blocked), []string{"blocked-overdue", "blocked-now"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("blocked tasks=%v, want %v", got, want)
+	}
+	if got, want := titles(result.Board.Done), []string{"done"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("done board tasks=%v, want %v", got, want)
 	}
 }
 

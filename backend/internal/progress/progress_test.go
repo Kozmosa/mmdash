@@ -14,6 +14,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
@@ -177,6 +178,50 @@ func TestProgressHomeItemsContainOpenTasksOnly(t *testing.T) {
 	}
 	if todos[0].(Task).ID != "open" {
 		t.Fatalf("completed tasks leaked into home: %#v", todos)
+	}
+}
+
+func TestProgressAggregateTodayAndOverdueContainOpenTasksAtUTCBoundaries(t *testing.T) {
+	now := time.Date(2026, time.August, 6, 3, 0, 0, 0, time.UTC)
+	china := time.FixedZone("CST", 8*60*60)
+	due := func(value time.Time) *time.Time { return &value }
+	store := &progressStoreTestStub{tasks: []Task{
+		{ID: "done", Status: TaskDone, DueAt: due(time.Date(2026, time.August, 5, 23, 0, 0, 0, china))},
+		{ID: "cancelled", Status: TaskCancelled, DueAt: due(time.Date(2026, time.August, 6, 12, 0, 0, 0, china))},
+		{ID: "todo-overdue", Status: TaskTodo, DueAt: due(now.Add(-time.Hour))},
+		{ID: "in-progress-today", Status: TaskInProgress, DueAt: due(time.Date(2026, time.August, 6, 12, 0, 0, 0, china))},
+		{ID: "blocked-overdue", Status: TaskBlocked, DueAt: due(now.Add(-time.Hour))},
+		{ID: "blocked-now", Status: TaskBlocked, DueAt: due(time.Date(2026, time.August, 6, 11, 0, 0, 0, china))},
+		{ID: "todo-day-start", Status: TaskTodo, DueAt: due(time.Date(2026, time.August, 6, 8, 0, 0, 0, china))},
+		{ID: "todo-tomorrow", Status: TaskTodo, DueAt: due(time.Date(2026, time.August, 7, 8, 0, 0, 0, china))},
+	}}
+	service := Service{Access: &progressAccessTestStub{}, Clock: clock.Fixed{Time: now}, Store: store}
+	result, err := service.List(context.Background(), auth.Identity{}, "project-1")
+	if err != nil {
+		t.Fatalf("list progress aggregate: %v", err)
+	}
+
+	taskIDs := func(items []Task) []string {
+		ids := make([]string, 0, len(items))
+		for _, item := range items {
+			ids = append(ids, item.ID)
+		}
+		return ids
+	}
+	if got, want := taskIDs(result.Today), []string{"todo-overdue", "in-progress-today", "blocked-overdue", "blocked-now", "todo-day-start"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("today tasks=%v, want %v", got, want)
+	}
+	if got, want := taskIDs(result.Overdue), []string{"todo-overdue", "blocked-overdue", "todo-day-start"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("overdue tasks=%v, want %v", got, want)
+	}
+	if got, want := taskIDs(result.Blocked), []string{"blocked-overdue", "blocked-now"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("blocked tasks=%v, want %v", got, want)
+	}
+	if got, want := taskIDs(result.Board.Done), []string{"done"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("done board tasks=%v, want %v", got, want)
+	}
+	if len(result.Tasks) != 8 || len(result.Gantt) != 8 {
+		t.Fatalf("aggregate task views changed unexpectedly: tasks=%d gantt=%d", len(result.Tasks), len(result.Gantt))
 	}
 }
 
