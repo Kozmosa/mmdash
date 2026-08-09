@@ -4,6 +4,7 @@ import { SettingsSlotGrid } from "@/features/settings/settings-slot-grid";
 import { RegisteredSettingsPanel } from "@/features/settings/registered-settings-panel";
 import { settingsSlots } from "@/features/settings/registry";
 import { MemberManagement } from "@/features/members/member-management";
+import { NotificationSettingsPanel } from "@/features/notification/notification-settings-panel";
 import { RepoSettingsPanel } from "@/features/repo/repo-settings-panel";
 
 export default function SettingsPage() {
@@ -24,6 +25,7 @@ export default function SettingsPage() {
         </p>
       </header>
       <RepoSettingsPanel />
+      <NotificationSettingsPanel />
       <SettingsSlotGrid
         slots={settingsSlots.list().filter((slot) => slot.id !== "repo")}
       />

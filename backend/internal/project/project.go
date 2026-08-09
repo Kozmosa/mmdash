@@ -51,6 +51,9 @@ const (
 	PermissionArtifactUpload   Permission = "project.artifact.upload"
 	PermissionArtifactDownload Permission = "project.artifact.download"
 	PermissionArtifactDelete   Permission = "project.artifact.delete"
+	PermissionProgressRead     Permission = "project.progress.read"
+	PermissionProgressManage   Permission = "project.progress.manage"
+	PermissionProgressPropose  Permission = "project.progress.propose"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -77,6 +80,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactUpload,
 		PermissionArtifactDownload,
 		PermissionArtifactDelete,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -100,6 +106,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactUpload,
 		PermissionArtifactDownload,
 		PermissionArtifactDelete,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -117,6 +126,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactRead,
 		PermissionArtifactUpload,
 		PermissionArtifactDownload,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -127,6 +139,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionRepoRead,
 		PermissionArtifactRead,
 		PermissionArtifactDownload,
+		PermissionProgressRead,
 	},
 	RoleAgent: {
 		PermissionRead,
@@ -138,6 +151,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionContextPropose,
 		PermissionAuditWrite,
 		PermissionRepoRead,
+		PermissionProgressRead,
+		PermissionProgressManage,
+		PermissionProgressPropose,
 	},
 	RoleBox: {
 		PermissionRead,
@@ -146,6 +162,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionDataRead,
 		PermissionAuditWrite,
 		PermissionRepoRead,
+		PermissionProgressRead,
 	},
 }
 
@@ -540,6 +557,26 @@ func (service Service) DeclineInvitation(ctx context.Context, token string) erro
 
 func (service Service) AcceptInvitation(ctx context.Context, identity auth.Identity, token string) (auth.AcceptedMember, error) {
 	member, err := service.Store.AcceptInvitation(ctx, hashInvitationToken(token), identity.User.ID, identity.User.Email, service.now())
+	if err != nil {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	return acceptedMember(member), nil
+}
+
+// AcceptInvitationByID is the authenticated Inbox action. It deliberately
+// accepts an invitation ID, not a token; the Project store rechecks the
+// invitation email, lifecycle, and one-time semantics in the same transaction.
+func (service Service) AcceptInvitationByID(ctx context.Context, identity auth.Identity, invitationID string) (auth.AcceptedMember, error) {
+	if identity.Kind == "agent" || identity.Kind == "box" {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	store, ok := service.Store.(interface {
+		AcceptInvitationByID(context.Context, string, string, string, time.Time) (Member, error)
+	})
+	if !ok || strings.TrimSpace(invitationID) == "" {
+		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
+	}
+	member, err := store.AcceptInvitationByID(ctx, invitationID, identity.User.ID, identity.User.Email, service.now())
 	if err != nil {
 		return auth.AcceptedMember{}, auth.ErrInvalidInvitation
 	}

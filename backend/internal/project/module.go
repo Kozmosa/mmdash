@@ -13,9 +13,11 @@ import (
 
 // Module exposes project collaboration routes.
 type Module struct {
-	Artifact   http.Handler
-	Repository http.Handler
-	Service    Service
+	Artifact     http.Handler
+	Notification http.Handler
+	Progress     http.Handler
+	Repository   http.Handler
+	Service      Service
 }
 
 func (Module) Name() string { return "project" }
@@ -23,7 +25,21 @@ func (Module) Name() string { return "project" }
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/projects", module.handleCollection)
 	mux.HandleFunc("/v1/projects/trash", module.handleTrash)
+	mux.HandleFunc("/v1/projects/invitations/", module.handleInvitationAcceptResource)
 	mux.HandleFunc("/v1/projects/", module.handleResource)
+}
+
+func (module Module) handleInvitationAcceptResource(response http.ResponseWriter, request *http.Request) {
+	identity, ok := module.identity(response, request)
+	if !ok {
+		return
+	}
+	segments := strings.Split(strings.Trim(strings.TrimPrefix(request.URL.Path, "/v1/projects/invitations/"), "/"), "/")
+	if len(segments) != 2 || segments[1] != "accept" || segments[0] == "" {
+		writeProjectError(response, request, ErrNotFound)
+		return
+	}
+	module.handleInvitationAccept(response, request, identity, segments[0])
 }
 
 func (module Module) handleCollection(response http.ResponseWriter, request *http.Request) {
@@ -92,6 +108,16 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 			module.Repository.ServeHTTP(response, request)
 			return
 		}
+	case "progress":
+		if module.Progress != nil {
+			module.Progress.ServeHTTP(response, request)
+			return
+		}
+	case "notification-channels", "notification-rules", "notification-deliveries":
+		if module.Notification != nil {
+			module.Notification.ServeHTTP(response, request)
+			return
+		}
 	case "restore":
 		if len(segments) == 2 {
 			module.handleRestore(response, request, identity, projectID)
@@ -122,6 +148,18 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 		}
 	}
 	writeProjectError(response, request, ErrNotFound)
+}
+
+func (module Module) handleInvitationAccept(response http.ResponseWriter, request *http.Request, identity auth.Identity, invitationID string) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	member, err := module.Service.AcceptInvitationByID(request.Context(), identity, invitationID)
+	if err != nil {
+		writeProjectError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, member)
 }
 
 func (module Module) handleProject(
@@ -389,6 +427,8 @@ func writeProjectError(response http.ResponseWriter, request *http.Request, err 
 			"PROJECT_NOT_FOUND",
 			"Project not found",
 		))
+	case errors.Is(err, auth.ErrInvalidInvitation):
+		httpx.WriteError(response, request, apperror.New(http.StatusBadRequest, "INVALID_INVITATION", "Invitation is invalid, expired, revoked, or does not match the current user"))
 	default:
 		httpx.WriteError(response, request, err)
 	}

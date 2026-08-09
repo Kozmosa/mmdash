@@ -52,6 +52,9 @@ func (stub *artifactValidatorStub) ValidateProjectReferences(
 func (stub *storeStub) AcceptInvitation(context.Context, string, string, string, time.Time) (Member, error) {
 	return Member{UserID: "user-2", Role: RoleViewer}, nil
 }
+func (stub *storeStub) AcceptInvitationByID(context.Context, string, string, string, time.Time) (Member, error) {
+	return Member{UserID: "user-2", Role: RoleViewer}, nil
+}
 func (stub *storeStub) CreateInvitation(context.Context, string, string, string, Role, time.Time) (IssuedInvitation, error) {
 	stub.invitationCreated = true
 	return IssuedInvitation{}, nil
@@ -409,6 +412,21 @@ func TestModuleRoutesProjectAndMemberMutationsToTheirHandlers(t *testing.T) {
 	}
 	if !store.projectUpdated || !store.projectTrashed || !store.projectRestored || !store.memberUpdated || !store.memberRemoved {
 		t.Fatalf("expected all mutation handlers to run: %#v", store)
+	}
+}
+
+func TestModuleRoutesInboxInvitationAcceptByID(t *testing.T) {
+	module := Module{Service: Service{
+		Auth:  authStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "user-2", Email: "invitee@example.com"}}},
+		Store: &storeStub{},
+	}}
+	mux := http.NewServeMux()
+	module.RegisterRoutes(mux)
+	request := httptest.NewRequest(http.MethodPost, "/v1/projects/invitations/invitation-1/accept", nil)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("invitation accept route: got %d, want %d", response.Code, http.StatusOK)
 	}
 }
 

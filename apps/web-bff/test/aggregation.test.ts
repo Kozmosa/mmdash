@@ -46,6 +46,10 @@ describe("PageAggregatorRegistry", () => {
         calls.push(args);
         return home;
       },
+      getProject: async () => ({
+        problem_title: "Problem",
+        project_constraints: [],
+      }),
     };
     await expect(
       registry.aggregate("home", {
@@ -63,7 +67,12 @@ describe("PageAggregatorRegistry", () => {
         projectId: "project-1",
         requestId: "request-1",
       }),
-    ).resolves.toMatchObject({ fragments: { home } });
+    ).resolves.toMatchObject({
+      fragments: {
+        home,
+        project: { problem_title: "Problem", project_constraints: [] },
+      },
+    });
     expect(calls).toEqual([
       [
         "project-1",

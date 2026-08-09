@@ -1,0 +1,2 @@
+ALTER TABLE notification_deliveries
+    DROP CONSTRAINT IF EXISTS notification_deliveries_notification_id_channel_key_deliver_key;
