@@ -934,7 +934,7 @@ func (request CreateAgentInstanceRequest) Validate() error {
 	if request.AllowedTools == nil {
 		return fmt.Errorf("allowed_tools is required")
 	}
-	if len(request.AllowedTools) > 100 {
+	if len(request.AllowedTools) > 4 {
 		return fmt.Errorf("allowed_tools has too many items")
 	}
 	if len(request.AllowedTools) < 1 {
@@ -1035,7 +1035,7 @@ func (request UpdateAgentInstanceRequest) Validate() error {
 		}
 	}
 	if request.AllowedTools != nil {
-		if len(*request.AllowedTools) > 100 {
+		if len(*request.AllowedTools) > 4 {
 			return fmt.Errorf("allowed_tools has too many items")
 		}
 		if len(*request.AllowedTools) < 1 {
