@@ -1,10 +1,10 @@
 # mmdash v0.1 Stage 5 Agent Sessions handoff
 
-- Updated: 2026-08-06
+- Updated: 2026-08-09
 - Branch: `codex/stage-5-agent-sessions`
 - Base: `codex/stage-4-home-progress@202bad8`（含全部已验收 Stage 4 fixes，于 `141ad72` 整合）
-- Delivery state: Stage 5 implementation complete；12 个提交，HEAD `b7118cb`；
-  未 push、未创建 PR
+- Delivery state: Stage 5 implementation and final acceptance complete；全部已验收
+  Stage 4 fixes 已包含在当前基线；未 push、未创建 PR
 
 ## Status
 
@@ -50,8 +50,9 @@ provider-neutral extension boundary. Stage 6 automatic Progress tracking
   Proposal。
 - Web 会话工作台：会话列表、消息历史、输入框、BFF SSE 流式代理、工具调用
   展示、Run 状态、停止/新建/分叉/重新生成/重新执行、连接状态与
-  manual/auto 展示、manual 可选 Dashboard 入口。浏览器不持有 Hermes API
-  Key 或 Agent Token。
+  manual/auto 展示、manual 可选 Dashboard 入口。浏览器不接收 Hermes API
+  Key；Agent Token 仅在 manual 首次响应一次性展示且不持久化，auto 从不向
+  浏览器返回 Token 明文。
 
 ## Acceptance fixes discovered in this run
 
@@ -65,6 +66,16 @@ provider-neutral extension boundary. Stage 6 automatic Progress tracking
   改为空。
 - 后端镜像保证迁移/契约文件对非 root `mmdash` 用户可读。
 - Web 设置页 `auto` 选项按 adapter 声明能力禁用。
+- Core 对 Agent Token 验证证据采用 first-write 幂等语义；MCP Gateway 原先
+  错误要求重复 `tools/list` 返回当前 Session/Request ID，导致 auto 管理在
+  restart 后的第二次验证必然失败。Gateway 现仅校验稳定的 Token/Agent/
+  Project/`tools/list` 绑定，并新增重复验证回归测试。
+- Mock Hermes Dashboard 现在以真实 MCP initialize + `tools/list` 请求验证
+  所配置的 Gateway URL/Token，而不是返回静态 Tool 列表；Agent smoke 覆盖
+  auto 创建、直接管理、反向验证与无明文轮换。
+- Acceptance Compose 的服务发现 Host allowlist 包含 Compose-only
+  `mcp-gateway`，所有宿主端口仅绑定 `127.0.0.1`，避免验收数据库和服务暴露
+  到宿主外部网络。
 
 ## Contracts and persistence
 
@@ -85,31 +96,38 @@ Outbox，事件目录、OpenAPI、生成的 Go/TS 客户端与 API 目录已对�
 
 Passed:
 
-- `pnpm contracts:generate`、`pnpm contracts:check`、`pnpm api:check`
-  （315 operations / 8 contracts）、`pnpm caddy:check`（镜像需经本地
-  mirror 拉取后通过）。
-- TypeScript lint、全量 TS 测试（web 75、web-bff 38、mcp-gateway 31）、
-  TS 构建；Go 格式化/lint/构建；除 repo 包 git 集成超时测试外全部 Go 测试
-  通过（含 `MMDASH_TEST_DATABASE_URL` 下的 agent/auth/datahub/progress/
-  project/settings integration tests）；Python lint/测试/构建。
-- Docker Compose acceptance（隔离端口 13000/13001/15432/18080/19000/
-  19001/18642/19002）：`scripts/mock-hermes.mjs`（pinned v2026.8.3 契约）
-  + `scripts/agent-smoke.mjs` 35 项断言全绿（实例设置、运行时检查、
+- 2026-08-09 在最终代码上 fresh `pnpm check` 全量通过：TypeScript lint、
+  Web 75 tests、Web BFF 38 tests、MCP Gateway 32 tests、Go 全仓测试与构建
+  （包括 `backend/internal/repo` Git integration tests）、Python lint/25 tests/
+  build、contracts compatibility、API catalog（315 operations / 8
+  contracts）和 Caddyfile validation。
+- 独立 PostgreSQL 测试库从空库应用 `000001` 至
+  `000026_agent_sessions` 全量迁移；`000023-000025` 为已验收 Stage 4 fixes，
+  编号连续无冲突。强制运行 agent/auth/datahub/progress/project/settings/
+  notification PostgreSQL integration tests 全绿。
+- Docker Compose acceptance（loopback-only 隔离端口
+  13000/13001/15432/18080/19000/19001/18642/19002）：
+  `scripts/mock-hermes.mjs`（pinned v2026.8.3 HTTP/SSE/Dashboard 契约）+
+  `scripts/agent-smoke.mjs` 43 项断言全绿（manual/auto 实例设置、运行时检查、
   tools/list 精确工具证据、pending 拒绝、VerifyToken 激活、反向验证、
   会话/消息/Run/SSE/停止/重跑/重生成/分叉/结束、context.promote、Prompt
-  覆盖与恢复、两阶段轮换/中止/撤销、撤销后 Gateway 拒绝）。
+  覆盖与恢复、manual 两阶段轮换/中止/撤销、撤销后 Gateway 拒绝、auto
+  Dashboard 配置/验证/激活及无明文原子轮换）。
 - `pnpm smoke` 通过（`MMDASH_SMOKE_SKIP_CLI=1`，原因见限制）；Web/BFF/
-  Core/MCP 健康检查全绿；修复后容器日志零 panic/fatal/error，且不包含
-  Hermes API Key、Dashboard Token、Cloudflare Secret 或 Agent/API Token
-  明文。栈以 `docker compose down`（不带 `-v`）停止，命名卷保留。
+  Core/MCP/Mock Hermes/PostgreSQL/MinIO 健康检查全绿，migration 与
+  minio-init 均 exit 0。
+- Final browser/API canary 同时创建 manual 与 auto Agent，确认 manual Token
+  只在首次响应出现、auto 不返回明文；后续浏览器 API/Agent 页面、Audit、
+  Metrics 与应用日志均不含 Hermes API Key、Dashboard Token、Cloudflare
+  Secret、Agent Token 或 Gateway attestation Token 明文。loopback 收敛后
+  application/PostgreSQL recent logs 零 panic/fatal/error。
+- 验收栈最终以 `docker compose down`（不带 `-v`）停止，命名卷保留。
 
 ## Known limitations
 
 - 未执行真实 Hermes interoperability：验收使用 pinned mock HTTP/SSE
   服务器（`scripts/mock-hermes.mjs` + `scripts/agent-smoke.mjs`）。真实
   Hermes 实例的互操作属独立环境检查，需在具备 Hermes 的环境中另行执行。
-- `backend/internal/repo` 的 git 集成测试在无外网/慢 git 环境超时
-  （Stage 4 基线同样失败，环境性 pre-existing 问题）。
 - Native CLI smoke 需要系统 Secret Service keyring；headless 主机无
   keyring，故 `MMDASH_SMOKE_SKIP_CLI=1` 跳过 CLI 段（其余 smoke 照跑）。
 - `StreamChat` 为已实现并测试的接口端口；当前产品消息路径走
