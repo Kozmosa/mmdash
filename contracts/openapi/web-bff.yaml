@@ -20,6 +20,7 @@ tags:
   - name: Artifact
   - name: Pages
   - name: Progress
+  - name: Model
   - name: Notification
   - name: Streams
 paths:
@@ -853,6 +854,184 @@ paths:
                     },
                 },
             }
+  /api/projects/{projectId}/models:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: Read the project Model overview
+      operationId: bff.model.get
+      responses:
+        "200":
+          description: Model source, discovered pages, questions, and synchronization state.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelOverview" }
+  /api/projects/{projectId}/models/source:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: Read the single project Model source
+      operationId: bff.model.source.get
+      responses:
+        "200":
+          description: Browser-safe Model source and countdown.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSource" }
+  /api/projects/{projectId}/models/source/sync:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Model]
+      summary: Manually synchronize the Model source and bound questions
+      operationId: bff.model.source.sync
+      responses:
+        "202":
+          description: Model synchronization accepted.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSync" }
+  /api/projects/{projectId}/models/questions:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: List Model questions
+      operationId: bff.model.questions.list
+      responses:
+        "200":
+          description: Ordered Model questions.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestionList" }
+    post:
+      tags: [Model]
+      summary: Create a Model question bound to a discovered child page
+      operationId: bff.model.questions.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/CreateModelQuestionRequest" }
+      responses:
+        "201":
+          description: Created Model question.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestion" }
+  /api/projects/{projectId}/models/questions/{questionId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+    get:
+      tags: [Model]
+      summary: Read one Model question and its current Snapshot
+      operationId: bff.model.questions.get
+      responses:
+        "200":
+          description: Model question detail.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestionDetail" }
+    patch:
+      tags: [Model]
+      summary: Update a Model question or its bound page
+      operationId: bff.model.questions.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/UpdateModelQuestionRequest" }
+      responses:
+        "200":
+          description: Updated Model question.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestion" }
+    delete:
+      tags: [Model]
+      summary: Remove a Model question
+      operationId: bff.model.questions.delete
+      responses:
+        "204": { description: Model question removed. }
+  /api/projects/{projectId}/models/questions/{questionId}/sync:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+    post:
+      tags: [Model]
+      summary: Manually synchronize one Model question
+      operationId: bff.model.questions.sync
+      responses:
+        "202":
+          description: Question synchronization accepted and automatic countdown reset.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSync" }
+  /api/projects/{projectId}/models/questions/{questionId}/snapshots:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+    get:
+      tags: [Model]
+      summary: List immutable Snapshots for one Model question
+      operationId: bff.model.snapshots.list
+      responses:
+        "200":
+          description: Newest-first Snapshot timeline.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSnapshotList" }
+  /api/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+      - $ref: "./core.yaml#/components/parameters/ModelSnapshotId"
+    get:
+      tags: [Model]
+      summary: Read one fixed Model Snapshot
+      operationId: bff.model.snapshots.get
+      responses:
+        "200":
+          description: Immutable Model content and editable metadata.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSnapshot" }
+    patch:
+      tags: [Model]
+      summary: Update user-managed Snapshot tags and version note
+      operationId: bff.model.snapshots.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/UpdateModelSnapshotRequest" }
+      responses:
+        "200":
+          description: Updated Snapshot metadata.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSnapshot" }
+  /api/projects/{projectId}/models/questions/{questionId}/diff:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+      - name: from_snapshot_id
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: to_snapshot_id
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Model]
+      summary: Compare two Model Snapshots at character granularity
+      operationId: bff.model.snapshots.diff
+      responses:
+        "200":
+          description: Block-preserving diff with contiguous character runs.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelDiff" }
   /api/settings/types:
     get:
       tags: [Settings]

@@ -14,6 +14,7 @@ import (
 // Module exposes project collaboration routes.
 type Module struct {
 	Artifact     http.Handler
+	Model        http.Handler
 	Notification http.Handler
 	Progress     http.Handler
 	Repository   http.Handler
@@ -101,6 +102,11 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 	case "artifacts":
 		if module.Artifact != nil {
 			module.Artifact.ServeHTTP(response, request)
+			return
+		}
+	case "models":
+		if module.Model != nil {
+			module.Model.ServeHTTP(response, request)
 			return
 		}
 	case "repository":

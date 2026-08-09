@@ -83,4 +83,43 @@ describe("Project home Artifact aggregate", () => {
       "/projects/00000000-0000-4000-8000-000000000001/artifacts?artifact=00000000-0000-4000-8000-000000000002",
     );
   });
+
+  it("replaces the Stage 4 placeholder with live Model question links", async () => {
+    apiRequest.mockResolvedValue({
+      fragments: {
+        home: {
+          agent: { available: false, items: [], total: 0 },
+          article: { available: false, items: [], total: 0 },
+          experiments: { available: false, items: [], total: 0 },
+          generated_at: "2026-08-09T00:00:00Z",
+          milestones: { available: true, items: [], total: 0 },
+          models: {
+            available: true,
+            items: [
+              {
+                code: "Q1",
+                question_id: "00000000-0000-4000-8000-000000000003",
+                snapshot_count: 2,
+                sync_status: "succeeded",
+                title: "传染病传播模型",
+              },
+            ],
+            total: 1,
+          },
+          problem: { available: true, items: [], total: 0 },
+          project_id: "00000000-0000-4000-8000-000000000001",
+          todos: { available: true, items: [], total: 0 },
+        },
+      },
+    });
+
+    render(<ProjectHomePage />, { wrapper: Providers });
+
+    expect(await screen.findByText("Q1 · 传染病传播模型")).toHaveAttribute(
+      "href",
+      "/projects/00000000-0000-4000-8000-000000000001/models/00000000-0000-4000-8000-000000000003",
+    );
+    expect(screen.getByText("2 个版本 · succeeded")).toBeInTheDocument();
+    expect(screen.queryByText("模型、实验与论文尚未接入")).not.toBeInTheDocument();
+  });
 });

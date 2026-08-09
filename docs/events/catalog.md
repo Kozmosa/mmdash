@@ -44,6 +44,10 @@ All entries currently use envelope schema version `1`.
 | `progress.reminder.due`       | progress | yes            | `resource_id`, `resource_type=reminder`, `title`, `status`, `reminder_id`, optional task/milestone IDs          | `notification.events`          |
 | `progress.proposal.created`   | progress | yes            | `resource_id`, `resource_type=progress_proposal`, `title`, `status`, `proposal_type`, `source`, `source_run_id` | `datahub.projections`          |
 | `progress.proposal.reviewed`  | progress | yes            | `resource_id`, `resource_type=progress_proposal`, `title`, `status`, `proposal_type`, `decision`                | `datahub.projections`          |
+| `model.sync.requested`        | model    | yes            | `sync_id`, `source_id`, optional `question_id`, `scope`, `trigger`, `job_id`, `requested_at`                    | none                           |
+| `model.source.changed`        | model    | yes            | `source_id`, `notion_root_page_id`, `action`, `status`                                                           | `datahub.projections`          |
+| `model.question.changed`      | model    | yes            | `question_id`, `source_id`, `code`, `title`, `notion_page_id`, `action`, `status`                               | `datahub.projections`          |
+| `model.snapshot.created`      | model    | yes            | `snapshot_id`, `question_id`, `source_id`, `content_hash`, optional `previous_snapshot_id`, `captured_at`       | `datahub.projections`          |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.
@@ -75,6 +79,13 @@ Notification consumes stable invitation lifecycle, registration, and reminder
 events into its canonical Notification/Recipient/Inbox model. External delivery
 remains behind the Core Delivery Processor and registered Feishu/Generic Webhook
 adapters; Progress never sends provider requests.
+
+Model events never contain the Notion integration token, temporary Notion file
+URLs, raw block content, or Artifact transfer credentials. A source or question
+change updates the mutable `model_source` or `model_question` projection;
+`model.snapshot.created` creates an immutable `model_snapshot` projection
+addressable through MCP `data.list/read`. An unchanged content Hash completes
+the synchronization as `unchanged` and deliberately emits no Snapshot event.
 
 When adding an event:
 

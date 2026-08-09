@@ -45,6 +45,24 @@ func (store PostgresStore) CreateFirst(
 		if err := insertUpload(ctx, tx, upload); err != nil {
 			return mapPostgresError(err)
 		}
+		if artifact.Source == SourceModel {
+			if artifact.SourceObjectID == nil {
+				return ErrSourceInvalid
+			}
+			relationID, err := store.Generator.New()
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO artifact_relations(
+					relation_id,project_id,artifact_id,version_id,
+					relation_type,target_type,target_id,created_by,created_at
+				) VALUES($1,$2,$3,$4,'attachment','model',$5,$6,$7)
+			`, relationID, artifact.ProjectID, artifact.ID, version.ID,
+				*artifact.SourceObjectID, artifact.CreatedBy, artifact.CreatedAt); err != nil {
+				return mapPostgresError(err)
+			}
+		}
 		if version.Status == StatusAvailable {
 			if err := store.schedulePreviewInTransaction(
 				ctx, tx, artifact.ProjectID, artifact.ID, version.ID,

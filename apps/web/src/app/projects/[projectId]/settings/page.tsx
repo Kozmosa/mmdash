@@ -6,6 +6,7 @@ import { settingsSlots } from "@/features/settings/registry";
 import { MemberManagement } from "@/features/members/member-management";
 import { NotificationSettingsPanel } from "@/features/notification/notification-settings-panel";
 import { RepoSettingsPanel } from "@/features/repo/repo-settings-panel";
+import { ModelSettingsPanel } from "@/features/model/model-settings-panel";
 
 export default function SettingsPage() {
   return (
@@ -25,9 +26,10 @@ export default function SettingsPage() {
         </p>
       </header>
       <RepoSettingsPanel />
+      <ModelSettingsPanel />
       <NotificationSettingsPanel />
       <SettingsSlotGrid
-        slots={settingsSlots.list().filter((slot) => slot.id !== "repo")}
+        slots={settingsSlots.list().filter((slot) => slot.id !== "repo" && slot.id !== "model")}
       />
       <MemberManagement />
       <section

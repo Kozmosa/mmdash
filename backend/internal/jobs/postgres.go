@@ -368,6 +368,8 @@ func (store PostgresStore) Complete(
 			      ELSE result
 			    END,
 			    finished_at = $3,
+			    error_code = NULL,
+			    error_message = NULL,
 			    locked_by = NULL,
 			    lease_expires_at = NULL,
 			    updated_at = $3

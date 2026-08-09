@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.local/contracts/json-schema/model-notion-result.schema.json",
+  "title": "Model Notion Worker result",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "sync_id", "root_title", "pages"],
+      "properties": {
+        "mode": { "const": "discover" },
+        "sync_id": { "type": "string", "format": "uuid" },
+        "root_title": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["page_id", "parent_page_id", "title", "url", "depth", "has_children"],
+            "properties": {
+              "page_id": { "type": "string", "format": "uuid" },
+              "parent_page_id": { "type": ["string", "null"], "format": "uuid" },
+              "title": { "type": "string", "maxLength": 255 },
+              "url": { "type": "string", "format": "uri" },
+              "depth": { "type": "integer", "minimum": 1, "maximum": 64 },
+              "has_children": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "sync_id", "question_id", "title", "content_hash", "summary", "outline", "blocks", "content_markdown", "content_text", "media"],
+      "properties": {
+        "mode": { "const": "snapshot" },
+        "sync_id": { "type": "string", "format": "uuid" },
+        "question_id": { "type": "string", "format": "uuid" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "content_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "summary": { "type": "string", "maxLength": 10000 },
+        "outline": { "type": "array", "items": { "type": "object" } },
+        "blocks": { "type": "array", "items": { "type": "object" } },
+        "content_markdown": { "type": "string" },
+        "content_text": { "type": "string" },
+        "media": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_block_id", "filename", "mime_type"],
+            "anyOf": [
+              { "required": ["url"] },
+              { "required": ["artifact_id", "artifact_version_id"] }
+            ],
+            "properties": {
+              "source_block_id": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "filename": { "type": "string", "minLength": 1, "maxLength": 255 },
+              "mime_type": { "type": "string" },
+              "artifact_id": { "type": "string", "format": "uuid" },
+              "artifact_version_id": { "type": "string", "format": "uuid" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

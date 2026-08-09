@@ -177,6 +177,10 @@ type ProgressProvider interface {
 	ProgressHomeItems(context.Context, auth.Identity, string) ([]interface{}, []interface{}, error)
 }
 
+type ModelProvider interface {
+	ModelHomeItems(context.Context, auth.Identity, string) ([]interface{}, error)
+}
+
 // AdapterRegistry maps stable object types to domain-owned readers.
 type AdapterRegistry struct {
 	mu      sync.RWMutex
@@ -233,6 +237,7 @@ type Service struct {
 	Clock    interface{ Now() time.Time }
 	Problem  ProblemProvider
 	Progress ProgressProvider
+	Models   ModelProvider
 	Store    Store
 }
 
@@ -391,10 +396,18 @@ func (service Service) Home(
 		milestones = HomeSection{Available: true, Items: nonNilItems(milestoneItems), Total: len(milestoneItems)}
 		todos = HomeSection{Available: true, Items: nonNilItems(todoItems), Total: len(todoItems)}
 	}
+	models := empty()
+	if service.Models != nil {
+		items, err := service.Models.ModelHomeItems(ctx, identity, projectID)
+		if err != nil {
+			return HomeAggregate{}, err
+		}
+		models = HomeSection{Available: true, Items: nonNilItems(items), Total: len(items)}
+	}
 	return HomeAggregate{
 		Agent: empty(), Article: empty(), Experiments: empty(),
 		GeneratedAt: service.Clock.Now().UTC(), Milestones: milestones,
-		Models: empty(), Problem: problem, ProjectID: projectID, Todos: todos,
+		Models: models, Problem: problem, ProjectID: projectID, Todos: todos,
 	}, nil
 }
 
