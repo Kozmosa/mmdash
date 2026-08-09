@@ -45,6 +45,9 @@ def main() -> None:
         model_completion_timeout_seconds=float(
             os.environ.get("MMDASH_WORKER_MODEL_COMPLETION_TIMEOUT_SECONDS", "300")
         ),
+        progress_evaluation_timeout_seconds=float(
+            os.environ.get("MMDASH_WORKER_PROGRESS_EVALUATION_TIMEOUT_SECONDS", "900")
+        ),
     )
     runtime = WorkerRuntime(
         client,
