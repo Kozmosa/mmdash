@@ -4,7 +4,7 @@
 - Branch: `codex/stage-6-auto-progress`
 - Base: `origin/main@52e398f`
 - Migration: `000028_progress_auto_tracking`
-- Delivery state: Stage 6 complete; Ready PR pending final branch publication
+- Delivery state: Stage 6 complete in Ready PR #33; CI passed; not merged
 
 ## 2026-08-10 Stage 6 automatic Progress tracking
 
