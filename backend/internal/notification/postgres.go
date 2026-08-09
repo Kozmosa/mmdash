@@ -73,6 +73,19 @@ func (store PostgresStore) ListInbox(ctx context.Context, userID string, filter 
 		args = append(args, filter.Outcome)
 		next++
 	}
+	if filter.OutcomeGroup == "processed" {
+		where = append(where, "item.outcome IN ('resolved','revoked','expired')")
+	}
+	if filter.OccurredFrom != nil {
+		where = append(where, fmt.Sprintf("notification.occurred_at >= $%d", next))
+		args = append(args, *filter.OccurredFrom)
+		next++
+	}
+	if filter.OccurredTo != nil {
+		where = append(where, fmt.Sprintf("notification.occurred_at <= $%d", next))
+		args = append(args, *filter.OccurredTo)
+		next++
+	}
 	if cursorTime != "" {
 		where = append(where, fmt.Sprintf("(item.created_at, item.inbox_item_id) < ($%d::timestamptz, $%d::uuid)", next, next+1))
 		args = append(args, cursorTime, cursorID)
@@ -80,7 +93,7 @@ func (store PostgresStore) ListInbox(ctx context.Context, userID string, filter 
 	}
 	args = append(args, page.Limit+1)
 	query := `SELECT item.inbox_item_id,item.read_state,item.archived_at,item.outcome,item.created_at,item.updated_at,
- notification.notification_id,notification.type_key,notification.template_version,notification.source_event_id,COALESCE(notification.project_id::text,''),COALESCE(notification.actor_id::text,''),notification.resource_type,notification.resource_id,notification.priority,notification.data,notification.action_type,notification.action_resource_id,notification.action_route,notification.occurred_at,notification.created_at,
+	 notification.notification_id,notification.type_key,notification.template_version,notification.source_event_id,COALESCE(notification.project_id::text,''),COALESCE(notification.actor_id::text,''),notification.resource_type,notification.resource_id,notification.priority,notification.data,notification.rendered_snapshot,notification.action_type,notification.action_resource_id,notification.action_route,notification.occurred_at,notification.created_at,
  recipient.recipient_id,recipient.notification_id,recipient.recipient_key,COALESCE(recipient.user_id::text,''),COALESCE(recipient.normalized_email,''),recipient.expires_at
  FROM notification_inbox_items item JOIN notification_notifications notification USING(notification_id) JOIN notification_recipients recipient USING(recipient_id)
  WHERE ` + strings.Join(where, " AND ") + ` ORDER BY item.created_at DESC,item.inbox_item_id DESC LIMIT $` + fmt.Sprint(next)
@@ -115,7 +128,7 @@ func (store PostgresStore) ListInbox(ctx context.Context, userID string, filter 
 
 func (store PostgresStore) GetInbox(ctx context.Context, userID, id string) (InboxItem, error) {
 	row := store.DB.QueryRowContext(ctx, `SELECT item.inbox_item_id,item.read_state,item.archived_at,item.outcome,item.created_at,item.updated_at,
- notification.notification_id,notification.type_key,notification.template_version,notification.source_event_id,COALESCE(notification.project_id::text,''),COALESCE(notification.actor_id::text,''),notification.resource_type,notification.resource_id,notification.priority,notification.data,notification.action_type,notification.action_resource_id,notification.action_route,notification.occurred_at,notification.created_at,
+	 notification.notification_id,notification.type_key,notification.template_version,notification.source_event_id,COALESCE(notification.project_id::text,''),COALESCE(notification.actor_id::text,''),notification.resource_type,notification.resource_id,notification.priority,notification.data,notification.rendered_snapshot,notification.action_type,notification.action_resource_id,notification.action_route,notification.occurred_at,notification.created_at,
  recipient.recipient_id,recipient.notification_id,recipient.recipient_key,COALESCE(recipient.user_id::text,''),COALESCE(recipient.normalized_email,''),recipient.expires_at
  FROM notification_inbox_items item JOIN notification_notifications notification USING(notification_id) JOIN notification_recipients recipient USING(recipient_id)
  WHERE item.inbox_item_id=$1 AND recipient.user_id=$2`, id, userID)
@@ -158,7 +171,7 @@ func (store PostgresStore) MarkAllRead(ctx context.Context, userID string, filte
 }
 
 func (store PostgresStore) UnreadCount(ctx context.Context, userID, projectID string) (int64, error) {
-	query := `SELECT COUNT(*) FROM notification_inbox_items item JOIN notification_recipients recipient USING(recipient_id) JOIN notification_notifications notification USING(notification_id) WHERE recipient.user_id=$1 AND item.read_state='unread' AND item.archived_at IS NULL`
+	query := `SELECT COUNT(*) FROM notification_inbox_items item JOIN notification_recipients recipient ON recipient.recipient_id=item.recipient_id AND recipient.notification_id=item.notification_id JOIN notification_notifications notification ON notification.notification_id=item.notification_id WHERE recipient.user_id=$1 AND item.read_state='unread' AND item.archived_at IS NULL`
 	args := []interface{}{userID}
 	if projectID != "" {
 		query += ` AND notification.project_id=$2`
@@ -172,9 +185,9 @@ func (store PostgresStore) UnreadCount(ctx context.Context, userID, projectID st
 func (store PostgresStore) GetRule(ctx context.Context, projectID, typeKey string) (Rule, error) {
 	var rule Rule
 	var channelKeys []byte
-	err := store.DB.QueryRowContext(ctx, `SELECT project_id,type_key,inbox_enabled,external_enabled,channel_keys,minimum_priority,version,updated_by,updated_at FROM notification_rules WHERE project_id=$1 AND type_key=$2`, projectID, typeKey).Scan(&rule.ProjectID, &rule.TypeKey, &rule.InboxEnabled, &rule.ExternalEnabled, &channelKeys, &rule.MinimumPriority, &rule.Version, &rule.UpdatedBy, &rule.UpdatedAt)
+	err := store.DB.QueryRowContext(ctx, `SELECT project_id,type_key,external_enabled,channel_keys,minimum_priority,version,updated_by,updated_at FROM notification_rules WHERE project_id=$1 AND type_key=$2`, projectID, typeKey).Scan(&rule.ProjectID, &rule.TypeKey, &rule.ExternalEnabled, &channelKeys, &rule.MinimumPriority, &rule.Version, &rule.UpdatedBy, &rule.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Rule{ProjectID: projectID, TypeKey: typeKey, InboxEnabled: true, ChannelKeys: []string{}, MinimumPriority: "normal"}, nil
+		return Rule{ProjectID: projectID, TypeKey: typeKey, ChannelKeys: []string{}, MinimumPriority: "normal"}, nil
 	}
 	if err != nil {
 		return Rule{}, err
@@ -200,7 +213,7 @@ func (store PostgresStore) UpsertRule(ctx context.Context, rule Rule) (Rule, err
 		return Rule{}, marshalErr
 	}
 	var returnedChannelKeys []byte
-	err = store.DB.QueryRowContext(ctx, `INSERT INTO notification_rules(rule_id,project_id,type_key,inbox_enabled,external_enabled,channel_keys,minimum_priority,updated_by,version,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,1,$9,$9) ON CONFLICT(project_id,type_key) DO UPDATE SET inbox_enabled=EXCLUDED.inbox_enabled,external_enabled=EXCLUDED.external_enabled,channel_keys=EXCLUDED.channel_keys,minimum_priority=EXCLUDED.minimum_priority,updated_by=EXCLUDED.updated_by,version=notification_rules.version+1,updated_at=EXCLUDED.updated_at WHERE notification_rules.version=$10 RETURNING project_id,type_key,inbox_enabled,external_enabled,channel_keys,minimum_priority,version,updated_by,updated_at`, ruleID, rule.ProjectID, rule.TypeKey, rule.InboxEnabled, rule.ExternalEnabled, channelKeys, rule.MinimumPriority, rule.UpdatedBy, rule.UpdatedAt, expectedVersion).Scan(&rule.ProjectID, &rule.TypeKey, &rule.InboxEnabled, &rule.ExternalEnabled, &returnedChannelKeys, &rule.MinimumPriority, &rule.Version, &rule.UpdatedBy, &rule.UpdatedAt)
+	err = store.DB.QueryRowContext(ctx, `INSERT INTO notification_rules(rule_id,project_id,type_key,external_enabled,channel_keys,minimum_priority,updated_by,version,created_at,updated_at) VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,1,$8,$8) ON CONFLICT(project_id,type_key) DO UPDATE SET external_enabled=EXCLUDED.external_enabled,channel_keys=EXCLUDED.channel_keys,minimum_priority=EXCLUDED.minimum_priority,updated_by=EXCLUDED.updated_by,version=notification_rules.version+1,updated_at=EXCLUDED.updated_at WHERE notification_rules.version=$9 RETURNING project_id,type_key,external_enabled,channel_keys,minimum_priority,version,updated_by,updated_at`, ruleID, rule.ProjectID, rule.TypeKey, rule.ExternalEnabled, channelKeys, rule.MinimumPriority, rule.UpdatedBy, rule.UpdatedAt, expectedVersion).Scan(&rule.ProjectID, &rule.TypeKey, &rule.ExternalEnabled, &returnedChannelKeys, &rule.MinimumPriority, &rule.Version, &rule.UpdatedBy, &rule.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Rule{}, ErrConflict
 	}
@@ -429,12 +442,16 @@ func safeDeliveryError(message string) string {
 func scanInbox(scan func(...interface{}) error) (InboxItem, error) {
 	var item InboxItem
 	var notificationData []byte
+	var renderedSnapshot []byte
 	var actionType, actionResourceID, actionRoute sql.NullString
-	err := scan(&item.ID, &item.ReadState, &item.ArchivedAt, &item.Outcome, &item.CreatedAt, &item.UpdatedAt, &item.Notification.ID, &item.Notification.TypeKey, &item.Notification.TemplateVersion, &item.Notification.SourceEventID, &item.Notification.ProjectID, &item.Notification.ActorID, &item.Notification.ResourceType, &item.Notification.ResourceID, &item.Notification.Priority, &notificationData, &actionType, &actionResourceID, &actionRoute, &item.Notification.OccurredAt, &item.Notification.CreatedAt, &item.Recipient.ID, &item.Recipient.NotificationID, &item.Recipient.RecipientKey, &item.Recipient.UserID, &item.Recipient.NormalizedEmail, &item.Recipient.ExpiresAt)
+	err := scan(&item.ID, &item.ReadState, &item.ArchivedAt, &item.Outcome, &item.CreatedAt, &item.UpdatedAt, &item.Notification.ID, &item.Notification.TypeKey, &item.Notification.TemplateVersion, &item.Notification.SourceEventID, &item.Notification.ProjectID, &item.Notification.ActorID, &item.Notification.ResourceType, &item.Notification.ResourceID, &item.Notification.Priority, &notificationData, &renderedSnapshot, &actionType, &actionResourceID, &actionRoute, &item.Notification.OccurredAt, &item.Notification.CreatedAt, &item.Recipient.ID, &item.Recipient.NotificationID, &item.Recipient.RecipientKey, &item.Recipient.UserID, &item.Recipient.NormalizedEmail, &item.Recipient.ExpiresAt)
 	if err != nil {
 		return InboxItem{}, err
 	}
 	if err = json.Unmarshal(notificationData, &item.Notification.Data); err != nil {
+		return InboxItem{}, err
+	}
+	if err = json.Unmarshal(renderedSnapshot, &item.Notification.RenderedSnapshot); err != nil {
 		return InboxItem{}, err
 	}
 	if actionType.Valid && actionResourceID.Valid {

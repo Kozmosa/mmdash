@@ -13,6 +13,9 @@ const query = z.object({
   read_state: z.enum(["read", "unread"]).optional(),
   archived: z.enum(["true", "false"]).optional(),
   outcome: z.enum(["active", "resolved", "revoked", "expired"]).optional(),
+  outcome_group: z.enum(["processed"]).optional(),
+  occurred_from: z.string().datetime({ offset: true }).optional(),
+  occurred_to: z.string().datetime({ offset: true }).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
@@ -168,7 +171,6 @@ export function registerNotificationRoutes(
         params.typeKey,
         z
           .object({
-            inbox_enabled: z.boolean(),
             external_enabled: z.boolean(),
             channel_keys: z
               .array(
@@ -182,7 +184,8 @@ export function registerNotificationRoutes(
               .enum(["low", "normal", "high", "urgent"])
               .optional(),
             version: z.number().int().min(0),
-        })
+          })
+          .strict()
           .parse(request.body),
         context(request, params.projectId),
       );

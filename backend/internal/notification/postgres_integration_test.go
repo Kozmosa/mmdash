@@ -60,7 +60,6 @@ func TestPostgresRuleJSONBReadWrite(t *testing.T) {
 	want := Rule{
 		ProjectID:       projectID,
 		TypeKey:         TypeReminderDue,
-		InboxEnabled:    true,
 		ExternalEnabled: true,
 		ChannelKeys:     []string{"notification.generic_webhook", "notification.feishu_webhook"},
 		MinimumPriority: "high",
@@ -168,6 +167,13 @@ func TestPostgresInvitationActionAndOutcomeCancelPendingDelivery(t *testing.T) {
 	}
 	if page.Items[0].Notification.Action == nil || page.Items[0].Notification.Action.ResourceID != invitationID {
 		t.Fatalf("invitation action was not persisted: %#v", page.Items[0].Notification.Action)
+	}
+	unreadCount, err := store.UnreadCount(ctx, userID, projectID)
+	if err != nil {
+		t.Fatalf("count unread notifications: %v", err)
+	}
+	if unreadCount != 1 {
+		t.Fatalf("unread notification count = %d, want 1", unreadCount)
 	}
 	if err := store.ApplyInvitationOutcome(ctx, invitationID, OutcomeRevoked); err != nil {
 		t.Fatalf("apply invitation outcome: %v", err)
