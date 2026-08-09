@@ -13,6 +13,7 @@ import (
 
 // Module exposes project collaboration routes.
 type Module struct {
+	Agent        http.Handler
 	Artifact     http.Handler
 	Model        http.Handler
 	Notification http.Handler
@@ -99,6 +100,11 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 		return
 	}
 	switch segments[1] {
+	case "agent-instances":
+		if module.Agent != nil {
+			module.Agent.ServeHTTP(response, request)
+			return
+		}
 	case "artifacts":
 		if module.Artifact != nil {
 			module.Artifact.ServeHTTP(response, request)

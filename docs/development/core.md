@@ -45,15 +45,29 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `AUTH_DEVICE_AUTHORIZATION_TTL` | `10m`                         | CLI device-code lifetime                                       |
 | `AUTH_DEVICE_POLL_INTERVAL`     | `5s`                          | Minimum advertised CLI polling interval                        |
 | `SETTINGS_ENCRYPTION_KEY`       | local-only fallback           | Stable key material for AES-256-GCM setting secrets            |
+| `NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK` | `false`             | Explicitly allow HTTP only for literal loopback development Webhooks |
 | `OUTBOX_POLL_INTERVAL`          | `500ms`                       | Idle event Processor delay                                     |
 | `OUTBOX_EVENT_LEASE`            | `30s`                         | Outbox publication lease                                       |
 | `OUTBOX_DELIVERY_LEASE`         | `30s`                         | Per-consumer processing lease                                  |
 | `OUTBOX_RETRY_DELAY`            | `2s`                          | Baseline publication and consumer retry delay                  |
+| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`                        | Idle due Reminder scan interval                                |
+| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`                        | Maximum Reminders claimed per scan                             |
+| `PROGRESS_REMINDER_LEASE`         | `30s`                       | Recoverable due Reminder processing lease                      |
+| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`                        | Retry delay after a due event transaction failure              |
+| `PROJECT_INVITATION_EXPIRY_POLL_INTERVAL` | `30s`              | Idle scan interval for due Project invitations                 |
+| `PROJECT_INVITATION_EXPIRY_BATCH_SIZE` | `100`                    | Maximum invitations expired in one transaction                 |
 
 Configuration validates all values before opening listeners. JSON logging
 recursively redacts credential, authorization, secret, token, password,
 cookie, access/API/private-key, passphrase, DSN, database-URL, and
 connection-string fields.
+
+Notification Webhook endpoints require HTTPS by default. Native local
+development explicitly enables the loopback exception; it accepts only
+`localhost`, `*.localhost`, or loopback IP literals and never resolves an
+arbitrary hostname to decide whether HTTP is safe. Webhook clients do not
+follow redirects, so a validated endpoint cannot forward the payload or HMAC
+signature to a second URL.
 
 ## HTTP and request context
 

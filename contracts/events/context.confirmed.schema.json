@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/context.confirmed.schema.json",
+  "title": "context.confirmed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["proposal_id", "context_id"],
+  "properties": {
+    "proposal_id": { "type": "string", "format": "uuid" },
+    "context_id": { "type": "string", "format": "uuid" }
+  }
+}

@@ -22,6 +22,8 @@ COPY --from=build /out/artifact-storage-init /usr/local/bin/artifact-storage-ini
 COPY --from=build /out/mmdash-git-askpass /usr/local/bin/mmdash-git-askpass
 COPY backend/migrations ./migrations
 COPY contracts/openapi/core.yaml ./contracts/openapi/core.yaml
+# The non-root mmdash user reads migrations and OpenAPI at runtime.
+RUN chmod -R a+rX /app/migrations /app/contracts
 USER mmdash
 VOLUME ["/var/lib/mmdash/artifacts", "/var/lib/mmdash/repos"]
 EXPOSE 8080

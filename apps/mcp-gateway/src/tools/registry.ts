@@ -10,6 +10,7 @@ export type ToolRegistrationContext = {
   authorizer: GatewayAuthorizer;
   coreClient: CoreClient;
   coreAccessToken?: string;
+  coreGatewayAccessToken?: string;
   now: () => number;
   principal: Principal;
   requestId: string;

@@ -84,7 +84,7 @@ func (store PostgresStore) GetObject(
 		       title, summary, status, version, metadata, occurred_at,
 		       created_at, updated_at
 		FROM data_objects
-		WHERE project_id = $1 AND object_id = $2
+		WHERE project_id = $1 AND object_id = $2 AND status <> 'hidden'
 	`, projectID, objectID).Scan)
 	return object, mapNotFound("get data object", err)
 }
@@ -138,7 +138,7 @@ func (store PostgresStore) ListActivity(
 func (store PostgresStore) CreateProposal(
 	ctx context.Context,
 	projectID string,
-	userID string,
+	actor ProposalActor,
 	input CreateProposalInput,
 ) (ContextProposal, error) {
 	proposalID, err := store.Generator.New()
@@ -151,30 +151,56 @@ func (store PostgresStore) CreateProposal(
 	}
 	now := store.Clock.Now().UTC()
 	proposal := ContextProposal{
+		AgentRunID: actor.AgentRunID, AgentSessionID: actor.AgentSessionID,
 		Content: input.Content, ContextType: input.ContextType, CreatedAt: now,
-		ID: proposalID, ProjectID: projectID, ProposedBy: userID,
+		ID: proposalID, ProjectID: projectID, ProposedBy: actor.ID,
+		ProposedByActorID: actor.ID, ProposedByActorKind: actor.Kind,
 		Rationale: input.Rationale, ReviewNote: "",
 		SourceObjectIDs: nonNilStrings(input.SourceObjectIDs),
 		Status:          "pending", Title: input.Title, UpdatedAt: now,
 	}
 	sourceIDs, _ := json.Marshal(proposal.SourceObjectIDs)
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if len(proposal.SourceObjectIDs) > 0 {
+			var count int
+			if err := tx.QueryRowContext(ctx, `
+				SELECT count(*)
+				FROM data_objects
+				WHERE project_id = $1
+				  AND object_id::text IN (
+				    SELECT jsonb_array_elements_text($2::jsonb)
+				  )
+			`, projectID, sourceIDs).Scan(&count); err != nil {
+				return err
+			}
+			if count != len(proposal.SourceObjectIDs) {
+				return ErrInvalid
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO data_context_proposals (
 				proposal_id, project_id, title, content, context_type,
-				source_object_ids, rationale, proposed_by, created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+				source_object_ids, rationale, proposed_by,
+				proposed_by_actor_id, proposed_by_actor_kind,
+				agent_session_id, agent_run_id, created_at, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')::uuid,
+				$9, $10, NULLIF($11, '')::uuid, NULLIF($12, '')::uuid,
+				$13, $13
+			)
 		`, proposal.ID, projectID, proposal.Title, proposal.Content,
-			proposal.ContextType, sourceIDs, proposal.Rationale, userID, now); err != nil {
+			proposal.ContextType, sourceIDs, proposal.Rationale, actor.UserID,
+			actor.ID, actor.Kind, actor.AgentSessionID, actor.AgentRunID, now); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO data_objects (
 				object_id, project_id, object_type, source_module, source_id,
 				title, summary, status, metadata, occurred_at, created_at, updated_at
-			) VALUES ($1, $2, 'context-proposal', 'datahub', $1, $3, $4,
+			) VALUES ($1, $2, 'context-proposal', 'datahub', $6, $3, $4,
 			          'pending', '{}'::jsonb, $5, $5, $5)
-		`, proposal.ID, projectID, proposal.Title, proposal.Rationale, now); err != nil {
+		`, proposal.ID, projectID, proposal.Title, proposal.Rationale, now,
+			proposal.ID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -184,11 +210,11 @@ func (store PostgresStore) CreateProposal(
 			) VALUES ($1, $2, $3, 'context.proposal.created', $4, $5,
 			          $6, '{}'::jsonb, $7, $7)
 		`, activityID, projectID, proposal.ID, proposal.Title, proposal.Rationale,
-			jsonBytes(map[string]string{"user_id": userID}), now); err != nil {
+			jsonBytes(map[string]string{"actor_id": actor.ID, "actor_kind": actor.Kind}), now); err != nil {
 			return err
 		}
 		_, err := store.Outbox.Write(ctx, tx, outbox.Event{
-			Actor:     map[string]string{"user_id": userID},
+			Actor:     map[string]string{"actor_id": actor.ID, "actor_kind": actor.Kind},
 			EventType: "context.proposal.created",
 			Payload: map[string]interface{}{
 				"proposal_id":  proposal.ID,
@@ -266,19 +292,27 @@ func (store PostgresStore) ReviewProposal(
 				INSERT INTO data_context_entries (
 					context_id, project_id, title, content, context_type,
 					source_object_ids, proposed_by, confirmed_by, confirmed_at,
+					proposed_by_actor_id, proposed_by_actor_kind,
 					created_at, updated_at
-				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $9)
+				) VALUES (
+					$1, $2, $3, $4, $5, $6, NULLIF($7, '')::uuid, $8, $9,
+					$10, $11, $9, $9
+				)
 			`, contextID, projectID, current.Title, current.Content,
-				current.ContextType, sourceIDs, current.ProposedBy, reviewerID, now); err != nil {
+				current.ContextType, sourceIDs,
+				legacyProposer(current), reviewerID, now,
+				current.ProposedByActorID, current.ProposedByActorKind); err != nil {
 				return err
 			}
+			// Keep the UUID object ID and text source ID on distinct bind parameters.
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO data_objects (
 					object_id, project_id, object_type, source_module, source_id,
 					title, summary, status, metadata, occurred_at, created_at, updated_at
-				) VALUES ($1, $2, 'project-context', 'datahub', $1, $3, $4,
+				) VALUES ($1, $2, 'project-context', 'datahub', $6, $3, $4,
 				          'confirmed', '{}'::jsonb, $5, $5, $5)
-			`, contextID, projectID, current.Title, current.Content, now); err != nil {
+			`, contextID, projectID, current.Title, current.Content, now,
+				contextID); err != nil {
 				return err
 			}
 		}
@@ -520,15 +554,19 @@ func (store PostgresStore) projectEvent(
 
 const proposalSelect = `
 	SELECT proposal_id, project_id, title, content, context_type,
-	       source_object_ids, rationale, proposed_by, status,
+	       source_object_ids, rationale, proposed_by_actor_id,
+	       proposed_by_actor_kind, status,
 	       COALESCE(reviewed_by::text, ''), reviewed_at, review_note,
-	       COALESCE(promoted_context_id::text, ''), created_at, updated_at
+	       COALESCE(promoted_context_id::text, ''),
+	       COALESCE(agent_session_id::text, ''),
+	       COALESCE(agent_run_id::text, ''), created_at, updated_at
 	FROM data_context_proposals
 `
 
 const contextSelect = `
 	SELECT context_id, project_id, title, content, context_type,
-	       source_object_ids, proposed_by, confirmed_by, confirmed_at,
+	       source_object_ids, proposed_by_actor_id, proposed_by_actor_kind,
+	       confirmed_by, confirmed_at,
 	       created_at, updated_at
 	FROM data_context_entries
 `
@@ -571,16 +609,21 @@ func scanActivity(scan scanFunc) (Activity, error) {
 func scanProposal(scan scanFunc) (ContextProposal, error) {
 	var item ContextProposal
 	var sourceIDs []byte
+	var proposedByActorID string
 	err := scan(&item.ID, &item.ProjectID, &item.Title, &item.Content,
-		&item.ContextType, &sourceIDs, &item.Rationale, &item.ProposedBy,
+		&item.ContextType, &sourceIDs, &item.Rationale, &proposedByActorID,
+		&item.ProposedByActorKind,
 		&item.Status, &item.ReviewedBy, &item.ReviewedAt, &item.ReviewNote,
-		&item.PromotedContext, &item.CreatedAt, &item.UpdatedAt)
+		&item.PromotedContext, &item.AgentSessionID, &item.AgentRunID,
+		&item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return ContextProposal{}, err
 	}
 	if err := json.Unmarshal(sourceIDs, &item.SourceObjectIDs); err != nil {
 		return ContextProposal{}, err
 	}
+	item.ProposedBy = proposedByActorID
+	item.ProposedByActorID = proposedByActorID
 	return item, nil
 }
 
@@ -588,7 +631,8 @@ func scanContext(scan scanFunc) (ContextEntry, error) {
 	var item ContextEntry
 	var sourceIDs []byte
 	err := scan(&item.ID, &item.ProjectID, &item.Title, &item.Content,
-		&item.ContextType, &sourceIDs, &item.ProposedBy, &item.ConfirmedBy,
+		&item.ContextType, &sourceIDs, &item.ProposedBy, &item.ProposedByActorKind,
+		&item.ConfirmedBy,
 		&item.ConfirmedAt, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return ContextEntry{}, err
@@ -597,6 +641,13 @@ func scanContext(scan scanFunc) (ContextEntry, error) {
 		return ContextEntry{}, err
 	}
 	return item, nil
+}
+
+func legacyProposer(proposal ContextProposal) string {
+	if proposal.ProposedByActorKind == "agent" {
+		return ""
+	}
+	return proposal.ProposedByActorID
 }
 
 func decodePage(value string) (string, string, error) {

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/agent.token.rotation_failed.schema.json",
+  "title": "agent.token.rotation_failed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project_id",
+    "resource_id",
+    "rotation_id",
+    "status",
+    "safe_error_code",
+    "old_token_remains_active"
+  ],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "resource_id": { "type": "string", "format": "uuid" },
+    "rotation_id": { "type": "string", "format": "uuid" },
+    "status": { "const": "failed" },
+    "safe_error_code": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "old_token_remains_active": {
+      "type": "boolean",
+      "description": "False only when initial provisioning failed before any active Token existed; an actual rotation with an existing active Token must report true."
+    }
+  }
+}

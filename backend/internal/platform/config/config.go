@@ -14,6 +14,7 @@ import (
 // Config contains the complete Core Server process configuration.
 type Config struct {
 	Addr            string
+	Agent           AgentConfig
 	Artifact        ArtifactConfig
 	Auth            AuthConfig
 	Database        DatabaseConfig
@@ -22,6 +23,8 @@ type Config struct {
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	Outbox          OutboxConfig
+	Progress        ProgressConfig
+	Project         ProjectConfig
 	PublicURL       string
 	Repo            RepoConfig
 	Settings        SettingsConfig
@@ -39,6 +42,27 @@ type NotionConfig struct {
 	OAuthRedirectURI  string
 }
 
+// AgentConfig configures the product Agent runtime boundary. Connector policy
+// is deployment-owned and cannot be weakened by per-project Agent settings.
+type AgentConfig struct {
+	GatewayURL                string
+	Management                AgentConnectorConfig
+	ManagementMinimumInterval time.Duration
+	Runtime                   AgentConnectorConfig
+}
+
+// AgentConnectorConfig limits one class of Hermes outbound connections.
+type AgentConnectorConfig struct {
+	AllowLoopback         bool
+	AllowPrivate          bool
+	AllowedPorts          []int
+	ConnectTimeout        time.Duration
+	MaxRedirects          int
+	MaxResponseBytes      int64
+	RequestTimeout        time.Duration
+	ResponseHeaderTimeout time.Duration
+}
+
 // ArtifactConfig configures multipart limits and local storage behavior.
 type ArtifactConfig struct {
 	LocalStorageRoot      string
@@ -54,14 +78,15 @@ type ArtifactConfig struct {
 
 // AuthConfig configures bootstrap login and session signing.
 type AuthConfig struct {
-	AccessTokenTTL         time.Duration
-	BootstrapDisplayName   string
-	BootstrapEmail         string
-	BootstrapPassword      string
-	DeviceAuthorizationTTL time.Duration
-	DevicePollInterval     time.Duration
-	JWTSecret              string
-	SessionTTL             time.Duration
+	AccessTokenTTL           time.Duration
+	AgentVerificationTokenID string
+	BootstrapDisplayName     string
+	BootstrapEmail           string
+	BootstrapPassword        string
+	DeviceAuthorizationTTL   time.Duration
+	DevicePollInterval       time.Duration
+	JWTSecret                string
+	SessionTTL               time.Duration
 }
 
 // DatabaseConfig configures the PostgreSQL connection pool.
@@ -91,6 +116,20 @@ type OutboxConfig struct {
 	RetryDelay    time.Duration
 }
 
+// ProgressConfig configures the in-Core due reminder processor.
+type ProgressConfig struct {
+	ReminderBatchSize    int
+	ReminderLease        time.Duration
+	ReminderPollInterval time.Duration
+	ReminderRetryDelay   time.Duration
+}
+
+// ProjectConfig configures Project-owned lifecycle processors.
+type ProjectConfig struct {
+	InvitationExpiryBatchSize    int
+	InvitationExpiryPollInterval time.Duration
+}
+
 // RepoConfig configures the managed Git runtime and synchronization loop.
 type RepoConfig struct {
 	AskPassPath       string
@@ -116,8 +155,30 @@ type LookupEnv func(string) (string, bool)
 
 // Load builds a validated Config from environment variables.
 func Load(lookup LookupEnv) (Config, error) {
+	runtimeConnector, err := loadAgentConnector(
+		lookup, "AGENT_RUNTIME", []int{80, 443, 8642},
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	managementConnector, err := loadAgentConnector(
+		lookup, "AGENT_MANAGEMENT", []int{80, 443, 9119},
+	)
+	if err != nil {
+		return Config{}, err
+	}
 	config := Config{
 		Addr: envOrDefault(lookup, "CORE_ADDR", ":8080"),
+		Agent: AgentConfig{
+			GatewayURL: envOrDefault(
+				lookup, "AGENT_MCP_GATEWAY_URL", "http://localhost:3002/mcp",
+			),
+			Management: managementConnector,
+			ManagementMinimumInterval: durationOrDefault(
+				lookup, "AGENT_MANAGEMENT_MINIMUM_INTERVAL", 250*time.Millisecond,
+			),
+			Runtime: runtimeConnector,
+		},
 		Artifact: ArtifactConfig{
 			LocalStorageRoot: envOrDefault(
 				lookup,
@@ -166,14 +227,15 @@ func Load(lookup LookupEnv) (Config, error) {
 			),
 		},
 		Auth: AuthConfig{
-			AccessTokenTTL:         durationOrDefault(lookup, "AUTH_ACCESS_TOKEN_TTL", 24*time.Hour),
-			BootstrapDisplayName:   envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
-			BootstrapEmail:         envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
-			BootstrapPassword:      envOrDefault(lookup, "AUTH_BOOTSTRAP_PASSWORD", "mmdash-local-admin"),
-			JWTSecret:              envOrDefault(lookup, "AUTH_JWT_SECRET", "development-auth-jwt-secret-change-me"),
-			DeviceAuthorizationTTL: durationOrDefault(lookup, "AUTH_DEVICE_AUTHORIZATION_TTL", 10*time.Minute),
-			DevicePollInterval:     durationOrDefault(lookup, "AUTH_DEVICE_POLL_INTERVAL", 5*time.Second),
-			SessionTTL:             durationOrDefault(lookup, "AUTH_SESSION_TTL", 30*24*time.Hour),
+			AccessTokenTTL:           durationOrDefault(lookup, "AUTH_ACCESS_TOKEN_TTL", 24*time.Hour),
+			AgentVerificationTokenID: strings.TrimSpace(envOrDefault(lookup, "AUTH_AGENT_VERIFICATION_TOKEN_ID", "")),
+			BootstrapDisplayName:     envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
+			BootstrapEmail:           envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
+			BootstrapPassword:        envOrDefault(lookup, "AUTH_BOOTSTRAP_PASSWORD", "mmdash-local-admin"),
+			JWTSecret:                envOrDefault(lookup, "AUTH_JWT_SECRET", "development-auth-jwt-secret-change-me"),
+			DeviceAuthorizationTTL:   durationOrDefault(lookup, "AUTH_DEVICE_AUTHORIZATION_TTL", 10*time.Minute),
+			DevicePollInterval:       durationOrDefault(lookup, "AUTH_DEVICE_POLL_INTERVAL", 5*time.Second),
+			SessionTTL:               durationOrDefault(lookup, "AUTH_SESSION_TTL", 30*24*time.Hour),
 		},
 		Database: DatabaseConfig{
 			ConnMaxIdleTime: durationOrDefault(lookup, "DATABASE_CONN_MAX_IDLE_TIME", 5*time.Minute),
@@ -203,6 +265,24 @@ func Load(lookup LookupEnv) (Config, error) {
 			EventLease:    durationOrDefault(lookup, "OUTBOX_EVENT_LEASE", 30*time.Second),
 			PollInterval:  durationOrDefault(lookup, "OUTBOX_POLL_INTERVAL", 500*time.Millisecond),
 			RetryDelay:    durationOrDefault(lookup, "OUTBOX_RETRY_DELAY", 2*time.Second),
+		},
+		Progress: ProgressConfig{
+			ReminderBatchSize:    intOrDefault(lookup, "PROGRESS_REMINDER_BATCH_SIZE", 20),
+			ReminderLease:        durationOrDefault(lookup, "PROGRESS_REMINDER_LEASE", 30*time.Second),
+			ReminderPollInterval: durationOrDefault(lookup, "PROGRESS_REMINDER_POLL_INTERVAL", time.Second),
+			ReminderRetryDelay:   durationOrDefault(lookup, "PROGRESS_REMINDER_RETRY_DELAY", 2*time.Second),
+		},
+		Project: ProjectConfig{
+			InvitationExpiryBatchSize: intOrDefault(
+				lookup,
+				"PROJECT_INVITATION_EXPIRY_BATCH_SIZE",
+				100,
+			),
+			InvitationExpiryPollInterval: durationOrDefault(
+				lookup,
+				"PROJECT_INVITATION_EXPIRY_POLL_INTERVAL",
+				30*time.Second,
+			),
 		},
 		Repo: RepoConfig{
 			AskPassPath:       envOrDefault(lookup, "REPO_ASKPASS_PATH", "mmdash-git-askpass"),
@@ -242,6 +322,18 @@ func Load(lookup LookupEnv) (Config, error) {
 func (config Config) Validate() error {
 	if strings.TrimSpace(config.Addr) == "" {
 		return fmt.Errorf("CORE_ADDR must not be empty")
+	}
+	if err := validateAgentGatewayURL(config.Agent.GatewayURL); err != nil {
+		return err
+	}
+	if err := validateAgentConnector("AGENT_RUNTIME", config.Agent.Runtime); err != nil {
+		return err
+	}
+	if err := validateAgentConnector("AGENT_MANAGEMENT", config.Agent.Management); err != nil {
+		return err
+	}
+	if config.Agent.ManagementMinimumInterval <= 0 {
+		return fmt.Errorf("AGENT_MANAGEMENT_MINIMUM_INTERVAL must be positive")
 	}
 	if config.Artifact.StorageBackend != "local" &&
 		config.Artifact.StorageBackend != "minio" &&
@@ -372,6 +464,20 @@ func (config Config) Validate() error {
 		config.Outbox.RetryDelay <= 0 {
 		return fmt.Errorf("Outbox durations must be positive")
 	}
+	if config.Progress.ReminderBatchSize < 1 || config.Progress.ReminderBatchSize > 1000 {
+		return fmt.Errorf("PROGRESS_REMINDER_BATCH_SIZE must be between 1 and 1000")
+	}
+	if config.Progress.ReminderLease <= 0 ||
+		config.Progress.ReminderPollInterval <= 0 ||
+		config.Progress.ReminderRetryDelay <= 0 {
+		return fmt.Errorf("Progress reminder durations must be positive")
+	}
+	if config.Project.InvitationExpiryBatchSize < 1 || config.Project.InvitationExpiryBatchSize > 1000 {
+		return fmt.Errorf("PROJECT_INVITATION_EXPIRY_BATCH_SIZE must be between 1 and 1000")
+	}
+	if config.Project.InvitationExpiryPollInterval <= 0 {
+		return fmt.Errorf("PROJECT_INVITATION_EXPIRY_POLL_INTERVAL must be positive")
+	}
 	if strings.TrimSpace(config.Repo.StorageRoot) == "" {
 		return fmt.Errorf("REPO_STORAGE_ROOT must not be empty")
 	}
@@ -451,6 +557,115 @@ func int64OrDefault(lookup LookupEnv, key string, fallback int64) int64 {
 		return -1
 	}
 	return parsed
+}
+
+func loadAgentConnector(
+	lookup LookupEnv,
+	prefix string,
+	defaultPorts []int,
+) (AgentConnectorConfig, error) {
+	allowLoopback, err := boolOrDefault(lookup, prefix+"_ALLOW_LOOPBACK", false)
+	if err != nil {
+		return AgentConnectorConfig{}, err
+	}
+	allowPrivate, err := boolOrDefault(lookup, prefix+"_ALLOW_PRIVATE", false)
+	if err != nil {
+		return AgentConnectorConfig{}, err
+	}
+	ports, err := intListOrDefault(lookup, prefix+"_ALLOWED_PORTS", defaultPorts)
+	if err != nil {
+		return AgentConnectorConfig{}, err
+	}
+	return AgentConnectorConfig{
+		AllowLoopback: allowLoopback,
+		AllowPrivate:  allowPrivate,
+		AllowedPorts:  ports,
+		ConnectTimeout: durationOrDefault(
+			lookup, prefix+"_CONNECT_TIMEOUT", 5*time.Second,
+		),
+		MaxRedirects: intOrDefault(lookup, prefix+"_MAX_REDIRECTS", 3),
+		MaxResponseBytes: int64OrDefault(
+			lookup, prefix+"_MAX_RESPONSE_BYTES", 4*1024*1024,
+		),
+		RequestTimeout: durationOrDefault(
+			lookup, prefix+"_REQUEST_TIMEOUT", 30*time.Second,
+		),
+		ResponseHeaderTimeout: durationOrDefault(
+			lookup, prefix+"_RESPONSE_HEADER_TIMEOUT", 10*time.Second,
+		),
+	}, nil
+}
+
+func boolOrDefault(lookup LookupEnv, key string, fallback bool) (bool, error) {
+	value, ok := lookup(key)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return parsed, nil
+}
+
+func intListOrDefault(
+	lookup LookupEnv,
+	key string,
+	fallback []int,
+) ([]int, error) {
+	value, ok := lookup(key)
+	if !ok || strings.TrimSpace(value) == "" {
+		return append([]int(nil), fallback...), nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]int, 0, len(parts))
+	seen := map[int]bool{}
+	for _, part := range parts {
+		port, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || port < 1 || port > 65535 {
+			return nil, fmt.Errorf("%s must contain comma-separated TCP ports", key)
+		}
+		if !seen[port] {
+			seen[port] = true
+			result = append(result, port)
+		}
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("%s must contain at least one TCP port", key)
+	}
+	return result, nil
+}
+
+func validateAgentGatewayURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("AGENT_MCP_GATEWAY_URL must be an HTTP(S) URL without credentials, query, or fragment")
+	}
+	return nil
+}
+
+func validateAgentConnector(prefix string, connector AgentConnectorConfig) error {
+	if len(connector.AllowedPorts) == 0 {
+		return fmt.Errorf("%s_ALLOWED_PORTS must contain at least one TCP port", prefix)
+	}
+	for _, port := range connector.AllowedPorts {
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("%s_ALLOWED_PORTS contains an invalid TCP port", prefix)
+		}
+	}
+	if connector.ConnectTimeout <= 0 || connector.ResponseHeaderTimeout <= 0 ||
+		connector.RequestTimeout <= 0 {
+		return fmt.Errorf("%s connector timeouts must be positive", prefix)
+	}
+	if connector.MaxRedirects < 1 || connector.MaxRedirects > 10 {
+		return fmt.Errorf("%s_MAX_REDIRECTS must be between 1 and 10", prefix)
+	}
+	if connector.MaxResponseBytes < 1024 || connector.MaxResponseBytes > 64*1024*1024 {
+		return fmt.Errorf("%s_MAX_RESPONSE_BYTES must be between 1 KiB and 64 MiB", prefix)
+	}
+	return nil
 }
 
 func pathList(lookup LookupEnv, key string) []string {

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/context.promote.json",
+  "title": "context.promote MCP tool",
+  "description": "Submits an explicit conclusion as a pending Project Context proposal for human review.",
+  "x-operation-id": "context.promote",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "title", "content", "context_type"],
+      "dependentRequired": {
+        "agent_session_id": ["agent_run_id"],
+        "agent_run_id": ["agent_session_id"]
+      },
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "context_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "source_object_ids": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "agent_session_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Optional local mmdash Agent Session provenance; must be paired with agent_run_id."
+        },
+        "agent_run_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Optional local mmdash Agent Run provenance; must belong to agent_session_id and the authenticated Agent/Project."
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["proposal_id", "project_id", "status"],
+      "properties": {
+        "proposal_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "const": "pending"
+        }
+      }
+    }
+  }
+}

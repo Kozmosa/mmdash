@@ -3,6 +3,7 @@
 Search by event type, producer, consumer, payload field, or schema version.
 All entries currently use envelope schema version `1`.
 
+
 | Event type                    | Producer | Project-scoped | Payload keys                                                                                                    | Current consumer               |
 | ----------------------------- | -------- | -------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `project.created`             | project  | yes            | `project_id`, `name`                                                                                            | `datahub.projections`          |
@@ -48,6 +49,25 @@ All entries currently use envelope schema version `1`.
 | `model.source.changed`        | model    | yes            | `source_id`, `notion_root_page_id`, `action`, `status`                                                           | `datahub.projections`          |
 | `model.question.changed`      | model    | yes            | `question_id`, `source_id`, `code`, `title`, `notion_page_id`, `action`, `status`                               | `datahub.projections`          |
 | `model.snapshot.created`      | model    | yes            | `snapshot_id`, `question_id`, `source_id`, `content_hash`, optional `previous_snapshot_id`, `captured_at`       | `datahub.projections`          |
+| `agent.instance.created`        | agent    | yes            | `project_id`, `resource_id`, `adapter_type=hermes`, `management_mode`, `status`                                 | none                           |
+| `agent.instance.updated`        | agent    | yes            | `project_id`, `resource_id`, `management_mode`, `status`                                                        | none                           |
+| `agent.instance.revoked`        | agent    | yes            | `project_id`, `resource_id`, `status=disabled`                                                                  | none                           |
+| `agent.prompt.updated`          | agent    | yes            | `project_id`, `resource_id`, `version_changed=true`                                                             | none                           |
+| `agent.prompt.reset`            | agent    | yes            | `project_id`, `resource_id`, `version_changed=true`                                                             | none                           |
+| `agent.session.created`         | agent    | yes            | `project_id`, `resource_id`, `agent_instance_id`, `session_type`                                                | none                           |
+| `agent.session.renamed`         | agent    | yes            | `project_id`, `resource_id`, `status`, `session_type`                                                           | none                           |
+| `agent.session.ended`           | agent    | yes            | `project_id`, `resource_id`, `status=ended`, `session_type`                                                     | none                           |
+| `agent.session.continued`       | agent    | yes            | `project_id`, `resource_id`, `status=active`, `session_type`                                                    | none                           |
+| `agent.session.forked`          | agent    | yes            | `project_id`, `resource_id`, `agent_instance_id`, `parent_session_id`, `session_type`                           | none                           |
+| `agent.session.default_changed` | agent    | yes            | `project_id`, `resource_id`, `agent_instance_id`                                                                | none                           |
+| `agent.run.started`             | agent    | yes            | `project_id`, `resource_id`, `session_id`, `source`                                                             | none                           |
+| `agent.run.completed`           | agent    | yes            | `project_id`, `resource_id`, `session_id`, `status=completed`, empty `safe_error_code`                          | none                           |
+| `agent.run.failed`              | agent    | yes            | `project_id`, `resource_id`, `session_id`, `status=failed`, bounded `safe_error_code`                           | none                           |
+| `agent.run.stopped`             | agent    | yes            | `project_id`, `resource_id`, `session_id`, `status=stopped`, bounded `safe_error_code`                          | none                           |
+| `agent.token.issued`            | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, non-terminal `status`                                         | none                           |
+| `agent.token.activated`         | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, optional replaced Token ID, `status=active`                   | none                           |
+| `agent.token.rotation_failed`   | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, safe code, whether an old Token remains active                | none                           |
+| `agent.token.revoked`           | agent    | yes            | `project_id`, Token `resource_id`, `status=revoked`                                                             | none                           |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.
@@ -72,6 +92,13 @@ is emitted only after full size and SHA-256 verification, except
 `artifact.deleted` is a recoverable trash transition and does not imply that
 Version bytes were deleted.
 
+Agent lifecycle payloads never contain Agent Token plaintext or hashes,
+Hermes API Keys, Dashboard or Cloudflare credentials, runtime or management
+URLs, message bodies, Tool arguments/results, reasoning, or raw provider
+errors. Token rotation failure is an explicit state event and records that the
+old Token remains active. Hermes Run SSE is a request-scoped browser stream,
+not an Outbox domain event and not a Stage 6 progress trigger.
+
 Progress events carry only bounded resource metadata and source references.
 Critical Milestone writes are human-session operations; accepted non-human
 changes are applied by Progress and carry their Proposal/source run. Reminder
@@ -86,6 +113,10 @@ change updates the mutable `model_source` or `model_question` projection;
 `model.snapshot.created` creates an immutable `model_snapshot` projection
 addressable through MCP `data.list/read`. An unchanged content Hash completes
 the synchronization as `unchanged` and deliberately emits no Snapshot event.
+
+`progress.reminder.due` uses the Reminder UUID as its stable event ID. Progress
+commits the Reminder `triggered` state and Outbox row together; automatic and
+manual triggering share the same leased PostgreSQL claim path.
 
 When adding an event:
 

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/agent.session.forked.schema.json",
+  "title": "agent.session.forked payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project_id",
+    "resource_id",
+    "agent_instance_id",
+    "parent_session_id",
+    "session_type"
+  ],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "resource_id": { "type": "string", "format": "uuid" },
+    "agent_instance_id": { "type": "string", "format": "uuid" },
+    "parent_session_id": { "type": "string", "format": "uuid" },
+    "session_type": {
+      "type": "string",
+      "enum": ["main", "progress", "experiment"]
+    }
+  }
+}

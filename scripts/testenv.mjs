@@ -160,6 +160,7 @@ export function createServiceConfiguration(
           "core.yaml",
         ),
         DATABASE_URL: databaseUrl,
+        NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK: "true",
         OBJECT_STORAGE_ACCESS_KEY: "mmdash",
         OBJECT_STORAGE_BUCKET: "mmdash",
         OBJECT_STORAGE_ENDPOINT: minioUrl,
