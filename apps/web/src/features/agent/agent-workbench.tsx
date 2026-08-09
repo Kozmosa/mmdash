@@ -60,7 +60,9 @@ export function AgentWorkbench() {
   const project = useCurrentProject();
   const queryClient = useQueryClient();
   const canOperate =
-    project.role !== "viewer" && project.role !== "agent" && project.role !== "box";
+    project.role !== "viewer" &&
+    project.role !== "agent" &&
+    project.role !== "box";
   const instances = useQuery({
     queryFn: () => agentApi.listInstances(project.id),
     queryKey: ["agent-instances", project.id],
@@ -80,13 +82,17 @@ export function AgentWorkbench() {
     }
     const preferred =
       instances.data.items.find((candidate) => candidate.status === "active") ??
-      instances.data.items.find((candidate) => candidate.status !== "disabled") ??
+      instances.data.items.find(
+        (candidate) => candidate.status !== "disabled",
+      ) ??
       instances.data.items[0];
     setInstanceId(preferred?.agent_instance_id ?? null);
   }, [instanceId, instances.data?.items]);
 
   if (instances.isLoading) {
-    return <p className="text-sm text-muted-foreground">正在连接 Agent 工作台…</p>;
+    return (
+      <p className="text-sm text-muted-foreground">正在连接 Agent 工作台…</p>
+    );
   }
   if (instances.isError) {
     return (
@@ -136,13 +142,16 @@ function AgentWorkspace({
   const [newSessionType, setNewSessionType] =
     useState<AgentSessionType>("main");
   const [composer, setComposer] = useState("");
-  const [optimisticUser, setOptimisticUser] = useState<AgentMessage | null>(null);
+  const [optimisticUser, setOptimisticUser] = useState<AgentMessage | null>(
+    null,
+  );
   const [streamDraft, setStreamDraft] = useState<AgentMessage | null>(null);
   const [streamTools, setStreamTools] = useState<AgentToolCall[]>([]);
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
-  const [approval, setApproval] = useState<AgentApproval | null>(null);
+  const [approvals, setApprovals] = useState<AgentApproval[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
   const streamAbort = useRef<AbortController | null>(null);
+  const streamGeneration = useRef(0);
   const lastEventId = useRef<string | undefined>(undefined);
 
   const sessions = useQuery({
@@ -152,8 +161,9 @@ function AgentWorkspace({
   });
   const selectedSession = useMemo(
     () =>
-      sessions.data?.items.find((session) => session.session_id === sessionId) ??
-      null,
+      sessions.data?.items.find(
+        (session) => session.session_id === sessionId,
+      ) ?? null,
     [sessionId, sessions.data?.items],
   );
   const messages = useQuery({
@@ -184,24 +194,38 @@ function AgentWorkspace({
 
   useEffect(() => {
     if (!sessions.data?.items.length) {
+      streamGeneration.current += 1;
+      streamAbort.current?.abort();
+      streamAbort.current = null;
+      setApprovals([]);
       setSessionId(null);
       return;
     }
-    if (sessions.data.items.some((session) => session.session_id === sessionId)) {
+    if (
+      sessions.data.items.some((session) => session.session_id === sessionId)
+    ) {
       return;
     }
     const preferred =
-      sessions.data.items.find((session) => session.default && session.status === "active") ??
       sessions.data.items.find(
-        (session) => session.session_type === "main" && session.status === "active",
+        (session) => session.default && session.status === "active",
+      ) ??
+      sessions.data.items.find(
+        (session) =>
+          session.session_type === "main" && session.status === "active",
       ) ??
       sessions.data.items.find((session) => session.status === "active") ??
       sessions.data.items[0];
+    streamGeneration.current += 1;
+    streamAbort.current?.abort();
+    streamAbort.current = null;
+    setApprovals([]);
     setSessionId(preferred?.session_id ?? null);
   }, [sessionId, sessions.data?.items]);
 
   useEffect(
     () => () => {
+      streamGeneration.current += 1;
       streamAbort.current?.abort();
     },
     [],
@@ -255,7 +279,9 @@ function AgentWorkspace({
         setStreamDraft((current) => ({
           content: `${current?.content ?? ""}${event.delta}`,
           message_id:
-            event.message_id ?? current?.message_id ?? `stream-${event.event_id}`,
+            event.message_id ??
+            current?.message_id ??
+            `stream-${event.event_id}`,
           role: "assistant",
         }));
       }
@@ -263,19 +289,27 @@ function AgentWorkspace({
         setStreamTools((current) => upsertToolCall(current, event.tool_call!));
       }
       if (event.event === "approval.required" && event.approval) {
-        setApproval(event.approval);
-      } else if (event.event === "approval.responded") {
-        setApproval(null);
+        setApprovals((current) => enqueueApproval(current, event.approval!));
+      } else if (event.event === "approval.responded" && event.approval) {
+        setApprovals((current) =>
+          removeApproval(current, event.approval!.approval_id),
+        );
       }
       const terminalStatus = terminalStatusForEvent(event.event);
       if (terminalStatus) {
-        setActiveRun((current) =>
-          event.run ??
-          (current
-            ? { ...current, status: terminalStatus, updated_at: event.occurred_at }
-            : current),
+        streamGeneration.current += 1;
+        setActiveRun(
+          (current) =>
+            event.run ??
+            (current
+              ? {
+                  ...current,
+                  status: terminalStatus,
+                  updated_at: event.occurred_at,
+                }
+              : current),
         );
-        setApproval(null);
+        setApprovals([]);
         await finishRun();
       }
       if (event.event === "error") {
@@ -288,13 +322,15 @@ function AgentWorkspace({
   const beginStream = useCallback(
     (launch: AgentRunLaunch) => {
       streamAbort.current?.abort();
+      const generation = streamGeneration.current + 1;
+      streamGeneration.current = generation;
       const controller = new AbortController();
       streamAbort.current = controller;
       lastEventId.current = undefined;
       setActiveRun(launch.run);
       setStreamDraft(null);
       setStreamTools(launch.run.tool_calls);
-      setApproval(null);
+      setApprovals([]);
       setStreamError(null);
       cacheSession(launch.session);
       setSessionId(launch.session.session_id);
@@ -310,12 +346,24 @@ function AgentWorkspace({
                 runId: launch.run.run_id,
                 sessionId: launch.session.session_id,
               },
-              handleStreamEvent,
+              async (event) => {
+                if (
+                  streamGeneration.current !== generation ||
+                  event.run_id !== launch.run.run_id ||
+                  event.session_id !== launch.session.session_id
+                ) {
+                  return;
+                }
+                await handleStreamEvent(event);
+              },
               { signal: controller.signal },
             );
             return;
           } catch (error) {
-            if (controller.signal.aborted) {
+            if (
+              controller.signal.aborted ||
+              streamGeneration.current !== generation
+            ) {
               return;
             }
             if (attempt === 0) {
@@ -383,7 +431,11 @@ function AgentWorkspace({
             action.title,
           );
         case "end":
-          return agentApi.endSession(projectId, instanceId!, session.session_id);
+          return agentApi.endSession(
+            projectId,
+            instanceId!,
+            session.session_id,
+          );
         case "continue":
           return agentApi.continueSession(
             projectId,
@@ -460,42 +512,50 @@ function AgentWorkspace({
   });
 
   const approve = useMutation({
-    mutationFn: (choice: AgentApprovalChoice) =>
+    mutationFn: ({
+      approvalId,
+      choice,
+    }: {
+      approvalId: string;
+      choice: AgentApprovalChoice;
+    }) =>
       agentApi.approveRun(
         projectId,
         instanceId!,
         selectedSession!.session_id,
         run!.run_id,
-        approval!.approval_id,
+        approvalId,
         choice,
       ),
     onError: showError("审批响应失败"),
-    onSuccess: (latest) => {
+    onSuccess: (latest, request) => {
       setActiveRun(latest);
-      setApproval(null);
+      setApprovals((current) => removeApproval(current, request.approvalId));
       toast.success("审批选择已提交");
     },
   });
 
   const chooseSession = (nextSessionId: string) => {
+    streamGeneration.current += 1;
     streamAbort.current?.abort();
     streamAbort.current = null;
     setActiveRun(null);
     setStreamDraft(null);
     setStreamTools([]);
     setOptimisticUser(null);
-    setApproval(null);
+    setApprovals([]);
     setStreamError(null);
     setSessionId(nextSessionId);
   };
 
   const chooseInstance = (nextInstanceId: string) => {
+    streamGeneration.current += 1;
     streamAbort.current?.abort();
     setSessionId(null);
     setActiveRun(null);
     setStreamDraft(null);
     setStreamTools([]);
-    setApproval(null);
+    setApprovals([]);
     setStreamError(null);
     onInstanceChange(nextInstanceId);
   };
@@ -503,14 +563,17 @@ function AgentWorkspace({
   const currentMessages = messages.data?.items ?? [];
   const hasDraftMessage = Boolean(
     streamDraft &&
-      !currentMessages.some(
-        (message) => message.message_id === streamDraft.message_id,
-      ),
+    !currentMessages.some(
+      (message) => message.message_id === streamDraft.message_id,
+    ),
   );
   const toolCalls = mergeToolCalls(run?.tool_calls ?? [], streamTools);
+  const approval = approvals[0] ?? null;
   const runBusy = Boolean(run && !terminalStatuses.has(run.status));
   const canChat =
-    canOperate && instance?.status === "active" && selectedSession?.status === "active";
+    canOperate &&
+    instance?.status === "active" &&
+    selectedSession?.status === "active";
 
   return (
     <div className="space-y-4">
@@ -568,14 +631,23 @@ function AgentWorkspace({
             className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
           >
             {messages.isLoading ? (
-              <p className="text-sm text-muted-foreground">正在读取 Hermes 消息历史…</p>
+              <p className="text-sm text-muted-foreground">
+                正在读取 Hermes 消息历史…
+              </p>
             ) : null}
-            {!messages.isLoading && selectedSession && currentMessages.length === 0 && !optimisticUser ? (
+            {!messages.isLoading &&
+            selectedSession &&
+            currentMessages.length === 0 &&
+            !optimisticUser ? (
               <div className="py-16 text-center">
-                <Sparkles aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
+                <Sparkles
+                  aria-hidden="true"
+                  className="mx-auto size-8 text-muted-foreground"
+                />
                 <p className="mt-3 font-medium">开始这个项目会话</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Hermes 保存完整历史；重要结论可通过 context.promote 提交为待审提议。
+                  Hermes 保存完整历史；重要结论可通过 context.promote
+                  提交为待审提议。
                 </p>
               </div>
             ) : null}
@@ -592,7 +664,12 @@ function AgentWorkspace({
               <ApprovalCard
                 approval={approval}
                 disabled={approve.isPending}
-                onChoose={(choice) => approve.mutate(choice)}
+                onChoose={(choice) =>
+                  approve.mutate({
+                    approvalId: approval.approval_id,
+                    choice,
+                  })
+                }
               />
             ) : null}
             {streamError ? (
@@ -641,7 +718,9 @@ function AgentWorkspace({
                 浏览器不会持有 Hermes API Key 或 Agent Token。
               </p>
               <Button
-                disabled={!composer.trim() || !canChat || runBusy || startRun.isPending}
+                disabled={
+                  !composer.trim() || !canChat || runBusy || startRun.isPending
+                }
                 type="submit"
               >
                 <Play aria-hidden="true" className="size-4" />
@@ -691,11 +770,15 @@ function AgentHeader({
           <Bot aria-hidden="true" className="size-5" />
         </span>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">mmdash Agent</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            mmdash Agent
+          </h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge>{instance?.status ?? "unavailable"}</Badge>
             <span>{instance?.management_mode ?? "—"}</span>
-            <span>MCP {instance?.grant.project_access_status ?? "pending"}</span>
+            <span>
+              MCP {instance?.grant.project_access_status ?? "pending"}
+            </span>
             {instance?.management_mode === "auto" ? (
               <span>管理链路 {instance.management_path}</span>
             ) : null}
@@ -818,7 +901,9 @@ function SessionSidebar({
             </select>
             <Button
               aria-label="创建 Session"
-              disabled={!newSessionTitle.trim() || !instanceReady || createPending}
+              disabled={
+                !newSessionTitle.trim() || !instanceReady || createPending
+              }
               size="icon"
               type="submit"
             >
@@ -831,7 +916,9 @@ function SessionSidebar({
         {sessions.map((session) => (
           <li key={session.session_id}>
             <button
-              aria-current={selectedSessionId === session.session_id ? "true" : undefined}
+              aria-current={
+                selectedSessionId === session.session_id ? "true" : undefined
+              }
               className={cn(
                 "w-full rounded-md px-3 py-2 text-left text-sm transition-colors",
                 selectedSessionId === session.session_id
@@ -843,7 +930,9 @@ function SessionSidebar({
             >
               <span className="flex items-center justify-between gap-2">
                 <span className="truncate font-medium">{session.title}</span>
-                {session.default ? <Check aria-label="默认 Session" className="size-3" /> : null}
+                {session.default ? (
+                  <Check aria-label="默认 Session" className="size-3" />
+                ) : null}
               </span>
               <span className="mt-1 flex gap-1 text-xs text-muted-foreground">
                 <span>{session.session_type}</span>
@@ -861,14 +950,16 @@ function SessionSidebar({
             icon={Pencil}
             label="重命名"
             onClick={() => {
-              const title = window.prompt("Session 新名称", selectedSession.title)?.trim();
+              const title = window
+                .prompt("Session 新名称", selectedSession.title)
+                ?.trim();
               if (title && title !== selectedSession.title) {
                 updateSession({ kind: "rename", title });
               }
             }}
           />
           <SessionAction
-            disabled={sessionPending || !selectedSession.default && false}
+            disabled={sessionPending || (!selectedSession.default && false)}
             icon={Check}
             label="设为默认"
             onClick={() => updateSession({ kind: "default" })}
@@ -878,10 +969,9 @@ function SessionSidebar({
             icon={GitFork}
             label="分叉"
             onClick={() => {
-              const title = window.prompt(
-                "分叉 Session 名称",
-                `${selectedSession.title}（分叉）`,
-              )?.trim();
+              const title = window
+                .prompt("分叉 Session 名称", `${selectedSession.title}（分叉）`)
+                ?.trim();
               if (title) {
                 updateSession({ kind: "fork", title });
               }
@@ -950,7 +1040,9 @@ function MessageBubble({
           optimistic ? "opacity-70" : null,
         )}
       >
-        <p className="mb-1 text-[11px] font-medium opacity-70">{message.role}</p>
+        <p className="mb-1 text-[11px] font-medium opacity-70">
+          {message.role}
+        </p>
         <div className="whitespace-pre-wrap break-words leading-6">
           {message.content || (streaming ? "…" : "")}
           {streaming ? <span aria-label="正在流式回复"> ▍</span> : null}
@@ -1032,18 +1124,33 @@ function RunControls({
     <div className="flex flex-wrap items-center gap-2">
       <Badge>{run.status}</Badge>
       {canOperate && busy ? (
-        <Button disabled={pending || run.status === "stopping"} onClick={onStop} size="sm" variant="outline">
+        <Button
+          disabled={pending || run.status === "stopping"}
+          onClick={onStop}
+          size="sm"
+          variant="outline"
+        >
           <CircleStop aria-hidden="true" className="size-3" />
           停止
         </Button>
       ) : null}
       {canOperate && terminalStatuses.has(run.status) ? (
         <>
-          <Button disabled={pending} onClick={onRegenerate} size="sm" variant="outline">
+          <Button
+            disabled={pending}
+            onClick={onRegenerate}
+            size="sm"
+            variant="outline"
+          >
             <RefreshCw aria-hidden="true" className="size-3" />
             重新生成
           </Button>
-          <Button disabled={pending} onClick={onRerun} size="sm" variant="outline">
+          <Button
+            disabled={pending}
+            onClick={onRerun}
+            size="sm"
+            variant="outline"
+          >
             <RotateCcw aria-hidden="true" className="size-3" />
             重新执行
           </Button>
@@ -1085,16 +1192,23 @@ function RunStatusCard({
             <p className="text-xs text-muted-foreground">暂无工具调用。</p>
           ) : null}
           {toolCalls.map((tool) => (
-            <div className="rounded-md border border-border p-3 text-xs" key={tool.tool_call_id}>
+            <div
+              className="rounded-md border border-border p-3 text-xs"
+              key={tool.tool_call_id}
+            >
               <div className="flex items-center justify-between gap-2">
                 <code className="truncate">{tool.name}</code>
                 <Badge>{tool.status}</Badge>
               </div>
               {tool.input_summary ? (
-                <p className="mt-2 text-muted-foreground">{tool.input_summary}</p>
+                <p className="mt-2 text-muted-foreground">
+                  {tool.input_summary}
+                </p>
               ) : null}
               {tool.output_summary ? (
-                <p className="mt-1 text-muted-foreground">{tool.output_summary}</p>
+                <p className="mt-1 text-muted-foreground">
+                  {tool.output_summary}
+                </p>
               ) : null}
               {tool.safe_error_code ? (
                 <p className="mt-1 text-destructive">{tool.safe_error_code}</p>
@@ -1127,7 +1241,8 @@ function PromptCard({
     }
   }, [prompt.data]);
   const update = useMutation({
-    mutationFn: () => agentApi.updatePrompt(projectId, instanceId, content.trim()),
+    mutationFn: () =>
+      agentApi.updatePrompt(projectId, instanceId, content.trim()),
     onError: showError("Prompt 保存失败"),
     onSuccess: (result) => {
       setContent(result.effective_prompt);
@@ -1167,7 +1282,9 @@ function PromptCard({
         )}
         {prompt.data ? (
           <p className="text-xs text-muted-foreground">
-            {prompt.data.custom ? "当前使用自定义 Prompt" : "当前使用自动生成 Prompt"}
+            {prompt.data.custom
+              ? "当前使用自定义 Prompt"
+              : "当前使用自动生成 Prompt"}
           </p>
         ) : null}
         {canOperate ? (
@@ -1209,8 +1326,8 @@ function UnconfiguredAgent({ projectId }: { projectId: string }) {
         <Bot aria-hidden="true" className="size-10 text-muted-foreground" />
         <h1 className="mt-4 text-xl font-semibold">尚未配置 Hermes 连接</h1>
         <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-          选择 manual 获取一次性 Agent Token，或选择 auto 由服务端通过受控 Dashboard
-          管理连接完成 MCP 安装与安全轮换。
+          选择 manual 获取一次性 Agent Token，或选择 auto 由服务端通过受控
+          Dashboard 管理连接完成 MCP 安装与安全轮换。
         </p>
         <Link
           className="mt-5 inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
@@ -1248,6 +1365,28 @@ function mergeToolCalls(
   streamed: AgentToolCall[],
 ): AgentToolCall[] {
   return streamed.reduce(upsertToolCall, persisted);
+}
+
+function enqueueApproval(
+  current: AgentApproval[],
+  approval: AgentApproval,
+): AgentApproval[] {
+  const existingIndex = current.findIndex(
+    (item) => item.approval_id === approval.approval_id,
+  );
+  if (existingIndex < 0) {
+    return [...current, approval];
+  }
+  return current.map((item, index) =>
+    index === existingIndex ? approval : item,
+  );
+}
+
+function removeApproval(
+  current: AgentApproval[],
+  approvalId: string,
+): AgentApproval[] {
+  return current.filter((item) => item.approval_id !== approvalId);
 }
 
 function showError(fallback: string) {

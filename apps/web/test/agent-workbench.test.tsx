@@ -1,5 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -88,7 +95,9 @@ describe("Agent workbench", () => {
     mocks.stopRun.mockResolvedValue(runFixture({ status: "stopping" }));
     mocks.approveRun.mockResolvedValue(runFixture({ status: "running" }));
     mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
-      await onEvent(streamEvent("message.started", { message_id: "message-2" }));
+      await onEvent(
+        streamEvent("message.started", { message_id: "message-2" }),
+      );
       await onEvent(
         streamEvent("message.delta", {
           delta: "流式回答",
@@ -158,6 +167,275 @@ describe("Agent workbench", () => {
         "run-1",
       ),
     );
+  });
+
+  it("keeps consecutive approvals FIFO and advances only after the head succeeds", async () => {
+    const session = sessionFixture();
+    prepareQueries(session);
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    mocks.approveRun.mockResolvedValue(
+      runFixture({ status: "waiting_for_approval" }),
+    );
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-1", choices: ["once"] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-2", choices: ["deny"] },
+        }),
+      );
+      return "approval-event-2";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+    await sendMessage("触发连续审批");
+
+    const firstChoice = await screen.findByRole("button", { name: "仅本次" });
+    expect(
+      screen.queryByRole("button", { name: "拒绝" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(firstChoice);
+
+    await waitFor(() =>
+      expect(mocks.approveRun).toHaveBeenNthCalledWith(
+        1,
+        "project-1",
+        "instance-1",
+        "session-1",
+        "run-1",
+        "approval-1",
+        "once",
+      ),
+    );
+
+    const secondChoice = await screen.findByRole("button", { name: "拒绝" });
+    expect(
+      screen.queryByRole("button", { name: "仅本次" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(secondChoice);
+
+    await waitFor(() =>
+      expect(mocks.approveRun).toHaveBeenNthCalledWith(
+        2,
+        "project-1",
+        "instance-1",
+        "session-1",
+        "run-1",
+        "approval-2",
+        "deny",
+      ),
+    );
+  });
+
+  it("updates duplicate requests in place and ignores duplicate non-head responses", async () => {
+    const session = sessionFixture();
+    prepareQueries(session);
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    mocks.approveRun.mockResolvedValue(runFixture({ status: "running" }));
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-1", choices: ["once"] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-2", choices: ["deny"] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-1", choices: ["session"] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.responded", {
+          approval: { approval_id: "approval-2", choices: [] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.responded", {
+          approval: { approval_id: "approval-2", choices: [] },
+        }),
+      );
+      return "approval-event-5";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+    await sendMessage("触发重复审批事件");
+
+    expect(
+      await screen.findByRole("button", { name: "本 Session" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "仅本次" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "拒绝" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "本 Session" }));
+    await waitFor(() =>
+      expect(mocks.approveRun).toHaveBeenCalledWith(
+        "project-1",
+        "instance-1",
+        "session-1",
+        "run-1",
+        "approval-1",
+        "session",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Agent 请求工具审批")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("advances on a matching head response without letting its replay clear the next item", async () => {
+    const session = sessionFixture();
+    prepareQueries(session);
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    mocks.approveRun.mockResolvedValue(runFixture({ status: "running" }));
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-1", choices: ["once"] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-2", choices: ["deny"] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.responded", {
+          approval: { approval_id: "approval-1", choices: [] },
+        }),
+      );
+      await onEvent(
+        streamEvent("approval.responded", {
+          approval: { approval_id: "approval-1", choices: [] },
+        }),
+      );
+      return "approval-event-4";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+    await sendMessage("推进审批队列");
+
+    const remainingChoice = await screen.findByRole("button", { name: "拒绝" });
+    expect(
+      screen.queryByRole("button", { name: "仅本次" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(remainingChoice);
+
+    await waitFor(() =>
+      expect(mocks.approveRun).toHaveBeenCalledWith(
+        "project-1",
+        "instance-1",
+        "session-1",
+        "run-1",
+        "approval-2",
+        "deny",
+      ),
+    );
+  });
+
+  it("clears approvals on Session switch and ignores late events from the old stream", async () => {
+    const session = sessionFixture();
+    const secondary = sessionFixture({
+      default: false,
+      session_id: "session-2",
+      title: "Secondary",
+    });
+    prepareQueries(session);
+    mocks.listSessions.mockResolvedValue({ items: [session, secondary] });
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    let emitStreamEvent:
+      ((event: ReturnType<typeof streamEvent>) => Promise<void>) | null = null;
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      emitStreamEvent = async (event) => void (await onEvent(event));
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-1", choices: ["once"] },
+        }),
+      );
+      return "approval-event-1";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+    await sendMessage("切换 Session");
+
+    expect(await screen.findByText("Agent 请求工具审批")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Secondary/ }));
+    await waitFor(() =>
+      expect(screen.queryByText("Agent 请求工具审批")).not.toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      await emitStreamEvent!(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-late", choices: ["deny"] },
+        }),
+      );
+    });
+    expect(screen.queryByText("Agent 请求工具审批")).not.toBeInTheDocument();
+  });
+
+  it("clears approvals at Run terminal state and ignores later replayed requests", async () => {
+    const session = sessionFixture();
+    prepareQueries(session);
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    let emitStreamEvent:
+      ((event: ReturnType<typeof streamEvent>) => Promise<void>) | null = null;
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      emitStreamEvent = async (event) => void (await onEvent(event));
+      await onEvent(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-1", choices: ["once"] },
+        }),
+      );
+      return "approval-event-1";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+    await sendMessage("结束 Run");
+    expect(await screen.findByText("Agent 请求工具审批")).toBeInTheDocument();
+
+    await act(async () => {
+      await emitStreamEvent!(
+        streamEvent("run.completed", {
+          run: runFixture({ status: "completed" }),
+        }),
+      );
+    });
+    expect(screen.queryByText("Agent 请求工具审批")).not.toBeInTheDocument();
+
+    await act(async () => {
+      await emitStreamEvent!(
+        streamEvent("approval.required", {
+          approval: { approval_id: "approval-late", choices: ["deny"] },
+        }),
+      );
+    });
+    expect(screen.queryByText("Agent 请求工具审批")).not.toBeInTheDocument();
   });
 
   it("supports ended Session continuation and non-destructive Run replay", async () => {
@@ -320,12 +598,24 @@ describe("Agent workbench", () => {
   });
 });
 
+async function sendMessage(content: string) {
+  await screen.findByText("历史消息");
+  fireEvent.change(screen.getByLabelText("发给 Hermes 的消息"), {
+    target: { value: content },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+  await waitFor(() => expect(mocks.startRun).toHaveBeenCalled());
+}
+
 function Providers({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <QueryClientProvider
       client={
         new QueryClient({
-          defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+          defaultOptions: {
+            mutations: { retry: false },
+            queries: { retry: false },
+          },
         })
       }
     >
@@ -468,10 +758,7 @@ function runFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function streamEvent(
-  event: string,
-  overrides: Record<string, unknown> = {},
-) {
+function streamEvent(event: string, overrides: Record<string, unknown> = {}) {
   return {
     event,
     event_id: `event-${event}`,
