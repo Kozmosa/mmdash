@@ -2,7 +2,8 @@
 
 - Updated: 2026-08-09
 - Branch: `codex/stage-5-agent-sessions`
-- Base: `codex/stage-4-home-progress@202bad8`（含全部已验收 Stage 4 fixes，于 `141ad72` 整合）
+- Base: `codex/stage-4-home-progress@2bf8959`（先前 fixes 于 `141ad72`
+  整合；最终 reminder creation fix 于 `be934f0` 整合）
 - Delivery state: Stage 5 implementation and final acceptance complete；全部已验收
   Stage 4 fixes 已包含在当前基线；未 push、未创建 PR
 
@@ -76,6 +77,9 @@ provider-neutral extension boundary. Stage 6 automatic Progress tracking
 - Acceptance Compose 的服务发现 Host allowlist 包含 Compose-only
   `mcp-gateway`，所有宿主端口仅绑定 `127.0.0.1`，避免验收数据库和服务暴露
   到宿主外部网络。
+- 最终验收前再次同步 Stage 4：`2bf8959 fix(progress): add reminder
+  creation flow` 通过 `be934f0` 合并；新增 Progress reminder 创建 UI 与 7 项
+  页面测试。该 fix 不含迁移，`000023-000026` 编号无需调整且无冲突。
 
 ## Contracts and persistence
 
@@ -96,8 +100,9 @@ Outbox，事件目录、OpenAPI、生成的 Go/TS 客户端与 API 目录已对�
 
 Passed:
 
-- 2026-08-09 在最终代码上 fresh `pnpm check` 全量通过：TypeScript lint、
-  Web 75 tests、Web BFF 38 tests、MCP Gateway 32 tests、Go 全仓测试与构建
+- 2026-08-09 在最终 Stage 4+5 合并代码上 fresh `pnpm check` 全量通过：
+  TypeScript lint、Web 82 tests（含 Progress reminder 7 tests）、Web BFF 38
+  tests、MCP Gateway 32 tests、Go 全仓测试与构建
   （包括 `backend/internal/repo` Git integration tests）、Python lint/25 tests/
   build、contracts compatibility、API catalog（315 operations / 8
   contracts）和 Caddyfile validation。
