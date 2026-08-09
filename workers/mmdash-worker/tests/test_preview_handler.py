@@ -104,5 +104,6 @@ def test_production_registry_advertises_artifact_preview() -> None:
         "artifact.preview",
         "model.notion.discover",
         "model.notion.snapshot",
+        "progress.evaluate",
         "system.test",
     )
