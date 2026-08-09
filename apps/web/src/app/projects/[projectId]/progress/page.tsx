@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { calculateGanttTimeline, formatTimelineDate, type GanttTimelineInput } from "@/features/progress/gantt-timeline";
 import { apiClient } from "@/lib/api-client";
 
 type Task = { task_id: string; title: string; description: string; status: string; due_at?: string; source: string; source_run_id?: string };
@@ -24,7 +25,7 @@ type Progress = {
   proposals: Proposal[];
   reminders: { reminder_id: string; note: string; status: string; remind_at: string }[];
   board: { todo: Task[]; in_progress: Task[]; blocked: Task[]; done: Task[] };
-  gantt: { id: string; kind: string; title: string; target_at?: string; status: string }[];
+  gantt: GanttTimelineInput[];
 };
 
 type View = "board" | "list" | "gantt" | "today" | "proposals";
@@ -126,7 +127,65 @@ function ListView({ milestones, tasks }: { milestones: Milestone[]; tasks: Task[
 }
 
 function GanttView({ items }: { items: Progress["gantt"] }) {
-  return items.length ? <Card><CardHeader><CardTitle className="text-base">时间轴</CardTitle></CardHeader><CardContent className="space-y-3">{items.map((item) => <div className="grid gap-2 md:grid-cols-[12rem_1fr] md:items-center" key={`${item.kind}-${item.id}`}><div><p className="truncate text-sm">{item.title}</p><p className="text-xs text-muted-foreground">{item.kind} · {item.status}</p></div><div className="h-3 rounded-full bg-muted"><div className="h-3 w-1/3 rounded-full bg-primary/70" /></div></div>)}</CardContent></Card> : <EmptyState description="设置时间后，Milestone 和 Task 会出现在同一时间轴。" title="暂无时间安排" />;
+  const timeline = calculateGanttTimeline(items);
+  if (!timeline.items.length) {
+    return <EmptyState description="设置时间后，Milestone 和 Task 会出现在同一时间轴。" title="暂无时间安排" />;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">时间轴</CardTitle>
+        <p className="text-xs text-muted-foreground" data-testid="gantt-range">
+          时间范围：{formatTimelineDate(timeline.startAt!)} — {formatTimelineDate(timeline.targetAt!)}
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3" data-testid="gantt-timeline">
+        <div className="grid gap-2 md:grid-cols-[12rem_1fr] md:items-end">
+          <span className="text-xs text-muted-foreground">日期</span>
+          <div aria-label="时间轴刻度" className="relative h-8 border-b border-border">
+            {timeline.ticks.map((tick) => (
+              <span className="absolute bottom-1 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted-foreground" data-testid="gantt-tick" key={`${tick.offset}-${tick.label}`} style={{ left: `${tick.offset}%` }}>
+                {tick.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        {timeline.items.map((item) => (
+          <div className="grid gap-2 md:grid-cols-[12rem_1fr] md:items-center" data-testid={`gantt-item-${item.id}`} key={`${item.kind}-${item.id}`}>
+            <div>
+              <p className="truncate text-sm">{item.title}</p>
+              <p className="text-xs text-muted-foreground">{item.kind} · {item.status}</p>
+              <p className="text-[10px] text-muted-foreground">{formatTimelineDate(item.startAt)} — {formatTimelineDate(item.targetAt)}</p>
+            </div>
+            <div aria-label={`${item.title} 时间安排`} className="relative h-3 rounded-full bg-muted" data-offset={item.offset} data-width={item.width}>
+              <div
+                className="absolute h-3 rounded-full bg-primary/70"
+                data-testid={`gantt-bar-${item.id}`}
+                style={{
+                  left: `${item.offset}%`,
+                  minWidth: item.width === 0 ? "0.5rem" : undefined,
+                  transform: item.width === 0 && item.offset >= 99.5 ? "translateX(-100%)" : undefined,
+                  width: `${item.width}%`,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+        {timeline.unscheduled.length ? (
+          <div className="space-y-2 border-t border-border pt-3">
+            <p className="text-xs font-medium text-muted-foreground">未安排时间</p>
+            {timeline.unscheduled.map((item) => (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-3 py-2" data-testid={`gantt-unscheduled-${item.id}`} key={`${item.kind}-${item.id}`}>
+                <p className="truncate text-sm">{item.title}</p>
+                <p className="shrink-0 text-xs text-muted-foreground">{item.kind} · {item.status}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }
 
 function TodayView({ blocked, overdue, tasks }: { blocked: Task[]; overdue: Task[]; tasks: Task[] }) {

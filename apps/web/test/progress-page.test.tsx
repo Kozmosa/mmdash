@@ -229,3 +229,66 @@ describe("Progress reminder creation", () => {
     expect(mocks.request.mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
   });
 });
+
+describe("Progress gantt timeline", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    mocks.project.role = "owner";
+  });
+
+  it("renders bars at their real shared date offsets and widths", async () => {
+    const gantt = [
+      {
+        id: "00000000-0000-4000-8000-000000000041",
+        kind: "milestone",
+        status: "planned",
+        title: "模型冻结",
+        start_at: "2030-01-01T00:00:00Z",
+        target_at: "2030-01-11T00:00:00Z",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000042",
+        kind: "task",
+        status: "in_progress",
+        title: "整理参数",
+        start_at: "2030-01-06T00:00:00Z",
+        target_at: "2030-01-21T00:00:00Z",
+      },
+    ];
+    mocks.request.mockImplementation((path: string, options?: { method?: string }) => {
+      if (path === "/projects/project-1/progress" && !options) return Promise.resolve({ ...progress, gantt });
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+
+    renderProgress();
+    await screen.findByText("现有提醒");
+    fireEvent.click(screen.getByRole("button", { name: "甘特" }));
+
+    expect(screen.getByTestId("gantt-range")).toHaveTextContent("2030-01-01 — 2030-01-21");
+    expect(screen.getByTestId("gantt-bar-00000000-0000-4000-8000-000000000041")).toHaveStyle({ left: "0%", width: "50%" });
+    expect(screen.getByTestId("gantt-bar-00000000-0000-4000-8000-000000000042")).toHaveStyle({ left: "25%", width: "75%" });
+    expect(screen.getByTestId("gantt-item-00000000-0000-4000-8000-000000000041")).toHaveTextContent("milestone · planned");
+    expect(screen.getByTestId("gantt-item-00000000-0000-4000-8000-000000000042")).toHaveTextContent("task · in_progress");
+    expect(screen.getAllByTestId("gantt-tick")).toHaveLength(5);
+  });
+
+  it("shows the safe empty state when all timeline dates are missing", async () => {
+    mocks.request.mockImplementation((path: string, options?: { method?: string }) => {
+      if (path === "/projects/project-1/progress" && !options) {
+        return Promise.resolve({
+          ...progress,
+          gantt: [{ id: "00000000-0000-4000-8000-000000000043", kind: "task", status: "todo", title: "未安排" }],
+        });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+
+    renderProgress();
+    await screen.findByText("现有提醒");
+    fireEvent.click(screen.getByRole("button", { name: "甘特" }));
+
+    expect(screen.getByText("暂无时间安排")).toBeInTheDocument();
+    expect(screen.queryByTestId("gantt-timeline")).not.toBeInTheDocument();
+  });
+});
