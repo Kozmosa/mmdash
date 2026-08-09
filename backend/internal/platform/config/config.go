@@ -116,12 +116,16 @@ type OutboxConfig struct {
 	RetryDelay    time.Duration
 }
 
-// ProgressConfig configures the in-Core due reminder processor.
+// ProgressConfig configures the in-Core reminder and automatic tracking processors.
 type ProgressConfig struct {
+	EvaluatorMode        string
 	ReminderBatchSize    int
 	ReminderLease        time.Duration
 	ReminderPollInterval time.Duration
 	ReminderRetryDelay   time.Duration
+	TrackingLease        time.Duration
+	TrackingPollInterval time.Duration
+	TrackingRetryDelay   time.Duration
 }
 
 // ProjectConfig configures Project-owned lifecycle processors.
@@ -267,10 +271,14 @@ func Load(lookup LookupEnv) (Config, error) {
 			RetryDelay:    durationOrDefault(lookup, "OUTBOX_RETRY_DELAY", 2*time.Second),
 		},
 		Progress: ProgressConfig{
+			EvaluatorMode:        envOrDefault(lookup, "MMDASH_PROGRESS_EVALUATOR_MODE", "core_agent"),
 			ReminderBatchSize:    intOrDefault(lookup, "PROGRESS_REMINDER_BATCH_SIZE", 20),
 			ReminderLease:        durationOrDefault(lookup, "PROGRESS_REMINDER_LEASE", 30*time.Second),
 			ReminderPollInterval: durationOrDefault(lookup, "PROGRESS_REMINDER_POLL_INTERVAL", time.Second),
 			ReminderRetryDelay:   durationOrDefault(lookup, "PROGRESS_REMINDER_RETRY_DELAY", 2*time.Second),
+			TrackingLease:        durationOrDefault(lookup, "PROGRESS_TRACKING_LEASE", 2*time.Minute),
+			TrackingPollInterval: durationOrDefault(lookup, "PROGRESS_TRACKING_POLL_INTERVAL", time.Second),
+			TrackingRetryDelay:   durationOrDefault(lookup, "PROGRESS_TRACKING_RETRY_DELAY", 30*time.Second),
 		},
 		Project: ProjectConfig{
 			InvitationExpiryBatchSize: intOrDefault(
@@ -471,6 +479,14 @@ func (config Config) Validate() error {
 		config.Progress.ReminderPollInterval <= 0 ||
 		config.Progress.ReminderRetryDelay <= 0 {
 		return fmt.Errorf("Progress reminder durations must be positive")
+	}
+	if config.Progress.TrackingLease <= 0 ||
+		config.Progress.TrackingPollInterval <= 0 ||
+		config.Progress.TrackingRetryDelay <= 0 {
+		return fmt.Errorf("Progress tracking durations must be positive")
+	}
+	if config.Progress.EvaluatorMode != "core_agent" && config.Progress.EvaluatorMode != "mock" {
+		return fmt.Errorf("MMDASH_PROGRESS_EVALUATOR_MODE must be core_agent or mock")
 	}
 	if config.Project.InvitationExpiryBatchSize < 1 || config.Project.InvitationExpiryBatchSize > 1000 {
 		return fmt.Errorf("PROJECT_INVITATION_EXPIRY_BATCH_SIZE must be between 1 and 1000")

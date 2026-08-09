@@ -2467,6 +2467,107 @@ export interface paths {
     patch: operations["progress.settings.update"];
     trace?: never;
   };
+  "/v1/projects/{projectId}/progress/recalculate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Schedule an idempotent Progress evaluation */
+    post: operations["progress.recalculate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/evaluations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List automatic Progress evaluation history */
+    get: operations["progress.evaluations.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/evaluations/{evaluationId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        evaluationId: string;
+      };
+      cookie?: never;
+    };
+    /** Read one Progress evaluation */
+    get: operations["progress.evaluations.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/evaluations/{evaluationId}/retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        evaluationId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry a failed Progress evaluation */
+    post: operations["progress.evaluations.retry"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/stage-override": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Override the automatically detected project stage
+     * @description Human session only. The detected stage remains preserved in evaluation history.
+     */
+    post: operations["progress.stage_override.set"];
+    /** Clear the active project stage override */
+    delete: operations["progress.stage_override.clear"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/models": {
     parameters: {
       query?: never;
@@ -2747,6 +2848,44 @@ export interface paths {
     get: operations["model.worker.export"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/progress-evaluation-jobs/{jobId}/input": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    /** Read one actively leased Progress evaluation input */
+    get: operations["progress.worker.input"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/progress-evaluation-jobs/{jobId}/execute": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Execute one actively leased evaluation through the configured Agent */
+    post: operations["progress.worker.execute"];
     delete?: never;
     options?: never;
     head?: never;
@@ -4156,6 +4295,7 @@ export interface components {
       experiments: components["schemas"]["HomeSection"];
       article: components["schemas"]["HomeSection"];
       agent: components["schemas"]["HomeSection"];
+      progress_tracking?: components["schemas"]["ProgressTrackerState"];
     };
     ModelOverview: {
       /** Format: uuid */
@@ -4507,6 +4647,8 @@ export interface components {
         status: string;
       }[];
       settings: components["schemas"]["ProgressSettings"];
+      tracking: components["schemas"]["ProgressTrackerState"];
+      latest_evaluation?: components["schemas"]["ProgressEvaluation"];
     };
     Milestone: {
       /** Format: uuid */
@@ -4581,6 +4723,18 @@ export interface components {
       /** @enum {string} */
       source: "human" | "agent" | "proposal";
       source_run_id?: string;
+      /** Format: uuid */
+      source_evaluation_id?: string;
+      manual_override_fields: (
+        | "milestone_id"
+        | "title"
+        | "description"
+        | "status"
+        | "assignee_id"
+        | "start_at"
+        | "due_at"
+        | "related_object_ids"
+      )[];
       related_object_ids: string[];
       /** Format: uuid */
       created_by: string;
@@ -4609,6 +4763,9 @@ export interface components {
       due_at?: string;
       related_object_ids?: string[];
       source_run_id?: string;
+      /** Format: uuid */
+      source_evaluation_id?: string;
+      source_key?: string;
     };
     UpdateTaskRequest: {
       /** Format: uuid */
@@ -4747,6 +4904,22 @@ export interface components {
       /** Format: uuid */
       project_id: string;
       auto_task_changes: boolean;
+      auto_tracking_enabled: boolean;
+      event_triggers_enabled: boolean;
+      cron_enabled: boolean;
+      cron_schedule: string;
+      debounce_seconds: number;
+      min_interval_seconds: number;
+      /** @enum {string} */
+      evaluator_mode: "core_agent" | "mock";
+      /** Format: uuid */
+      agent_instance_id?: string;
+      cron_remote_job_id?: string;
+      /** @enum {string} */
+      cron_sync_status: "pending" | "syncing" | "ready" | "failed" | "disabled";
+      cron_error_code?: string;
+      /** Format: date-time */
+      cron_synced_at?: string;
       /** Format: uuid */
       updated_by: string;
       /** Format: date-time */
@@ -4754,6 +4927,197 @@ export interface components {
     };
     UpdateProgressSettingsRequest: {
       auto_task_changes: boolean;
+      auto_tracking_enabled: boolean;
+      event_triggers_enabled: boolean;
+      cron_enabled: boolean;
+      cron_schedule: string;
+      debounce_seconds: number;
+      min_interval_seconds: number;
+      /** Format: uuid */
+      agent_instance_id?: string;
+    };
+    ProgressTrackerState: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      last_evaluation_id?: string;
+      detected_stage: string;
+      effective_stage: string;
+      stage_overridden: boolean;
+      summary: string;
+      changes_since_last: string[];
+      completed_items: string[];
+      in_progress_items: string[];
+      blockers: string[];
+      pending_questions: string[];
+      /** Format: date-time */
+      last_evaluated_at?: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ProgressEvaluationTrigger: {
+      /** Format: uuid */
+      trigger_id: string;
+      trigger_type: string;
+      /** Format: uuid */
+      source_event_id?: string;
+      source_event_type?: string;
+      source_resource_id?: string;
+      source_version?: string;
+      payload: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      occurred_at: string;
+    };
+    ProgressRisk: {
+      /** Format: uuid */
+      risk_id: string;
+      /** Format: uuid */
+      evaluation_id: string;
+      /** Format: uuid */
+      project_id: string;
+      risk_key: string;
+      title: string;
+      /** @enum {string} */
+      severity: "low" | "medium" | "high" | "critical";
+      /** @enum {string} */
+      status: "open" | "mitigated" | "accepted";
+      detail: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    ProgressEvaluationRiskInput: {
+      key: string;
+      title: string;
+      /** @enum {string} */
+      severity: "low" | "medium" | "high" | "critical";
+      detail: string;
+    };
+    ProgressEvaluationSuggestion: {
+      key: string;
+      /** @enum {string} */
+      proposal_type:
+        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+      /** Format: uuid */
+      target_id?: string;
+      title: string;
+      rationale: string;
+      changes: {
+        [key: string]: unknown;
+      };
+    };
+    ProgressEvaluationOutput: {
+      stage: string;
+      summary: string;
+      changes_since_last: string[];
+      completed_items: string[];
+      in_progress_items: string[];
+      blockers: string[];
+      risks: components["schemas"]["ProgressEvaluationRiskInput"][];
+      suggestions: components["schemas"]["ProgressEvaluationSuggestion"][];
+      pending_questions: string[];
+    };
+    ProgressEvaluation: {
+      /** Format: uuid */
+      evaluation_id: string;
+      /** Format: uuid */
+      request_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      job_id?: string;
+      /** @enum {string} */
+      status: "queued" | "running" | "succeeded" | "failed";
+      input_version: string;
+      input_snapshot: {
+        [key: string]: unknown;
+      };
+      output?: components["schemas"]["ProgressEvaluationOutput"];
+      detected_stage: string;
+      summary: string;
+      changes_since_last: string[];
+      completed_items: string[];
+      in_progress_items: string[];
+      blockers: string[];
+      pending_questions: string[];
+      source_event_ids: string[];
+      /** @enum {string} */
+      trigger_kind: "event" | "manual" | "cron" | "retry";
+      /** Format: uuid */
+      agent_instance_id?: string;
+      /** Format: uuid */
+      agent_session_id?: string;
+      /** Format: uuid */
+      agent_run_id?: string;
+      /** @enum {string} */
+      evaluator_mode: "core_agent" | "mock";
+      attempts: number;
+      error_code?: string;
+      error_message?: string;
+      /** Format: uuid */
+      requested_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      started_at?: string;
+      /** Format: date-time */
+      completed_at?: string;
+      /** Format: date-time */
+      updated_at: string;
+      triggers: components["schemas"]["ProgressEvaluationTrigger"][];
+      risks: components["schemas"]["ProgressRisk"][];
+    };
+    ProgressEvaluationPage: {
+      items: components["schemas"]["ProgressEvaluation"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    RecalculateProgressRequest: {
+      /** @enum {string} */
+      trigger_kind: "manual" | "cron";
+      force: boolean;
+    };
+    RecalculateProgressResult: {
+      /** Format: uuid */
+      request_id: string;
+      /** @enum {string} */
+      status: "pending";
+      /** Format: date-time */
+      scheduled_for: string;
+      merged: boolean;
+    };
+    SetProgressStageOverrideRequest: {
+      stage: string;
+      summary?: string;
+      note?: string;
+    };
+    ProgressStageOverride: {
+      /** Format: uuid */
+      override_id: string;
+      /** Format: uuid */
+      project_id: string;
+      stage: string;
+      summary: string;
+      note: string;
+      active: boolean;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: uuid */
+      cleared_by?: string;
+      /** Format: date-time */
+      cleared_at?: string;
+    };
+    ProgressAgentExecution: {
+      output: string;
+      /** Format: uuid */
+      agent_instance_id: string;
+      /** Format: uuid */
+      agent_session_id: string;
+      /** Format: uuid */
+      agent_run_id: string;
     };
     Notification: {
       /** Format: uuid */
@@ -4918,11 +5282,16 @@ export interface components {
     /** @enum {string} */
     AgentAdapterType: "hermes";
     /**
-     * @description Closed Stage 5 product Agent Tool scope. Additional MCP tools require a later-stage domain and contract change before they can be granted.
+     * @description Closed Stage 6 product Agent Tool scope. Additional MCP tools require a later-stage domain and contract change before they can be granted.
      * @enum {string}
      */
     AgentToolName:
-      "project.get" | "data.list" | "data.read" | "context.promote";
+      | "project.get"
+      | "data.list"
+      | "data.read"
+      | "context.promote"
+      | "progress.get"
+      | "progress.recalculate";
     /** @enum {string} */
     AgentManagementMode: "manual" | "auto";
     /** @enum {string} */
@@ -4950,7 +5319,7 @@ export interface components {
       | "failed"
       | "stopped";
     /** @enum {string} */
-    AgentRunSource: "message" | "regenerate" | "rerun";
+    AgentRunSource: "message" | "regenerate" | "rerun" | "progress_evaluation";
     AgentProjectAccessCapabilities: {
       verify: boolean;
       configure: boolean;
@@ -5010,7 +5379,9 @@ export interface components {
        *       "project.get",
        *       "data.list",
        *       "data.read",
-       *       "context.promote"
+       *       "context.promote",
+       *       "progress.get",
+       *       "progress.recalculate"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -5043,7 +5414,9 @@ export interface components {
        *       "project.get",
        *       "data.list",
        *       "data.read",
-       *       "context.promote"
+       *       "context.promote",
+       *       "progress.get",
+       *       "progress.recalculate"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -5117,12 +5490,14 @@ export interface components {
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
       /**
-       * @description Exact reviewed Stage 5 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @description Exact reviewed Stage 6 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
        * @example [
        *       "project.get",
        *       "data.list",
        *       "data.read",
-       *       "context.promote"
+       *       "context.promote",
+       *       "progress.get",
+       *       "progress.recalculate"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -5142,12 +5517,14 @@ export interface components {
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
       /**
-       * @description Exact reviewed Stage 5 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @description Exact reviewed Stage 6 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
        * @example [
        *       "project.get",
        *       "data.list",
        *       "data.read",
-       *       "context.promote"
+       *       "context.promote",
+       *       "progress.get",
+       *       "progress.recalculate"
        *     ]
        */
       allowed_tools?: components["schemas"]["AgentToolName"][];
@@ -9399,6 +9776,152 @@ export interface operations {
       };
     };
   };
+  "progress.recalculate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RecalculateProgressRequest"];
+      };
+    };
+    responses: {
+      /** @description Evaluation request scheduled or merged into the active request. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecalculateProgressResult"];
+        };
+      };
+    };
+  };
+  "progress.evaluations.list": {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Evaluation history page. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressEvaluationPage"];
+        };
+      };
+    };
+  };
+  "progress.evaluations.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        evaluationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Evaluation input, output, triggers, risks, and provenance. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressEvaluation"];
+        };
+      };
+      404: components["responses"]["Error"];
+    };
+  };
+  "progress.evaluations.retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        evaluationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Retry request scheduled. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecalculateProgressResult"];
+        };
+      };
+    };
+  };
+  "progress.stage_override.set": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SetProgressStageOverrideRequest"];
+      };
+    };
+    responses: {
+      /** @description Active stage override. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressStageOverride"];
+        };
+      };
+    };
+  };
+  "progress.stage_override.clear": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cleared stage override. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressStageOverride"];
+        };
+      };
+    };
+  };
   "model.get": {
     parameters: {
       query?: never;
@@ -9818,6 +10341,50 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelNotionExport"];
+        };
+      };
+    };
+  };
+  "progress.worker.input": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Job-bound secret-free evaluation record and input snapshot. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressEvaluation"];
+        };
+      };
+    };
+  };
+  "progress.worker.execute": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Raw Agent output and persisted Agent provenance. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressAgentExecution"];
         };
       };
     };

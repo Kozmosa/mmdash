@@ -9,6 +9,7 @@
     "project_id": { "type": "string", "format": "uuid" },
     "resource_id": { "type": "string", "format": "uuid" },
     "session_id": { "type": "string", "format": "uuid" },
-    "source": { "type": "string", "enum": ["message", "regenerate", "rerun"] }
+    "source": { "type": "string", "enum": ["message", "regenerate", "rerun", "progress_evaluation"] },
+    "source_run_id": { "type": "string", "format": "uuid" }
   }
 }

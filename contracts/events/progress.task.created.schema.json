@@ -12,6 +12,7 @@
     "status": { "type": "string" },
     "source": { "type": "string" },
     "source_run_id": { "type": "string" },
+    "source_evaluation_id": { "type": "string", "format": "uuid" },
     "proposal_id": { "type": "string", "format": "uuid" }
   }
 }
