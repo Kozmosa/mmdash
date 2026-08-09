@@ -193,6 +193,11 @@ provider-neutral approval ID and allowed choices. The browser responds through
 `POST .../runs/{runId}/approvals/{approvalId}` with exactly one of `once`,
 `session`, `always`, or `deny`; Core returns the current normalized Run. The
 approval request never exposes raw Tool arguments or bypasses Hermes policy.
+Pinned Hermes v2026.8.3 has no provider approval-ID field and resolves only its
+oldest pending request when `resolve_all=false`, so Core generates and persists
+the normalized ID, accepts only the FIFO head, and maps an ID-less upstream
+response back to that persisted ID. This limitation is documented with exact
+upstream source references in `docs/development/agent.md`.
 
 `regenerate` is non-destructive: it forks the Session and replays the selected
 or latest user turn. `rerun` replays the selected or latest user turn in the

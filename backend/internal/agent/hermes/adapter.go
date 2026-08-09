@@ -371,10 +371,17 @@ func (adapter *Adapter) ApproveRun(ctx context.Context, remoteID string, request
 	if request.Choice != agent.ApprovalOnce && request.Choice != agent.ApprovalSession && request.Choice != agent.ApprovalAlways && request.Choice != agent.ApprovalDeny {
 		return agent.ApprovalResult{}, agent.ErrInvalidArgument
 	}
+	approvalID := strings.TrimSpace(request.RemoteID)
+	if approvalID == "" || len(approvalID) > 500 || strings.ContainsAny(approvalID, "\r\n\x00") {
+		return agent.ApprovalResult{}, agent.ErrInvalidArgument
+	}
 	id, err := pathID(remoteID)
 	if err != nil {
 		return agent.ApprovalResult{}, err
 	}
+	// Hermes v2026.8.3 has no approval-ID request field. Core has already
+	// claimed the FIFO head represented by approvalID; resolve_all=false maps
+	// that stable mmdash ID to Hermes' verified oldest-pending operation.
 	body := map[string]any{"choice": request.Choice}
 	if request.ResolveAll {
 		body["resolve_all"] = true
@@ -387,7 +394,14 @@ func (adapter *Adapter) ApproveRun(ctx context.Context, remoteID string, request
 	if err := adapter.runtime.doJSON(ctx, "hermes.runs.approve", http.MethodPost, "/v1/runs/"+id+"/approval", nil, body, &response, http.StatusOK); err != nil {
 		return agent.ApprovalResult{}, err
 	}
-	return agent.ApprovalResult{RunRemoteID: response.RunID, Choice: response.Choice, Resolved: response.Resolved}, nil
+	if response.RunID != remoteID || response.Choice != request.Choice ||
+		response.Resolved < 1 || (!request.ResolveAll && response.Resolved != 1) {
+		return agent.ApprovalResult{}, unexpectedObject("hermes.runs.approve")
+	}
+	return agent.ApprovalResult{
+		RemoteID: approvalID, RunRemoteID: response.RunID,
+		Choice: response.Choice, Resolved: response.Resolved,
+	}, nil
 }
 
 func (adapter *Adapter) StopRun(ctx context.Context, remoteID string) (agent.Run, error) {

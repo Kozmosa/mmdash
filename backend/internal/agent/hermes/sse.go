@@ -281,6 +281,11 @@ func correlateApproval(event *agent.Event, active *[]string) {
 		if event.Approval.RemoteID == "" {
 			event.Approval.RemoteID = event.ID
 		}
+		for _, approvalID := range *active {
+			if approvalID == event.Approval.RemoteID {
+				return
+			}
+		}
 		*active = append(*active, event.Approval.RemoteID)
 	case agent.EventApprovalResponded:
 		if event.Approval.RemoteID == "" && len(*active) > 0 {
@@ -288,7 +293,13 @@ func correlateApproval(event *agent.Event, active *[]string) {
 			*active = (*active)[1:]
 		}
 		if event.Approval.RemoteID == "" {
-			event.Approval.RemoteID = event.ID
+			return
+		}
+		for index, approvalID := range *active {
+			if approvalID == event.Approval.RemoteID {
+				*active = append((*active)[:index], (*active)[index+1:]...)
+				break
+			}
 		}
 	}
 }

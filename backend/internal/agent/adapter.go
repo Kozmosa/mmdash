@@ -265,11 +265,17 @@ const (
 )
 
 type ApprovalRequest struct {
+	// RemoteID is the stable provider-neutral ID emitted to the browser. A
+	// Runtime without targetable approval IDs must map it through its verified
+	// ordering semantics rather than silently accepting an arbitrary ID.
+	RemoteID   string
 	Choice     ApprovalChoice
 	ResolveAll bool
 }
 
 type ApprovalResult struct {
+	// RemoteID confirms which normalized approval the Adapter mapped.
+	RemoteID    string
 	RunRemoteID string
 	Choice      ApprovalChoice
 	Resolved    int

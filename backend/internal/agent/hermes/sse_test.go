@@ -192,3 +192,42 @@ func TestApprovalResponseCorrelatesToGeneratedRequestID(t *testing.T) {
 		t.Fatalf("approval lifecycle was not correlated: %#v", events)
 	}
 }
+
+func TestApprovalResponseRemovesExplicitIDFromCorrelationQueue(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"event":"approval.request","approval_id":"approval-1","run_id":"run-1"}`,
+		"",
+		`data: {"event":"approval.request","approval_id":"approval-2","run_id":"run-1"}`,
+		"",
+		`data: {"event":"approval.responded","approval_id":"approval-2","run_id":"run-1","choice":"once","resolved":1}`,
+		"",
+		`data: {"event":"approval.responded","run_id":"run-1","choice":"deny","resolved":1}`,
+		"",
+	}, "\n")
+	var events []agent.Event
+	if err := consumeSSE(context.Background(), strings.NewReader(stream), "run-1", 4096, func(_ context.Context, event agent.Event) error {
+		events = append(events, event)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 4 || events[2].Approval == nil || events[3].Approval == nil ||
+		events[2].Approval.RemoteID != "approval-2" ||
+		events[3].Approval.RemoteID != "approval-1" {
+		t.Fatalf("explicit response left a stale correlation entry: %#v", events)
+	}
+}
+
+func TestUncorrelatedApprovalResponseKeepsRemoteIDEmpty(t *testing.T) {
+	stream := "data: {\"event\":\"approval.responded\",\"run_id\":\"run-1\",\"choice\":\"once\",\"resolved\":1}\n\n"
+	var actual agent.Event
+	if err := consumeSSE(context.Background(), strings.NewReader(stream), "run-1", 4096, func(_ context.Context, event agent.Event) error {
+		actual = event
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if actual.Approval == nil || actual.Approval.RemoteID != "" {
+		t.Fatalf("unidentified upstream response invented an approval ID: %#v", actual)
+	}
+}

@@ -249,6 +249,130 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 		t.Fatalf("activate an already active run: got %v", err)
 	}
 
+	approvalOne := "approval-1"
+	approvalTwo := "approval-2"
+	approvalAt := startedAt.Add(time.Second)
+	if _, err := store.RecordRunApproval(ctx, rollbackRunID, approvalOne, approvalAt); err != nil {
+		t.Fatalf("record first approval: %v", err)
+	}
+	if _, err := store.RecordRunApproval(ctx, rollbackRunID, approvalTwo, approvalAt.Add(time.Second)); err != nil {
+		t.Fatalf("record second approval: %v", err)
+	}
+	pending, err := store.GetRun(ctx, sessionID, rollbackRunID)
+	if err != nil || pending.Status != RunRecordWaitingForApproval ||
+		len(pending.PendingApprovalIDs) != 2 {
+		t.Fatalf("persist pending approvals: %#v %v", pending, err)
+	}
+	claimOne := generator.MustNew()
+	if _, err := store.ClaimRunApproval(
+		ctx, rollbackRunID, approvalTwo, generator.MustNew(), approvalAt.Add(2*time.Second),
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("non-head approval was claimable: %v", err)
+	}
+	if _, err := store.ClaimRunApproval(
+		ctx, rollbackRunID, approvalOne, claimOne, approvalAt.Add(2*time.Second),
+	); err != nil {
+		t.Fatalf("claim first approval: %v", err)
+	}
+	if _, err := store.ClaimRunApproval(
+		ctx, rollbackRunID, approvalOne, generator.MustNew(), approvalAt.Add(3*time.Second),
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("live approval claim was stolen: %v", err)
+	}
+
+	// A new Core process can reclaim a response abandoned by a crashed process
+	// after the bounded Hermes request lease, while the old claim can no longer
+	// release or complete it.
+	restartedStore := store
+	claimTwo := generator.MustNew()
+	reclaimedAt := approvalAt.Add(runApprovalClaimLease + 3*time.Second)
+	if _, err := restartedStore.ClaimRunApproval(
+		ctx, rollbackRunID, approvalOne, claimTwo, reclaimedAt,
+	); err != nil {
+		t.Fatalf("reclaim approval after restart: %v", err)
+	}
+	if _, err := store.ReleaseRunApprovalClaim(
+		ctx, rollbackRunID, approvalOne, claimOne, reclaimedAt.Add(time.Second),
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale claim released the replacement: %v", err)
+	}
+	resolved, err := restartedStore.CompleteRunApproval(
+		ctx, rollbackRunID, approvalOne, claimTwo, reclaimedAt.Add(2*time.Second),
+	)
+	if err != nil || resolved.Status != RunRecordWaitingForApproval ||
+		len(resolved.PendingApprovalIDs) != 1 ||
+		resolved.PendingApprovalIDs[0] != approvalTwo {
+		t.Fatalf("resolving one approval cleared another: %#v %v", resolved, err)
+	}
+	if _, err := restartedStore.ApplyRunApprovalResponse(
+		ctx, rollbackRunID, approvalOne, reclaimedAt.Add(3*time.Second),
+	); err != nil {
+		t.Fatalf("idempotent SSE response after Core completion: %v", err)
+	}
+	if _, err := restartedStore.ClaimRunApproval(
+		ctx, rollbackRunID, "forged-approval", generator.MustNew(), reclaimedAt.Add(4*time.Second),
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("forged approval was claimable: %v", err)
+	}
+
+	claimThree := generator.MustNew()
+	if _, err := restartedStore.ClaimRunApproval(
+		ctx, rollbackRunID, approvalTwo, claimThree, reclaimedAt.Add(5*time.Second),
+	); err != nil {
+		t.Fatalf("claim second approval: %v", err)
+	}
+	if _, err := restartedStore.ReleaseRunApprovalClaim(
+		ctx, rollbackRunID, approvalTwo, claimThree, reclaimedAt.Add(6*time.Second),
+	); err != nil {
+		t.Fatalf("release failed Hermes response: %v", err)
+	}
+	claimFour := generator.MustNew()
+	fullyResolved, err := restartedStore.ClaimRunApproval(
+		ctx, rollbackRunID, approvalTwo, claimFour, reclaimedAt.Add(7*time.Second),
+	)
+	if err != nil || fullyResolved.Status != RunRecordWaitingForApproval {
+		t.Fatalf("retry released approval: %#v %v", fullyResolved, err)
+	}
+	fullyResolved, err = restartedStore.CompleteRunApproval(
+		ctx, rollbackRunID, approvalTwo, claimFour, reclaimedAt.Add(8*time.Second),
+	)
+	if err != nil || fullyResolved.Status != RunRecordRunning ||
+		len(fullyResolved.PendingApprovalIDs) != 0 {
+		t.Fatalf("complete final approval: %#v %v", fullyResolved, err)
+	}
+
+	if _, err := restartedStore.RecordRunApproval(
+		ctx, rollbackRunID, "approval-terminal", reclaimedAt.Add(9*time.Second),
+	); err != nil {
+		t.Fatalf("record terminal approval fixture: %v", err)
+	}
+	if _, err := restartedStore.RecordRunApproval(
+		ctx, rollbackRunID, "approval-terminal-next", reclaimedAt.Add(10*time.Second),
+	); err != nil {
+		t.Fatalf("record unidentified response fixture: %v", err)
+	}
+	mapped, mappedID, err := restartedStore.ApplyNextRunApprovalResponse(
+		ctx, rollbackRunID, reclaimedAt.Add(11*time.Second),
+	)
+	if err != nil || mappedID != "approval-terminal" ||
+		len(mapped.PendingApprovalIDs) != 1 ||
+		mapped.PendingApprovalIDs[0] != "approval-terminal-next" {
+		t.Fatalf("map unidentified response FIFO: id=%q run=%#v err=%v", mappedID, mapped, err)
+	}
+	terminalAt := reclaimedAt.Add(12 * time.Second)
+	terminal, err := restartedStore.UpdateRun(
+		ctx, rollbackRunID, RunRecordCompleted, "", terminalAt,
+	)
+	if err != nil || terminal.Status != RunRecordCompleted ||
+		len(terminal.PendingApprovalIDs) != 0 {
+		t.Fatalf("terminal run did not expire approvals: %#v %v", terminal, err)
+	}
+	if _, err := restartedStore.ClaimRunApproval(
+		ctx, rollbackRunID, "approval-terminal-next", generator.MustNew(), terminalAt.Add(time.Second),
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expired approval was claimable: %v", err)
+	}
+
 	failedRunID := generator.MustNew()
 	failedReservation := RunRecord{
 		CreatedAt: now.Add(3 * time.Second), CreatedBy: userID, ID: failedRunID,

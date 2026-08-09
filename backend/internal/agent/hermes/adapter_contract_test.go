@@ -238,7 +238,8 @@ func TestRunAndJobMapping(t *testing.T) {
 			writeJSON(t, response, map[string]any{"object": "hermes.run", "run_id": "run-1", "session_id": "session-main", "status": "completed", "model": "hermes-4", "output": "answer", "usage": map[string]any{"input_tokens": 2, "output_tokens": 5, "total_tokens": 7}, "created_at": 1_754_000_000, "updated_at": 1_754_000_001})
 		case "POST /v1/runs/run-1/approval":
 			body := decodeRequestMap(t, request)
-			if body["choice"] != string(agent.ApprovalSession) || body["resolve_all"] != true {
+			if _, guessed := body["approval_id"]; guessed ||
+				body["choice"] != string(agent.ApprovalSession) || body["resolve_all"] != true {
 				t.Fatalf("approval: %#v", body)
 			}
 			writeJSON(t, response, map[string]any{"object": "hermes.run.approval_response", "run_id": "run-1", "choice": "session", "resolved": 2})
@@ -280,8 +281,8 @@ func TestRunAndJobMapping(t *testing.T) {
 	if err != nil || run.Status != agent.RunCompleted || run.Output != "answer" || run.Usage.TotalTokens != 7 {
 		t.Fatalf("get run: %#v %v", run, err)
 	}
-	approved, err := adapter.ApproveRun(ctx, "run-1", agent.ApprovalRequest{Choice: agent.ApprovalSession, ResolveAll: true})
-	if err != nil || approved.Resolved != 2 {
+	approved, err := adapter.ApproveRun(ctx, "run-1", agent.ApprovalRequest{RemoteID: "approval-1", Choice: agent.ApprovalSession, ResolveAll: true})
+	if err != nil || approved.RemoteID != "approval-1" || approved.Resolved != 2 {
 		t.Fatalf("approve: %#v %v", approved, err)
 	}
 	stopped, err := adapter.StopRun(ctx, "run-1")
@@ -471,5 +472,27 @@ func TestRequestTimeoutHonorsContext(t *testing.T) {
 	var adapterError *agent.AdapterError
 	if !errors.As(err, &adapterError) || adapterError.Code != agent.ErrorTimeout {
 		t.Fatalf("expected timeout, got %#v", err)
+	}
+}
+
+func TestApproveRunRejectsMultipleResolutionsWithoutResolveAll(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body := decodeRequestMap(t, request)
+		if _, guessed := body["approval_id"]; guessed || body["choice"] != "once" {
+			t.Fatalf("request diverged from pinned Hermes contract: %#v", body)
+		}
+		writeJSON(t, response, map[string]any{
+			"object": "hermes.run.approval_response", "run_id": "run-1",
+			"choice": "once", "resolved": 2,
+		})
+	}))
+	defer server.Close()
+	adapter := runtimeAdapterForServer(t, server.URL, "")
+	_, err := adapter.ApproveRun(context.Background(), "run-1", agent.ApprovalRequest{
+		RemoteID: "approval-1", Choice: agent.ApprovalOnce,
+	})
+	var adapterError *agent.AdapterError
+	if !errors.As(err, &adapterError) || adapterError.Code != agent.ErrorProtocol {
+		t.Fatalf("non-FIFO approval count was accepted: %#v", err)
 	}
 }
