@@ -10,10 +10,13 @@
 //
 // Env: CORE_URL (default http://localhost:18080), MCP_URL (default
 // http://localhost:19002), MMDASH_SMOKE_EMAIL/PASSWORD for the admin login,
-// MOCK_HERMES_RUNTIME_URL (default http://localhost:18642), and
-// MOCK_HERMES_RUNTIME_KEY (default hermes-runtime-key).
+// MOCK_HERMES_RUNTIME_URL / MOCK_HERMES_MANAGEMENT_URL (default to the
+// mock-hermes Compose service), MOCK_HERMES_RUNTIME_KEY (default
+// hermes-runtime-key), and MOCK_HERMES_DASHBOARD_TOKEN (default
+// hermes-dashboard-token).
 //
-// Covers: instance setup, runtime checks, manual verification evidence,
+// Covers: manual and automatic instance setup, runtime checks and management,
+// manual verification evidence,
 // exact Tool scope, sessions CRUD/fork/default, message Run lifecycle with
 // SSE stream and stop/regenerate/rerun, context.promote provenance, prompt
 // override and reset, two-phase rotation, abort, and revocation.
@@ -29,7 +32,12 @@ const hermesHealthUrl = trim(
 const hermesRuntimeUrl = trim(
   process.env.MOCK_HERMES_RUNTIME_URL ?? "http://mock-hermes:8642",
 );
+const hermesManagementUrl = trim(
+  process.env.MOCK_HERMES_MANAGEMENT_URL ?? hermesRuntimeUrl,
+);
 const hermesKey = process.env.MOCK_HERMES_RUNTIME_KEY ?? "hermes-runtime-key";
+const hermesDashboardToken =
+  process.env.MOCK_HERMES_DASHBOARD_TOKEN ?? "hermes-dashboard-token";
 const email = process.env.MMDASH_SMOKE_EMAIL ?? "admin@mmdash.local";
 const password = process.env.MMDASH_SMOKE_PASSWORD ?? "mmdash-local-admin";
 const runId = `${Date.now()}-${process.pid}`;
@@ -520,6 +528,64 @@ async function main() {
   assert(
     revokedList.status === 401 || revokedList.status === 403,
     "revoked Agent Token is rejected by Gateway",
+  );
+
+  // 15. Automatic management configures Hermes directly, verifies the
+  // product Token through the real Gateway, and never returns plaintext.
+  const autoProvisioned = await core(
+    `/projects/${projectId}/agent-instances`,
+    {
+      body: JSON.stringify({
+        adapter_type: "hermes",
+        allowed_tools: allowedTools,
+        dashboard_session_token: hermesDashboardToken,
+        display_name: "Auto Smoke Hermes",
+        hermes_api_key: hermesKey,
+        management_mode: "auto",
+        management_url: hermesManagementUrl,
+        profile: "research",
+        request_timeout_seconds: 10,
+        runtime_url: hermesRuntimeUrl,
+      }),
+      method: "POST",
+    },
+    token,
+  );
+  const autoInstance = autoProvisioned.instance;
+  const autoInstanceId = autoInstance.agent_instance_id;
+  assert(
+    autoProvisioned.one_time_credential === undefined,
+    "auto provisioning never returns the one-time Agent Token",
+  );
+  assert(
+    autoInstance.management_mode === "auto" && autoInstance.status === "active",
+    `auto-managed instance activates (${autoInstance.status})`,
+  );
+  assert(
+    autoInstance.management_path === "direct" &&
+      autoInstance.management_check?.status === "passed" &&
+      autoInstance.project_access_check?.status === "passed",
+    "auto management verifies the Dashboard and real Gateway tool access",
+  );
+
+  const autoVerified = await core(
+    `/projects/${projectId}/agent-instances/${autoInstanceId}/project-access/verify`,
+    { method: "POST" },
+    token,
+  );
+  assert(autoVerified.verified === true, "auto project access remains verified");
+
+  const autoRotated = await core(
+    `/projects/${projectId}/agent-instances/${autoInstanceId}/tokens/rotate`,
+    { body: JSON.stringify({ name: "auto-rotated" }), method: "POST" },
+    token,
+  );
+  assert(
+    autoRotated.rotation_status === "completed" &&
+      autoRotated.credential?.status === "active" &&
+      autoRotated.old_credential_remains_active === false &&
+      autoRotated.one_time_credential === undefined,
+    "auto rotation activates the replacement without returning plaintext",
   );
 
   console.log(

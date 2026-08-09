@@ -39,16 +39,16 @@ services:
       timeout: 3s
       retries: 20
     ports: !override
-      - "18642:8642"
+      - "127.0.0.1:18642:8642"
 
   postgres:
     ports: !override
-      - "15432:5432"
+      - "127.0.0.1:15432:5432"
 
   minio:
     ports: !override
-      - "19000:9000"
-      - "19001:9001"
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
 
   core:
     environment:
@@ -59,16 +59,21 @@ services:
       AGENT_MANAGEMENT_ALLOW_PRIVATE: "true"
       AGENT_MANAGEMENT_ALLOWED_PORTS: "80,443,9119,8642"
     ports: !override
-      - "18080:8080"
+      - "127.0.0.1:18080:8080"
 
   web-bff:
     ports: !override
-      - "13001:3001"
+      - "127.0.0.1:13001:3001"
 
   web:
     ports: !override
-      - "13000:3000"
+      - "127.0.0.1:13000:3000"
 
   mcp-gateway:
+    environment:
+      # The mock Hermes container exercises the same service-discovery URL
+      # that Core provisions for automatic management. Production must use
+      # its public Gateway hostname instead of this Compose-only alias.
+      MCP_ALLOWED_HOSTS: mmdash.moe,localhost,127.0.0.1,mcp-gateway
     ports: !override
-      - "19002:3002"
+      - "127.0.0.1:19002:3002"
