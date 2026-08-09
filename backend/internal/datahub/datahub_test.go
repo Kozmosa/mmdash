@@ -26,6 +26,36 @@ func TestProgressReferenceValidationSkipsEmptyInput(t *testing.T) {
 	}
 }
 
+func TestEvaluationFactsExcludeSelfGeneratedProgressHistoryAndTimestamps(t *testing.T) {
+	now := time.Date(2026, time.August, 10, 0, 0, 0, 0, time.UTC)
+	objects := stableEvaluationObjects([]Object{
+		{ID: "task-object", ObjectType: "task", SourceModule: "progress", SourceID: "task-1", Title: "Task", Summary: "progress.task.updated", Status: "done", Version: 2, Metadata: map[string]interface{}{"source": "agent"}, CreatedAt: now, OccurredAt: now, UpdatedAt: now},
+		{ID: "evaluation-object", ObjectType: "progress_evaluation", SourceModule: "progress", SourceID: "evaluation-1"},
+		{ID: "risk-object", ObjectType: "progress_risk", SourceModule: "progress", SourceID: "risk-1"},
+	})
+	if len(objects) != 1 || objects[0]["object_id"] != "task-object" {
+		t.Fatalf("unexpected stable evaluation objects: %#v", objects)
+	}
+	for _, volatile := range []string{"created_at", "occurred_at", "updated_at"} {
+		if _, exists := objects[0][volatile]; exists {
+			t.Fatalf("stable evaluation object retained %s: %#v", volatile, objects[0])
+		}
+	}
+	activity := stableEvaluationActivity([]Activity{
+		{ID: "task-activity", ActivityType: "progress.task.updated", ObjectID: "task-object", Title: "Task", Summary: "done", CreatedAt: now, OccurredAt: now},
+		{ID: "evaluation-activity", ActivityType: "progress.evaluation.completed"},
+		{ID: "risk-activity", ActivityType: "progress.risk.detected"},
+	})
+	if len(activity) != 1 || activity[0]["activity_id"] != "task-activity" {
+		t.Fatalf("unexpected stable evaluation activity: %#v", activity)
+	}
+	for _, volatile := range []string{"created_at", "occurred_at"} {
+		if _, exists := activity[0][volatile]; exists {
+			t.Fatalf("stable evaluation activity retained %s: %#v", volatile, activity[0])
+		}
+	}
+}
+
 type accessStub struct {
 	authorized []project.Permission
 	err        error
@@ -62,6 +92,7 @@ type problemProviderStub struct {
 
 type progressProviderStub struct {
 	milestones []interface{}
+	tracking   interface{}
 	todos      []interface{}
 }
 
@@ -91,6 +122,17 @@ func (stub progressProviderStub) ProgressHomeItems(
 	string,
 ) ([]interface{}, []interface{}, error) {
 	return stub.milestones, stub.todos, nil
+}
+
+func (stub progressProviderStub) ProgressHomeTracking(
+	context.Context,
+	auth.Identity,
+	string,
+) (interface{}, error) {
+	if stub.tracking == nil {
+		return map[string]interface{}{}, nil
+	}
+	return stub.tracking, nil
 }
 
 func (stub agentProviderStub) AgentHomeItems(
@@ -413,6 +455,9 @@ func TestHomeAggregateIsTypedEmptyShell(t *testing.T) {
 	if home.ProjectID != "project-1" || !home.GeneratedAt.Equal(now) {
 		t.Fatalf("unexpected home shell: %#v", home)
 	}
+	if home.ProgressTracking == nil {
+		t.Fatal("home Progress tracking shell must be non-nil")
+	}
 }
 
 func TestHomeAggregateIncludesValidatedProblemArtifacts(t *testing.T) {
@@ -445,6 +490,7 @@ func TestHomeAggregateIncludesProgressItemsAndKeepsFutureSectionsEmpty(t *testin
 		Access: &accessStub{}, Clock: clock.Fixed{Time: time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)},
 		Progress: progressProviderStub{
 			milestones: []interface{}{map[string]interface{}{"milestone_id": "milestone-1"}},
+			tracking:   map[string]interface{}{"effective_stage": "execution"},
 			todos:      []interface{}{map[string]interface{}{"task_id": "task-1"}},
 		},
 		Store: &storeStub{},
@@ -455,6 +501,9 @@ func TestHomeAggregateIncludesProgressItemsAndKeepsFutureSectionsEmpty(t *testin
 	}
 	if !home.Milestones.Available || home.Milestones.Total != 1 || !home.Todos.Available || home.Todos.Total != 1 {
 		t.Fatalf("progress was not aggregated into Home: %#v", home)
+	}
+	if home.ProgressTracking.(map[string]interface{})["effective_stage"] != "execution" {
+		t.Fatalf("Progress tracking was not aggregated into Home: %#v", home.ProgressTracking)
 	}
 	if home.Models.Available || home.Experiments.Available || home.Article.Available || home.Agent.Available {
 		t.Fatalf("future home sections must remain empty: %#v", home)

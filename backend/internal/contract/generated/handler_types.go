@@ -629,15 +629,17 @@ func (request UpdateMilestoneRequest) Validate() error {
 
 // CreateTaskRequest is generated from the Core request-body schema.
 type CreateTaskRequest struct {
-	MilestoneID      *string    `json:"milestone_id,omitempty"`
-	Title            string     `json:"title"`
-	Description      *string    `json:"description,omitempty"`
-	Status           *string    `json:"status,omitempty"`
-	AssigneeID       *string    `json:"assignee_id,omitempty"`
-	StartAt          *time.Time `json:"start_at,omitempty"`
-	DueAt            *time.Time `json:"due_at,omitempty"`
-	RelatedObjectIDs *[]string  `json:"related_object_ids,omitempty"`
-	SourceRunID      *string    `json:"source_run_id,omitempty"`
+	MilestoneID        *string    `json:"milestone_id,omitempty"`
+	Title              string     `json:"title"`
+	Description        *string    `json:"description,omitempty"`
+	Status             *string    `json:"status,omitempty"`
+	AssigneeID         *string    `json:"assignee_id,omitempty"`
+	StartAt            *time.Time `json:"start_at,omitempty"`
+	DueAt              *time.Time `json:"due_at,omitempty"`
+	RelatedObjectIDs   *[]string  `json:"related_object_ids,omitempty"`
+	SourceRunID        *string    `json:"source_run_id,omitempty"`
+	SourceEvaluationID *string    `json:"source_evaluation_id,omitempty"`
+	SourceKey          *string    `json:"source_key,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -664,6 +666,11 @@ func (request CreateTaskRequest) Validate() error {
 	if request.SourceRunID != nil {
 		if len(*request.SourceRunID) > 200 {
 			return fmt.Errorf("source_run_id is too long")
+		}
+	}
+	if request.SourceKey != nil {
+		if len(*request.SourceKey) > 200 {
+			return fmt.Errorf("source_key is too long")
 		}
 	}
 	return nil
@@ -824,13 +831,88 @@ func (request ReviewProgressProposalRequest) Validate() error {
 
 // UpdateProgressSettingsRequest is generated from the Core request-body schema.
 type UpdateProgressSettingsRequest struct {
-	AutoTaskChanges bool `json:"auto_task_changes"`
+	AutoTaskChanges      bool    `json:"auto_task_changes"`
+	AutoTrackingEnabled  bool    `json:"auto_tracking_enabled"`
+	EventTriggersEnabled bool    `json:"event_triggers_enabled"`
+	CronEnabled          bool    `json:"cron_enabled"`
+	CronSchedule         string  `json:"cron_schedule"`
+	DebounceSeconds      int64   `json:"debounce_seconds"`
+	MinIntervalSeconds   int64   `json:"min_interval_seconds"`
+	AgentInstanceID      *string `json:"agent_instance_id,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request UpdateProgressSettingsRequest) Validate() error {
+	if request.CronSchedule == "" {
+		return fmt.Errorf("cron_schedule is required")
+	}
+	if len(request.CronSchedule) < 1 {
+		return fmt.Errorf("cron_schedule is too short")
+	}
+	if len(request.CronSchedule) > 100 {
+		return fmt.Errorf("cron_schedule is too long")
+	}
+	if request.DebounceSeconds < 0 {
+		return fmt.Errorf("debounce_seconds is below its minimum")
+	}
+	if request.DebounceSeconds > 3600 {
+		return fmt.Errorf("debounce_seconds exceeds its maximum")
+	}
+	if request.MinIntervalSeconds < 0 {
+		return fmt.Errorf("min_interval_seconds is below its minimum")
+	}
+	if request.MinIntervalSeconds > 86400 {
+		return fmt.Errorf("min_interval_seconds exceeds its maximum")
+	}
 	return nil
+}
 
+// RecalculateProgressRequest is generated from the Core request-body schema.
+type RecalculateProgressRequest struct {
+	TriggerKind string `json:"trigger_kind"`
+	Force       bool   `json:"force"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RecalculateProgressRequest) Validate() error {
+	if request.TriggerKind == "" {
+		return fmt.Errorf("trigger_kind is required")
+	}
+	if request.TriggerKind != "manual" && request.TriggerKind != "cron" {
+		return fmt.Errorf("trigger_kind has an unsupported value")
+	}
+	return nil
+}
+
+// SetProgressStageOverrideRequest is generated from the Core request-body schema.
+type SetProgressStageOverrideRequest struct {
+	Stage   string  `json:"stage"`
+	Summary *string `json:"summary,omitempty"`
+	Note    *string `json:"note,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request SetProgressStageOverrideRequest) Validate() error {
+	if request.Stage == "" {
+		return fmt.Errorf("stage is required")
+	}
+	if len(request.Stage) < 1 {
+		return fmt.Errorf("stage is too short")
+	}
+	if len(request.Stage) > 100 {
+		return fmt.Errorf("stage is too long")
+	}
+	if request.Summary != nil {
+		if len(*request.Summary) > 2000 {
+			return fmt.Errorf("summary is too long")
+		}
+	}
+	if request.Note != nil {
+		if len(*request.Note) > 2000 {
+			return fmt.Errorf("note is too long")
+		}
+	}
+	return nil
 }
 
 // CreateAgentInstanceRequest is generated from the Core request-body schema.
@@ -934,7 +1016,7 @@ func (request CreateAgentInstanceRequest) Validate() error {
 	if request.AllowedTools == nil {
 		return fmt.Errorf("allowed_tools is required")
 	}
-	if len(request.AllowedTools) > 4 {
+	if len(request.AllowedTools) > 6 {
 		return fmt.Errorf("allowed_tools has too many items")
 	}
 	if len(request.AllowedTools) < 1 {
@@ -1035,7 +1117,7 @@ func (request UpdateAgentInstanceRequest) Validate() error {
 		}
 	}
 	if request.AllowedTools != nil {
-		if len(*request.AllowedTools) > 4 {
+		if len(*request.AllowedTools) > 6 {
 			return fmt.Errorf("allowed_tools has too many items")
 		}
 		if len(*request.AllowedTools) < 1 {

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/progress.get.json",
+  "title": "progress.get MCP tool",
+  "description": "Reads the authoritative project Progress aggregate and automatic tracking state.",
+  "x-operation-id": "progress.get",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id"],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": ["project_id", "milestones", "tasks", "proposals", "tracking", "settings"],
+      "properties": {
+        "project_id": { "type": "string" },
+        "milestones": { "type": "array" },
+        "tasks": { "type": "array" },
+        "proposals": { "type": "array" },
+        "tracking": { "type": "object" },
+        "settings": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

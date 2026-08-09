@@ -16,6 +16,8 @@
     "resource_id": { "type": "string", "format": "uuid" },
     "session_id": { "type": "string", "format": "uuid" },
     "status": { "const": "completed" },
-    "safe_error_code": { "const": "" }
+    "safe_error_code": { "const": "" },
+    "source": { "type": "string", "enum": ["message", "regenerate", "rerun", "progress_evaluation"] },
+    "source_run_id": { "type": "string", "format": "uuid" }
   }
 }

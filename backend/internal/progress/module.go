@@ -3,12 +3,15 @@ package progress
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
+	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
 	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
+	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
@@ -18,6 +21,7 @@ func (Module) Name() string { return "progress" }
 
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/progress/", module.handleStandalone)
+	mux.HandleFunc("/v1/internal/progress-evaluation-jobs/", module.handleWorkerEvaluation)
 }
 
 func (module Module) ProjectHandler() http.Handler { return http.HandlerFunc(module.handleProject) }
@@ -68,6 +72,12 @@ func (module Module) dispatch(response http.ResponseWriter, request *http.Reques
 		module.handleProposals(response, request, identity, projectID, segments[1:])
 	case "settings":
 		module.handleSettings(response, request, identity, projectID)
+	case "recalculate":
+		module.handleRecalculate(response, request, identity, projectID)
+	case "evaluations":
+		module.handleEvaluations(response, request, identity, projectID, segments[1:])
+	case "stage-override":
+		module.handleStageOverride(response, request, identity, projectID)
 	default:
 		writeError(response, request, ErrNotFound)
 	}
@@ -347,7 +357,12 @@ func (module Module) handleSettings(w http.ResponseWriter, r *http.Request, iden
 			writeError(w, r, ErrInvalid)
 			return
 		}
-		item, err := module.Service.UpdateSettings(r.Context(), identity, projectID, body.AutoTaskChanges)
+		item, err := module.Service.UpdateTrackingSettings(r.Context(), identity, projectID, UpdateTrackingSettingsInput{
+			AutoTaskChanges: body.AutoTaskChanges, AutoTrackingEnabled: body.AutoTrackingEnabled,
+			EventTriggersEnabled: body.EventTriggersEnabled, CronEnabled: body.CronEnabled,
+			CronSchedule: body.CronSchedule, DebounceSeconds: int(body.DebounceSeconds),
+			MinIntervalSeconds: int(body.MinIntervalSeconds), AgentInstanceID: stringValue(body.AgentInstanceID),
+		})
 		if err != nil {
 			writeError(w, r, err)
 			return
@@ -355,6 +370,133 @@ func (module Module) handleSettings(w http.ResponseWriter, r *http.Request, iden
 		httpx.WriteJSON(w, http.StatusOK, item)
 	default:
 		writeError(w, r, apperror.New(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed"))
+	}
+}
+
+func (module Module) handleRecalculate(w http.ResponseWriter, r *http.Request, identity auth.Identity, projectID string) {
+	if !httpx.RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var body contract.RecalculateProgressRequest
+	if !httpx.DecodeJSON(w, r, &body) {
+		return
+	}
+	if err := body.Validate(); err != nil {
+		writeError(w, r, ErrInvalid)
+		return
+	}
+	item, err := module.Service.Recalculate(r.Context(), identity, projectID, body.TriggerKind, body.Force)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, item)
+}
+
+func (module Module) handleEvaluations(w http.ResponseWriter, r *http.Request, identity auth.Identity, projectID string, rest []string) {
+	if len(rest) == 0 && r.Method == http.MethodGet {
+		limit := 0
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil {
+				writeError(w, r, ErrInvalid)
+				return
+			}
+			limit = parsed
+		}
+		page, err := module.Service.ListEvaluations(r.Context(), identity, projectID, pagination.Request{Cursor: r.URL.Query().Get("cursor"), Limit: limit})
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, page)
+		return
+	}
+	if len(rest) == 1 && r.Method == http.MethodGet {
+		item, err := module.Service.ReadEvaluation(r.Context(), identity, projectID, rest[0])
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, item)
+		return
+	}
+	if len(rest) == 2 && rest[1] == "retry" && r.Method == http.MethodPost {
+		item, err := module.Service.RetryEvaluation(r.Context(), identity, projectID, rest[0])
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusAccepted, item)
+		return
+	}
+	writeError(w, r, ErrNotFound)
+}
+
+func (module Module) handleStageOverride(w http.ResponseWriter, r *http.Request, identity auth.Identity, projectID string) {
+	switch r.Method {
+	case http.MethodPost:
+		var body contract.SetProgressStageOverrideRequest
+		if !httpx.DecodeJSON(w, r, &body) {
+			return
+		}
+		if err := body.Validate(); err != nil {
+			writeError(w, r, ErrInvalid)
+			return
+		}
+		item, err := module.Service.OverrideStage(r.Context(), identity, projectID, body.Stage, stringValue(body.Summary), stringValue(body.Note))
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, item)
+	case http.MethodDelete:
+		item, err := module.Service.ClearStageOverride(r.Context(), identity, projectID)
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, item)
+	default:
+		writeError(w, r, apperror.New(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed"))
+	}
+}
+
+func (module Module) handleWorkerEvaluation(w http.ResponseWriter, r *http.Request) {
+	identity, err := module.Service.Authenticate(r.Context(), r.Header.Get("Authorization"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/internal/progress-evaluation-jobs/"), "/")
+	segments := strings.Split(path, "/")
+	if len(segments) != 2 || segments[0] == "" {
+		writeError(w, r, ErrNotFound)
+		return
+	}
+	switch segments[1] {
+	case "input":
+		if !httpx.RequireMethod(w, r, http.MethodGet) {
+			return
+		}
+		item, err := module.Service.WorkerEvaluationInput(r.Context(), identity, segments[0])
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, item)
+	case "execute":
+		if !httpx.RequireMethod(w, r, http.MethodPost) {
+			return
+		}
+		item, err := module.Service.ExecuteWorkerEvaluation(r.Context(), identity, segments[0])
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, item)
+	default:
+		writeError(w, r, ErrNotFound)
 	}
 }
 
@@ -394,6 +536,10 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusConflict, "PROGRESS_CONFLICT", "The Progress record has changed or is already resolved"
 	case errors.Is(err, ErrNotFound):
 		status, code, message = http.StatusNotFound, "PROGRESS_NOT_FOUND", "Progress record not found"
+	case errors.Is(err, ErrEvaluationUnavailable):
+		status, code, message = http.StatusServiceUnavailable, "PROGRESS_EVALUATOR_UNAVAILABLE", "Progress evaluation is temporarily unavailable"
+	case errors.Is(err, jobs.ErrLeaseLost), errors.Is(err, jobs.ErrWorkerToken):
+		status, code, message = http.StatusConflict, "PROGRESS_EVALUATION_LEASE_LOST", "The Progress evaluation Job lease is not active"
 	case errors.Is(err, project.ErrForbidden):
 		status, code, message = http.StatusForbidden, "FORBIDDEN", "Project permission denied"
 	}

@@ -114,15 +114,16 @@ type HomeSection struct {
 
 // HomeAggregate is the stable, intentionally empty project-home DTO shell.
 type HomeAggregate struct {
-	Agent       HomeSection `json:"agent"`
-	Article     HomeSection `json:"article"`
-	Experiments HomeSection `json:"experiments"`
-	GeneratedAt time.Time   `json:"generated_at"`
-	Milestones  HomeSection `json:"milestones"`
-	Models      HomeSection `json:"models"`
-	Problem     HomeSection `json:"problem"`
-	ProjectID   string      `json:"project_id"`
-	Todos       HomeSection `json:"todos"`
+	Agent            HomeSection `json:"agent"`
+	Article          HomeSection `json:"article"`
+	Experiments      HomeSection `json:"experiments"`
+	GeneratedAt      time.Time   `json:"generated_at"`
+	Milestones       HomeSection `json:"milestones"`
+	Models           HomeSection `json:"models"`
+	Problem          HomeSection `json:"problem"`
+	ProgressTracking interface{} `json:"progress_tracking"`
+	ProjectID        string      `json:"project_id"`
+	Todos            HomeSection `json:"todos"`
 }
 
 type CreateProposalInput struct {
@@ -197,6 +198,7 @@ type ProblemProvider interface {
 
 type ProgressProvider interface {
 	ProgressHomeItems(context.Context, auth.Identity, string) ([]interface{}, []interface{}, error)
+	ProgressHomeTracking(context.Context, auth.Identity, string) (interface{}, error)
 }
 
 type ModelProvider interface {
@@ -474,6 +476,7 @@ func (service Service) Home(
 		}
 	}
 	milestones, todos := empty(), empty()
+	var progressTracking interface{} = map[string]interface{}{}
 	if service.Progress != nil {
 		milestoneItems, todoItems, err := service.Progress.ProgressHomeItems(ctx, identity, projectID)
 		if err != nil {
@@ -481,6 +484,10 @@ func (service Service) Home(
 		}
 		milestones = HomeSection{Available: true, Items: nonNilItems(milestoneItems), Total: len(milestoneItems)}
 		todos = HomeSection{Available: true, Items: nonNilItems(todoItems), Total: len(todoItems)}
+		progressTracking, err = service.Progress.ProgressHomeTracking(ctx, identity, projectID)
+		if err != nil {
+			return HomeAggregate{}, err
+		}
 	}
 	models := empty()
 	if service.Models != nil {
@@ -503,7 +510,8 @@ func (service Service) Home(
 	return HomeAggregate{
 		Agent: agentSection, Article: empty(), Experiments: empty(),
 		GeneratedAt: service.Clock.Now().UTC(), Milestones: milestones,
-		Models: models, Problem: problem, ProjectID: projectID, Todos: todos,
+		Models: models, Problem: problem, ProgressTracking: progressTracking,
+		ProjectID: projectID, Todos: todos,
 	}, nil
 }
 
