@@ -128,7 +128,17 @@ function ModelBlockView({ assetsByBlock, block, onArtifactOpen, projectId }: { a
   const asset = assetsByBlock.get(block.block_id);
   const artifactId = block.artifact_id ?? asset?.artifact_id;
   const artifactVersionId = block.artifact_version_id ?? asset?.artifact_version_id;
-  const documentTitle = block.caption || asset?.filename || (block.type === "pdf" ? "Notion PDF" : "Notion 文件");
+  const detail = useQuery({
+    enabled: Boolean(artifactId),
+    queryFn: () => artifactApi.get(projectId, artifactId!),
+    queryKey: ["artifact", projectId, artifactId, "active"],
+  });
+  // The Artifact 展示名称 is live metadata; once it differs from the imported
+  // Notion filename the document should display the user's rename instead of
+  // the immutable snapshot caption/filename.
+  const renamed = Boolean(detail.data?.artifact?.name && asset?.filename && detail.data.artifact.name !== asset.filename);
+  const displayName = renamed ? detail.data!.artifact.name : undefined;
+  const documentTitle = displayName ?? (block.caption || asset?.filename || (block.type === "pdf" ? "Notion PDF" : "Notion 文件"));
   let node;
   if (block.type.startsWith("heading_")) { const level = block.level ?? 1; const id = headingAnchor(block.block_id); node = level === 1 ? <h1 className="mb-2 mt-7 scroll-mt-6 text-3xl font-bold" id={id}>{content}</h1> : level === 2 ? <h2 className="mb-1 mt-6 scroll-mt-6 text-2xl font-semibold" id={id}>{content}</h2> : <h3 className="mb-1 mt-5 scroll-mt-6 text-xl font-semibold" id={id}>{content}</h3>; }
   else if (block.type === "bulleted_list_item") node = <div className="flex gap-3 py-1"><span>•</span><p>{content}</p></div>;
@@ -140,7 +150,7 @@ function ModelBlockView({ assetsByBlock, block, onArtifactOpen, projectId }: { a
   else if (block.type === "table") { const rows = block.children.map((child) => child.cells ?? (child.rows?.[0] ?? []).map((text) => [{ text }])); node = <div className="my-4 overflow-x-auto"><table className="w-full border-collapse text-sm"><tbody>{rows.map((row, rowIndex) => <tr key={`${block.block_id}-row-${rowIndex}`}>{row.map((cell, cellIndex) => <td className="border border-border px-3 py-2 align-top" key={`${block.block_id}-${rowIndex}-${cellIndex}`}>{cell.map((part, partIndex) => <RichTextView key={`${block.block_id}-${rowIndex}-${cellIndex}-${partIndex}`} part={part} />)}</td>)}</tr>)}</tbody></table></div>; }
   else if (["bookmark", "link_preview"].includes(block.type) && block.url) node = <a className="my-3 flex items-center justify-between gap-4 rounded-lg border border-border p-4 hover:bg-muted/50" href={block.url} rel="noreferrer" target="_blank"><span className="min-w-0"><span className="block truncate font-medium">{block.caption || bookmarkTitle(block.url)}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{block.url}</span></span><ExternalLink className="size-4 shrink-0 text-muted-foreground" /></a>;
   else if (block.type === "synced_block") node = block.children.length ? null : <p className="my-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">同步区块尚未读取到内容，请重新同步。</p>;
-  else if (block.type === "image") node = <ModelArtifactImage artifactId={artifactId} artifactVersionId={artifactVersionId} onOpen={onArtifactOpen} projectId={projectId} title={block.caption || asset?.filename || "Notion 模型图片"} />;
+  else if (block.type === "image") node = <ModelArtifactImage artifactId={artifactId} artifactVersionId={artifactVersionId} onOpen={onArtifactOpen} projectId={projectId} title={displayName ?? (block.caption || asset?.filename || "Notion 模型图片")} />;
   else if (["file", "pdf"].includes(block.type)) node = <button className="my-3 flex w-full items-center gap-3 rounded-lg border border-border p-4 text-left hover:bg-muted/50" disabled={!artifactId} onClick={() => artifactId && onArtifactOpen(artifactId)} type="button"><FileArchive className="size-5 shrink-0" /><span className="min-w-0"><span className="block truncate font-medium">{documentTitle}</span>{block.caption && asset?.filename && block.caption !== asset.filename ? <span className="block truncate text-xs text-muted-foreground">{asset.filename}</span> : null}</span></button>;
   else if (block.type === "divider") node = <hr className="my-5 border-border" />;
   else node = <p className="min-h-6 whitespace-pre-wrap py-1 leading-7">{content}</p>;

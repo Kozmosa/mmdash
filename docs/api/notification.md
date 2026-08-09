@@ -26,10 +26,13 @@ does not turn arbitrary event data into user-facing HTML or copy. The first
 version stores a plain-text `title` and `body` snapshot.
 
 Project channel routes are a safe composition over Settings. Secrets are
-encrypted at rest and returned only as redacted values. Delivery diagnostics
-contain status, retry counters, bounded error codes/messages, channel key, and
-Settings version; they never expose a URL query, secret, or complete provider
-response.
+encrypted at rest and returned only as redacted values. A channel that has no
+saved Settings row yet is not an error: it reads as `enabled: false` and
+`configured: false` with version `0`, so the Web can show "尚未配置凭据" instead
+of a read failure. An unknown channel type still returns `404`. Delivery
+diagnostics contain status, retry counters, bounded error codes/messages,
+channel key, and Settings version; they never expose a URL query, secret, or
+complete provider response.
 Rule reads/updates, Delivery diagnostics, and explicit retries require Project
 `settings.manage` (owner or maintainer). Retry requires a non-empty human
 reason and records Audit metadata.

@@ -124,6 +124,31 @@ describe("Model pages", () => {
     expect(screen.queryByText(/^\d+$/)).not.toBeInTheDocument();
   });
 
+  it("shows the Artifact display name instead of the snapshot filename after a rename", async () => {
+    apiRequest.mockImplementation(async (path: string) => {
+      if (path.endsWith("/artifacts/artifact-1/versions/version-1/download")) {
+        return { artifact_id: "artifact-1", version_id: "version-1", filename: "结果图.png", mime_type: "image/png", size_bytes: 1024, transfer: { method: "GET", url: "/api/artifact-transfers/token.signature", headers: {}, expires_at: "2026-08-09T00:10:00Z" } };
+      }
+      if (path.endsWith("/artifacts/artifact-1")) {
+        return { artifact: { artifact_id: "artifact-1", project_id: projectId, kind: "model_file", source: "model", source_object_id: questionId, tags: ["模型文件"], name: "重命名后的结果图", description: "Notion 模型图片", recommended_usage: [], current_version_id: "version-1", status: "available", created_by: "user", trashed_at: null, created_at: "2026-08-09T00:05:00Z", updated_at: "2026-08-09T00:05:00Z" }, current_version: null };
+      }
+      if (path.endsWith("/models/questions/" + questionId)) {
+        return {
+          question: { question_id: questionId, project_id: projectId, code: "Q1", title: "人口模型", notion_page_id: "page", notion_page_url: "https://www.notion.so/page", position: 0, latest_snapshot_id: secondSnapshot, snapshot_count: 1, sync_status: "succeeded", created_at: "2026-08-09T00:00:00Z", updated_at: "2026-08-09T00:00:00Z" },
+          latest_snapshot: { snapshot_id: secondSnapshot, question_id: questionId, previous_snapshot_id: null, title: "人口模型", content_hash: "a".repeat(64), summary: "", tags: [], captured_at: "2026-08-09T00:05:00Z", triggered_by: "user", created_at: "2026-08-09T00:05:00Z", metadata_updated_at: "2026-08-09T00:05:00Z", project_id: projectId, notion_page_id: "page", notion_page_url: "https://www.notion.so/page", outline: [], blocks: [{ block_id: "image-1", type: "image", text: "", rich_text: [], artifact_id: "artifact-1", artifact_version_id: "version-1", caption: "", children: [] }], content_markdown: "", content_text: "", assets: [{ source_block_id: "image-1", artifact_id: "artifact-1", artifact_version_id: "version-1", filename: "结果图.png", mime_type: "image/png" }] },
+          snapshots: [{ snapshot_id: secondSnapshot, question_id: questionId, title: "人口模型", content_hash: "a".repeat(64), summary: "", tags: [], captured_at: "2026-08-09T00:05:00Z", triggered_by: "user", created_at: "2026-08-09T00:05:00Z", metadata_updated_at: "2026-08-09T00:05:00Z" }],
+        };
+      }
+      throw new Error(`unexpected request ${path}`);
+    });
+
+    const { container } = render(<ModelQuestionPage questionId={questionId} />, { wrapper: Providers });
+
+    await waitFor(() => expect(container.querySelector('img[alt="重命名后的结果图"]')).toHaveAttribute("src", "/api/artifact-transfers/token.signature"));
+    expect(screen.getByText("重命名后的结果图").closest("figcaption")).toBeInTheDocument();
+    expect(screen.queryByText("结果图.png")).not.toBeInTheDocument();
+  });
+
   it("shows the authorized Notion workspace and saves only public synchronization settings", async () => {
     const settingPath = `/projects/${projectId}/settings/model.notion`;
     apiRequest.mockImplementation(async (path: string, options?: { body?: unknown; method?: string }) => {
