@@ -2613,6 +2613,25 @@ paths:
             schema:
               { type: string, enum: [active, resolved, revoked, expired] },
           }
+        - {
+            name: outcome_group,
+            in: query,
+            required: false,
+            description: Named UI grouping for terminal business outcomes.,
+            schema: { type: string, enum: [processed] },
+          }
+        - {
+            name: occurred_from,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: occurred_to,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
+          }
         - { name: cursor, in: query, required: false, schema: { type: string } }
         - {
             name: limit,
@@ -6671,7 +6690,6 @@ components:
         [
           project_id,
           type_key,
-          inbox_enabled,
           external_enabled,
           channel_keys,
           minimum_priority,
@@ -6680,7 +6698,6 @@ components:
       properties:
         project_id: { type: string, format: uuid }
         type_key: { type: string }
-        inbox_enabled: { type: boolean }
         external_enabled: { type: boolean }
         channel_keys:
           type: array
@@ -6694,9 +6711,8 @@ components:
     UpdateNotificationRuleRequest:
       type: object
       additionalProperties: false
-      required: [inbox_enabled, external_enabled, version]
+      required: [external_enabled, version]
       properties:
-        inbox_enabled: { type: boolean }
         external_enabled: { type: boolean }
         channel_keys:
           type: array

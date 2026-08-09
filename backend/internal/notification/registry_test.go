@@ -46,13 +46,16 @@ func TestRegistryRejectsUnsafeAndIncompleteDescriptors(t *testing.T) {
 }
 
 type notificationStoreStub struct {
-	created      []Notification
-	listInboxHit bool
-	upsertedRule Rule
+	created       []Notification
+	inboxFlags    []bool
+	listInboxHit  bool
+	markAllFilter Filter
+	upsertedRule  Rule
 }
 
-func (stub *notificationStoreStub) CreateEvent(_ context.Context, notification Notification, _ []RecipientInput, _ bool, _ []DeliveryIntent) error {
+func (stub *notificationStoreStub) CreateEvent(_ context.Context, notification Notification, _ []RecipientInput, inboxEnabled bool, _ []DeliveryIntent) error {
 	stub.created = append(stub.created, notification)
+	stub.inboxFlags = append(stub.inboxFlags, inboxEnabled)
 	return nil
 }
 func (*notificationStoreStub) ClaimEmailRecipients(context.Context, string, string) error { return nil }
@@ -69,12 +72,15 @@ func (*notificationStoreStub) GetInbox(context.Context, string, string) (InboxIt
 func (*notificationStoreStub) UpdateInbox(context.Context, string, string, *string, *bool) (InboxItem, error) {
 	return InboxItem{}, nil
 }
-func (*notificationStoreStub) MarkAllRead(context.Context, string, Filter) error { return nil }
+func (stub *notificationStoreStub) MarkAllRead(_ context.Context, _ string, filter Filter) error {
+	stub.markAllFilter = filter
+	return nil
+}
 func (*notificationStoreStub) UnreadCount(context.Context, string, string) (int64, error) {
 	return 0, nil
 }
 func (*notificationStoreStub) GetRule(context.Context, string, string) (Rule, error) {
-	return Rule{InboxEnabled: true, MinimumPriority: "normal"}, nil
+	return Rule{MinimumPriority: "normal"}, nil
 }
 func (stub *notificationStoreStub) UpsertRule(_ context.Context, rule Rule) (Rule, error) {
 	stub.upsertedRule = rule
@@ -114,6 +120,40 @@ func TestHandleEventCreatesEveryRegisteredTypeForOneEvent(t *testing.T) {
 	}
 	if len(store.created) != 2 {
 		t.Fatalf("expected two notifications, got %d", len(store.created))
+	}
+	if !store.inboxFlags[0] || !store.inboxFlags[1] {
+		t.Fatalf("default-on notification types must create Inbox items: %#v", store.inboxFlags)
+	}
+}
+
+func TestHandleEventUsesTypeOwnedInboxPolicyAndControlledSnapshot(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.Register(Descriptor{
+		TypeKey: "progress.reminder.optional", SchemaVersion: 1,
+		SourceEventTypes: []string{"progress.reminder.due"}, AcceptedEventSchemaVersions: []int64{1},
+		Scope: "project", InboxPolicy: "optional", Priority: "normal", TemplateKey: "optional", TemplateVersion: 1,
+		AllowedTemplateFields: []string{"title", "reminder_id"}, RecipientResolver: "test", Renderer: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	store := &notificationStoreStub{}
+	projectID := "00000000-0000-4000-8000-000000000001"
+	err := (Service{Registry: registry, Store: store, Generator: identity.Generator{}}).HandleEvent(context.Background(), contract.EventEnvelope{
+		EventID: "00000000-0000-4000-8000-000000000002", EventType: "progress.reminder.due",
+		OccurredAt: time.Now().UTC(), Payload: map[string]interface{}{"title": "Review the result", "reminder_id": "reminder-1", "secret": "must-not-render"},
+		ProjectID: &projectID, SchemaVersion: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.inboxFlags) != 1 || store.inboxFlags[0] {
+		t.Fatalf("optional Inbox policy must not be changed by a project rule: %#v", store.inboxFlags)
+	}
+	if got := store.created[0].RenderedSnapshot["title"]; got != "需要关注的通知" {
+		t.Fatalf("unexpected controlled snapshot title: %#v", got)
+	}
+	if _, leaked := store.created[0].RenderedSnapshot["secret"]; leaked {
+		t.Fatal("rendered Inbox snapshot leaked an unapproved source field")
 	}
 }
 

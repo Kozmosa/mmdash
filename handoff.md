@@ -4,7 +4,27 @@
 - Branch: `main`
 - Base: `origin/main@f10733e`
 - Integration-token baseline: `b7150e3 feat(model): implement stage 7 model workflow`
-- Delivery state: Stage 7 complete, including localhost Notion OAuth and Docker acceptance
+- Notification correction: `af5e596 fix(notification): correct inbox routing model`
+- Delivery state: Stage 7 complete and Notification routing correction merged
+
+## 2026-08-09 Notification routing correction
+
+Commit `af5e596` corrects the Stage 3.17/Stage 4 Notification
+implementation against the v0.1 baseline without changing the source module
+contract. The Type Registry now exclusively owns Inbox policy and Project
+Notification Rules exclusively own optional external delivery. The obsolete
+`inbox_enabled` API/database field is removed by migration
+`000024_notification_routing_model`; invitation remains required Inbox-only,
+while Progress reminders remain default-on in Inbox and optionally external.
+
+The Web now has one global Inbox icon/unread badge on `/projects` and project
+workspace chrome, a consistent global page shell, unread/all/processed and
+archive views, project/type/time filters, pagination, scoped batch read, safe
+rendered copy, and a detail route. Notification settings separate read-only
+Inbox policy from owner/maintainer-only channel/rule/Delivery management;
+explicit retry requires a reason. Focused Go, BFF, Web, contract, API, lint,
+test, and build checks passed on the source branch. The merge verification is
+recorded below together with Stage 7.
 
 ## Status
 
@@ -99,9 +119,9 @@ Passed on 2026-08-09:
   codes. The temporary Worker token was revoked and Compose was stopped with
   `down`, never `down -v`.
 
-An existing Notification Inbox unread-count SQL error was visible in shared
-logs during browser acceptance. Per user direction it is outside this Stage 7
-submission and was not modified here.
+The merged Notification correction also removes the ambiguous Inbox
+unread-count join that produced background HTTP 500 responses during the
+Stage 7 browser acceptance.
 
 ## Operational notes
 

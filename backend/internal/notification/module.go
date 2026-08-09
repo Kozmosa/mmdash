@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -47,18 +48,6 @@ func (module Module) handleInboxCollection(w http.ResponseWriter, r *http.Reques
 		module.handleInbox(w, r)
 		return
 	}
-	if r.Method == http.MethodPost {
-		if r.URL.Query().Get("action") != "mark-all-read" {
-			writeError(w, r, ErrInvalid)
-			return
-		}
-		if err := module.Service.MarkAllRead(r.Context(), identity, filterFromRequest(r)); err != nil {
-			writeError(w, r, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
 	if !httpx.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
@@ -66,7 +55,12 @@ func (module Module) handleInboxCollection(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	result, err := module.Service.ListInbox(r.Context(), identity, filterFromRequest(r), page)
+	filter, err := filterFromRequest(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	result, err := module.Service.ListInbox(r.Context(), identity, filter, page)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -84,7 +78,22 @@ func (module Module) handleInbox(w http.ResponseWriter, r *http.Request) {
 		if !httpx.RequireMethod(w, r, http.MethodPost) {
 			return
 		}
-		if err := module.Service.MarkAllRead(r.Context(), identity, filterFromRequest(r)); err != nil {
+		var body contract.MarkAllInboxReadRequest
+		if !httpx.DecodeJSON(w, r, &body) {
+			return
+		}
+		if err := body.Validate(); err != nil {
+			writeError(w, r, ErrInvalid)
+			return
+		}
+		filter := Filter{}
+		if body.ProjectID != nil {
+			filter.ProjectID = *body.ProjectID
+		}
+		if body.TypeKey != nil {
+			filter.TypeKey = *body.TypeKey
+		}
+		if err := module.Service.MarkAllRead(r.Context(), identity, filter); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -258,7 +267,7 @@ func (module Module) handleRule(w http.ResponseWriter, r *http.Request, identity
 		if body.MinimumPriority != nil {
 			minimumPriority = *body.MinimumPriority
 		}
-		rule, err := module.Service.UpsertRule(r.Context(), identity, Rule{ProjectID: projectID, TypeKey: typeKey, InboxEnabled: body.InboxEnabled, ExternalEnabled: body.ExternalEnabled, ChannelKeys: channelKeys, MinimumPriority: minimumPriority, Version: body.Version})
+		rule, err := module.Service.UpsertRule(r.Context(), identity, Rule{ProjectID: projectID, TypeKey: typeKey, ExternalEnabled: body.ExternalEnabled, ChannelKeys: channelKeys, MinimumPriority: minimumPriority, Version: body.Version})
 		if err != nil {
 			writeError(w, r, err)
 			return
@@ -340,8 +349,33 @@ func notificationPage(r *http.Request) (pagination.Request, bool) {
 	}
 	return pagination.Request{Cursor: r.URL.Query().Get("cursor"), Limit: limit}, true
 }
-func filterFromRequest(r *http.Request) Filter {
-	return Filter{ProjectID: r.URL.Query().Get("project_id"), TypeKey: r.URL.Query().Get("type_key"), ReadState: r.URL.Query().Get("read_state"), Archived: r.URL.Query().Get("archived"), Outcome: r.URL.Query().Get("outcome")}
+func filterFromRequest(r *http.Request) (Filter, error) {
+	filter := Filter{
+		ProjectID:    r.URL.Query().Get("project_id"),
+		TypeKey:      r.URL.Query().Get("type_key"),
+		ReadState:    r.URL.Query().Get("read_state"),
+		Archived:     r.URL.Query().Get("archived"),
+		Outcome:      r.URL.Query().Get("outcome"),
+		OutcomeGroup: r.URL.Query().Get("outcome_group"),
+	}
+	if value := r.URL.Query().Get("occurred_from"); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return Filter{}, ErrInvalid
+		}
+		filter.OccurredFrom = &parsed
+	}
+	if value := r.URL.Query().Get("occurred_to"); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return Filter{}, ErrInvalid
+		}
+		filter.OccurredTo = &parsed
+	}
+	if !validInboxFilter(filter) {
+		return Filter{}, ErrInvalid
+	}
+	return filter, nil
 }
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	if w == nil {

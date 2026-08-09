@@ -4218,7 +4218,6 @@ export interface components {
       /** Format: uuid */
       project_id: string;
       type_key: string;
-      inbox_enabled: boolean;
       external_enabled: boolean;
       channel_keys: (
         "notification.feishu_webhook" | "notification.generic_webhook"
@@ -4232,7 +4231,6 @@ export interface components {
       updated_at?: string;
     };
     UpdateNotificationRuleRequest: {
-      inbox_enabled: boolean;
       external_enabled: boolean;
       channel_keys?: (
         "notification.feishu_webhook" | "notification.generic_webhook"
@@ -7849,6 +7847,10 @@ export interface operations {
         read_state?: "read" | "unread";
         archived?: true | false;
         outcome?: "active" | "resolved" | "revoked" | "expired";
+        /** @description Named UI grouping for terminal business outcomes. */
+        outcome_group?: "processed";
+        occurred_from?: string;
+        occurred_to?: string;
         cursor?: string;
         limit?: number;
       };

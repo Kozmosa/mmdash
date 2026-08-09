@@ -817,7 +817,6 @@ func (request UpdateNotificationChannelRequest) Validate() error {
 
 // UpdateNotificationRuleRequest is generated from the Core request-body schema.
 type UpdateNotificationRuleRequest struct {
-	InboxEnabled    bool      `json:"inbox_enabled"`
 	ExternalEnabled bool      `json:"external_enabled"`
 	ChannelKeys     *[]string `json:"channel_keys,omitempty"`
 	MinimumPriority *string   `json:"minimum_priority,omitempty"`
