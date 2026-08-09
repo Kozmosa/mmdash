@@ -92,6 +92,16 @@ export function createDefaultPageRegistry(): PageAggregatorRegistry {
           userId: identity.userId,
         }),
     },
+    {
+      id: "project",
+      load: async ({ coreClient, identity, projectId, requestId }) =>
+        coreClient.getProject(projectId, {
+          accessToken: identity.accessToken,
+          projectId,
+          requestId,
+          userId: identity.userId,
+        }),
+    },
   ]);
   return registry;
 }

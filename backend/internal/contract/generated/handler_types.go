@@ -501,6 +501,361 @@ func (request ReviewContextProposalRequest) Validate() error {
 	return nil
 }
 
+// CreateMilestoneRequest is generated from the Core request-body schema.
+type CreateMilestoneRequest struct {
+	Title       string     `json:"title"`
+	Description *string    `json:"description,omitempty"`
+	Critical    *bool      `json:"critical,omitempty"`
+	StartAt     *time.Time `json:"start_at,omitempty"`
+	TargetAt    *time.Time `json:"target_at,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateMilestoneRequest) Validate() error {
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.Description != nil {
+		if len(*request.Description) > 10000 {
+			return fmt.Errorf("description is too long")
+		}
+	}
+	return nil
+}
+
+// UpdateMilestoneRequest is generated from the Core request-body schema.
+type UpdateMilestoneRequest struct {
+	Title       *string    `json:"title,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Status      *string    `json:"status,omitempty"`
+	Critical    *bool      `json:"critical,omitempty"`
+	StartAt     *time.Time `json:"start_at,omitempty"`
+	TargetAt    *time.Time `json:"target_at,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateMilestoneRequest) Validate() error {
+	if request.Title == nil && request.Description == nil && request.Status == nil && request.Critical == nil && request.StartAt == nil && request.TargetAt == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.Title != nil {
+		if len(*request.Title) < 1 {
+			return fmt.Errorf("title is too short")
+		}
+		if len(*request.Title) > 255 {
+			return fmt.Errorf("title is too long")
+		}
+	}
+	if request.Description != nil {
+		if len(*request.Description) > 10000 {
+			return fmt.Errorf("description is too long")
+		}
+	}
+	if request.Status != nil {
+		if *request.Status != "planned" && *request.Status != "in_progress" && *request.Status != "completed" && *request.Status != "cancelled" {
+			return fmt.Errorf("status has an unsupported value")
+		}
+	}
+	return nil
+}
+
+// CreateTaskRequest is generated from the Core request-body schema.
+type CreateTaskRequest struct {
+	MilestoneID      *string    `json:"milestone_id,omitempty"`
+	Title            string     `json:"title"`
+	Description      *string    `json:"description,omitempty"`
+	Status           *string    `json:"status,omitempty"`
+	AssigneeID       *string    `json:"assignee_id,omitempty"`
+	StartAt          *time.Time `json:"start_at,omitempty"`
+	DueAt            *time.Time `json:"due_at,omitempty"`
+	RelatedObjectIDs *[]string  `json:"related_object_ids,omitempty"`
+	SourceRunID      *string    `json:"source_run_id,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateTaskRequest) Validate() error {
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.Description != nil {
+		if len(*request.Description) > 10000 {
+			return fmt.Errorf("description is too long")
+		}
+	}
+	if request.Status != nil {
+		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" && *request.Status != "cancelled" {
+			return fmt.Errorf("status has an unsupported value")
+		}
+	}
+	if request.SourceRunID != nil {
+		if len(*request.SourceRunID) > 200 {
+			return fmt.Errorf("source_run_id is too long")
+		}
+	}
+	return nil
+}
+
+// UpdateTaskRequest is generated from the Core request-body schema.
+type UpdateTaskRequest struct {
+	MilestoneID      *string    `json:"milestone_id,omitempty"`
+	Title            *string    `json:"title,omitempty"`
+	Description      *string    `json:"description,omitempty"`
+	Status           *string    `json:"status,omitempty"`
+	AssigneeID       *string    `json:"assignee_id,omitempty"`
+	StartAt          *time.Time `json:"start_at,omitempty"`
+	DueAt            *time.Time `json:"due_at,omitempty"`
+	RelatedObjectIDs *[]string  `json:"related_object_ids,omitempty"`
+	SourceRunID      *string    `json:"source_run_id,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateTaskRequest) Validate() error {
+	if request.MilestoneID == nil && request.Title == nil && request.Description == nil && request.Status == nil && request.AssigneeID == nil && request.StartAt == nil && request.DueAt == nil && request.RelatedObjectIDs == nil && request.SourceRunID == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.Title != nil {
+		if len(*request.Title) < 1 {
+			return fmt.Errorf("title is too short")
+		}
+		if len(*request.Title) > 255 {
+			return fmt.Errorf("title is too long")
+		}
+	}
+	if request.Description != nil {
+		if len(*request.Description) > 10000 {
+			return fmt.Errorf("description is too long")
+		}
+	}
+	if request.Status != nil {
+		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" && *request.Status != "cancelled" {
+			return fmt.Errorf("status has an unsupported value")
+		}
+	}
+	if request.SourceRunID != nil {
+		if len(*request.SourceRunID) > 200 {
+			return fmt.Errorf("source_run_id is too long")
+		}
+	}
+	return nil
+}
+
+// CreateDependencyRequest is generated from the Core request-body schema.
+type CreateDependencyRequest struct {
+	TaskID          string  `json:"task_id"`
+	DependsOnTaskID string  `json:"depends_on_task_id"`
+	Kind            *string `json:"kind,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateDependencyRequest) Validate() error {
+	if request.TaskID == "" {
+		return fmt.Errorf("task_id is required")
+	}
+	if request.DependsOnTaskID == "" {
+		return fmt.Errorf("depends_on_task_id is required")
+	}
+	if request.Kind != nil {
+		if *request.Kind != "blocks" && *request.Kind != "relates_to" {
+			return fmt.Errorf("kind has an unsupported value")
+		}
+	}
+	return nil
+}
+
+// CreateReminderRequest is generated from the Core request-body schema.
+type CreateReminderRequest struct {
+	TaskID      *string   `json:"task_id,omitempty"`
+	MilestoneID *string   `json:"milestone_id,omitempty"`
+	RemindAt    time.Time `json:"remind_at"`
+	Note        *string   `json:"note,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateReminderRequest) Validate() error {
+	if request.RemindAt.IsZero() {
+		return fmt.Errorf("remind_at is required")
+	}
+	if request.Note != nil {
+		if len(*request.Note) > 2000 {
+			return fmt.Errorf("note is too long")
+		}
+	}
+	return nil
+}
+
+// CreateProgressProposalRequest is generated from the Core request-body schema.
+type CreateProgressProposalRequest struct {
+	ProposalType string                 `json:"proposal_type"`
+	TargetID     *string                `json:"target_id,omitempty"`
+	Title        string                 `json:"title"`
+	Rationale    *string                `json:"rationale,omitempty"`
+	Changes      map[string]interface{} `json:"changes"`
+	SourceRunID  *string                `json:"source_run_id,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateProgressProposalRequest) Validate() error {
+	if request.ProposalType == "" {
+		return fmt.Errorf("proposal_type is required")
+	}
+	if request.ProposalType != "milestone.create" && request.ProposalType != "milestone.update" && request.ProposalType != "task.create" && request.ProposalType != "task.update" {
+		return fmt.Errorf("proposal_type has an unsupported value")
+	}
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.Rationale != nil {
+		if len(*request.Rationale) > 10000 {
+			return fmt.Errorf("rationale is too long")
+		}
+	}
+	if request.Changes == nil {
+		return fmt.Errorf("changes is required")
+	}
+	if request.SourceRunID != nil {
+		if len(*request.SourceRunID) > 200 {
+			return fmt.Errorf("source_run_id is too long")
+		}
+	}
+	return nil
+}
+
+// ReviewProgressProposalRequest is generated from the Core request-body schema.
+type ReviewProgressProposalRequest struct {
+	Decision string  `json:"decision"`
+	Note     *string `json:"note,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ReviewProgressProposalRequest) Validate() error {
+	if request.Decision == "" {
+		return fmt.Errorf("decision is required")
+	}
+	if request.Decision != "accepted" && request.Decision != "rejected" {
+		return fmt.Errorf("decision has an unsupported value")
+	}
+	if request.Note != nil {
+		if len(*request.Note) > 4000 {
+			return fmt.Errorf("note is too long")
+		}
+	}
+	return nil
+}
+
+// UpdateProgressSettingsRequest is generated from the Core request-body schema.
+type UpdateProgressSettingsRequest struct {
+	AutoTaskChanges bool `json:"auto_task_changes"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateProgressSettingsRequest) Validate() error {
+	return nil
+
+}
+
+// UpdateInboxRequest is generated from the Core request-body schema.
+type UpdateInboxRequest struct {
+	ReadState *string `json:"read_state,omitempty"`
+	Archived  *bool   `json:"archived,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateInboxRequest) Validate() error {
+	if request.ReadState == nil && request.Archived == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.ReadState != nil {
+		if *request.ReadState != "read" && *request.ReadState != "unread" {
+			return fmt.Errorf("read_state has an unsupported value")
+		}
+	}
+	return nil
+}
+
+// MarkAllInboxReadRequest is generated from the Core request-body schema.
+type MarkAllInboxReadRequest struct {
+	ProjectID *string `json:"project_id,omitempty"`
+	TypeKey   *string `json:"type_key,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request MarkAllInboxReadRequest) Validate() error {
+	return nil
+
+}
+
+// UpdateNotificationChannelRequest is generated from the Core request-body schema.
+type UpdateNotificationChannelRequest struct {
+	Values map[string]interface{} `json:"values"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateNotificationChannelRequest) Validate() error {
+	if request.Values == nil {
+		return fmt.Errorf("values is required")
+	}
+	return nil
+}
+
+// UpdateNotificationRuleRequest is generated from the Core request-body schema.
+type UpdateNotificationRuleRequest struct {
+	InboxEnabled    bool      `json:"inbox_enabled"`
+	ExternalEnabled bool      `json:"external_enabled"`
+	ChannelKeys     *[]string `json:"channel_keys,omitempty"`
+	MinimumPriority *string   `json:"minimum_priority,omitempty"`
+	Version         int64     `json:"version"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateNotificationRuleRequest) Validate() error {
+	if request.MinimumPriority != nil {
+		if *request.MinimumPriority != "low" && *request.MinimumPriority != "normal" && *request.MinimumPriority != "high" && *request.MinimumPriority != "urgent" {
+			return fmt.Errorf("minimum_priority has an unsupported value")
+		}
+	}
+	if request.Version < 0 {
+		return fmt.Errorf("version is below its minimum")
+	}
+	return nil
+}
+
+// RetryNotificationDeliveryRequest is generated from the Core request-body schema.
+type RetryNotificationDeliveryRequest struct {
+	Reason string `json:"reason"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RetryNotificationDeliveryRequest) Validate() error {
+	if request.Reason == "" {
+		return fmt.Errorf("reason is required")
+	}
+	if len(request.Reason) < 1 {
+		return fmt.Errorf("reason is too short")
+	}
+	if len(request.Reason) > 1000 {
+		return fmt.Errorf("reason is too long")
+	}
+	return nil
+}
+
 // RecordAuditEventRequest is generated from the Core request-body schema.
 type RecordAuditEventRequest struct {
 	Category     string                  `json:"category"`

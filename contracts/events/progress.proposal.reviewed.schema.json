@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/progress.proposal.reviewed.schema.json",
+  "title": "progress.proposal.reviewed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resource_id", "resource_type", "title", "status", "proposal_type", "decision"],
+  "properties": {
+    "resource_id": { "type": "string", "format": "uuid" },
+    "resource_type": { "const": "progress_proposal" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "type": "string" },
+    "proposal_type": { "type": "string" },
+    "decision": { "type": "string", "enum": ["accepted", "rejected"] }
+  }
+}
