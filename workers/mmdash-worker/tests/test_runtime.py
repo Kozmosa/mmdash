@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from mmdash_worker.jobs.client import JobAPIError
 from mmdash_worker.jobs.handlers import (
     HandlerContext,
     HandlerError,
@@ -18,11 +19,13 @@ class FakeClient:
         *,
         renew_error: Exception | None = None,
         renew_result: dict[str, Any] | None = None,
+        complete_error: Exception | None = None,
     ) -> None:
         self.job = job
         self.calls: list[tuple[Any, ...]] = []
         self.renew_error = renew_error
         self.renew_result = renew_result
+        self.complete_error = complete_error
 
     def heartbeat_worker(
         self,
@@ -66,6 +69,8 @@ class FakeClient:
         result: Mapping[str, Any],
     ) -> dict[str, Any]:
         self.calls.append(("complete", job_id, worker_id, result))
+        if self.complete_error is not None:
+            raise self.complete_error
         return {"id": job_id, "status": "succeeded"}
 
     def fail(
@@ -144,6 +149,36 @@ def test_safe_handler_failure_is_submitted_with_retry_policy() -> None:
         "retry later",
         True,
         7,
+    )
+
+
+def test_core_completion_failure_preserves_safe_error_code() -> None:
+    client = FakeClient(
+        {"id": "job-media", "job_type": "system.test", "payload": {}},
+        complete_error=JobAPIError(
+            "MODEL_MEDIA_IMPORT_FAILED",
+            "Model media could not be transferred to Artifact",
+            502,
+        ),
+    )
+    runtime = WorkerRuntime(
+        client,
+        baseline_registry(),
+        worker_id="worker-1",
+        version="0.1.0",
+        lease_seconds=10,
+        poll_seconds=0,
+    )
+
+    assert asyncio.run(runtime.run_once()) is True
+    assert client.calls[-1] == (
+        "fail",
+        "job-media",
+        "worker-1",
+        "MODEL_MEDIA_IMPORT_FAILED",
+        "Model media could not be transferred to Artifact",
+        True,
+        0,
     )
 
 

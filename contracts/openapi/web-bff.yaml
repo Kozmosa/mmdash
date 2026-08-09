@@ -21,6 +21,7 @@ tags:
   - name: Pages
   - name: Data Hub
   - name: Progress
+  - name: Model
   - name: Agent
   - name: Notification
   - name: Streams
@@ -1382,6 +1383,234 @@ paths:
                     },
                 },
             }
+  /api/projects/{projectId}/models:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: Read the project Model overview
+      operationId: bff.model.get
+      responses:
+        "200":
+          description: Model source, discovered pages, questions, and synchronization state.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelOverview" }
+  /api/projects/{projectId}/models/source:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: Read the single project Model source
+      operationId: bff.model.source.get
+      responses:
+        "200":
+          description: Browser-safe Model source and countdown.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSource" }
+  /api/projects/{projectId}/models/source/sync:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Model]
+      summary: Manually synchronize the Model source and bound questions
+      description: Every human Project member may trigger fresh descendant discovery followed by all valid bound questions. The automatic countdown is reset even when an active discovery request is reused.
+      operationId: bff.model.source.sync
+      responses:
+        "202":
+          description: Model synchronization accepted.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSync" }
+  /api/projects/{projectId}/models/notion/oauth:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: Read browser-safe Notion OAuth status
+      operationId: bff.model.notion.oauth.get
+      responses:
+        "200":
+          description: Public integration availability and authorized workspace.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/NotionOAuthConnection" }
+  /api/projects/{projectId}/models/notion/oauth/authorizations:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Model]
+      summary: Start a Notion public integration authorization
+      operationId: bff.model.notion.oauth.start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/StartNotionOAuthRequest" }
+      responses:
+        "201":
+          description: Authorization URL for top-level browser navigation.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/NotionOAuthAuthorization" }
+  /api/projects/{projectId}/models/notion/oauth/connection:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    delete:
+      tags: [Model]
+      summary: Revoke and remove the Project Notion authorization
+      operationId: bff.model.notion.oauth.disconnect
+      responses:
+        "204": { description: Disconnected while retaining existing Model history. }
+  /api/integrations/notion/oauth/callback:
+    get:
+      tags: [Model]
+      summary: Complete Notion OAuth and redirect to the state-bound Project settings
+      operationId: bff.model.notion.oauth.callback
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string, minLength: 32, maxLength: 512 } }
+        - { name: code, in: query, schema: { type: string, minLength: 1, maxLength: 2048 } }
+        - { name: error, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        "302": { description: Relative redirect to Model settings with a non-secret completion status. }
+  /api/projects/{projectId}/models/questions:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Model]
+      summary: List Model questions
+      operationId: bff.model.questions.list
+      responses:
+        "200":
+          description: Ordered Model questions.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestionList" }
+    post:
+      tags: [Model]
+      summary: Create a Model question bound to a discovered child page
+      operationId: bff.model.questions.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/CreateModelQuestionRequest" }
+      responses:
+        "201":
+          description: Created Model question.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestion" }
+  /api/projects/{projectId}/models/questions/{questionId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+    get:
+      tags: [Model]
+      summary: Read one Model question and its current Snapshot
+      operationId: bff.model.questions.get
+      responses:
+        "200":
+          description: Model question detail.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestionDetail" }
+    patch:
+      tags: [Model]
+      summary: Update a Model question or its bound page
+      operationId: bff.model.questions.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/UpdateModelQuestionRequest" }
+      responses:
+        "200":
+          description: Updated Model question.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestion" }
+    delete:
+      tags: [Model]
+      summary: Remove a Model question
+      operationId: bff.model.questions.delete
+      responses:
+        "204": { description: Model question removed. }
+  /api/projects/{projectId}/models/questions/{questionId}/sync:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+    post:
+      tags: [Model]
+      summary: Manually synchronize one Model question
+      description: Every human Project member may trigger this operation. The automatic countdown is reset even when an active request for the question is reused.
+      operationId: bff.model.questions.sync
+      responses:
+        "202":
+          description: Question synchronization accepted and automatic countdown reset.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSync" }
+  /api/projects/{projectId}/models/questions/{questionId}/snapshots:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+    get:
+      tags: [Model]
+      summary: List immutable Snapshots for one Model question
+      operationId: bff.model.snapshots.list
+      responses:
+        "200":
+          description: Newest-first Snapshot timeline.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSnapshotList" }
+  /api/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+      - $ref: "./core.yaml#/components/parameters/ModelSnapshotId"
+    get:
+      tags: [Model]
+      summary: Read one fixed Model Snapshot
+      operationId: bff.model.snapshots.get
+      responses:
+        "200":
+          description: Immutable Model content and editable metadata.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSnapshot" }
+    patch:
+      tags: [Model]
+      summary: Update user-managed Snapshot tags and version note
+      operationId: bff.model.snapshots.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/UpdateModelSnapshotRequest" }
+      responses:
+        "200":
+          description: Updated Snapshot metadata.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelSnapshot" }
+  /api/projects/{projectId}/models/questions/{questionId}/diff:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/ModelQuestionId"
+      - name: from_snapshot_id
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: to_snapshot_id
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Model]
+      summary: Compare two Model Snapshots at character granularity
+      operationId: bff.model.snapshots.diff
+      responses:
+        "200":
+          description: Block-preserving diff with contiguous character runs.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ModelDiff" }
   /api/settings/types:
     get:
       tags: [Settings]
@@ -2375,6 +2604,24 @@ paths:
             schema:
               { type: string, enum: [active, resolved, revoked, expired] },
           }
+        - {
+            name: outcome_group,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [processed] },
+          }
+        - {
+            name: occurred_from,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: occurred_to,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
+          }
         - { name: cursor, in: query, required: false, schema: { type: string } }
         - {
             name: limit,
@@ -2640,13 +2887,32 @@ paths:
       operationId: bff.notification.deliveries.list
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: channel_key, in: query, required: false, schema: { type: string } }
+        - {
+            name: channel_key,
+            in: query,
+            required: false,
+            schema: { type: string },
+          }
         - { name: cursor, in: query, required: false, schema: { type: string } }
-        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - {
+            name: limit,
+            in: query,
+            required: false,
+            schema: { type: integer, minimum: 1, maximum: 200 },
+          }
       responses:
         "200":
           description: Delivery page.
-          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/NotificationDeliveryPage" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/NotificationDeliveryPage",
+                    },
+                },
+            }
   /api/projects/{projectId}/notification-deliveries/{deliveryId}/retry:
     post:
       tags: [Notification]
@@ -2657,11 +2923,29 @@ paths:
         - { $ref: "./core.yaml#/components/parameters/NotificationDeliveryId" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/RetryNotificationDeliveryRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "./core.yaml#/components/schemas/RetryNotificationDeliveryRequest",
+                  },
+              },
+          }
       responses:
         "200":
-          description: Idempotently created retry delivery.
-          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/NotificationDelivery" } } }
+          description: Retry delivery.
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/NotificationDelivery",
+                    },
+                },
+            }
         "404":
           $ref: "#/components/responses/Error"
         "409":

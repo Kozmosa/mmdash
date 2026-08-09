@@ -7,6 +7,7 @@ import {
   FileQuestion,
   Gauge,
   ListChecks,
+  Waypoints,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -52,6 +53,16 @@ type HomeSection = {
   available: boolean;
   items: unknown[];
   total: number;
+};
+
+type ModelHomeItem = {
+  question_id: string;
+  code: string;
+  title: string;
+  latest_snapshot_id?: string;
+  snapshot_count: number;
+  sync_status: string;
+  last_synced_at?: string;
 };
 
 export default function ProjectHomePage() {
@@ -187,8 +198,9 @@ export default function ProjectHomePage() {
         className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
       >
         <ProgressHomeCard aggregate={aggregate} projectId={project.id} />
-        <EmptyModule label="模型、实验与论文" />
+        <ModelHomeCard aggregate={aggregate} projectId={project.id} />
         <AgentHomeCard projectId={project.id} />
+        <EmptyModule label="实验与论文" />
       </section>
     </div>
   );
@@ -291,6 +303,53 @@ function ProgressHomeCard({
           href={`/projects/${encodeURIComponent(projectId)}/progress`}
         >
           打开 Progress <ArrowRight aria-hidden="true" className="size-3" />
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ModelHomeCard({
+  aggregate,
+  projectId,
+}: Readonly<{ aggregate?: HomeAggregate; projectId: string }>) {
+  const models = (aggregate?.models.items ?? []) as ModelHomeItem[];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Waypoints aria-hidden="true" className="size-4" />
+          模型版本
+          <Badge className="ml-auto">{aggregate?.models.total ?? 0}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {models.length === 0 ? (
+          <p className="text-muted-foreground">
+            尚未创建题号；绑定 Notion 来源后可为 Q1、Q2 选择子页面。
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {models.slice(0, 3).map((model) => (
+              <li className="flex items-center justify-between gap-3" key={model.question_id}>
+                <Link
+                  className="min-w-0 truncate font-medium hover:text-primary hover:underline"
+                  href={`/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(model.question_id)}`}
+                >
+                  {model.code} · {model.title}
+                </Link>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {model.snapshot_count} 个版本 · {model.sync_status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Link
+          className="inline-flex items-center gap-1 text-primary hover:underline"
+          href={`/projects/${encodeURIComponent(projectId)}/models`}
+        >
+          打开模型版本 <ArrowRight aria-hidden="true" className="size-3" />
         </Link>
       </CardContent>
     </Card>

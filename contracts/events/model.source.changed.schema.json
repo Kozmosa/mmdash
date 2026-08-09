@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.local/contracts/events/model.source.changed.schema.json",
+  "title": "model.source.changed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "notion_root_page_id", "action", "status"],
+  "properties": {
+    "source_id": { "type": "string", "format": "uuid" },
+    "notion_root_page_id": { "type": "string", "format": "uuid" },
+    "action": { "type": "string", "enum": ["configured", "updated", "disabled"] },
+    "status": { "type": "string", "enum": ["active", "hidden"] }
+  }
+}

@@ -91,11 +91,14 @@ type DeliveryPage struct {
 }
 
 type Filter struct {
-	ProjectID string
-	TypeKey   string
-	ReadState string
-	Archived  string
-	Outcome   string
+	ProjectID    string
+	TypeKey      string
+	ReadState    string
+	Archived     string
+	Outcome      string
+	OutcomeGroup string
+	OccurredFrom *time.Time
+	OccurredTo   *time.Time
 }
 
 type RecipientInput struct {
@@ -108,7 +111,6 @@ type RecipientInput struct {
 type Rule struct {
 	ProjectID       string    `json:"project_id"`
 	TypeKey         string    `json:"type_key"`
-	InboxEnabled    bool      `json:"inbox_enabled"`
 	ExternalEnabled bool      `json:"external_enabled"`
 	ChannelKeys     []string  `json:"channel_keys"`
 	MinimumPriority string    `json:"minimum_priority"`
@@ -243,7 +245,7 @@ type ProjectAccess interface {
 type Store interface {
 	CreateEvent(context.Context, Notification, []RecipientInput, bool, []DeliveryIntent) error
 	ClaimEmailRecipients(context.Context, string, string) error
-	ApplyInvitationOutcome(context.Context, InvitationOutcome) error
+	ApplyInvitationOutcome(context.Context, string, string) error
 	ListInbox(context.Context, string, Filter, pagination.Request) (Page, error)
 	GetInbox(context.Context, string, string) (InboxItem, error)
 	UpdateInbox(context.Context, string, string, *string, *bool) (InboxItem, error)
@@ -262,7 +264,7 @@ type SettingsResolver interface {
 type DeliveryStore interface {
 	EnqueueDelivery(context.Context, Notification, string, int64) (Delivery, error)
 	ClaimDelivery(context.Context, string, time.Duration) (*Delivery, Notification, error)
-	CompleteDelivery(context.Context, string, string, ProviderSendResult) error
+	CompleteDelivery(context.Context, string, string) error
 	FailDelivery(context.Context, string, string, string, int, string, bool, time.Duration) error
 	CancelDelivery(context.Context, string, string, string) error
 	CancelPending(context.Context, string, string) error
@@ -274,14 +276,6 @@ type DeliveryIntent struct {
 	TargetKey       string
 	RuleVersion     int64
 	SettingsVersion int64
-}
-
-type InvitationOutcome struct {
-	InvitationID  string
-	ProjectID     string
-	Outcome       string
-	SourceEventID string
-	OccurredAt    time.Time
 }
 
 func (service Service) HandleSettingsEvent(ctx context.Context, event contract.EventEnvelope) error {
@@ -338,16 +332,10 @@ func (service Service) HandleEvent(ctx context.Context, event contract.EventEnve
 			outcome = OutcomeExpired
 		}
 		invitationID := stringValue(event.Payload["invitation_id"])
-		if invitationID == "" || event.ProjectID == nil || event.EventID == "" || event.OccurredAt.IsZero() {
+		if invitationID == "" {
 			return ErrInvalid
 		}
-		if err := service.Store.ApplyInvitationOutcome(ctx, InvitationOutcome{
-			InvitationID:  invitationID,
-			ProjectID:     *event.ProjectID,
-			Outcome:       outcome,
-			SourceEventID: event.EventID,
-			OccurredAt:    event.OccurredAt,
-		}); err != nil {
+		if err := service.Store.ApplyInvitationOutcome(ctx, invitationID, outcome); err != nil {
 			return err
 		}
 		service.recordLifecycleAudit(ctx, event, "notification.invitation.outcome", invitationID, outcome)
@@ -423,11 +411,8 @@ func (service Service) handleRegisteredEvent(ctx context.Context, event contract
 	if err != nil {
 		return err
 	}
-	if descriptor.InboxPolicy == "required" {
-		rule.InboxEnabled = true
-	}
-	inboxEnabled := descriptor.InboxPolicy != "disabled" && rule.InboxEnabled
-	notification := Notification{ID: id, TypeKey: descriptor.TypeKey, TemplateVersion: descriptor.TemplateVersion, SourceEventID: event.EventID, ProjectID: projectID, ActorID: actorID, ResourceType: resourceType, ResourceID: resourceID, Priority: descriptor.Priority, Data: data, RenderedSnapshot: data, OccurredAt: event.OccurredAt, CreatedAt: event.OccurredAt}
+	inboxEnabled := descriptor.InboxPolicy == "required" || descriptor.InboxPolicy == "default_on"
+	notification := Notification{ID: id, TypeKey: descriptor.TypeKey, TemplateVersion: descriptor.TemplateVersion, SourceEventID: event.EventID, ProjectID: projectID, ActorID: actorID, ResourceType: resourceType, ResourceID: resourceID, Priority: descriptor.Priority, Data: data, RenderedSnapshot: renderInboxSnapshot(descriptor.TypeKey, data), OccurredAt: event.OccurredAt, CreatedAt: event.OccurredAt}
 	if descriptor.TypeKey == TypeInvitationReceived {
 		if invitationID := stringValue(data["invitation_id"]); invitationID != "" {
 			notification.Action = &Action{
@@ -512,12 +497,59 @@ func priorityAtLeast(priority, minimum string) bool {
 	return rank[priority] >= rank[minimum]
 }
 
+func renderInboxSnapshot(typeKey string, data map[string]interface{}) map[string]interface{} {
+	switch typeKey {
+	case TypeInvitationReceived:
+		projectName := stringValue(data["project_name"])
+		role := stringValue(data["role"])
+		title := "项目邀请"
+		if projectName != "" {
+			title = "加入“" + projectName + "”的邀请"
+		}
+		body := "你收到了一条项目邀请。"
+		if role != "" {
+			body = "你被邀请以 " + role + " 身份加入项目。"
+		}
+		return map[string]interface{}{"title": title, "body": body}
+	case TypeReminderDue:
+		title := stringValue(data["title"])
+		if title == "" {
+			title = "Progress 提醒到期"
+		}
+		return map[string]interface{}{"title": title, "body": "项目中有一项需要你关注的 Progress 提醒。"}
+	default:
+		return map[string]interface{}{"title": "需要关注的通知", "body": "项目中有一项需要你处理的消息。"}
+	}
+}
+
+func validInboxFilter(filter Filter) bool {
+	if filter.ReadState != "" && filter.ReadState != "read" && filter.ReadState != "unread" {
+		return false
+	}
+	if filter.Archived != "" && filter.Archived != "true" && filter.Archived != "false" {
+		return false
+	}
+	if filter.Outcome != "" && filter.Outcome != OutcomeActive && filter.Outcome != OutcomeResolved && filter.Outcome != OutcomeRevoked && filter.Outcome != OutcomeExpired {
+		return false
+	}
+	if filter.OutcomeGroup != "" && filter.OutcomeGroup != "processed" {
+		return false
+	}
+	if filter.Outcome != "" && filter.OutcomeGroup != "" {
+		return false
+	}
+	return filter.OccurredFrom == nil || filter.OccurredTo == nil || !filter.OccurredFrom.After(*filter.OccurredTo)
+}
+
 func (service Service) ListInbox(ctx context.Context, identity auth.Identity, filter Filter, page pagination.Request) (Page, error) {
 	if err := humanInboxCaller(identity); err != nil {
 		return Page{}, err
 	}
 	page, err := page.Normalize()
 	if err != nil {
+		return Page{}, ErrInvalid
+	}
+	if !validInboxFilter(filter) {
 		return Page{}, ErrInvalid
 	}
 	return service.Store.ListInbox(ctx, identity.User.ID, filter, page)
@@ -540,6 +572,9 @@ func (service Service) UpdateInbox(ctx context.Context, identity auth.Identity, 
 func (service Service) MarkAllRead(ctx context.Context, identity auth.Identity, filter Filter) error {
 	if err := humanInboxCaller(identity); err != nil {
 		return err
+	}
+	if !validInboxFilter(filter) {
+		return ErrInvalid
 	}
 	return service.Store.MarkAllRead(ctx, identity.User.ID, filter)
 }
@@ -578,9 +613,6 @@ func (service Service) UpsertRule(ctx context.Context, identity auth.Identity, r
 	if !ok {
 		return Rule{}, ErrNotFound
 	}
-	if descriptor.InboxPolicy == "required" {
-		rule.InboxEnabled = true
-	}
 	if !descriptor.ExternalAllowed {
 		rule.ExternalEnabled = false
 		rule.ChannelKeys = nil
@@ -611,7 +643,7 @@ func (service Service) UpsertRule(ctx context.Context, identity auth.Identity, r
 	rule.UpdatedAt = service.now()
 	result, err := service.Store.UpsertRule(ctx, rule)
 	if err == nil && service.Audit != nil {
-		_ = service.Audit.Record(ctx, audit.Event{Action: "notification.rule.updated", ActorID: identity.User.ID, ActorKind: identity.Kind, Category: "notification", Metadata: map[string]interface{}{"type_key": rule.TypeKey, "external_enabled": rule.ExternalEnabled, "inbox_enabled": rule.InboxEnabled}, OccurredAt: service.now(), Outcome: "success", ProjectID: rule.ProjectID, ResourceID: rule.TypeKey, ResourceType: "notification-rule", Source: "notification", RecordedAt: service.now()})
+		_ = service.Audit.Record(ctx, audit.Event{Action: "notification.rule.updated", ActorID: identity.User.ID, ActorKind: identity.Kind, Category: "notification", Metadata: map[string]interface{}{"type_key": rule.TypeKey, "external_enabled": rule.ExternalEnabled}, OccurredAt: service.now(), Outcome: "success", ProjectID: rule.ProjectID, ResourceID: rule.TypeKey, ResourceType: "notification-rule", Source: "notification", RecordedAt: service.now()})
 	}
 	return result, err
 }
@@ -714,11 +746,10 @@ func containsVersion(values []int64, wanted int64) bool {
 }
 
 var (
-	ErrInvalid               = errors.New("invalid notification request")
-	ErrNotFound              = errors.New("notification not found")
-	ErrNotReady              = errors.New("notification service is not ready")
-	ErrConflict              = errors.New("notification rule version conflict")
-	ErrDeliveryRetryConflict = errors.New("notification delivery cannot be manually retried")
+	ErrInvalid  = errors.New("invalid notification request")
+	ErrNotFound = errors.New("notification not found")
+	ErrNotReady = errors.New("notification service is not ready")
+	ErrConflict = errors.New("notification rule version conflict")
 )
 
 // Adapter is retained as the small Progress seam for compatibility with the
@@ -731,11 +762,7 @@ type ProviderAdapter interface {
 	ValidateConfig(map[string]interface{}) error
 	Test(context.Context, map[string]interface{}) error
 	Render(context.Context, Notification, int) (RenderedMessage, error)
-	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) (ProviderSendResult, error)
-}
-type ProviderSendResult struct {
-	ProviderMessageID string
-	ResponseSummary   string
+	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) error
 }
 type RenderedMessage struct {
 	Body        []byte
@@ -762,7 +789,7 @@ func (adapter PersistenceAdapter) Accept(ctx context.Context, intent Intent) err
 	}
 	if intent.Notification.ID == "" {
 		data := map[string]interface{}{"reminder_id": intent.ReminderID}
-		intent.Notification = Notification{ID: intent.ID, TypeKey: TypeReminderDue, TemplateVersion: 1, SourceEventID: intent.SourceEventID, ProjectID: intent.ProjectID, ResourceType: "reminder", ResourceID: intent.ReminderID, Priority: "normal", Data: data, RenderedSnapshot: data, OccurredAt: intent.CreatedAt, CreatedAt: intent.CreatedAt}
+		intent.Notification = Notification{ID: intent.ID, TypeKey: TypeReminderDue, TemplateVersion: 1, SourceEventID: intent.SourceEventID, ProjectID: intent.ProjectID, ResourceType: "reminder", ResourceID: intent.ReminderID, Priority: "normal", Data: data, RenderedSnapshot: renderInboxSnapshot(TypeReminderDue, data), OccurredAt: intent.CreatedAt, CreatedAt: intent.CreatedAt}
 	}
 	return adapter.Store.CreateEvent(ctx, intent.Notification, intent.Recipients, true, nil)
 }
@@ -817,10 +844,6 @@ func (store PostgresStore) createEventTx(ctx context.Context, tx transaction.Tx,
 		actionResourceID = notification.Action.ResourceID
 		actionRoute = notification.Action.Route
 	}
-	invitationOutcome, err := store.invitationOutcomeForCreateTx(ctx, tx, notification, data, now)
-	if err != nil {
-		return err
-	}
 	if err := tx.QueryRowContext(ctx, `INSERT INTO notification_notifications(notification_id,type_key,template_version,source_event_id,project_id,actor_id,resource_type,resource_id,priority,data,rendered_snapshot,action_type,action_resource_id,action_route,occurred_at,created_at) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,'')::uuid,$7,$8,$9,$10,$11,NULLIF($12,''),NULLIF($13,''),NULLIF($14,''),$15,$16) ON CONFLICT(source_event_id,type_key) DO UPDATE SET action_type=COALESCE(notification_notifications.action_type,EXCLUDED.action_type),action_resource_id=COALESCE(notification_notifications.action_resource_id,EXCLUDED.action_resource_id),action_route=COALESCE(notification_notifications.action_route,EXCLUDED.action_route) RETURNING notification_id`, notification.ID, notification.TypeKey, notification.TemplateVersion, notification.SourceEventID, notification.ProjectID, notification.ActorID, notification.ResourceType, notification.ResourceID, notification.Priority, dataJSON, snapshotJSON, actionType, actionResourceID, actionRoute, notification.OccurredAt, now).Scan(&notification.ID); err != nil {
 		return err
 	}
@@ -852,7 +875,7 @@ func (store PostgresStore) createEventTx(ctx context.Context, tx transaction.Tx,
 			if err != nil {
 				return err
 			}
-			if _, err = tx.ExecContext(ctx, `INSERT INTO notification_inbox_items(inbox_item_id,notification_id,recipient_id,outcome,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$5) ON CONFLICT(recipient_id) DO NOTHING`, inboxID, notification.ID, recipientID, invitationOutcome, now); err != nil {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO notification_inbox_items(inbox_item_id,notification_id,recipient_id,created_at,updated_at) VALUES($1,$2,$3,$4,$4) ON CONFLICT(recipient_id) DO NOTHING`, inboxID, notification.ID, recipientID, now); err != nil {
 				return err
 			}
 		}
@@ -869,43 +892,11 @@ func (store PostgresStore) createEventTx(ctx context.Context, tx transaction.Tx,
 		if targetKey == "" {
 			targetKey = "project-channel:" + delivery.ChannelKey
 		}
-		deliveryStatus, lastErrorCode, lastErrorMessage := "pending", "", ""
-		if invitationOutcome == OutcomeRevoked || invitationOutcome == OutcomeExpired {
-			deliveryStatus = "cancelled"
-			lastErrorCode = "notification_outcome"
-			lastErrorMessage = "Invitation is no longer active"
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,last_error_code,last_error_message,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,'live',$9,5,$10,$11,$12,$10,$10) ON CONFLICT(notification_id,channel_key,target_key,delivery_key) DO NOTHING`, deliveryID, notification.ID, delivery.RecipientID, notification.ProjectID, delivery.ChannelKey, targetKey, delivery.RuleVersion, delivery.SettingsVersion, deliveryStatus, now, lastErrorCode, lastErrorMessage); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,'live','pending',5,$9,$9,$9) ON CONFLICT(notification_id,channel_key,target_key,delivery_key) DO NOTHING`, deliveryID, notification.ID, delivery.RecipientID, notification.ProjectID, delivery.ChannelKey, targetKey, delivery.RuleVersion, delivery.SettingsVersion, now); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (store PostgresStore) invitationOutcomeForCreateTx(ctx context.Context, tx transaction.Tx, notification Notification, data map[string]interface{}, now time.Time) (string, error) {
-	if notification.TypeKey != TypeInvitationReceived {
-		return OutcomeActive, nil
-	}
-	invitationID := stringValue(data["invitation_id"])
-	if invitationID == "" || notification.ProjectID == "" || notification.SourceEventID == "" || notification.OccurredAt.IsZero() {
-		return "", ErrInvalid
-	}
-	// Outcome consumers upsert the same invitation_id. PostgreSQL's unique-key
-	// lock makes creation wait for an in-flight terminal outcome (and vice
-	// versa), so the Inbox row is never created from a stale transaction view.
-	var outcome string
-	err := tx.QueryRowContext(ctx, `
-		INSERT INTO notification_invitation_outcomes(
-			invitation_id,project_id,outcome,source_event_id,occurred_at,created_at,updated_at
-		) VALUES($1,$2,'active',$3,$4,$5,$5)
-		ON CONFLICT(invitation_id) DO UPDATE SET invitation_id=EXCLUDED.invitation_id
-		WHERE notification_invitation_outcomes.project_id=EXCLUDED.project_id
-		RETURNING outcome
-	`, invitationID, notification.ProjectID, notification.SourceEventID, notification.OccurredAt, now).Scan(&outcome)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrInvalid
-	}
-	return outcome, err
 }
 func (store PostgresStore) now() time.Time {
 	if store.Clock == nil {

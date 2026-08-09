@@ -107,6 +107,11 @@ function renderGoHandlerTypes(document) {
     "ArtifactUpdateRequest",
     "ArtifactRestoreVersionRequest",
     "ArtifactPreviewJobTransferRequest",
+    "CreateModelQuestionRequest",
+    "UpdateModelQuestionRequest",
+    "UpdateModelSnapshotRequest",
+    "StartNotionOAuthRequest",
+    "CompleteNotionOAuthRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {

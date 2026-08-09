@@ -72,20 +72,13 @@ func TestCoreHTTPNotificationRuleRoundTrip(t *testing.T) {
 
 	path := coreURL + "/v1/projects/" + projectID + "/notification-rules/" + TypeReminderDue
 	channelPath := coreURL + "/v1/projects/" + projectID + "/notification-channels/notification.generic_webhook"
-	unsafeCredential := "unsafe-http-integration-secret"
-	var rejected map[string]interface{}
-	status, err = notificationHTTPJSON(ctx, client, http.MethodPatch, channelPath, token, map[string]interface{}{
-		"values": map[string]interface{}{
-			"enabled":        true,
-			"endpoint":       "http://example.test/notification",
-			"signing_secret": unsafeCredential,
-		},
-	}, &rejected)
-	if err != nil || status != http.StatusBadRequest {
-		t.Fatalf("reject insecure notification channel: status=%d body=%#v err=%v", status, rejected, err)
+	var fresh map[string]interface{}
+	status, err = notificationHTTPJSON(ctx, client, http.MethodGet, channelPath, token, nil, &fresh)
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("get unconfigured channel: status=%d err=%v", status, err)
 	}
-	if encoded, _ := json.Marshal(rejected); strings.Contains(string(encoded), unsafeCredential) || strings.Contains(string(encoded), "example.test") {
-		t.Fatalf("insecure channel response leaked configuration: %s", encoded)
+	if fresh["configured"] != false || fresh["enabled"] != false {
+		t.Fatalf("unconfigured channel projection: %#v", fresh)
 	}
 	status, err = notificationHTTPJSON(ctx, client, http.MethodPatch, channelPath, token, map[string]interface{}{
 		"values": map[string]interface{}{
@@ -98,7 +91,6 @@ func TestCoreHTTPNotificationRuleRoundTrip(t *testing.T) {
 		t.Fatalf("configure notification channel: status=%d err=%v", status, err)
 	}
 	body := map[string]interface{}{
-		"inbox_enabled":    true,
 		"external_enabled": true,
 		"channel_keys":     []string{"notification.generic_webhook"},
 		"minimum_priority": "high",

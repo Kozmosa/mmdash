@@ -21,6 +21,7 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { registerPageRoutes } from "./routes/pages.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerProgressRoutes } from "./routes/progress.js";
+import { registerModelRoutes } from "./routes/models.js";
 import { registerRepoRoutes } from "./routes/repo.js";
 import { registerRepoWebhookRoutes } from "./routes/repo-webhook.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
@@ -83,6 +84,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerContextProposalRoutes(app, coreClient);
   registerProjectRoutes(app, coreClient);
   registerProgressRoutes(app, coreClient);
+  registerModelRoutes(app, coreClient);
   registerRepoRoutes(app, coreClient);
   registerRepoWebhookRoutes(app, coreClient);
   registerSettingsRoutes(app, coreClient);

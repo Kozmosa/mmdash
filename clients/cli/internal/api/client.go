@@ -72,6 +72,52 @@ type ProjectList struct {
 	Items []Project `json:"items"`
 }
 
+type ModelQuestion struct {
+	ID               string     `json:"question_id"`
+	ProjectID        string     `json:"project_id"`
+	Code             string     `json:"code"`
+	Title            string     `json:"title"`
+	NotionPageID     string     `json:"notion_page_id"`
+	NotionPageURL    string     `json:"notion_page_url"`
+	LatestSnapshotID string     `json:"latest_snapshot_id,omitempty"`
+	SnapshotCount    int        `json:"snapshot_count"`
+	SyncStatus       string     `json:"sync_status"`
+	LastSyncedAt     *time.Time `json:"last_synced_at,omitempty"`
+}
+
+type ModelSource struct {
+	ID                      string     `json:"source_id"`
+	NotionRootTitle         string     `json:"notion_root_title"`
+	NotionRootPageURL       string     `json:"notion_root_page_url"`
+	AutoSyncEnabled         bool       `json:"auto_sync_enabled"`
+	AutoSyncIntervalSeconds int        `json:"auto_sync_interval_seconds"`
+	NextSyncAt              *time.Time `json:"next_sync_at,omitempty"`
+	SyncStatus              string     `json:"sync_status"`
+	DiscoveredPageCount     int        `json:"discovered_page_count"`
+}
+
+type ModelOverview struct {
+	ProjectID  string          `json:"project_id"`
+	Configured bool            `json:"configured"`
+	Source     *ModelSource    `json:"source,omitempty"`
+	Questions  []ModelQuestion `json:"questions"`
+}
+
+type ModelQuestionDetail struct {
+	Question       ModelQuestion            `json:"question"`
+	LatestSnapshot map[string]interface{}   `json:"latest_snapshot,omitempty"`
+	Snapshots      []map[string]interface{} `json:"snapshots"`
+}
+
+type ModelSync struct {
+	ID         string `json:"sync_id"`
+	ProjectID  string `json:"project_id"`
+	QuestionID string `json:"question_id,omitempty"`
+	Scope      string `json:"scope"`
+	Status     string `json:"status"`
+	JobID      string `json:"job_id"`
+}
+
 type Error struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
@@ -123,6 +169,29 @@ func (client *Client) GetProject(ctx context.Context, token string, projectID st
 	var result Project
 	path := "/v1/projects/" + url.PathEscape(projectID)
 	err := client.do(ctx, http.MethodGet, path, nil, token, &result, true)
+	return result, err
+}
+
+func (client *Client) GetModels(ctx context.Context, token, projectID string) (ModelOverview, error) {
+	var result ModelOverview
+	err := client.do(ctx, http.MethodGet, "/v1/projects/"+url.PathEscape(projectID)+"/models", nil, token, &result, true)
+	return result, err
+}
+
+func (client *Client) GetModelQuestion(ctx context.Context, token, projectID, questionID string) (ModelQuestionDetail, error) {
+	var result ModelQuestionDetail
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/models/questions/" + url.PathEscape(questionID)
+	err := client.do(ctx, http.MethodGet, path, nil, token, &result, true)
+	return result, err
+}
+
+func (client *Client) SyncModels(ctx context.Context, token, projectID, questionID string) (ModelSync, error) {
+	var result ModelSync
+	path := "/v1/projects/" + url.PathEscape(projectID) + "/models/source/sync"
+	if questionID != "" {
+		path = "/v1/projects/" + url.PathEscape(projectID) + "/models/questions/" + url.PathEscape(questionID) + "/sync"
+	}
+	err := client.do(ctx, http.MethodPost, path, nil, token, &result, false)
 	return result, err
 }
 

@@ -1,10 +1,16 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/components/providers/project-provider", () => ({
+  useCurrentProject: () => ({ id: "00000000-0000-4000-8000-000000000001", name: "Settings Project", role: "owner" }),
+}));
 vi.mock("@/features/agent/agent-settings-panel", () => ({
   AgentSettingsPanel: () => (
     <section data-testid="agent-settings-panel">Agent 设置面板</section>
   ),
+}));
+vi.mock("@/features/model/model-settings-panel", () => ({
+  ModelSettingsPanel: () => null,
 }));
 vi.mock("@/features/members/member-management", () => ({
   MemberManagement: () => null,

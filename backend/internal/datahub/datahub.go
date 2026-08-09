@@ -199,6 +199,10 @@ type ProgressProvider interface {
 	ProgressHomeItems(context.Context, auth.Identity, string) ([]interface{}, []interface{}, error)
 }
 
+type ModelProvider interface {
+	ModelHomeItems(context.Context, auth.Identity, string) ([]interface{}, error)
+}
+
 type AgentProvider interface {
 	AgentHomeItems(context.Context, auth.Identity, string) ([]interface{}, error)
 }
@@ -259,6 +263,7 @@ type Service struct {
 	Agent           AgentProvider
 	AgentProvenance AgentProvenanceValidator
 	Clock           interface{ Now() time.Time }
+	Models          ModelProvider
 	Problem         ProblemProvider
 	Progress        ProgressProvider
 	Store           Store
@@ -477,6 +482,14 @@ func (service Service) Home(
 		milestones = HomeSection{Available: true, Items: nonNilItems(milestoneItems), Total: len(milestoneItems)}
 		todos = HomeSection{Available: true, Items: nonNilItems(todoItems), Total: len(todoItems)}
 	}
+	models := empty()
+	if service.Models != nil {
+		items, err := service.Models.ModelHomeItems(ctx, identity, projectID)
+		if err != nil {
+			return HomeAggregate{}, err
+		}
+		models = HomeSection{Available: true, Items: nonNilItems(items), Total: len(items)}
+	}
 	agentSection := empty()
 	if service.Agent != nil {
 		agentItems, err := service.Agent.AgentHomeItems(ctx, identity, projectID)
@@ -490,7 +503,7 @@ func (service Service) Home(
 	return HomeAggregate{
 		Agent: agentSection, Article: empty(), Experiments: empty(),
 		GeneratedAt: service.Clock.Now().UTC(), Milestones: milestones,
-		Models: empty(), Problem: problem, ProjectID: projectID, Todos: todos,
+		Models: models, Problem: problem, ProjectID: projectID, Todos: todos,
 	}, nil
 }
 
