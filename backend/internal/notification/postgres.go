@@ -21,23 +21,56 @@ func (store PostgresStore) ClaimEmailRecipients(ctx context.Context, email, user
 	return err
 }
 
-func (store PostgresStore) ApplyInvitationOutcome(ctx context.Context, invitationID, outcome string) error {
-	if invitationID == "" || (outcome != OutcomeResolved && outcome != OutcomeRevoked && outcome != OutcomeExpired) {
+func (store PostgresStore) ApplyInvitationOutcome(ctx context.Context, fact InvitationOutcome) error {
+	if strings.TrimSpace(fact.InvitationID) == "" || strings.TrimSpace(fact.ProjectID) == "" || strings.TrimSpace(fact.SourceEventID) == "" || fact.OccurredAt.IsZero() || (fact.Outcome != OutcomeResolved && fact.Outcome != OutcomeRevoked && fact.Outcome != OutcomeExpired) {
 		return ErrInvalid
 	}
 	if store.Transaction.DB == nil {
 		return ErrNotReady
 	}
+	now := store.now()
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `UPDATE notification_inbox_items AS item SET outcome=$2, updated_at=NOW() FROM notification_notifications AS notification WHERE item.notification_id=notification.notification_id AND notification.type_key=$3 AND notification.data->>'invitation_id'=$1 AND item.outcome='active'`, invitationID, outcome, TypeInvitationReceived); err != nil {
-			return err
-		}
-		if outcome == OutcomeRevoked || outcome == OutcomeExpired {
-			_, err := tx.ExecContext(ctx, `UPDATE notification_deliveries AS delivery SET status='cancelled',locked_by=NULL,lease_expires_at=NULL,last_error_code='notification_outcome',last_error_message=$2,updated_at=NOW() FROM notification_notifications AS notification WHERE delivery.notification_id=notification.notification_id AND notification.type_key=$3 AND notification.data->>'invitation_id'=$1 AND delivery.status IN ('pending','retrying')`, invitationID, "Invitation is no longer active", TypeInvitationReceived)
-			return err
-		}
-		return nil
+		_, err := store.applyInvitationOutcomeTx(ctx, tx, fact, now)
+		return err
 	})
+}
+
+func (store PostgresStore) applyInvitationOutcomeTx(ctx context.Context, tx transaction.Tx, fact InvitationOutcome, now time.Time) (string, error) {
+	var outcome string
+	err := tx.QueryRowContext(ctx, `
+		INSERT INTO notification_invitation_outcomes(
+			invitation_id,project_id,outcome,source_event_id,occurred_at,created_at,updated_at
+		) VALUES($1,$2,$3,$4,$5,$6,$6)
+		ON CONFLICT(invitation_id) DO UPDATE SET
+			outcome=EXCLUDED.outcome,
+			source_event_id=EXCLUDED.source_event_id,
+			occurred_at=EXCLUDED.occurred_at,
+			updated_at=EXCLUDED.updated_at
+		WHERE notification_invitation_outcomes.project_id=EXCLUDED.project_id
+		  AND notification_invitation_outcomes.outcome='active'
+		RETURNING outcome
+	`, fact.InvitationID, fact.ProjectID, fact.Outcome, fact.SourceEventID, fact.OccurredAt, now).Scan(&outcome)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = tx.QueryRowContext(ctx, `SELECT outcome FROM notification_invitation_outcomes WHERE invitation_id=$1 AND project_id=$2`, fact.InvitationID, fact.ProjectID).Scan(&outcome)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrInvalid
+	}
+	if err != nil {
+		return "", err
+	}
+	if outcome == OutcomeActive {
+		return outcome, nil
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE notification_inbox_items AS item SET outcome=$2, updated_at=$3 FROM notification_notifications AS notification WHERE item.notification_id=notification.notification_id AND notification.type_key=$4 AND notification.data->>'invitation_id'=$1 AND item.outcome='active'`, fact.InvitationID, outcome, now, TypeInvitationReceived); err != nil {
+		return "", err
+	}
+	if outcome == OutcomeRevoked || outcome == OutcomeExpired {
+		if _, err = tx.ExecContext(ctx, `UPDATE notification_deliveries AS delivery SET status='cancelled',locked_by=NULL,lease_expires_at=NULL,last_error_code='notification_outcome',last_error_message=$2,updated_at=$3 FROM notification_notifications AS notification WHERE delivery.notification_id=notification.notification_id AND notification.type_key=$4 AND notification.data->>'invitation_id'=$1 AND delivery.status IN ('pending','retrying')`, fact.InvitationID, "Invitation is no longer active", now, TypeInvitationReceived); err != nil {
+			return "", err
+		}
+	}
+	return outcome, nil
 }
 
 func (store PostgresStore) ListInbox(ctx context.Context, userID string, filter Filter, page pagination.Request) (Page, error) {
@@ -260,11 +293,20 @@ func (store PostgresStore) CreateRetry(ctx context.Context, projectID, deliveryI
 	if err != nil {
 		return Delivery{}, err
 	}
-	key := "retry:" + newID
+	key := "retry:" + deliveryID
+	now := store.now()
 	var d Delivery
-	err = store.DB.QueryRowContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,created_at,updated_at) SELECT $1,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,$2,'pending',max_attempts,NOW(),NOW(),NOW() FROM notification_deliveries WHERE delivery_id=$3 AND project_id=$4 AND status IN ('failed','retrying') RETURNING delivery_id,notification_id,COALESCE(recipient_id::text,''),project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,attempts,max_attempts,COALESCE(provider_message_id,''),last_error_code,last_error_message,COALESCE(response_summary,''),available_at,delivered_at,created_at,updated_at`, newID, key, deliveryID, projectID).Scan(&d.ID, &d.NotificationID, &d.RecipientID, &d.ProjectID, &d.ChannelKey, &d.TargetKey, &d.RuleVersion, &d.SettingsVersion, &d.DeliveryKey, &d.Status, &d.Attempts, &d.MaxAttempts, &d.ProviderMessage, &d.LastErrorCode, &d.LastError, &d.ResponseSummary, &d.AvailableAt, &d.DeliveredAt, &d.CreatedAt, &d.UpdatedAt)
+	err = store.DB.QueryRowContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,created_at,updated_at) SELECT $1,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,$2,'pending',max_attempts,$3,$3,$3 FROM notification_deliveries WHERE delivery_id=$4 AND project_id=$5 AND status='failed' ON CONFLICT(notification_id,channel_key,target_key,delivery_key) DO UPDATE SET delivery_key=EXCLUDED.delivery_key RETURNING delivery_id,notification_id,COALESCE(recipient_id::text,''),project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,attempts,max_attempts,COALESCE(provider_message_id,''),last_error_code,last_error_message,COALESCE(response_summary,''),available_at,delivered_at,created_at,updated_at`, newID, key, now, deliveryID, projectID).Scan(&d.ID, &d.NotificationID, &d.RecipientID, &d.ProjectID, &d.ChannelKey, &d.TargetKey, &d.RuleVersion, &d.SettingsVersion, &d.DeliveryKey, &d.Status, &d.Attempts, &d.MaxAttempts, &d.ProviderMessage, &d.LastErrorCode, &d.LastError, &d.ResponseSummary, &d.AvailableAt, &d.DeliveredAt, &d.CreatedAt, &d.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Delivery{}, ErrNotFound
+		var status string
+		statusErr := store.DB.QueryRowContext(ctx, `SELECT status FROM notification_deliveries WHERE delivery_id=$1 AND project_id=$2`, deliveryID, projectID).Scan(&status)
+		if errors.Is(statusErr, sql.ErrNoRows) {
+			return Delivery{}, ErrNotFound
+		}
+		if statusErr != nil {
+			return Delivery{}, statusErr
+		}
+		return Delivery{}, ErrDeliveryRetryConflict
 	}
 	return d, err
 }
@@ -344,13 +386,14 @@ func (store PostgresStore) ClaimDelivery(ctx context.Context, owner string, leas
 	return delivery, notification, nil
 }
 
-func (store PostgresStore) CompleteDelivery(ctx context.Context, deliveryID, owner string) error {
+func (store PostgresStore) CompleteDelivery(ctx context.Context, deliveryID, owner string, providerResult ProviderSendResult) error {
 	if store.Transaction.DB == nil {
 		return ErrNotReady
 	}
+	providerResult = sanitizeProviderResult(providerResult)
 	now := store.now()
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		result, err := tx.ExecContext(ctx, `UPDATE notification_deliveries SET status='delivered',delivered_at=$1,locked_by=NULL,lease_expires_at=NULL,updated_at=$1 WHERE delivery_id=$2 AND status='sending' AND locked_by=$3`, now, deliveryID, owner)
+		result, err := tx.ExecContext(ctx, `UPDATE notification_deliveries SET status='delivered',delivered_at=$1,locked_by=NULL,lease_expires_at=NULL,provider_message_id=NULLIF($2,''),response_summary=NULLIF($3,''),updated_at=$1 WHERE delivery_id=$4 AND status='sending' AND locked_by=$5`, now, providerResult.ProviderMessageID, providerResult.ResponseSummary, deliveryID, owner)
 		if err != nil {
 			return err
 		}
@@ -359,7 +402,7 @@ func (store PostgresStore) CompleteDelivery(ctx context.Context, deliveryID, own
 		} else if affected == 0 {
 			return ErrNotFound
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE notification_delivery_attempts SET outcome='delivered',finished_at=$1 WHERE delivery_id=$2 AND outcome='sending'`, now, deliveryID)
+		_, err = tx.ExecContext(ctx, `UPDATE notification_delivery_attempts SET outcome='delivered',finished_at=$1,response_summary=NULLIF($2,'') WHERE delivery_id=$3 AND outcome='sending'`, now, providerResult.ResponseSummary, deliveryID)
 		return err
 	})
 }

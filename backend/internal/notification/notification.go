@@ -243,7 +243,7 @@ type ProjectAccess interface {
 type Store interface {
 	CreateEvent(context.Context, Notification, []RecipientInput, bool, []DeliveryIntent) error
 	ClaimEmailRecipients(context.Context, string, string) error
-	ApplyInvitationOutcome(context.Context, string, string) error
+	ApplyInvitationOutcome(context.Context, InvitationOutcome) error
 	ListInbox(context.Context, string, Filter, pagination.Request) (Page, error)
 	GetInbox(context.Context, string, string) (InboxItem, error)
 	UpdateInbox(context.Context, string, string, *string, *bool) (InboxItem, error)
@@ -262,7 +262,7 @@ type SettingsResolver interface {
 type DeliveryStore interface {
 	EnqueueDelivery(context.Context, Notification, string, int64) (Delivery, error)
 	ClaimDelivery(context.Context, string, time.Duration) (*Delivery, Notification, error)
-	CompleteDelivery(context.Context, string, string) error
+	CompleteDelivery(context.Context, string, string, ProviderSendResult) error
 	FailDelivery(context.Context, string, string, string, int, string, bool, time.Duration) error
 	CancelDelivery(context.Context, string, string, string) error
 	CancelPending(context.Context, string, string) error
@@ -274,6 +274,14 @@ type DeliveryIntent struct {
 	TargetKey       string
 	RuleVersion     int64
 	SettingsVersion int64
+}
+
+type InvitationOutcome struct {
+	InvitationID  string
+	ProjectID     string
+	Outcome       string
+	SourceEventID string
+	OccurredAt    time.Time
 }
 
 func (service Service) HandleSettingsEvent(ctx context.Context, event contract.EventEnvelope) error {
@@ -330,10 +338,16 @@ func (service Service) HandleEvent(ctx context.Context, event contract.EventEnve
 			outcome = OutcomeExpired
 		}
 		invitationID := stringValue(event.Payload["invitation_id"])
-		if invitationID == "" {
+		if invitationID == "" || event.ProjectID == nil || event.EventID == "" || event.OccurredAt.IsZero() {
 			return ErrInvalid
 		}
-		if err := service.Store.ApplyInvitationOutcome(ctx, invitationID, outcome); err != nil {
+		if err := service.Store.ApplyInvitationOutcome(ctx, InvitationOutcome{
+			InvitationID:  invitationID,
+			ProjectID:     *event.ProjectID,
+			Outcome:       outcome,
+			SourceEventID: event.EventID,
+			OccurredAt:    event.OccurredAt,
+		}); err != nil {
 			return err
 		}
 		service.recordLifecycleAudit(ctx, event, "notification.invitation.outcome", invitationID, outcome)
@@ -542,7 +556,7 @@ func humanInboxCaller(identity auth.Identity) error {
 	return nil
 }
 func (service Service) GetRule(ctx context.Context, identity auth.Identity, projectID, typeKey string) (Rule, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return Rule{}, err
 	}
 	if service.Registry == nil {
@@ -602,7 +616,7 @@ func (service Service) UpsertRule(ctx context.Context, identity auth.Identity, r
 	return result, err
 }
 func (service Service) ListDeliveries(ctx context.Context, identity auth.Identity, projectID, channelKey string, page pagination.Request) (DeliveryPage, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return DeliveryPage{}, err
 	}
 	page, err := page.Normalize()
@@ -700,10 +714,11 @@ func containsVersion(values []int64, wanted int64) bool {
 }
 
 var (
-	ErrInvalid  = errors.New("invalid notification request")
-	ErrNotFound = errors.New("notification not found")
-	ErrNotReady = errors.New("notification service is not ready")
-	ErrConflict = errors.New("notification rule version conflict")
+	ErrInvalid               = errors.New("invalid notification request")
+	ErrNotFound              = errors.New("notification not found")
+	ErrNotReady              = errors.New("notification service is not ready")
+	ErrConflict              = errors.New("notification rule version conflict")
+	ErrDeliveryRetryConflict = errors.New("notification delivery cannot be manually retried")
 )
 
 // Adapter is retained as the small Progress seam for compatibility with the
@@ -716,7 +731,11 @@ type ProviderAdapter interface {
 	ValidateConfig(map[string]interface{}) error
 	Test(context.Context, map[string]interface{}) error
 	Render(context.Context, Notification, int) (RenderedMessage, error)
-	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) error
+	Send(context.Context, map[string]interface{}, string, string, RenderedMessage) (ProviderSendResult, error)
+}
+type ProviderSendResult struct {
+	ProviderMessageID string
+	ResponseSummary   string
 }
 type RenderedMessage struct {
 	Body        []byte
@@ -798,6 +817,10 @@ func (store PostgresStore) createEventTx(ctx context.Context, tx transaction.Tx,
 		actionResourceID = notification.Action.ResourceID
 		actionRoute = notification.Action.Route
 	}
+	invitationOutcome, err := store.invitationOutcomeForCreateTx(ctx, tx, notification, data, now)
+	if err != nil {
+		return err
+	}
 	if err := tx.QueryRowContext(ctx, `INSERT INTO notification_notifications(notification_id,type_key,template_version,source_event_id,project_id,actor_id,resource_type,resource_id,priority,data,rendered_snapshot,action_type,action_resource_id,action_route,occurred_at,created_at) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,'')::uuid,$7,$8,$9,$10,$11,NULLIF($12,''),NULLIF($13,''),NULLIF($14,''),$15,$16) ON CONFLICT(source_event_id,type_key) DO UPDATE SET action_type=COALESCE(notification_notifications.action_type,EXCLUDED.action_type),action_resource_id=COALESCE(notification_notifications.action_resource_id,EXCLUDED.action_resource_id),action_route=COALESCE(notification_notifications.action_route,EXCLUDED.action_route) RETURNING notification_id`, notification.ID, notification.TypeKey, notification.TemplateVersion, notification.SourceEventID, notification.ProjectID, notification.ActorID, notification.ResourceType, notification.ResourceID, notification.Priority, dataJSON, snapshotJSON, actionType, actionResourceID, actionRoute, notification.OccurredAt, now).Scan(&notification.ID); err != nil {
 		return err
 	}
@@ -829,7 +852,7 @@ func (store PostgresStore) createEventTx(ctx context.Context, tx transaction.Tx,
 			if err != nil {
 				return err
 			}
-			if _, err = tx.ExecContext(ctx, `INSERT INTO notification_inbox_items(inbox_item_id,notification_id,recipient_id,created_at,updated_at) VALUES($1,$2,$3,$4,$4) ON CONFLICT(recipient_id) DO NOTHING`, inboxID, notification.ID, recipientID, now); err != nil {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO notification_inbox_items(inbox_item_id,notification_id,recipient_id,outcome,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$5) ON CONFLICT(recipient_id) DO NOTHING`, inboxID, notification.ID, recipientID, invitationOutcome, now); err != nil {
 				return err
 			}
 		}
@@ -846,11 +869,43 @@ func (store PostgresStore) createEventTx(ctx context.Context, tx transaction.Tx,
 		if targetKey == "" {
 			targetKey = "project-channel:" + delivery.ChannelKey
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,'live','pending',5,$9,$9,$9) ON CONFLICT(notification_id,channel_key,target_key,delivery_key) DO NOTHING`, deliveryID, notification.ID, delivery.RecipientID, notification.ProjectID, delivery.ChannelKey, targetKey, delivery.RuleVersion, delivery.SettingsVersion, now); err != nil {
+		deliveryStatus, lastErrorCode, lastErrorMessage := "pending", "", ""
+		if invitationOutcome == OutcomeRevoked || invitationOutcome == OutcomeExpired {
+			deliveryStatus = "cancelled"
+			lastErrorCode = "notification_outcome"
+			lastErrorMessage = "Invitation is no longer active"
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO notification_deliveries(delivery_id,notification_id,recipient_id,project_id,channel_key,target_key,rule_version,settings_version,delivery_key,status,max_attempts,available_at,last_error_code,last_error_message,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,'live',$9,5,$10,$11,$12,$10,$10) ON CONFLICT(notification_id,channel_key,target_key,delivery_key) DO NOTHING`, deliveryID, notification.ID, delivery.RecipientID, notification.ProjectID, delivery.ChannelKey, targetKey, delivery.RuleVersion, delivery.SettingsVersion, deliveryStatus, now, lastErrorCode, lastErrorMessage); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (store PostgresStore) invitationOutcomeForCreateTx(ctx context.Context, tx transaction.Tx, notification Notification, data map[string]interface{}, now time.Time) (string, error) {
+	if notification.TypeKey != TypeInvitationReceived {
+		return OutcomeActive, nil
+	}
+	invitationID := stringValue(data["invitation_id"])
+	if invitationID == "" || notification.ProjectID == "" || notification.SourceEventID == "" || notification.OccurredAt.IsZero() {
+		return "", ErrInvalid
+	}
+	// Outcome consumers upsert the same invitation_id. PostgreSQL's unique-key
+	// lock makes creation wait for an in-flight terminal outcome (and vice
+	// versa), so the Inbox row is never created from a stale transaction view.
+	var outcome string
+	err := tx.QueryRowContext(ctx, `
+		INSERT INTO notification_invitation_outcomes(
+			invitation_id,project_id,outcome,source_event_id,occurred_at,created_at,updated_at
+		) VALUES($1,$2,'active',$3,$4,$5,$5)
+		ON CONFLICT(invitation_id) DO UPDATE SET invitation_id=EXCLUDED.invitation_id
+		WHERE notification_invitation_outcomes.project_id=EXCLUDED.project_id
+		RETURNING outcome
+	`, invitationID, notification.ProjectID, notification.SourceEventID, notification.OccurredAt, now).Scan(&outcome)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrInvalid
+	}
+	return outcome, err
 }
 func (store PostgresStore) now() time.Time {
 	if store.Clock == nil {

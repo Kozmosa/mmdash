@@ -19,7 +19,9 @@ tags:
   - name: Repo
   - name: Artifact
   - name: Pages
+  - name: Data Hub
   - name: Progress
+  - name: Agent
   - name: Notification
   - name: Streams
 paths:
@@ -437,6 +439,533 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ProjectPermissions"
+  /api/projects/{projectId}/context/proposals:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Data Hub]
+      summary: List project Context Proposals for human review
+      operationId: bff.data.context.proposals.list
+      responses:
+        "200":
+          description: Context Proposals visible to the current collaborator.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ContextProposalList" }
+  /api/projects/{projectId}/context/proposals/{proposalId}/review:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Data Hub]
+      summary: Accept or reject a Context Proposal as a human reviewer
+      description: Requires a signed browser session and project.context.review.
+      operationId: bff.data.context.proposals.review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/ReviewContextProposalRequest",
+              }
+      responses:
+        "200":
+          description: Reviewed proposal with its original provenance retained.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ContextProposal" }
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/agent-instances:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Agent]
+      summary: List project Agent instances
+      operationId: bff.agent.instances.list
+      responses:
+        "200":
+          description: Redacted Agent instances.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceList" }
+    post:
+      tags: [Agent]
+      summary: Create and bind an Agent instance
+      operationId: bff.agent.instances.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/CreateAgentInstanceRequest" }
+      responses:
+        "201":
+          description: Manual provisioning may return a Token once; auto never does.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+    get:
+      tags: [Agent]
+      summary: Get an Agent instance
+      operationId: bff.agent.instances.get
+      responses:
+        "200":
+          description: Redacted Agent instance.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentInstance" }
+    patch:
+      tags: [Agent]
+      summary: Update Agent configuration
+      description: Tool-scope changes start safe Token rotation; the old Token remains active until verification.
+      operationId: bff.agent.instances.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/UpdateAgentInstanceRequest" }
+      responses:
+        "200":
+          description: Updated instance; manual scope rotation may return the new Token once.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult" }
+    delete:
+      tags: [Agent]
+      summary: Disable an Agent instance
+      operationId: bff.agent.instances.disable
+      responses:
+        "204": { description: Instance disabled and credentials revoked. }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/checks:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Run Agent connection and capability checks
+      operationId: bff.agent.instances.check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/RunAgentChecksRequest" }
+      responses:
+        "200":
+          description: Independent safe check results.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentChecksResult" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Verify Hermes to mmdash MCP access
+      operationId: bff.agent.project_access.verify
+      responses:
+        "200":
+          description: Reverse-connection result.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentProjectAccessVerificationResult" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Begin two-phase Agent Token rotation
+      operationId: bff.agent.tokens.rotate
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/RotateAgentTokenRequest" }
+      responses:
+        "201":
+          description: Rotation state; manual mode may return the Token once.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentTokenRotationResult" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentTokenId"
+    post:
+      tags: [Agent]
+      summary: Verify and activate a pending Agent Token
+      operationId: bff.agent.tokens.verify
+      responses:
+        "200":
+          description: Token activated after actual MCP access.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentTokenVerificationResult" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentTokenId"
+    post:
+      tags: [Agent]
+      summary: Abort a pending Agent Token rotation
+      operationId: bff.agent.tokens.abort
+      responses:
+        "200":
+          description: Pending Token revoked and old Token retained.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentTokenAbortResult" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentTokenId"
+    delete:
+      tags: [Agent]
+      summary: Immediately revoke an Agent Token
+      operationId: bff.agent.tokens.revoke
+      responses:
+        "204": { description: Agent Token revoked. }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+    get:
+      tags: [Agent]
+      summary: Get generated and effective Agent prompt
+      operationId: bff.agent.prompt.get
+      responses:
+        "200":
+          description: Project Agent prompt.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentPrompt" }
+    patch:
+      tags: [Agent]
+      summary: Update Agent prompt override
+      operationId: bff.agent.prompt.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/UpdateAgentPromptRequest" }
+      responses:
+        "200":
+          description: Updated effective prompt.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentPrompt" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt/reset:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+    post:
+      tags: [Agent]
+      summary: Restore the generated Agent prompt
+      operationId: bff.agent.prompt.reset
+      responses:
+        "200":
+          description: Default prompt restored.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentPrompt" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+    get:
+      tags: [Agent]
+      summary: List Agent sessions
+      operationId: bff.agent.sessions.list
+      responses:
+        "200":
+          description: Indexed Agent sessions.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSessionList" }
+    post:
+      tags: [Agent]
+      summary: Create an Agent session
+      operationId: bff.agent.sessions.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/CreateAgentSessionRequest" }
+      responses:
+        "201":
+          description: Agent session created.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSession" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+    get:
+      tags: [Agent]
+      summary: Get an Agent session
+      operationId: bff.agent.sessions.get
+      responses:
+        "200":
+          description: Agent session.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSession" }
+    patch:
+      tags: [Agent]
+      summary: Rename an Agent session
+      operationId: bff.agent.sessions.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/UpdateAgentSessionRequest" }
+      responses:
+        "200":
+          description: Renamed Agent session.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSession" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/end:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: End an Agent session without deleting history
+      operationId: bff.agent.sessions.end
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/EndAgentSessionRequest" }
+      responses:
+        "200":
+          description: Ended Agent session.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSession" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/continue:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Continue an Agent session
+      operationId: bff.agent.sessions.continue
+      responses:
+        "200":
+          description: Active Agent session.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSession" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/fork:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Fork an Agent session
+      operationId: bff.agent.sessions.fork
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/ForkAgentSessionRequest" }
+      responses:
+        "201":
+          description: Child Agent session.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSession" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/default:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Make an Agent session the default
+      operationId: bff.agent.sessions.default
+      responses:
+        "200":
+          description: Default Agent session.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentSession" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/messages:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+    get:
+      tags: [Agent]
+      summary: Read Hermes-backed Agent message history
+      operationId: bff.agent.sessions.messages.list
+      responses:
+        "200":
+          description: Normalized Agent messages.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentMessageList" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+    post:
+      tags: [Agent]
+      summary: Start a stoppable Agent Run
+      operationId: bff.agent.runs.start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/StartAgentRunRequest" }
+      responses:
+        "202":
+          description: Agent Run accepted.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentRunLaunch" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+      - $ref: "./core.yaml#/components/parameters/AgentRunId"
+    get:
+      tags: [Agent]
+      summary: Get Agent Run status
+      operationId: bff.agent.runs.get
+      responses:
+        "200":
+          description: Agent Run.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentRun" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/events:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+      - $ref: "./core.yaml#/components/parameters/AgentRunId"
+    get:
+      tags: [Agent, Streams]
+      summary: Proxy normalized Agent Run SSE without buffering
+      operationId: bff.agent.runs.events
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Runtime-neutral AgentStreamEvent payloads.
+          headers:
+            X-Accel-Buffering:
+              schema: { type: string, const: "no" }
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+      - $ref: "./core.yaml#/components/parameters/AgentRunId"
+      - $ref: "./core.yaml#/components/parameters/AgentApprovalId"
+    post:
+      tags: [Agent]
+      summary: Respond to a pending Agent Run approval
+      operationId: bff.agent.runs.approve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/RespondAgentRunApprovalRequest" }
+      responses:
+        "200":
+          description: Approval recorded and current Run returned.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentRun" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+      - $ref: "./core.yaml#/components/parameters/AgentRunId"
+    post:
+      tags: [Agent]
+      summary: Stop an Agent Run
+      operationId: bff.agent.runs.stop
+      responses:
+        "200":
+          description: Stop requested.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentRun" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+      - $ref: "./core.yaml#/components/parameters/AgentRunId"
+    post:
+      tags: [Agent]
+      summary: Regenerate in a non-destructive fork
+      operationId: bff.agent.runs.regenerate
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/ReplayAgentRunRequest" }
+      responses:
+        "202":
+          description: Fork and replacement Run accepted.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentRunLaunch" }
+  /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/AgentInstanceId"
+      - $ref: "./core.yaml#/components/parameters/AgentSessionId"
+      - $ref: "./core.yaml#/components/parameters/AgentRunId"
+    post:
+      tags: [Agent]
+      summary: Re-execute a prior user turn in the current Session
+      operationId: bff.agent.runs.rerun
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/ReplayAgentRunRequest" }
+      responses:
+        "202":
+          description: Replacement Agent Run accepted.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/AgentRunLaunch" }
   /api/projects/{projectId}/progress:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
@@ -709,7 +1238,7 @@ paths:
         schema: { type: string, format: uuid }
     post:
       tags: [Progress]
-      summary: Trigger a Progress reminder event
+      summary: Manually trigger a pending Progress reminder
       operationId: bff.progress.reminders.trigger
       responses:
         "200":
@@ -2121,7 +2650,7 @@ paths:
   /api/projects/{projectId}/notification-deliveries/{deliveryId}/retry:
     post:
       tags: [Notification]
-      summary: Explicitly retry a delivery
+      summary: Explicitly retry a failed delivery
       operationId: bff.notification.deliveries.retry
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
@@ -2131,8 +2660,12 @@ paths:
         content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/RetryNotificationDeliveryRequest" } } }
       responses:
         "200":
-          description: Retry delivery.
+          description: Idempotently created retry delivery.
           content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/NotificationDelivery" } } }
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
 components:
   securitySchemes:
     browserSession:

@@ -6,6 +6,7 @@ package generated
 import (
 	"fmt"
 	"net/mail"
+	"regexp"
 	"time"
 )
 
@@ -53,6 +54,56 @@ func (request CreateTokenRequest) Validate() error {
 	}
 	if len(request.Name) < 1 {
 		return fmt.Errorf("name is too short")
+	}
+	return nil
+}
+
+// RecordAgentTokenVerificationRequest is generated from the Core request-body schema.
+type RecordAgentTokenVerificationRequest struct {
+	ProjectID       string `json:"project_id"`
+	AgentInstanceID string `json:"agent_instance_id"`
+	McpMethod       string `json:"mcp_method"`
+	McpSessionID    string `json:"mcp_session_id"`
+	RequestID       string `json:"request_id"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RecordAgentTokenVerificationRequest) Validate() error {
+	if request.ProjectID == "" {
+		return fmt.Errorf("project_id is required")
+	}
+	if request.AgentInstanceID == "" {
+		return fmt.Errorf("agent_instance_id is required")
+	}
+	if request.McpMethod == "" {
+		return fmt.Errorf("mcp_method is required")
+	}
+	if request.McpMethod != "tools/list" {
+		return fmt.Errorf("mcp_method has an unsupported value")
+	}
+	if request.McpSessionID == "" {
+		return fmt.Errorf("mcp_session_id is required")
+	}
+	if len(request.McpSessionID) < 1 {
+		return fmt.Errorf("mcp_session_id is too short")
+	}
+	if len(request.McpSessionID) > 200 {
+		return fmt.Errorf("mcp_session_id is too long")
+	}
+	if matched, err := regexp.MatchString("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$", request.McpSessionID); err != nil || !matched {
+		return fmt.Errorf("mcp_session_id has an invalid format")
+	}
+	if request.RequestID == "" {
+		return fmt.Errorf("request_id is required")
+	}
+	if len(request.RequestID) < 1 {
+		return fmt.Errorf("request_id is too short")
+	}
+	if len(request.RequestID) > 200 {
+		return fmt.Errorf("request_id is too long")
+	}
+	if matched, err := regexp.MatchString("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$", request.RequestID); err != nil || !matched {
+		return fmt.Errorf("request_id has an invalid format")
 	}
 	return nil
 }
@@ -148,6 +199,9 @@ func (request CreateJobRequest) Validate() error {
 	}
 	if request.JobType == "" {
 		return fmt.Errorf("job_type is required")
+	}
+	if matched, err := regexp.MatchString("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", request.JobType); err != nil || !matched {
+		return fmt.Errorf("job_type has an invalid format")
 	}
 	if request.Payload == nil {
 		return fmt.Errorf("payload is required")
@@ -435,10 +489,18 @@ type CreateContextProposalRequest struct {
 	ContextType     string    `json:"context_type"`
 	SourceObjectIDs *[]string `json:"source_object_ids,omitempty"`
 	Rationale       *string   `json:"rationale,omitempty"`
+	AgentSessionID  *string   `json:"agent_session_id,omitempty"`
+	AgentRunID      *string   `json:"agent_run_id,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request CreateContextProposalRequest) Validate() error {
+	if request.AgentSessionID != nil && request.AgentRunID == nil {
+		return fmt.Errorf("agent_run_id is required when agent_session_id is present")
+	}
+	if request.AgentRunID != nil && request.AgentSessionID == nil {
+		return fmt.Errorf("agent_session_id is required when agent_run_id is present")
+	}
 	if request.Title == "" {
 		return fmt.Errorf("title is required")
 	}
@@ -771,6 +833,405 @@ func (request UpdateProgressSettingsRequest) Validate() error {
 
 }
 
+// CreateAgentInstanceRequest is generated from the Core request-body schema.
+type CreateAgentInstanceRequest struct {
+	DisplayName                  string   `json:"display_name"`
+	AdapterType                  *string  `json:"adapter_type,omitempty"`
+	ManagementMode               string   `json:"management_mode"`
+	RuntimeURL                   string   `json:"runtime_url"`
+	HermesAPIKey                 string   `json:"hermes_api_key"`
+	Profile                      *string  `json:"profile,omitempty"`
+	RequestTimeoutSeconds        *int64   `json:"request_timeout_seconds,omitempty"`
+	ManagementURL                *string  `json:"management_url,omitempty"`
+	DashboardSessionToken        *string  `json:"dashboard_session_token,omitempty"`
+	CloudflareAccessClientID     *string  `json:"cloudflare_access_client_id,omitempty"`
+	CloudflareAccessClientSecret *string  `json:"cloudflare_access_client_secret,omitempty"`
+	AllowedTools                 []string `json:"allowed_tools"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateAgentInstanceRequest) Validate() error {
+	if request.DisplayName == "" {
+		return fmt.Errorf("display_name is required")
+	}
+	if len(request.DisplayName) < 1 {
+		return fmt.Errorf("display_name is too short")
+	}
+	if len(request.DisplayName) > 120 {
+		return fmt.Errorf("display_name is too long")
+	}
+	if request.AdapterType != nil {
+		if *request.AdapterType != "hermes" {
+			return fmt.Errorf("adapter_type has an unsupported value")
+		}
+	}
+	if request.ManagementMode == "" {
+		return fmt.Errorf("management_mode is required")
+	}
+	if request.ManagementMode != "manual" && request.ManagementMode != "auto" {
+		return fmt.Errorf("management_mode has an unsupported value")
+	}
+	if request.RuntimeURL == "" {
+		return fmt.Errorf("runtime_url is required")
+	}
+	if len(request.RuntimeURL) > 2048 {
+		return fmt.Errorf("runtime_url is too long")
+	}
+	if request.HermesAPIKey == "" {
+		return fmt.Errorf("hermes_api_key is required")
+	}
+	if len(request.HermesAPIKey) < 16 {
+		return fmt.Errorf("hermes_api_key is too short")
+	}
+	if len(request.HermesAPIKey) > 4096 {
+		return fmt.Errorf("hermes_api_key is too long")
+	}
+	if request.Profile != nil {
+		if len(*request.Profile) < 1 {
+			return fmt.Errorf("profile is too short")
+		}
+		if len(*request.Profile) > 120 {
+			return fmt.Errorf("profile is too long")
+		}
+	}
+	if request.RequestTimeoutSeconds != nil {
+		if *request.RequestTimeoutSeconds < 1 {
+			return fmt.Errorf("request_timeout_seconds is below its minimum")
+		}
+		if *request.RequestTimeoutSeconds > 300 {
+			return fmt.Errorf("request_timeout_seconds exceeds its maximum")
+		}
+	}
+	if request.ManagementURL != nil {
+		if len(*request.ManagementURL) > 2048 {
+			return fmt.Errorf("management_url is too long")
+		}
+	}
+	if request.DashboardSessionToken != nil {
+		if len(*request.DashboardSessionToken) < 16 {
+			return fmt.Errorf("dashboard_session_token is too short")
+		}
+		if len(*request.DashboardSessionToken) > 4096 {
+			return fmt.Errorf("dashboard_session_token is too long")
+		}
+	}
+	if request.CloudflareAccessClientID != nil {
+		if len(*request.CloudflareAccessClientID) < 1 {
+			return fmt.Errorf("cloudflare_access_client_id is too short")
+		}
+		if len(*request.CloudflareAccessClientID) > 4096 {
+			return fmt.Errorf("cloudflare_access_client_id is too long")
+		}
+	}
+	if request.CloudflareAccessClientSecret != nil {
+		if len(*request.CloudflareAccessClientSecret) < 16 {
+			return fmt.Errorf("cloudflare_access_client_secret is too short")
+		}
+		if len(*request.CloudflareAccessClientSecret) > 4096 {
+			return fmt.Errorf("cloudflare_access_client_secret is too long")
+		}
+	}
+	if request.AllowedTools == nil {
+		return fmt.Errorf("allowed_tools is required")
+	}
+	if len(request.AllowedTools) > 4 {
+		return fmt.Errorf("allowed_tools has too many items")
+	}
+	if len(request.AllowedTools) < 1 {
+		return fmt.Errorf("allowed_tools has too few items")
+	}
+	return nil
+}
+
+// UpdateAgentInstanceRequest is generated from the Core request-body schema.
+type UpdateAgentInstanceRequest struct {
+	DisplayName                  *string   `json:"display_name,omitempty"`
+	ManagementMode               *string   `json:"management_mode,omitempty"`
+	RuntimeURL                   *string   `json:"runtime_url,omitempty"`
+	HermesAPIKey                 *string   `json:"hermes_api_key,omitempty"`
+	Profile                      *string   `json:"profile,omitempty"`
+	RequestTimeoutSeconds        *int64    `json:"request_timeout_seconds,omitempty"`
+	ManagementURL                *string   `json:"management_url,omitempty"`
+	DashboardSessionToken        *string   `json:"dashboard_session_token,omitempty"`
+	CloudflareAccessClientID     *string   `json:"cloudflare_access_client_id,omitempty"`
+	CloudflareAccessClientSecret *string   `json:"cloudflare_access_client_secret,omitempty"`
+	AllowedTools                 *[]string `json:"allowed_tools,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateAgentInstanceRequest) Validate() error {
+	if request.DisplayName == nil && request.ManagementMode == nil && request.RuntimeURL == nil && request.HermesAPIKey == nil && request.Profile == nil && request.RequestTimeoutSeconds == nil && request.ManagementURL == nil && request.DashboardSessionToken == nil && request.CloudflareAccessClientID == nil && request.CloudflareAccessClientSecret == nil && request.AllowedTools == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.DisplayName != nil {
+		if len(*request.DisplayName) < 1 {
+			return fmt.Errorf("display_name is too short")
+		}
+		if len(*request.DisplayName) > 120 {
+			return fmt.Errorf("display_name is too long")
+		}
+	}
+	if request.ManagementMode != nil {
+		if *request.ManagementMode != "manual" && *request.ManagementMode != "auto" {
+			return fmt.Errorf("management_mode has an unsupported value")
+		}
+	}
+	if request.RuntimeURL != nil {
+		if len(*request.RuntimeURL) > 2048 {
+			return fmt.Errorf("runtime_url is too long")
+		}
+	}
+	if request.HermesAPIKey != nil {
+		if len(*request.HermesAPIKey) < 16 {
+			return fmt.Errorf("hermes_api_key is too short")
+		}
+		if len(*request.HermesAPIKey) > 4096 {
+			return fmt.Errorf("hermes_api_key is too long")
+		}
+	}
+	if request.Profile != nil {
+		if len(*request.Profile) < 1 {
+			return fmt.Errorf("profile is too short")
+		}
+		if len(*request.Profile) > 120 {
+			return fmt.Errorf("profile is too long")
+		}
+	}
+	if request.RequestTimeoutSeconds != nil {
+		if *request.RequestTimeoutSeconds < 1 {
+			return fmt.Errorf("request_timeout_seconds is below its minimum")
+		}
+		if *request.RequestTimeoutSeconds > 300 {
+			return fmt.Errorf("request_timeout_seconds exceeds its maximum")
+		}
+	}
+	if request.ManagementURL != nil {
+		if len(*request.ManagementURL) > 2048 {
+			return fmt.Errorf("management_url is too long")
+		}
+	}
+	if request.DashboardSessionToken != nil {
+		if len(*request.DashboardSessionToken) < 16 {
+			return fmt.Errorf("dashboard_session_token is too short")
+		}
+		if len(*request.DashboardSessionToken) > 4096 {
+			return fmt.Errorf("dashboard_session_token is too long")
+		}
+	}
+	if request.CloudflareAccessClientID != nil {
+		if len(*request.CloudflareAccessClientID) < 1 {
+			return fmt.Errorf("cloudflare_access_client_id is too short")
+		}
+		if len(*request.CloudflareAccessClientID) > 4096 {
+			return fmt.Errorf("cloudflare_access_client_id is too long")
+		}
+	}
+	if request.CloudflareAccessClientSecret != nil {
+		if len(*request.CloudflareAccessClientSecret) < 16 {
+			return fmt.Errorf("cloudflare_access_client_secret is too short")
+		}
+		if len(*request.CloudflareAccessClientSecret) > 4096 {
+			return fmt.Errorf("cloudflare_access_client_secret is too long")
+		}
+	}
+	if request.AllowedTools != nil {
+		if len(*request.AllowedTools) > 4 {
+			return fmt.Errorf("allowed_tools has too many items")
+		}
+		if len(*request.AllowedTools) < 1 {
+			return fmt.Errorf("allowed_tools has too few items")
+		}
+	}
+	return nil
+}
+
+// RunAgentChecksRequest is generated from the Core request-body schema.
+type RunAgentChecksRequest struct {
+	Scope string `json:"scope"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RunAgentChecksRequest) Validate() error {
+	if request.Scope == "" {
+		return fmt.Errorf("scope is required")
+	}
+	if request.Scope != "runtime" && request.Scope != "management" && request.Scope != "project_access" && request.Scope != "all" {
+		return fmt.Errorf("scope has an unsupported value")
+	}
+	return nil
+}
+
+// RotateAgentTokenRequest is generated from the Core request-body schema.
+type RotateAgentTokenRequest struct {
+	Name      *string    `json:"name,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RotateAgentTokenRequest) Validate() error {
+	if request.Name != nil {
+		if len(*request.Name) < 1 {
+			return fmt.Errorf("name is too short")
+		}
+		if len(*request.Name) > 120 {
+			return fmt.Errorf("name is too long")
+		}
+	}
+	return nil
+}
+
+// UpdateAgentPromptRequest is generated from the Core request-body schema.
+type UpdateAgentPromptRequest struct {
+	Content string `json:"content"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateAgentPromptRequest) Validate() error {
+	if request.Content == "" {
+		return fmt.Errorf("content is required")
+	}
+	if len(request.Content) < 1 {
+		return fmt.Errorf("content is too short")
+	}
+	if len(request.Content) > 50000 {
+		return fmt.Errorf("content is too long")
+	}
+	return nil
+}
+
+// CreateAgentSessionRequest is generated from the Core request-body schema.
+type CreateAgentSessionRequest struct {
+	Title       string `json:"title"`
+	SessionType string `json:"session_type"`
+	Default     *bool  `json:"default,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateAgentSessionRequest) Validate() error {
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.SessionType == "" {
+		return fmt.Errorf("session_type is required")
+	}
+	if request.SessionType != "main" && request.SessionType != "progress" && request.SessionType != "experiment" {
+		return fmt.Errorf("session_type has an unsupported value")
+	}
+	return nil
+}
+
+// UpdateAgentSessionRequest is generated from the Core request-body schema.
+type UpdateAgentSessionRequest struct {
+	Title string `json:"title"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateAgentSessionRequest) Validate() error {
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	return nil
+}
+
+// EndAgentSessionRequest is generated from the Core request-body schema.
+type EndAgentSessionRequest struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request EndAgentSessionRequest) Validate() error {
+	if request.Reason != nil {
+		if len(*request.Reason) > 500 {
+			return fmt.Errorf("reason is too long")
+		}
+	}
+	return nil
+}
+
+// ForkAgentSessionRequest is generated from the Core request-body schema.
+type ForkAgentSessionRequest struct {
+	Title   *string `json:"title,omitempty"`
+	Default *bool   `json:"default,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ForkAgentSessionRequest) Validate() error {
+	if request.Title != nil {
+		if len(*request.Title) < 1 {
+			return fmt.Errorf("title is too short")
+		}
+		if len(*request.Title) > 255 {
+			return fmt.Errorf("title is too long")
+		}
+	}
+	return nil
+}
+
+// StartAgentRunRequest is generated from the Core request-body schema.
+type StartAgentRunRequest struct {
+	Message string `json:"message"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request StartAgentRunRequest) Validate() error {
+	if request.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if len(request.Message) < 1 {
+		return fmt.Errorf("message is too short")
+	}
+	if len(request.Message) > 100000 {
+		return fmt.Errorf("message is too long")
+	}
+	return nil
+}
+
+// ReplayAgentRunRequest is generated from the Core request-body schema.
+type ReplayAgentRunRequest struct {
+	MessageID *string `json:"message_id,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ReplayAgentRunRequest) Validate() error {
+	if request.MessageID != nil {
+		if len(*request.MessageID) < 1 {
+			return fmt.Errorf("message_id is too short")
+		}
+		if len(*request.MessageID) > 500 {
+			return fmt.Errorf("message_id is too long")
+		}
+	}
+	return nil
+}
+
+// RespondAgentRunApprovalRequest is generated from the Core request-body schema.
+type RespondAgentRunApprovalRequest struct {
+	Choice string `json:"choice"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RespondAgentRunApprovalRequest) Validate() error {
+	if request.Choice == "" {
+		return fmt.Errorf("choice is required")
+	}
+	if request.Choice != "once" && request.Choice != "session" && request.Choice != "always" && request.Choice != "deny" {
+		return fmt.Errorf("choice has an unsupported value")
+	}
+	return nil
+}
+
 // UpdateInboxRequest is generated from the Core request-body schema.
 type UpdateInboxRequest struct {
 	ReadState *string `json:"read_state,omitempty"`
@@ -879,11 +1340,17 @@ func (request RecordAuditEventRequest) Validate() error {
 	if len(request.Category) > 100 {
 		return fmt.Errorf("category is too long")
 	}
+	if matched, err := regexp.MatchString("^[a-z][a-z0-9-]*$", request.Category); err != nil || !matched {
+		return fmt.Errorf("category has an invalid format")
+	}
 	if request.Action == "" {
 		return fmt.Errorf("action is required")
 	}
 	if len(request.Action) > 200 {
 		return fmt.Errorf("action is too long")
+	}
+	if matched, err := regexp.MatchString("^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", request.Action); err != nil || !matched {
+		return fmt.Errorf("action has an invalid format")
 	}
 	if request.Outcome == "" {
 		return fmt.Errorf("outcome is required")
@@ -896,6 +1363,9 @@ func (request RecordAuditEventRequest) Validate() error {
 	}
 	if len(request.Source) > 100 {
 		return fmt.Errorf("source is too long")
+	}
+	if matched, err := regexp.MatchString("^[a-z][a-z0-9-]*$", request.Source); err != nil || !matched {
+		return fmt.Errorf("source has an invalid format")
 	}
 	if request.ResourceType != nil {
 		if len(*request.ResourceType) > 100 {
@@ -985,6 +1455,9 @@ func (request RepoCreateCheckoutRequest) Validate() error {
 	if request.CommitSha == "" {
 		return fmt.Errorf("commit_sha is required")
 	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{40}([0-9a-f]{24})?$", request.CommitSha); err != nil || !matched {
+		return fmt.Errorf("commit_sha has an invalid format")
+	}
 	if request.Purpose == "" {
 		return fmt.Errorf("purpose is required")
 	}
@@ -1024,6 +1497,9 @@ func (request RepoCreateCommitRequest) Validate() error {
 	}
 	if request.ExpectedHeadSha == "" {
 		return fmt.Errorf("expected_head_sha is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{40}([0-9a-f]{24})?$", request.ExpectedHeadSha); err != nil || !matched {
+		return fmt.Errorf("expected_head_sha has an invalid format")
 	}
 	if request.Message == "" {
 		return fmt.Errorf("message is required")
@@ -1093,6 +1569,9 @@ func (request ArtifactInitializeUploadRequest) Validate() error {
 	if request.Sha256 == "" {
 		return fmt.Errorf("sha256 is required")
 	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{64}$", request.Sha256); err != nil || !matched {
+		return fmt.Errorf("sha256 has an invalid format")
+	}
 	if request.MimeType != nil {
 		if len(*request.MimeType) < 1 {
 			return fmt.Errorf("mime_type is too short")
@@ -1154,6 +1633,9 @@ func (request ArtifactInitializeVersionUploadRequest) Validate() error {
 	}
 	if request.Sha256 == "" {
 		return fmt.Errorf("sha256 is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{64}$", request.Sha256); err != nil || !matched {
+		return fmt.Errorf("sha256 has an invalid format")
 	}
 	if request.MimeType != nil {
 		if len(*request.MimeType) < 1 {
@@ -1312,6 +1794,11 @@ func (request ArtifactPreviewJobTransferRequest) Validate() error {
 	if request.SizeBytes != nil {
 		if *request.SizeBytes < 0 {
 			return fmt.Errorf("size_bytes is below its minimum")
+		}
+	}
+	if request.Sha256 != nil {
+		if matched, err := regexp.MatchString("^[0-9a-f]{64}$", *request.Sha256); err != nil || !matched {
+			return fmt.Errorf("sha256 has an invalid format")
 		}
 	}
 	return nil

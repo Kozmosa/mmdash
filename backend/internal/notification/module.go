@@ -52,7 +52,11 @@ func (module Module) handleInboxCollection(w http.ResponseWriter, r *http.Reques
 			writeError(w, r, ErrInvalid)
 			return
 		}
-		if err := module.Service.MarkAllRead(r.Context(), identity, filterFromRequest(r)); err != nil {
+		filter, ok := markAllReadFilter(w, r)
+		if !ok {
+			return
+		}
+		if err := module.Service.MarkAllRead(r.Context(), identity, filter); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -84,7 +88,11 @@ func (module Module) handleInbox(w http.ResponseWriter, r *http.Request) {
 		if !httpx.RequireMethod(w, r, http.MethodPost) {
 			return
 		}
-		if err := module.Service.MarkAllRead(r.Context(), identity, filterFromRequest(r)); err != nil {
+		filter, ok := markAllReadFilter(w, r)
+		if !ok {
+			return
+		}
+		if err := module.Service.MarkAllRead(r.Context(), identity, filter); err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -343,6 +351,23 @@ func notificationPage(r *http.Request) (pagination.Request, bool) {
 func filterFromRequest(r *http.Request) Filter {
 	return Filter{ProjectID: r.URL.Query().Get("project_id"), TypeKey: r.URL.Query().Get("type_key"), ReadState: r.URL.Query().Get("read_state"), Archived: r.URL.Query().Get("archived"), Outcome: r.URL.Query().Get("outcome")}
 }
+func markAllReadFilter(w http.ResponseWriter, r *http.Request) (Filter, bool) {
+	if r.Body == nil || r.Body == http.NoBody || r.ContentLength == 0 {
+		return Filter{}, true
+	}
+	var body contract.MarkAllInboxReadRequest
+	if !httpx.DecodeJSON(w, r, &body) {
+		return Filter{}, false
+	}
+	filter := Filter{}
+	if body.ProjectID != nil {
+		filter.ProjectID = *body.ProjectID
+	}
+	if body.TypeKey != nil {
+		filter.TypeKey = *body.TypeKey
+	}
+	return filter, true
+}
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	if w == nil {
 		return
@@ -357,8 +382,10 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, apperror.New(http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required"))
 	case errors.Is(err, ErrNotFound):
 		httpx.WriteError(w, r, apperror.New(http.StatusNotFound, "NOT_FOUND", "Notification not found"))
-	case errors.Is(err, ErrInvalid):
+	case errors.Is(err, ErrInvalid), errors.Is(err, settings.ErrInvalid):
 		httpx.WriteError(w, r, apperror.New(http.StatusBadRequest, "INVALID_REQUEST", "Notification input is invalid"))
+	case errors.Is(err, ErrDeliveryRetryConflict):
+		httpx.WriteError(w, r, apperror.New(http.StatusConflict, "NOTIFICATION_DELIVERY_RETRY_CONFLICT", "Only failed deliveries can be manually retried"))
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(w, r, apperror.New(http.StatusConflict, "NOTIFICATION_RULE_CONFLICT", "Notification rule was changed by another request"))
 	case errors.Is(err, project.ErrForbidden):

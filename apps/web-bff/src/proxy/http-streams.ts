@@ -149,6 +149,7 @@ export function registerHttpStreamRoutes(
 
 function coreContext(request: FastifyRequest) {
   return {
+    accessToken: request.browserIdentity?.accessToken,
     projectId: request.currentProjectId,
     requestId: request.id,
     userId: request.browserIdentity?.userId,

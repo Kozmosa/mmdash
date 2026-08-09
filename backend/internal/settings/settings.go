@@ -63,6 +63,12 @@ type TypeDefinition struct {
 	Scopes      []Scope           `json:"scopes"`
 	Tester      ConnectionTester  `json:"-"`
 	Title       string            `json:"title"`
+	Validator   ConfigValidator   `json:"-"`
+}
+
+// ConfigValidator checks one complete resolved candidate before it is saved.
+type ConfigValidator interface {
+	ValidateConfig(map[string]interface{}) error
 }
 
 // TypeDescriptor is the serializable type-registry projection.
@@ -202,6 +208,7 @@ type StoredSetting struct {
 	CreatedAt        time.Time
 	EncryptedSecrets map[string]EncryptedSecret
 	PublicValues     map[string]interface{}
+	ResourceID       string
 	Scope            Scope
 	ScopeID          string
 	TypeKey          string
@@ -212,22 +219,24 @@ type StoredSetting struct {
 
 // Setting is the public projection with secrets redacted.
 type Setting struct {
-	Scope     Scope                  `json:"scope"`
-	ScopeID   string                 `json:"scope_id"`
-	TypeKey   string                 `json:"type_key"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	UpdatedBy string                 `json:"updated_by"`
-	Values    map[string]interface{} `json:"values"`
-	Version   int64                  `json:"version"`
+	ResourceID string                 `json:"resource_id,omitempty"`
+	Scope      Scope                  `json:"scope"`
+	ScopeID    string                 `json:"scope_id"`
+	TypeKey    string                 `json:"type_key"`
+	UpdatedAt  time.Time              `json:"updated_at"`
+	UpdatedBy  string                 `json:"updated_by"`
+	Values     map[string]interface{} `json:"values"`
+	Version    int64                  `json:"version"`
 }
 
 // ResolvedSetting is passed only to trusted in-process module adapters.
 type ResolvedSetting struct {
-	Scope   Scope
-	ScopeID string
-	TypeKey string
-	Values  map[string]interface{}
-	Version int64
+	ResourceID string
+	Scope      Scope
+	ScopeID    string
+	TypeKey    string
+	Values     map[string]interface{}
+	Version    int64
 }
 
 // Store is the persistence boundary for encrypted settings.
@@ -235,6 +244,15 @@ type Store interface {
 	Delete(context.Context, Scope, string, string, string) error
 	Get(context.Context, Scope, string, string) (StoredSetting, error)
 	Upsert(context.Context, string, StoredSetting) (StoredSetting, error)
+}
+
+// ResourceStore extends Store for module-owned settings attached to a stable
+// resource such as one Agent instance. Generic Settings routes always use the
+// empty resource ID and cannot enumerate or overwrite these values.
+type ResourceStore interface {
+	DeleteResource(context.Context, Scope, string, string, string, string) error
+	GetResource(context.Context, Scope, string, string, string) (StoredSetting, error)
+	UpsertResource(context.Context, string, StoredSetting) (StoredSetting, error)
 }
 
 // Authorizer enforces system-admin and project configuration permissions.
@@ -368,6 +386,9 @@ func (service Service) Update(
 	if err := service.applyPatch(definition, &stored, patch); err != nil {
 		return Setting{}, err
 	}
+	if err := service.validateStoredConfig(definition, stored); err != nil {
+		return Setting{}, err
+	}
 	updated, err := service.Store.Upsert(ctx, identity.User.ID, stored)
 	if err != nil {
 		return Setting{}, err
@@ -480,6 +501,130 @@ func (service Service) Resolve(
 	}, nil
 }
 
+// GetResource returns a redacted module-owned instance setting after applying
+// the same project authorization and registry validation as generic Settings.
+func (service Service) GetResource(
+	ctx context.Context,
+	identity auth.Identity,
+	scope Scope,
+	scopeID string,
+	typeKey string,
+	resourceID string,
+) (Setting, error) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return Setting{}, ErrInvalid
+	}
+	if err := service.Access.Authorize(ctx, identity, scope, scopeID, false); err != nil {
+		return Setting{}, err
+	}
+	if _, err := service.definition(typeKey, scope); err != nil {
+		return Setting{}, err
+	}
+	store, ok := service.Store.(ResourceStore)
+	if !ok {
+		return Setting{}, fmt.Errorf("resource settings store is not configured")
+	}
+	stored, err := store.GetResource(
+		ctx, scope, normalizeScopeID(scope, scopeID), typeKey, resourceID,
+	)
+	if err != nil {
+		return Setting{}, err
+	}
+	return redact(stored), nil
+}
+
+// UpdateResource stores encrypted module secrets without exposing them through
+// the generic Settings collection.
+func (service Service) UpdateResource(
+	ctx context.Context,
+	identity auth.Identity,
+	scope Scope,
+	scopeID string,
+	typeKey string,
+	resourceID string,
+	patch map[string]interface{},
+) (Setting, error) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return Setting{}, ErrInvalid
+	}
+	if err := service.Access.Authorize(ctx, identity, scope, scopeID, true); err != nil {
+		return Setting{}, err
+	}
+	definition, err := service.definition(typeKey, scope)
+	if err != nil {
+		return Setting{}, err
+	}
+	store, ok := service.Store.(ResourceStore)
+	if !ok {
+		return Setting{}, fmt.Errorf("resource settings store is not configured")
+	}
+	scopeID = normalizeScopeID(scope, scopeID)
+	stored, err := store.GetResource(ctx, scope, scopeID, typeKey, resourceID)
+	if errors.Is(err, ErrNotFound) {
+		stored = StoredSetting{
+			EncryptedSecrets: map[string]EncryptedSecret{},
+			PublicValues:     map[string]interface{}{},
+			ResourceID:       resourceID,
+			Scope:            scope,
+			ScopeID:          scopeID,
+			TypeKey:          typeKey,
+		}
+	} else if err != nil {
+		return Setting{}, err
+	}
+	if err := service.applyPatch(definition, &stored, patch); err != nil {
+		return Setting{}, err
+	}
+	updated, err := store.UpsertResource(ctx, identity.User.ID, stored)
+	if err != nil {
+		return Setting{}, err
+	}
+	return redact(updated), nil
+}
+
+// ResolveResource decrypts one module-owned instance setting for trusted
+// in-process adapters only.
+func (service Service) ResolveResource(
+	ctx context.Context,
+	scope Scope,
+	scopeID string,
+	typeKey string,
+	resourceID string,
+) (ResolvedSetting, error) {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return ResolvedSetting{}, ErrInvalid
+	}
+	if _, err := service.definition(typeKey, scope); err != nil {
+		return ResolvedSetting{}, err
+	}
+	store, ok := service.Store.(ResourceStore)
+	if !ok {
+		return ResolvedSetting{}, fmt.Errorf("resource settings store is not configured")
+	}
+	stored, err := store.GetResource(
+		ctx, scope, normalizeScopeID(scope, scopeID), typeKey, resourceID,
+	)
+	if err != nil {
+		return ResolvedSetting{}, err
+	}
+	values := cloneValues(stored.PublicValues)
+	for key, encrypted := range stored.EncryptedSecrets {
+		value, err := service.Codec.Decrypt(encrypted)
+		if err != nil {
+			return ResolvedSetting{}, fmt.Errorf("decrypt setting %s: %w", key, err)
+		}
+		values[key] = value
+	}
+	return ResolvedSetting{
+		ResourceID: stored.ResourceID,
+		Scope:      stored.Scope, ScopeID: stored.ScopeID, TypeKey: stored.TypeKey,
+		Values: values, Version: stored.Version,
+	}, nil
+}
+
 func (service Service) definition(typeKey string, scope Scope) (TypeDefinition, error) {
 	definition, err := service.Registry.Get(typeKey)
 	if err != nil {
@@ -547,6 +692,27 @@ func (service Service) applyPatch(
 		} else if _, exists := stored.PublicValues[field.Key]; !exists {
 			return fmt.Errorf("%w: %s is required", ErrInvalid, field.Key)
 		}
+	}
+	return nil
+}
+
+func (service Service) validateStoredConfig(
+	definition TypeDefinition,
+	stored StoredSetting,
+) error {
+	if definition.Validator == nil {
+		return nil
+	}
+	values := cloneValues(stored.PublicValues)
+	for key, encrypted := range stored.EncryptedSecrets {
+		plaintext, err := service.Codec.Decrypt(encrypted)
+		if err != nil {
+			return fmt.Errorf("decrypt setting %s for validation: %w", key, err)
+		}
+		values[key] = plaintext
+	}
+	if err := definition.Validator.ValidateConfig(values); err != nil {
+		return fmt.Errorf("%w: configuration is invalid", ErrInvalid)
 	}
 	return nil
 }
@@ -621,13 +787,14 @@ func redact(stored StoredSetting) Setting {
 		values[key] = RedactedSecret
 	}
 	return Setting{
-		Scope:     stored.Scope,
-		ScopeID:   stored.ScopeID,
-		TypeKey:   stored.TypeKey,
-		UpdatedAt: stored.UpdatedAt,
-		UpdatedBy: stored.UpdatedBy,
-		Values:    values,
-		Version:   stored.Version,
+		ResourceID: stored.ResourceID,
+		Scope:      stored.Scope,
+		ScopeID:    stored.ScopeID,
+		TypeKey:    stored.TypeKey,
+		UpdatedAt:  stored.UpdatedAt,
+		UpdatedBy:  stored.UpdatedBy,
+		Values:     values,
+		Version:    stored.Version,
 	}
 }
 

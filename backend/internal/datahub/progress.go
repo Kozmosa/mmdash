@@ -22,6 +22,12 @@ func (store PostgresStore) ProjectProgress(ctx context.Context, event contract.E
 	if strings.TrimSpace(resourceID) == "" || strings.TrimSpace(resourceType) == "" || strings.TrimSpace(title) == "" {
 		return ErrInvalid
 	}
+	if event.EventType == "progress.task.deleted" {
+		if resourceType != "task" || status != "deleted" {
+			return ErrInvalid
+		}
+		status = "hidden"
+	}
 	objectID, err := store.Generator.New()
 	if err != nil {
 		return err
@@ -38,7 +44,20 @@ func (store PostgresStore) ProjectProgress(ctx context.Context, event contract.E
 		if err != nil || done {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO data_objects(object_id,project_id,object_type,source_module,source_id,title,summary,status,metadata,occurred_at,created_at,updated_at) VALUES($1,$2,$3,'progress',$4,$5,$6,$7,$8,$9,$9,$9) ON CONFLICT(source_module,object_type,source_id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,status=EXCLUDED.status,metadata=EXCLUDED.metadata,version=data_objects.version+1,occurred_at=EXCLUDED.occurred_at,updated_at=EXCLUDED.updated_at`, objectID, projectID, resourceType, resourceID, title, event.EventType, status, metadata, event.OccurredAt); err != nil {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO data_objects(
+				object_id,project_id,object_type,source_module,source_id,
+				title,summary,status,metadata,occurred_at,created_at,updated_at
+			) VALUES($1,$2,$3,'progress',$4,$5,$6,$7,$8,$9,$9,$9)
+			ON CONFLICT(source_module,object_type,source_id) DO UPDATE SET
+				title=CASE WHEN data_objects.status='hidden' THEN data_objects.title ELSE EXCLUDED.title END,
+				summary=CASE WHEN data_objects.status='hidden' THEN data_objects.summary ELSE EXCLUDED.summary END,
+				status=CASE WHEN data_objects.status='hidden' THEN 'hidden' ELSE EXCLUDED.status END,
+				metadata=CASE WHEN data_objects.status='hidden' THEN data_objects.metadata ELSE EXCLUDED.metadata END,
+				version=data_objects.version+1,
+				occurred_at=GREATEST(data_objects.occurred_at,EXCLUDED.occurred_at),
+				updated_at=GREATEST(data_objects.updated_at,EXCLUDED.updated_at)
+		`, objectID, projectID, resourceType, resourceID, title, event.EventType, status, metadata, event.OccurredAt); err != nil {
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO data_activity(activity_id,project_id,object_id,event_id,activity_type,title,summary,actor,metadata,occurred_at,created_at) SELECT $1,$2,object_id,$3,$4,$5,$6,$7,$8,$9,$10 FROM data_objects WHERE source_module='progress' AND object_type=$11 AND source_id=$12 ON CONFLICT(event_id) WHERE event_id IS NOT NULL DO NOTHING`, activityID, projectID, event.EventID, event.EventType, title, status, actor, metadata, event.OccurredAt, store.Clock.Now().UTC(), resourceType, resourceID)

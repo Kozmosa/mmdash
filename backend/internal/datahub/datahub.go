@@ -55,36 +55,41 @@ type Activity struct {
 
 // ContextProposal is an untrusted suggestion awaiting human review.
 type ContextProposal struct {
-	Content         string     `json:"content"`
-	ContextType     string     `json:"context_type"`
-	CreatedAt       time.Time  `json:"created_at"`
-	ID              string     `json:"proposal_id"`
-	ProjectID       string     `json:"project_id"`
-	PromotedContext string     `json:"promoted_context_id,omitempty"`
-	ProposedBy      string     `json:"proposed_by"`
-	Rationale       string     `json:"rationale"`
-	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
-	ReviewedBy      string     `json:"reviewed_by,omitempty"`
-	ReviewNote      string     `json:"review_note"`
-	SourceObjectIDs []string   `json:"source_object_ids"`
-	Status          string     `json:"status"`
-	Title           string     `json:"title"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	AgentRunID          string     `json:"agent_run_id,omitempty"`
+	AgentSessionID      string     `json:"agent_session_id,omitempty"`
+	Content             string     `json:"content"`
+	ContextType         string     `json:"context_type"`
+	CreatedAt           time.Time  `json:"created_at"`
+	ID                  string     `json:"proposal_id"`
+	ProjectID           string     `json:"project_id"`
+	PromotedContext     string     `json:"promoted_context_id,omitempty"`
+	ProposedBy          string     `json:"proposed_by"`
+	ProposedByActorID   string     `json:"proposed_by_actor_id,omitempty"`
+	ProposedByActorKind string     `json:"proposed_by_actor_kind,omitempty"`
+	Rationale           string     `json:"rationale"`
+	ReviewedAt          *time.Time `json:"reviewed_at,omitempty"`
+	ReviewedBy          string     `json:"reviewed_by,omitempty"`
+	ReviewNote          string     `json:"review_note"`
+	SourceObjectIDs     []string   `json:"source_object_ids"`
+	Status              string     `json:"status"`
+	Title               string     `json:"title"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // ContextEntry is project context made formal by a human reviewer.
 type ContextEntry struct {
-	ConfirmedAt     time.Time `json:"confirmed_at"`
-	ConfirmedBy     string    `json:"confirmed_by"`
-	Content         string    `json:"content"`
-	ContextType     string    `json:"context_type"`
-	CreatedAt       time.Time `json:"created_at"`
-	ID              string    `json:"context_id"`
-	ProjectID       string    `json:"project_id"`
-	ProposedBy      string    `json:"proposed_by"`
-	SourceObjectIDs []string  `json:"source_object_ids"`
-	Title           string    `json:"title"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ConfirmedAt         time.Time `json:"confirmed_at"`
+	ConfirmedBy         string    `json:"confirmed_by"`
+	Content             string    `json:"content"`
+	ContextType         string    `json:"context_type"`
+	CreatedAt           time.Time `json:"created_at"`
+	ID                  string    `json:"context_id"`
+	ProjectID           string    `json:"project_id"`
+	ProposedBy          string    `json:"proposed_by"`
+	ProposedByActorKind string    `json:"-"`
+	SourceObjectIDs     []string  `json:"source_object_ids"`
+	Title               string    `json:"title"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // ObjectPage and ActivityPage expose opaque continuation cursors.
@@ -121,6 +126,8 @@ type HomeAggregate struct {
 }
 
 type CreateProposalInput struct {
+	AgentRunID      string
+	AgentSessionID  string
 	Content         string
 	ContextType     string
 	Rationale       string
@@ -133,9 +140,20 @@ type ReviewProposalInput struct {
 	Note     string
 }
 
+// ProposalActor records the independent caller identity without requiring an
+// Agent instance to exist in auth_users. UserID is populated only for human or
+// generic API credentials whose legacy foreign key remains valid.
+type ProposalActor struct {
+	AgentRunID     string
+	AgentSessionID string
+	ID             string
+	Kind           string
+	UserID         string
+}
+
 // Store is the Data Hub persistence boundary.
 type Store interface {
-	CreateProposal(context.Context, string, string, CreateProposalInput) (ContextProposal, error)
+	CreateProposal(context.Context, string, ProposalActor, CreateProposalInput) (ContextProposal, error)
 	GetContext(context.Context, string, string) (ContextEntry, error)
 	GetObject(context.Context, string, string) (Object, error)
 	GetProposal(context.Context, string, string) (ContextProposal, error)
@@ -150,6 +168,10 @@ type Store interface {
 type Access interface {
 	Authenticate(context.Context, string) (auth.Identity, error)
 	Authorize(context.Context, auth.Identity, string, project.Permission) error
+}
+
+type AgentProvenanceValidator interface {
+	ValidateProvenance(context.Context, string, string, string, string) error
 }
 
 // Reader resolves full authoritative content for one registered object type.
@@ -175,6 +197,10 @@ type ProblemProvider interface {
 
 type ProgressProvider interface {
 	ProgressHomeItems(context.Context, auth.Identity, string) ([]interface{}, []interface{}, error)
+}
+
+type AgentProvider interface {
+	AgentHomeItems(context.Context, auth.Identity, string) ([]interface{}, error)
 }
 
 // AdapterRegistry maps stable object types to domain-owned readers.
@@ -228,12 +254,14 @@ func (registry *AdapterRegistry) Types() []string {
 
 // Service coordinates authorization, routing, and context policy.
 type Service struct {
-	Access   Access
-	Adapters *AdapterRegistry
-	Clock    interface{ Now() time.Time }
-	Problem  ProblemProvider
-	Progress ProgressProvider
-	Store    Store
+	Access          Access
+	Adapters        *AdapterRegistry
+	Agent           AgentProvider
+	AgentProvenance AgentProvenanceValidator
+	Clock           interface{ Now() time.Time }
+	Problem         ProblemProvider
+	Progress        ProgressProvider
+	Store           Store
 }
 
 func (service Service) Authenticate(ctx context.Context, authorization string) (auth.Identity, error) {
@@ -247,6 +275,9 @@ func (service Service) ListObjects(
 	objectType string,
 	page pagination.Request,
 ) (ObjectPage, error) {
+	if err := auth.RequireAgentTool(identity, "data.list"); err != nil {
+		return ObjectPage{}, ErrForbidden
+	}
 	if err := service.Access.Authorize(ctx, identity, projectID, PermissionDataRead); err != nil {
 		return ObjectPage{}, err
 	}
@@ -263,6 +294,9 @@ func (service Service) ReadObject(
 	projectID string,
 	objectID string,
 ) (map[string]interface{}, error) {
+	if err := auth.RequireAgentTool(identity, "data.read"); err != nil {
+		return nil, ErrForbidden
+	}
 	if err := service.Access.Authorize(ctx, identity, projectID, PermissionDataRead); err != nil {
 		return nil, err
 	}
@@ -283,6 +317,9 @@ func (service Service) ListActivity(
 	projectID string,
 	page pagination.Request,
 ) (ActivityPage, error) {
+	if err := auth.RequireAgentTool(identity, "data.list"); err != nil {
+		return ActivityPage{}, ErrForbidden
+	}
 	if err := service.Access.Authorize(ctx, identity, projectID, PermissionDataRead); err != nil {
 		return ActivityPage{}, err
 	}
@@ -298,6 +335,9 @@ func (service Service) ListContext(
 	identity auth.Identity,
 	projectID string,
 ) ([]ContextEntry, error) {
+	if err := auth.RequireAgentTool(identity, "data.list"); err != nil {
+		return nil, ErrForbidden
+	}
 	if err := service.Access.Authorize(ctx, identity, projectID, PermissionDataRead); err != nil {
 		return nil, err
 	}
@@ -309,6 +349,9 @@ func (service Service) ListProposals(
 	identity auth.Identity,
 	projectID string,
 ) ([]ContextProposal, error) {
+	if err := auth.RequireAgentTool(identity, "context.promote"); err != nil {
+		return nil, ErrForbidden
+	}
 	if err := service.Access.Authorize(ctx, identity, projectID, PermissionContextPropose); err != nil {
 		return nil, err
 	}
@@ -321,6 +364,9 @@ func (service Service) CreateProposal(
 	projectID string,
 	input CreateProposalInput,
 ) (ContextProposal, error) {
+	if err := auth.RequireAgentTool(identity, "context.promote"); err != nil {
+		return ContextProposal{}, ErrForbidden
+	}
 	if err := service.Access.Authorize(ctx, identity, projectID, PermissionContextPropose); err != nil {
 		return ContextProposal{}, err
 	}
@@ -328,10 +374,50 @@ func (service Service) CreateProposal(
 	input.Content = strings.TrimSpace(input.Content)
 	input.ContextType = strings.TrimSpace(input.ContextType)
 	input.Rationale = strings.TrimSpace(input.Rationale)
+	input.AgentSessionID = strings.TrimSpace(input.AgentSessionID)
+	input.AgentRunID = strings.TrimSpace(input.AgentRunID)
 	if input.Title == "" || input.Content == "" || input.ContextType == "" {
 		return ContextProposal{}, ErrInvalid
 	}
-	return service.Store.CreateProposal(ctx, projectID, identity.User.ID, input)
+	if len(input.SourceObjectIDs) > 100 {
+		return ContextProposal{}, ErrInvalid
+	}
+	seen := map[string]bool{}
+	validatedSourceIDs := make([]string, 0, len(input.SourceObjectIDs))
+	for _, sourceID := range input.SourceObjectIDs {
+		sourceID = strings.TrimSpace(sourceID)
+		if sourceID == "" {
+			return ContextProposal{}, ErrInvalid
+		}
+		if !seen[sourceID] {
+			seen[sourceID] = true
+			validatedSourceIDs = append(validatedSourceIDs, sourceID)
+		}
+	}
+	input.SourceObjectIDs = validatedSourceIDs
+	actor := ProposalActor{ID: identity.ActorID(), Kind: identity.Kind}
+	if identity.Kind == "agent" {
+		if (input.AgentSessionID == "") != (input.AgentRunID == "") {
+			return ContextProposal{}, ErrInvalid
+		}
+		if input.AgentSessionID != "" {
+			if service.AgentProvenance == nil ||
+				service.AgentProvenance.ValidateProvenance(
+					ctx, identity.AgentInstanceID, projectID,
+					input.AgentSessionID, input.AgentRunID,
+				) != nil {
+				return ContextProposal{}, ErrForbidden
+			}
+			actor.AgentSessionID = input.AgentSessionID
+			actor.AgentRunID = input.AgentRunID
+		}
+	} else {
+		if input.AgentSessionID != "" || input.AgentRunID != "" {
+			return ContextProposal{}, ErrForbidden
+		}
+		actor.UserID = identity.User.ID
+	}
+	return service.Store.CreateProposal(ctx, projectID, actor, input)
 }
 
 func (service Service) ReviewProposal(
@@ -391,8 +477,18 @@ func (service Service) Home(
 		milestones = HomeSection{Available: true, Items: nonNilItems(milestoneItems), Total: len(milestoneItems)}
 		todos = HomeSection{Available: true, Items: nonNilItems(todoItems), Total: len(todoItems)}
 	}
+	agentSection := empty()
+	if service.Agent != nil {
+		agentItems, err := service.Agent.AgentHomeItems(ctx, identity, projectID)
+		if err != nil {
+			return HomeAggregate{}, err
+		}
+		agentSection = HomeSection{
+			Available: true, Items: nonNilItems(agentItems), Total: len(agentItems),
+		}
+	}
 	return HomeAggregate{
-		Agent: empty(), Article: empty(), Experiments: empty(),
+		Agent: agentSection, Article: empty(), Experiments: empty(),
 		GeneratedAt: service.Clock.Now().UTC(), Milestones: milestones,
 		Models: empty(), Problem: problem, ProjectID: projectID, Todos: todos,
 	}, nil
