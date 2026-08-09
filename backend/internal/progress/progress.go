@@ -311,10 +311,10 @@ func (service Service) List(ctx context.Context, identity auth.Identity, project
 		if task.Status == TaskBlocked {
 			result.Blocked = append(result.Blocked, task)
 		}
-		if task.Status != TaskDone && task.DueAt != nil && task.DueAt.Before(now) {
+		if task.Status != TaskDone && task.Status != TaskCancelled && task.DueAt != nil && task.DueAt.Before(now) {
 			result.Overdue = append(result.Overdue, task)
 		}
-		if task.DueAt != nil && !task.DueAt.Before(today) && task.DueAt.Before(tomorrow) {
+		if task.Status != TaskDone && task.Status != TaskCancelled && task.DueAt != nil && !task.DueAt.Before(today) && task.DueAt.Before(tomorrow) {
 			result.Today = append(result.Today, task)
 		}
 		switch task.Status {
