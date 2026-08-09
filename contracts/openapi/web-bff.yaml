@@ -1846,6 +1846,24 @@ paths:
             schema:
               { type: string, enum: [active, resolved, revoked, expired] },
           }
+        - {
+            name: outcome_group,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [processed] },
+          }
+        - {
+            name: occurred_from,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: occurred_to,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
+          }
         - { name: cursor, in: query, required: false, schema: { type: string } }
         - {
             name: limit,
@@ -2111,13 +2129,32 @@ paths:
       operationId: bff.notification.deliveries.list
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: channel_key, in: query, required: false, schema: { type: string } }
+        - {
+            name: channel_key,
+            in: query,
+            required: false,
+            schema: { type: string },
+          }
         - { name: cursor, in: query, required: false, schema: { type: string } }
-        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - {
+            name: limit,
+            in: query,
+            required: false,
+            schema: { type: integer, minimum: 1, maximum: 200 },
+          }
       responses:
         "200":
           description: Delivery page.
-          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/NotificationDeliveryPage" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/NotificationDeliveryPage",
+                    },
+                },
+            }
   /api/projects/{projectId}/notification-deliveries/{deliveryId}/retry:
     post:
       tags: [Notification]
@@ -2128,11 +2165,29 @@ paths:
         - { $ref: "./core.yaml#/components/parameters/NotificationDeliveryId" }
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/RetryNotificationDeliveryRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "./core.yaml#/components/schemas/RetryNotificationDeliveryRequest",
+                  },
+              },
+          }
       responses:
         "200":
           description: Retry delivery.
-          content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/NotificationDelivery" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/NotificationDelivery",
+                    },
+                },
+            }
 components:
   securitySchemes:
     browserSession:

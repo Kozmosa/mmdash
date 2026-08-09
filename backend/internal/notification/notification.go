@@ -91,11 +91,14 @@ type DeliveryPage struct {
 }
 
 type Filter struct {
-	ProjectID string
-	TypeKey   string
-	ReadState string
-	Archived  string
-	Outcome   string
+	ProjectID    string
+	TypeKey      string
+	ReadState    string
+	Archived     string
+	Outcome      string
+	OutcomeGroup string
+	OccurredFrom *time.Time
+	OccurredTo   *time.Time
 }
 
 type RecipientInput struct {
@@ -108,7 +111,6 @@ type RecipientInput struct {
 type Rule struct {
 	ProjectID       string    `json:"project_id"`
 	TypeKey         string    `json:"type_key"`
-	InboxEnabled    bool      `json:"inbox_enabled"`
 	ExternalEnabled bool      `json:"external_enabled"`
 	ChannelKeys     []string  `json:"channel_keys"`
 	MinimumPriority string    `json:"minimum_priority"`
@@ -409,11 +411,8 @@ func (service Service) handleRegisteredEvent(ctx context.Context, event contract
 	if err != nil {
 		return err
 	}
-	if descriptor.InboxPolicy == "required" {
-		rule.InboxEnabled = true
-	}
-	inboxEnabled := descriptor.InboxPolicy != "disabled" && rule.InboxEnabled
-	notification := Notification{ID: id, TypeKey: descriptor.TypeKey, TemplateVersion: descriptor.TemplateVersion, SourceEventID: event.EventID, ProjectID: projectID, ActorID: actorID, ResourceType: resourceType, ResourceID: resourceID, Priority: descriptor.Priority, Data: data, RenderedSnapshot: data, OccurredAt: event.OccurredAt, CreatedAt: event.OccurredAt}
+	inboxEnabled := descriptor.InboxPolicy == "required" || descriptor.InboxPolicy == "default_on"
+	notification := Notification{ID: id, TypeKey: descriptor.TypeKey, TemplateVersion: descriptor.TemplateVersion, SourceEventID: event.EventID, ProjectID: projectID, ActorID: actorID, ResourceType: resourceType, ResourceID: resourceID, Priority: descriptor.Priority, Data: data, RenderedSnapshot: renderInboxSnapshot(descriptor.TypeKey, data), OccurredAt: event.OccurredAt, CreatedAt: event.OccurredAt}
 	if descriptor.TypeKey == TypeInvitationReceived {
 		if invitationID := stringValue(data["invitation_id"]); invitationID != "" {
 			notification.Action = &Action{
@@ -498,12 +497,59 @@ func priorityAtLeast(priority, minimum string) bool {
 	return rank[priority] >= rank[minimum]
 }
 
+func renderInboxSnapshot(typeKey string, data map[string]interface{}) map[string]interface{} {
+	switch typeKey {
+	case TypeInvitationReceived:
+		projectName := stringValue(data["project_name"])
+		role := stringValue(data["role"])
+		title := "项目邀请"
+		if projectName != "" {
+			title = "加入“" + projectName + "”的邀请"
+		}
+		body := "你收到了一条项目邀请。"
+		if role != "" {
+			body = "你被邀请以 " + role + " 身份加入项目。"
+		}
+		return map[string]interface{}{"title": title, "body": body}
+	case TypeReminderDue:
+		title := stringValue(data["title"])
+		if title == "" {
+			title = "Progress 提醒到期"
+		}
+		return map[string]interface{}{"title": title, "body": "项目中有一项需要你关注的 Progress 提醒。"}
+	default:
+		return map[string]interface{}{"title": "需要关注的通知", "body": "项目中有一项需要你处理的消息。"}
+	}
+}
+
+func validInboxFilter(filter Filter) bool {
+	if filter.ReadState != "" && filter.ReadState != "read" && filter.ReadState != "unread" {
+		return false
+	}
+	if filter.Archived != "" && filter.Archived != "true" && filter.Archived != "false" {
+		return false
+	}
+	if filter.Outcome != "" && filter.Outcome != OutcomeActive && filter.Outcome != OutcomeResolved && filter.Outcome != OutcomeRevoked && filter.Outcome != OutcomeExpired {
+		return false
+	}
+	if filter.OutcomeGroup != "" && filter.OutcomeGroup != "processed" {
+		return false
+	}
+	if filter.Outcome != "" && filter.OutcomeGroup != "" {
+		return false
+	}
+	return filter.OccurredFrom == nil || filter.OccurredTo == nil || !filter.OccurredFrom.After(*filter.OccurredTo)
+}
+
 func (service Service) ListInbox(ctx context.Context, identity auth.Identity, filter Filter, page pagination.Request) (Page, error) {
 	if err := humanInboxCaller(identity); err != nil {
 		return Page{}, err
 	}
 	page, err := page.Normalize()
 	if err != nil {
+		return Page{}, ErrInvalid
+	}
+	if !validInboxFilter(filter) {
 		return Page{}, ErrInvalid
 	}
 	return service.Store.ListInbox(ctx, identity.User.ID, filter, page)
@@ -527,6 +573,9 @@ func (service Service) MarkAllRead(ctx context.Context, identity auth.Identity, 
 	if err := humanInboxCaller(identity); err != nil {
 		return err
 	}
+	if !validInboxFilter(filter) {
+		return ErrInvalid
+	}
 	return service.Store.MarkAllRead(ctx, identity.User.ID, filter)
 }
 func (service Service) UnreadCount(ctx context.Context, identity auth.Identity, projectID string) (int64, error) {
@@ -542,7 +591,7 @@ func humanInboxCaller(identity auth.Identity) error {
 	return nil
 }
 func (service Service) GetRule(ctx context.Context, identity auth.Identity, projectID, typeKey string) (Rule, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return Rule{}, err
 	}
 	if service.Registry == nil {
@@ -563,9 +612,6 @@ func (service Service) UpsertRule(ctx context.Context, identity auth.Identity, r
 	descriptor, ok := service.Registry.Get(rule.TypeKey)
 	if !ok {
 		return Rule{}, ErrNotFound
-	}
-	if descriptor.InboxPolicy == "required" {
-		rule.InboxEnabled = true
 	}
 	if !descriptor.ExternalAllowed {
 		rule.ExternalEnabled = false
@@ -597,12 +643,12 @@ func (service Service) UpsertRule(ctx context.Context, identity auth.Identity, r
 	rule.UpdatedAt = service.now()
 	result, err := service.Store.UpsertRule(ctx, rule)
 	if err == nil && service.Audit != nil {
-		_ = service.Audit.Record(ctx, audit.Event{Action: "notification.rule.updated", ActorID: identity.User.ID, ActorKind: identity.Kind, Category: "notification", Metadata: map[string]interface{}{"type_key": rule.TypeKey, "external_enabled": rule.ExternalEnabled, "inbox_enabled": rule.InboxEnabled}, OccurredAt: service.now(), Outcome: "success", ProjectID: rule.ProjectID, ResourceID: rule.TypeKey, ResourceType: "notification-rule", Source: "notification", RecordedAt: service.now()})
+		_ = service.Audit.Record(ctx, audit.Event{Action: "notification.rule.updated", ActorID: identity.User.ID, ActorKind: identity.Kind, Category: "notification", Metadata: map[string]interface{}{"type_key": rule.TypeKey, "external_enabled": rule.ExternalEnabled}, OccurredAt: service.now(), Outcome: "success", ProjectID: rule.ProjectID, ResourceID: rule.TypeKey, ResourceType: "notification-rule", Source: "notification", RecordedAt: service.now()})
 	}
 	return result, err
 }
 func (service Service) ListDeliveries(ctx context.Context, identity auth.Identity, projectID, channelKey string, page pagination.Request) (DeliveryPage, error) {
-	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsRead); err != nil {
+	if err := service.authorizeProject(ctx, identity, projectID, project.PermissionSettingsManage); err != nil {
 		return DeliveryPage{}, err
 	}
 	page, err := page.Normalize()
@@ -743,7 +789,7 @@ func (adapter PersistenceAdapter) Accept(ctx context.Context, intent Intent) err
 	}
 	if intent.Notification.ID == "" {
 		data := map[string]interface{}{"reminder_id": intent.ReminderID}
-		intent.Notification = Notification{ID: intent.ID, TypeKey: TypeReminderDue, TemplateVersion: 1, SourceEventID: intent.SourceEventID, ProjectID: intent.ProjectID, ResourceType: "reminder", ResourceID: intent.ReminderID, Priority: "normal", Data: data, RenderedSnapshot: data, OccurredAt: intent.CreatedAt, CreatedAt: intent.CreatedAt}
+		intent.Notification = Notification{ID: intent.ID, TypeKey: TypeReminderDue, TemplateVersion: 1, SourceEventID: intent.SourceEventID, ProjectID: intent.ProjectID, ResourceType: "reminder", ResourceID: intent.ReminderID, Priority: "normal", Data: data, RenderedSnapshot: renderInboxSnapshot(TypeReminderDue, data), OccurredAt: intent.CreatedAt, CreatedAt: intent.CreatedAt}
 	}
 	return adapter.Store.CreateEvent(ctx, intent.Notification, intent.Recipients, true, nil)
 }

@@ -83,7 +83,6 @@ func TestCoreHTTPNotificationRuleRoundTrip(t *testing.T) {
 		t.Fatalf("configure notification channel: status=%d err=%v", status, err)
 	}
 	body := map[string]interface{}{
-		"inbox_enabled":    true,
 		"external_enabled": true,
 		"channel_keys":     []string{"notification.generic_webhook"},
 		"minimum_priority": "high",

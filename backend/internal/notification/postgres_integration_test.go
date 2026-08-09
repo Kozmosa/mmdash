@@ -60,7 +60,6 @@ func TestPostgresRuleJSONBReadWrite(t *testing.T) {
 	want := Rule{
 		ProjectID:       projectID,
 		TypeKey:         TypeReminderDue,
-		InboxEnabled:    true,
 		ExternalEnabled: true,
 		ChannelKeys:     []string{"notification.generic_webhook", "notification.feishu_webhook"},
 		MinimumPriority: "high",
