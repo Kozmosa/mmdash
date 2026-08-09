@@ -648,6 +648,51 @@ export class CoreClient {
     );
   }
 
+  async getNotionOAuthConnection(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotionOAuthConnection"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/notion/oauth`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async startNotionOAuth(
+    projectId: string,
+    input: components["schemas"]["StartNotionOAuthRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotionOAuthAuthorization"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/notion/oauth/authorizations`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async completeNotionOAuth(
+    input: components["schemas"]["CompleteNotionOAuthRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotionOAuthCallbackResult"]> {
+    return this.request(
+      "/v1/model-notion/oauth/callback",
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async disconnectNotionOAuth(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/notion/oauth/connection`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
   async listModelQuestions(
     projectId: string,
     context: CoreRequestContext,

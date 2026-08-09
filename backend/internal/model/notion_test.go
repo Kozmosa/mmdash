@@ -103,6 +103,13 @@ func TestParseNotionPageURLAcceptsCurrentAppLinks(t *testing.T) {
 	}
 }
 
+func TestParseNotionPageURLAcceptsPublishedSiteLinks(t *testing.T) {
+	pageID, _, err := parseNotionPageURL("https://nyaku.notion.site/3a4df00a545d801cae41e79dc52fbb51?source=copy_link")
+	if err != nil || pageID != "3a4df00a-545d-801c-ae41-e79dc52fbb51" {
+		t.Fatalf("published URL = %q, %v", pageID, err)
+	}
+}
+
 func TestParseNotionPageURLRejectsLookalikeHostsAndCredentials(t *testing.T) {
 	for _, raw := range []string{
 		"https://app.notion.com.evil.example/p/nyaku/3a4df00a545d801cae41e79dc52fbb51",

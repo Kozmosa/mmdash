@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
@@ -19,6 +20,7 @@ func (Module) Name() string { return "model" }
 
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/internal/model-notion-jobs/", module.handleWorkerExport)
+	mux.HandleFunc("/v1/model-notion/oauth/callback", module.handleNotionOAuthCallback)
 }
 
 func (module Module) ProjectHandler() http.Handler {
@@ -51,6 +53,8 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch rest[0] {
+	case "notion":
+		module.handleNotion(w, r, caller, projectID, rest[1:])
 	case "source":
 		module.handleSource(w, r, caller, projectID, rest[1:])
 	case "questions":
@@ -58,6 +62,83 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeModelError(w, r, ErrNotFound)
 	}
+}
+
+func (module Module) handleNotion(w http.ResponseWriter, r *http.Request, caller auth.Identity, projectID string, rest []string) {
+	if len(rest) < 1 || rest[0] != "oauth" {
+		writeModelError(w, r, ErrNotFound)
+		return
+	}
+	if len(rest) == 1 && r.Method == http.MethodGet {
+		value, err := module.Service.GetNotionOAuthConnection(r.Context(), caller, projectID)
+		if err != nil {
+			writeModelError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, value)
+		return
+	}
+	if len(rest) == 2 && rest[1] == "authorizations" && r.Method == http.MethodPost {
+		var body contract.StartNotionOAuthRequest
+		if !httpx.DecodeJSON(w, r, &body) {
+			return
+		}
+		if err := body.Validate(); err != nil {
+			writeModelError(w, r, ErrInvalid)
+			return
+		}
+		value, err := module.Service.StartNotionOAuth(r.Context(), caller, projectID, StartNotionOAuthInput{
+			RootPageURL: body.RootPageURL, AutoSyncEnabled: body.AutoSyncEnabled,
+			Interval: time.Duration(body.AutoSyncIntervalSeconds) * time.Second,
+		})
+		if err != nil {
+			writeModelError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusCreated, value)
+		return
+	}
+	if len(rest) == 2 && rest[1] == "connection" && r.Method == http.MethodDelete {
+		if err := module.Service.DisconnectNotionOAuth(r.Context(), caller, projectID); err != nil {
+			writeModelError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeModelError(w, r, ErrNotFound)
+}
+
+func (module Module) handleNotionOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if !httpx.RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+	caller, err := module.Service.Authenticate(r.Context(), r.Header.Get("Authorization"))
+	if err != nil {
+		writeModelError(w, r, err)
+		return
+	}
+	var body contract.CompleteNotionOAuthRequest
+	if !httpx.DecodeJSON(w, r, &body) {
+		return
+	}
+	if err := body.Validate(); err != nil || (body.Code == nil && body.Error == nil) {
+		writeModelError(w, r, ErrInvalid)
+		return
+	}
+	input := CompleteNotionOAuthInput{State: body.State}
+	if body.Code != nil {
+		input.Code = *body.Code
+	}
+	if body.Error != nil {
+		input.ProviderError = *body.Error
+	}
+	value, err := module.Service.CompleteNotionOAuth(r.Context(), caller, input)
+	if err != nil {
+		writeModelError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, value)
 }
 
 func (module Module) handleSource(w http.ResponseWriter, r *http.Request, caller auth.Identity, projectID string, rest []string) {
@@ -281,6 +362,10 @@ func writeModelError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusNotFound, "MODEL_NOT_FOUND", "Model record not found"
 	case errors.Is(err, ErrSyncUnavailable):
 		status, code, message = http.StatusServiceUnavailable, "MODEL_SYNC_UNAVAILABLE", "Model synchronization is temporarily unavailable"
+	case errors.Is(err, ErrOAuthUnavailable):
+		status, code, message = http.StatusServiceUnavailable, "NOTION_OAUTH_UNAVAILABLE", "The mmdash Notion integration is not configured"
+	case errors.Is(err, ErrNotionUnauthorized):
+		status, code, message = http.StatusConflict, "NOTION_REAUTHORIZATION_REQUIRED", "Reconnect the project Notion workspace"
 	case errors.Is(err, project.ErrForbidden):
 		status, code, message = http.StatusForbidden, "FORBIDDEN", "Project permission denied"
 	}

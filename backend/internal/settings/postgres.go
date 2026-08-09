@@ -96,6 +96,29 @@ func (store PostgresStore) Upsert(
 	return updated, nil
 }
 
+func (store PostgresStore) RotateSecrets(
+	ctx context.Context,
+	actorID string,
+	setting StoredSetting,
+) (StoredSetting, error) {
+	encryptedSecrets, err := json.Marshal(setting.EncryptedSecrets)
+	if err != nil {
+		return StoredSetting{}, err
+	}
+	now := store.Clock.Now().UTC()
+	updated, err := scanStored(store.DB.QueryRowContext(ctx, `
+		UPDATE settings_values
+		SET encrypted_secrets=$4,version=version+1,updated_by=$5,updated_at=$6
+		WHERE scope_type=$1 AND scope_id=$2 AND type_key=$3
+		RETURNING scope_type,scope_id,type_key,public_values,
+		          encrypted_secrets,version,updated_by,created_at,updated_at
+	`, setting.Scope, setting.ScopeID, setting.TypeKey, encryptedSecrets, actorID, now).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoredSetting{}, ErrNotFound
+	}
+	return updated, err
+}
+
 func (store PostgresStore) Delete(
 	ctx context.Context,
 	scope Scope,

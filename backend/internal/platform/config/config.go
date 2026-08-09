@@ -18,6 +18,7 @@ type Config struct {
 	Auth            AuthConfig
 	Database        DatabaseConfig
 	InternalURL     string
+	Notion          NotionConfig
 	ObjectStorage   ObjectStorageConfig
 	OpenAPIPath     string
 	Outbox          OutboxConfig
@@ -27,6 +28,15 @@ type Config struct {
 	Version         string
 	ShutdownTimeout time.Duration
 	StartupTimeout  time.Duration
+}
+
+// NotionConfig configures the registered public Notion integration. Project
+// access and refresh tokens are never process configuration; they are stored
+// encrypted in Project Settings after each user authorization.
+type NotionConfig struct {
+	OAuthClientID     string
+	OAuthClientSecret string
+	OAuthRedirectURI  string
 }
 
 // ArtifactConfig configures multipart limits and local storage behavior.
@@ -183,6 +193,11 @@ func Load(lookup LookupEnv) (Config, error) {
 		OpenAPIPath: envOrDefault(lookup, "CORE_OPENAPI_PATH", "contracts/openapi/core.yaml"),
 		InternalURL: envOrDefault(lookup, "CORE_INTERNAL_URL", "http://localhost:8080"),
 		PublicURL:   envOrDefault(lookup, "MMDASH_PUBLIC_URL", "http://localhost:3000"),
+		Notion: NotionConfig{
+			OAuthClientID:     envOrDefault(lookup, "NOTION_OAUTH_CLIENT_ID", ""),
+			OAuthClientSecret: envOrDefault(lookup, "NOTION_OAUTH_CLIENT_SECRET", ""),
+			OAuthRedirectURI:  envOrDefault(lookup, "NOTION_OAUTH_REDIRECT_URI", ""),
+		},
 		Outbox: OutboxConfig{
 			DeliveryLease: durationOrDefault(lookup, "OUTBOX_DELIVERY_LEASE", 30*time.Second),
 			EventLease:    durationOrDefault(lookup, "OUTBOX_EVENT_LEASE", 30*time.Second),
@@ -212,6 +227,9 @@ func Load(lookup LookupEnv) (Config, error) {
 		Version:         envOrDefault(lookup, "MMDASH_VERSION", "0.1.0"),
 		ShutdownTimeout: durationOrDefault(lookup, "CORE_SHUTDOWN_TIMEOUT", 10*time.Second),
 		StartupTimeout:  durationOrDefault(lookup, "CORE_STARTUP_TIMEOUT", 15*time.Second),
+	}
+	if config.Notion.OAuthRedirectURI == "" {
+		config.Notion.OAuthRedirectURI = strings.TrimRight(config.PublicURL, "/") + "/api/integrations/notion/oauth/callback"
 	}
 
 	if err := config.Validate(); err != nil {
@@ -332,6 +350,16 @@ func (config Config) Validate() error {
 	if err != nil || publicURL.Host == "" ||
 		(publicURL.Scheme != "http" && publicURL.Scheme != "https") {
 		return fmt.Errorf("MMDASH_PUBLIC_URL must be an HTTP(S) URL")
+	}
+	redirectURI, err := url.Parse(config.Notion.OAuthRedirectURI)
+	if err != nil || redirectURI.Host == "" || redirectURI.User != nil ||
+		(redirectURI.Scheme != "http" && redirectURI.Scheme != "https") {
+		return fmt.Errorf("NOTION_OAUTH_REDIRECT_URI must be an HTTP(S) URL")
+	}
+	clientIDSet := strings.TrimSpace(config.Notion.OAuthClientID) != ""
+	clientSecretSet := strings.TrimSpace(config.Notion.OAuthClientSecret) != ""
+	if clientIDSet != clientSecretSet {
+		return fmt.Errorf("NOTION_OAUTH_CLIENT_ID and NOTION_OAUTH_CLIENT_SECRET must be configured together")
 	}
 	internalURL, err := url.Parse(config.InternalURL)
 	if err != nil || internalURL.Host == "" ||

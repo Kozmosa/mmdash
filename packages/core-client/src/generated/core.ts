@@ -1946,8 +1946,85 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Rediscover the configured Notion root and its descendant pages */
+    /**
+     * Rediscover the Notion descendants, then synchronize every bound Model question
+     * @description Every human Project member may trigger this operation. It resets the automatic countdown and reuses an active discovery request when present.
+     */
     post: operations["model.source.sync"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/notion/oauth": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the public Notion integration and Project authorization status */
+    get: operations["model.notion.oauth.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/notion/oauth/authorizations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start a one-time Notion public integration authorization */
+    post: operations["model.notion.oauth.start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/notion/oauth/connection": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke and remove the Project Notion OAuth authorization */
+    delete: operations["model.notion.oauth.disconnect"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/model-notion/oauth/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete a browser Notion OAuth callback */
+    post: operations["model.notion.oauth.callback"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2010,7 +2087,7 @@ export interface paths {
     put?: never;
     /**
      * Manually synchronize one Model question
-     * @description A manual synchronization resets the project automatic synchronization countdown.
+     * @description Every human Project member may trigger this operation. It resets the project automatic synchronization countdown and reuses an active request for the same question when present.
      */
     post: operations["model.questions.sync"];
     delete?: never;
@@ -3458,6 +3535,38 @@ export interface components {
       source?: components["schemas"]["ModelSource"];
       discovered_pages: components["schemas"]["ModelSourcePage"][];
       questions: components["schemas"]["ModelQuestion"][];
+    };
+    NotionOAuthConnection: {
+      available: boolean;
+      connected: boolean;
+      bot_id?: string;
+      workspace_id?: string;
+      workspace_name?: string;
+      /** Format: uri */
+      workspace_icon?: string;
+    };
+    StartNotionOAuthRequest: {
+      /** Format: uri */
+      root_page_url: string;
+      auto_sync_enabled: boolean;
+      auto_sync_interval_seconds: number;
+    };
+    NotionOAuthAuthorization: {
+      /** Format: uri */
+      authorization_url: string;
+      /** Format: date-time */
+      expires_at: string;
+    };
+    CompleteNotionOAuthRequest: {
+      state: string;
+      code?: string;
+      error?: string;
+    };
+    NotionOAuthCallbackResult: {
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      status: "connected" | "denied";
     };
     ModelSource: {
       /** Format: uuid */
@@ -7364,13 +7473,105 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Source discovery synchronization accepted. */
+      /** @description Full Model synchronization accepted and automatic countdown reset. */
       202: {
         headers: {
           [name: string]: unknown;
         };
         content: {
           "application/json": components["schemas"]["ModelSync"];
+        };
+      };
+    };
+  };
+  "model.notion.oauth.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Browser-safe OAuth availability and workspace identity; no token is returned. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotionOAuthConnection"];
+        };
+      };
+    };
+  };
+  "model.notion.oauth.start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["StartNotionOAuthRequest"];
+      };
+    };
+    responses: {
+      /** @description Short-lived authorization URL bound to the user, Project, and root-page configuration. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotionOAuthAuthorization"];
+        };
+      };
+    };
+  };
+  "model.notion.oauth.disconnect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Local authorization removed; existing immutable Snapshots are retained. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "model.notion.oauth.callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompleteNotionOAuthRequest"];
+      };
+    };
+    responses: {
+      /** @description Callback status and the state-bound Project used for a safe relative browser redirect. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["NotionOAuthCallbackResult"];
         };
       };
     };

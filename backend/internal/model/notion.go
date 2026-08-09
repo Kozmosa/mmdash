@@ -263,7 +263,9 @@ func (client NotionClient) requestJSON(ctx context.Context, token, method, path 
 			}
 			_ = json.Unmarshal(responseBody, &notionError)
 			switch response.StatusCode {
-			case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+			case http.StatusUnauthorized:
+				return fmt.Errorf("%w: Notion access token was rejected (%s)", ErrNotionUnauthorized, notionError.Code)
+			case http.StatusForbidden, http.StatusNotFound:
 				return fmt.Errorf("%w: Notion access denied (%s)", ErrNotConfigured, notionError.Code)
 			default:
 				return fmt.Errorf("%w: Notion returned HTTP %d (%s)", ErrSyncUnavailable, response.StatusCode, notionError.Code)
@@ -325,13 +327,19 @@ func collectChildPageIDs(blocks []map[string]interface{}) []string {
 func SettingDefinition(exporter NotionExporter) settings.TypeDefinition {
 	return settings.TypeDefinition{
 		Key: SettingTypeNotion, Owner: "model", Title: "Notion 模型来源", Order: 60,
-		Description: "单一 Notion 根页面、只读 Integration Token 与自动同步策略。",
+		Description: "通过 mmdash 公共集成授权单一 Notion 根页面并配置自动同步策略。",
 		Scopes:      []settings.Scope{settings.ScopeProject},
 		Fields: []settings.FieldDefinition{
-			{Key: "integration_token", Kind: settings.FieldSecret, Label: "Integration Token", Required: true, Description: "只需要 Read content 权限。"},
+			{Key: "access_token", Kind: settings.FieldSecret, Label: "OAuth access token", Description: "由 Notion OAuth 回调写入；浏览器不可读取。"},
+			{Key: "refresh_token", Kind: settings.FieldSecret, Label: "OAuth refresh token", Description: "由 Notion OAuth 回调写入；浏览器不可读取。"},
+			{Key: "integration_token", Kind: settings.FieldSecret, Label: "Legacy Integration Token", Description: "仅用于迁移升级前的现有连接，Web 不再接受新增。"},
 			{Key: "root_page_url", Kind: settings.FieldURL, Label: "根页面 URL", Required: true},
 			{Key: "auto_sync_enabled", Kind: settings.FieldBoolean, Label: "启用自动同步", Required: true},
 			{Key: "auto_sync_interval_seconds", Kind: settings.FieldNumber, Label: "同步间隔（秒）", Required: true, Description: "60–86400 秒，默认 300 秒。"},
+			{Key: "oauth_bot_id", Kind: settings.FieldString, Label: "Notion bot ID"},
+			{Key: "oauth_workspace_id", Kind: settings.FieldString, Label: "Notion workspace ID"},
+			{Key: "oauth_workspace_name", Kind: settings.FieldString, Label: "Notion workspace name"},
+			{Key: "oauth_workspace_icon", Kind: settings.FieldURL, Label: "Notion workspace icon"},
 		},
 		Tester: NotionSettingTester{Exporter: exporter},
 	}
@@ -343,7 +351,10 @@ func (tester NotionSettingTester) Test(ctx context.Context, setting settings.Res
 	if tester.Exporter == nil {
 		return nil, errors.New("Notion adapter unavailable")
 	}
-	token := settingString(setting, "integration_token")
+	token := settingString(setting, "access_token")
+	if token == "" {
+		token = settingString(setting, "integration_token")
+	}
 	rootURL := settingString(setting, "root_page_url")
 	pageID, _, err := parseNotionPageURL(rootURL)
 	if err != nil {

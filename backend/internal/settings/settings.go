@@ -234,6 +234,7 @@ type ResolvedSetting struct {
 type Store interface {
 	Delete(context.Context, Scope, string, string, string) error
 	Get(context.Context, Scope, string, string) (StoredSetting, error)
+	RotateSecrets(context.Context, string, StoredSetting) (StoredSetting, error)
 	Upsert(context.Context, string, StoredSetting) (StoredSetting, error)
 }
 
@@ -478,6 +479,49 @@ func (service Service) Resolve(
 		Values:  values,
 		Version: stored.Version,
 	}, nil
+}
+
+// RotateSecrets atomically replaces trusted module credentials without
+// publishing settings.updated. Public configuration did not change, so
+// consumers must not restart domain workflows merely because an OAuth
+// provider rotated its access and refresh tokens.
+func (service Service) RotateSecrets(
+	ctx context.Context,
+	actorID string,
+	scope Scope,
+	scopeID string,
+	typeKey string,
+	secrets map[string]string,
+) error {
+	definition, err := service.definition(typeKey, scope)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(actorID) == "" || len(secrets) == 0 {
+		return ErrInvalid
+	}
+	secretFields := map[string]bool{}
+	for _, field := range definition.Fields {
+		if field.Kind == FieldSecret {
+			secretFields[field.Key] = true
+		}
+	}
+	stored, err := service.Store.Get(ctx, scope, normalizeScopeID(scope, scopeID), typeKey)
+	if err != nil {
+		return err
+	}
+	for key, plaintext := range secrets {
+		if !secretFields[key] || strings.TrimSpace(plaintext) == "" {
+			return fmt.Errorf("%w: invalid secret rotation field %s", ErrInvalid, key)
+		}
+		encrypted, err := service.Codec.Encrypt(plaintext)
+		if err != nil {
+			return err
+		}
+		stored.EncryptedSecrets[key] = encrypted
+	}
+	_, err = service.Store.RotateSecrets(ctx, actorID, stored)
+	return err
 }
 
 func (service Service) definition(typeKey string, scope Scope) (TypeDefinition, error) {

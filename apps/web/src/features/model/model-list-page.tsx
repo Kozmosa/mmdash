@@ -72,7 +72,7 @@ export function ModelListPage() {
       {overview.isLoading ? <p className="text-sm text-muted-foreground">正在读取模型来源…</p> : null}
       {overview.error ? <p className="text-sm text-destructive">{overview.error.message}</p> : null}
       {overview.data && !configured ? (
-        <EmptyState action={<Link className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90" href={`/projects/${encodeURIComponent(project.id)}/settings#model-settings`}>现在绑定</Link>} description="先在项目设置中填写只读 Notion Integration Token 和根页面 URL；保存后 mmdash 会递归发现所有子页面。" title="尚未绑定 Notion 模型来源" />
+        <EmptyState action={<Link className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90" href={`/projects/${encodeURIComponent(project.id)}/settings#model-settings`}>现在授权</Link>} description="先在项目设置中通过 mmdash 公共集成授权 Notion 根页面；成功后会递归发现所有已授权子页面。" title="尚未绑定 Notion 模型来源" />
       ) : null}
       {overview.data?.source ? (
         <Card><CardContent className="flex flex-wrap items-center justify-between gap-4 p-4"><div><p className="font-medium">{overview.data.source.notion_root_title || "Notion 根页面"}</p><p className="text-xs text-muted-foreground">已发现 {overview.data.source.discovered_page_count} 个子页面 · 每 {Math.round(overview.data.source.auto_sync_interval_seconds / 60)} 分钟同步</p></div><Badge>{overview.data.source.sync_status}</Badge></CardContent></Card>

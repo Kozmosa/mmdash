@@ -328,6 +328,10 @@ func run(logger *logging.Logger) error {
 	}
 	settingsRegistry := settings.NewRegistry()
 	notionClient := model.NotionClient{}
+	notionOAuthClient := &model.NotionOAuthClient{
+		ClientID: processConfig.Notion.OAuthClientID, ClientSecret: processConfig.Notion.OAuthClientSecret,
+		RedirectURI: processConfig.Notion.OAuthRedirectURI,
+	}
 	if err := settingsRegistry.Register(settings.TypeDefinition{
 		Description: "Controls public account registration.",
 		Fields: []settings.FieldDefinition{
@@ -425,7 +429,8 @@ func run(logger *logging.Logger) error {
 	modelService := &model.Service{
 		Access: projectService, Artifacts: modelArtifactImporter{Service: &artifactService},
 		Audit: auditRecorder, Clock: systemClock, Generator: idGenerator,
-		Jobs: jobService, Notion: notionClient, Settings: settingsService,
+		Jobs: jobService, Notion: notionClient, OAuth: notionOAuthClient,
+		OAuthSettings: settingsService, Settings: settingsService,
 		Store: modelStore,
 	}
 	jobStore.Hooks = []jobs.LifecycleHook{artifactService, *modelService}

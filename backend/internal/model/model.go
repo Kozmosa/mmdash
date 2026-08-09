@@ -52,12 +52,14 @@ const (
 )
 
 var (
-	ErrConflict         = errors.New("model conflict")
-	ErrInvalid          = errors.New("invalid model request")
-	ErrNotConfigured    = errors.New("model source is not configured")
-	ErrNotFound         = errors.New("model record not found")
-	ErrPageUndiscovered = errors.New("Notion page is not a discovered descendant")
-	ErrSyncUnavailable  = errors.New("model synchronization is unavailable")
+	ErrConflict           = errors.New("model conflict")
+	ErrInvalid            = errors.New("invalid model request")
+	ErrNotConfigured      = errors.New("model source is not configured")
+	ErrNotFound           = errors.New("model record not found")
+	ErrNotionUnauthorized = errors.New("Notion OAuth access token is unauthorized")
+	ErrOAuthUnavailable   = errors.New("Notion OAuth is not configured")
+	ErrPageUndiscovered   = errors.New("Notion page is not a discovered descendant")
+	ErrSyncUnavailable    = errors.New("model synchronization is unavailable")
 
 	questionCodePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,31}$`)
 	hexPageIDPattern    = regexp.MustCompile(`(?i)([0-9a-f]{32})`)
@@ -220,6 +222,61 @@ type Overview struct {
 	Questions       []Question   `json:"questions"`
 }
 
+type NotionOAuthConnection struct {
+	Available     bool   `json:"available"`
+	Connected     bool   `json:"connected"`
+	BotID         string `json:"bot_id,omitempty"`
+	WorkspaceID   string `json:"workspace_id,omitempty"`
+	WorkspaceName string `json:"workspace_name,omitempty"`
+	WorkspaceIcon string `json:"workspace_icon,omitempty"`
+}
+
+type StartNotionOAuthInput struct {
+	RootPageURL     string
+	AutoSyncEnabled bool
+	Interval        time.Duration
+}
+
+type NotionOAuthAuthorizationResult struct {
+	AuthorizationURL string    `json:"authorization_url"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+type CompleteNotionOAuthInput struct {
+	Code          string
+	ProviderError string
+	State         string
+}
+
+type NotionOAuthCallbackResult struct {
+	ProjectID string `json:"project_id"`
+	Status    string `json:"status"`
+}
+
+type NotionOAuthAuthorization struct {
+	ID                      string
+	StateHash               string
+	ProjectID               string
+	UserID                  string
+	RootPageID              string
+	RootPageURL             string
+	AutoSyncEnabled         bool
+	AutoSyncIntervalSeconds int
+	Status                  string
+	ExpiresAt               time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+}
+
+type NotionOAuthTokens struct {
+	AccessToken   string
+	RefreshToken  string
+	BotID         string
+	WorkspaceID   string
+	WorkspaceName string
+	WorkspaceIcon string
+}
+
 type QuestionDetail struct {
 	Question       Question          `json:"question"`
 	LatestSnapshot *Snapshot         `json:"latest_snapshot,omitempty"`
@@ -308,14 +365,19 @@ type Store interface {
 	GetSnapshot(context.Context, string, string, string) (Snapshot, error)
 	UpdateSnapshot(context.Context, string, string, string, UpdateSnapshotInput, string, time.Time) (Snapshot, error)
 	CreateSync(context.Context, Sync, jobs.CreateInput, *time.Time) (Sync, error)
+	CreateSyncInTransaction(context.Context, transaction.Tx, Sync, jobs.CreateInput, *time.Time) (Sync, error)
 	GetSyncByJob(context.Context, string) (Sync, error)
 	LatestSnapshotHash(context.Context, string) (string, error)
 	ClaimSyncInTransaction(context.Context, transaction.Tx, jobs.Job, time.Time) error
-	CompleteDiscoverInTransaction(context.Context, transaction.Tx, jobs.Job, DiscoverResult, time.Time) error
+	CompleteDiscoverInTransaction(context.Context, transaction.Tx, jobs.Job, DiscoverResult, time.Time) (Sync, error)
+	ListDiscoveredQuestionsInTransaction(context.Context, transaction.Tx, string) ([]Question, error)
 	CompleteSnapshotInTransaction(context.Context, transaction.Tx, jobs.Job, SnapshotResult, time.Time) error
 	FailSyncInTransaction(context.Context, transaction.Tx, jobs.Job, jobs.Failure, time.Time) error
 	ClaimDueSources(context.Context, string, time.Time, time.Duration, int) ([]Source, error)
 	AdvanceSchedule(context.Context, string, string, time.Time, time.Time) error
+	CreateNotionOAuthAuthorization(context.Context, NotionOAuthAuthorization) error
+	ClaimNotionOAuthAuthorization(context.Context, string, string, time.Time) (NotionOAuthAuthorization, error)
+	CompleteNotionOAuthAuthorization(context.Context, string, string, time.Time) error
 }
 
 type Access interface {
@@ -333,6 +395,20 @@ type JobAccess interface {
 
 type SettingResolver interface {
 	Resolve(context.Context, settings.Scope, string, string) (settings.ResolvedSetting, error)
+}
+
+type OAuthSettingManager interface {
+	Delete(context.Context, auth.Identity, settings.Scope, string, string) error
+	RotateSecrets(context.Context, string, settings.Scope, string, string, map[string]string) error
+	Update(context.Context, auth.Identity, settings.Scope, string, string, map[string]interface{}) (settings.Setting, error)
+}
+
+type NotionOAuthProvider interface {
+	Available() bool
+	AuthorizationURL(string) (string, error)
+	Exchange(context.Context, string) (NotionOAuthTokens, error)
+	Refresh(context.Context, string) (NotionOAuthTokens, error)
+	Revoke(context.Context, string) error
 }
 
 type NotionExporter interface {
@@ -362,15 +438,17 @@ type ModelFileReference struct {
 }
 
 type Service struct {
-	Access    Access
-	Artifacts ArtifactImporter
-	Audit     AuditRecorder
-	Clock     clock.Clock
-	Generator identity.Generator
-	Jobs      JobAccess
-	Notion    NotionExporter
-	Settings  SettingResolver
-	Store     Store
+	Access        Access
+	Artifacts     ArtifactImporter
+	Audit         AuditRecorder
+	Clock         clock.Clock
+	Generator     identity.Generator
+	Jobs          JobAccess
+	Notion        NotionExporter
+	OAuth         NotionOAuthProvider
+	OAuthSettings OAuthSettingManager
+	Settings      SettingResolver
+	Store         Store
 }
 
 func (service Service) Authenticate(ctx context.Context, authorization string) (auth.Identity, error) {
@@ -600,38 +678,18 @@ func (service Service) Diff(ctx context.Context, caller auth.Identity, projectID
 }
 
 func (service Service) RequestSourceSync(ctx context.Context, caller auth.Identity, projectID, trigger string) (Sync, error) {
-	if err := service.authorize(ctx, caller, projectID, true); err != nil {
+	if err := service.authorizeSync(ctx, caller, projectID); err != nil {
 		return Sync{}, err
 	}
 	source, err := service.Store.GetSource(ctx, projectID)
 	if err != nil {
 		return Sync{}, err
 	}
-	discovery, err := service.requestSync(ctx, caller.User.ID, source, Question{}, SyncScopeSource, trigger, true)
-	if err != nil {
-		return Sync{}, err
-	}
-	questions, err := service.Store.ListQuestions(ctx, projectID)
-	if err != nil {
-		return Sync{}, err
-	}
-	pages, err := service.Store.ListSourcePages(ctx, projectID)
-	if err != nil {
-		return Sync{}, err
-	}
-	for _, question := range questions {
-		if !questionPageDiscovered(question, pages) {
-			continue
-		}
-		if _, err := service.requestSync(ctx, caller.User.ID, source, question, SyncScopeQuestion, trigger, false); err != nil && !errors.Is(err, ErrConflict) {
-			return Sync{}, err
-		}
-	}
-	return discovery, nil
+	return service.requestSync(ctx, caller.User.ID, source, Question{}, SyncScopeSource, trigger, true)
 }
 
 func (service Service) RequestQuestionSync(ctx context.Context, caller auth.Identity, projectID, questionID, trigger string) (Sync, error) {
-	if err := service.authorize(ctx, caller, projectID, true); err != nil {
+	if err := service.authorizeSync(ctx, caller, projectID); err != nil {
 		return Sync{}, err
 	}
 	source, err := service.Store.GetSource(ctx, projectID)
@@ -653,12 +711,34 @@ func (service Service) RequestQuestionSync(ctx context.Context, caller auth.Iden
 }
 
 func (service Service) requestSync(ctx context.Context, actorID string, source Source, question Question, scope, trigger string, resetCountdown bool) (Sync, error) {
+	sync, jobInput, next, err := service.newSync(actorID, source, question, scope, trigger, resetCountdown)
+	if err != nil {
+		return Sync{}, err
+	}
+	created, err := service.Store.CreateSync(ctx, sync, jobInput, next)
+	resourceID := sync.ID
+	if created.ID != "" {
+		resourceID = created.ID
+	}
+	service.record(ctx, auth.Identity{Kind: "system", User: auth.User{ID: actorID}}, source.ProjectID, "model.sync.requested", outcome(err), resourceID, map[string]interface{}{"scope": scope, "trigger": trigger, "reused_active": created.ID != "" && created.ID != sync.ID})
+	return created, err
+}
+
+func (service Service) requestSyncInTransaction(ctx context.Context, tx transaction.Tx, actorID string, source Source, question Question, scope, trigger string) (Sync, error) {
+	sync, jobInput, _, err := service.newSync(actorID, source, question, scope, trigger, false)
+	if err != nil {
+		return Sync{}, err
+	}
+	return service.Store.CreateSyncInTransaction(ctx, tx, sync, jobInput, nil)
+}
+
+func (service Service) newSync(actorID string, source Source, question Question, scope, trigger string, resetCountdown bool) (Sync, jobs.CreateInput, *time.Time, error) {
 	if trigger != SyncTriggerManual && trigger != SyncTriggerScheduled && trigger != SyncTriggerSettings {
-		return Sync{}, ErrInvalid
+		return Sync{}, jobs.CreateInput{}, nil, ErrInvalid
 	}
 	syncID, err := service.Generator.New()
 	if err != nil {
-		return Sync{}, err
+		return Sync{}, jobs.CreateInput{}, nil, err
 	}
 	now := service.now()
 	jobType := JobTypeDiscover
@@ -676,9 +756,7 @@ func (service Service) requestSync(ctx context.Context, actorID string, source S
 		value := now.Add(time.Duration(source.AutoSyncIntervalSeconds) * time.Second)
 		next = &value
 	}
-	created, err := service.Store.CreateSync(ctx, sync, jobInput, next)
-	service.record(ctx, auth.Identity{Kind: "system", User: auth.User{ID: actorID}}, source.ProjectID, "model.sync.requested", outcome(err), syncID, map[string]interface{}{"scope": scope, "trigger": trigger})
-	return created, err
+	return sync, jobInput, next, nil
 }
 
 func (service Service) ApplySettingEvent(ctx context.Context, event contract.EventEnvelope) error {
@@ -721,6 +799,10 @@ func (service Service) authorize(ctx context.Context, caller auth.Identity, proj
 		permission = project.PermissionModelManage
 	}
 	return service.Access.Authorize(ctx, caller, projectID, permission)
+}
+
+func (service Service) authorizeSync(ctx context.Context, caller auth.Identity, projectID string) error {
+	return service.Access.Authorize(ctx, caller, projectID, project.PermissionModelSync)
 }
 
 func (service Service) now() time.Time { return service.Clock.Now().UTC() }
@@ -774,7 +856,10 @@ func normalizeTags(values []string) ([]string, error) {
 
 func sourceConfig(projectID, actorID string, resolved settings.ResolvedSetting) (SourceConfig, error) {
 	rootURL, _ := resolved.Values["root_page_url"].(string)
-	token, _ := resolved.Values["integration_token"].(string)
+	token, _ := resolved.Values["access_token"].(string)
+	if strings.TrimSpace(token) == "" {
+		token, _ = resolved.Values["integration_token"].(string)
+	}
 	if strings.TrimSpace(token) == "" {
 		return SourceConfig{}, ErrNotConfigured
 	}
@@ -812,7 +897,8 @@ func parseNotionPageURL(raw string) (string, string, error) {
 
 func isNotionPageHost(hostname string) bool {
 	return hostname == "notion.so" || strings.HasSuffix(hostname, ".notion.so") ||
-		hostname == "notion.com" || strings.HasSuffix(hostname, ".notion.com")
+		hostname == "notion.com" || strings.HasSuffix(hostname, ".notion.com") ||
+		hostname == "notion.site" || strings.HasSuffix(hostname, ".notion.site")
 }
 
 func normalizePageID(raw string) string {
