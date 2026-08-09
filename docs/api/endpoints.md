@@ -1,5 +1,20 @@
 # API endpoint catalog
 
+Stage 7 Model operations:
+
+- Core: `model.get`, `model.source.get`, `model.source.sync`,
+  `model.questions.list`, `model.questions.create`, `model.questions.get`,
+  `model.questions.update`, `model.questions.delete`, `model.questions.sync`,
+  `model.snapshots.list`, `model.snapshots.get`, `model.snapshots.update`,
+  `model.snapshots.diff`, and the leased-Worker-only `model.worker.export`.
+- Web BFF: `bff.model.get`, `bff.model.source.get`,
+  `bff.model.source.sync`, `bff.model.questions.list`,
+  `bff.model.questions.create`, `bff.model.questions.get`,
+  `bff.model.questions.update`, `bff.model.questions.delete`,
+  `bff.model.questions.sync`, `bff.model.snapshots.list`,
+  `bff.model.snapshots.get`, `bff.model.snapshots.update`, and
+  `bff.model.snapshots.diff`.
+
 Stage 4 Progress operations:
 
 - Core: `progress.get`, `progress.milestones.list`, `progress.milestones.create`, `progress.milestones.update`, `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`, `progress.tasks.delete`, `progress.dependencies.list`, `progress.dependencies.create`, `progress.dependencies.delete`, `progress.reminders.list`, `progress.reminders.create`, `progress.reminders.trigger`, `progress.proposals.list`, `progress.proposals.create`, `progress.proposals.review`, `progress.settings.get`, and `progress.settings.update`.
@@ -160,6 +175,33 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | File stream   | `GET`         | `/api/projects/{projectId}/files/{filePath}`                                     | `bff.file.download`                        | file proxy           | `web-bff.yaml`     |
 | Web BFF     | File metadata | `HEAD`        | `/api/projects/{projectId}/files/{filePath}`                                     | `bff.file.head`                            | file proxy           | `web-bff.yaml`     |
 | Web BFF     | File stream   | `PUT`         | `/api/projects/{projectId}/files/{filePath}`                                     | `bff.file.upload`                          | file proxy           | `web-bff.yaml`     |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models`                                                | `model.get`                                | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/source`                                         | `model.source.get`                         | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/source/sync`                                    | `model.source.sync`                        | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions`                                      | `model.questions.list`                     | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/questions`                                      | `model.questions.create`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}`                         | `model.questions.get`                      | model                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/models/questions/{questionId}`                         | `model.questions.update`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/models/questions/{questionId}`                         | `model.questions.delete`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/questions/{questionId}/sync`                    | `model.questions.sync`                     | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}/snapshots`               | `model.snapshots.list`                     | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}`  | `model.snapshots.get`                      | model                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}`  | `model.snapshots.update`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}/diff`                    | `model.snapshots.diff`                     | model                | `core.yaml`        |
+| Core        | Internal HTTP | `GET`         | `/v1/internal/model-notion-jobs/{jobId}/export`                                  | `model.worker.export`                      | model                | `core.yaml`        |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models`                                               | `bff.model.get`                            | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/source`                                        | `bff.model.source.get`                     | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/source/sync`                                   | `bff.model.source.sync`                    | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions`                                     | `bff.model.questions.list`                 | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/questions`                                     | `bff.model.questions.create`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}`                        | `bff.model.questions.get`                  | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/models/questions/{questionId}`                        | `bff.model.questions.update`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/models/questions/{questionId}`                        | `bff.model.questions.delete`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/questions/{questionId}/sync`                   | `bff.model.questions.sync`                 | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}/snapshots`              | `bff.model.snapshots.list`                 | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}` | `bff.model.snapshots.get`                  | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}` | `bff.model.snapshots.update`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}/diff`                   | `bff.model.snapshots.diff`                 | model                | `web-bff.yaml`     |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository`                                            | `repo.get`                                 | repo                 | `core.yaml`        |
 | Core        | HTTP          | `PUT`         | `/v1/projects/{projectId}/repository`                                            | `repo.connect`                             | repo                 | `core.yaml`        |
 | Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/repository`                                            | `repo.disconnect`                          | repo                 | `core.yaml`        |

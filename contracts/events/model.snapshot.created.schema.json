@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.local/contracts/events/model.snapshot.created.schema.json",
+  "title": "model.snapshot.created payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["snapshot_id", "question_id", "source_id", "content_hash", "previous_snapshot_id", "captured_at"],
+  "properties": {
+    "snapshot_id": { "type": "string", "format": "uuid" },
+    "question_id": { "type": "string", "format": "uuid" },
+    "source_id": { "type": "string", "format": "uuid" },
+    "content_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "previous_snapshot_id": { "type": ["string", "null"], "format": "uuid" },
+    "captured_at": { "type": "string", "format": "date-time" }
+  }
+}

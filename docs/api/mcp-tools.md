@@ -57,6 +57,13 @@ Stage 4 adds Progress projections for `milestone`, `task`, and
 Dependency and Reminder events stay in the domain event stream and are not
 advertised as standalone Data Hub object types yet.
 
+Stage 7 adds `model_source`, `model_question`, and `model_snapshot`.
+`model_source` resolves the single authorized source and synchronization
+countdown; `model_question` resolves the question detail and latest Snapshot;
+`model_snapshot` resolves one immutable version by its question and Snapshot
+identifiers. MCP remains a read-only `data.list/read` surface for Model and
+never receives the Notion integration token or a temporary media URL.
+
 For `repo_file`, the returned content remains pinned to the full commit SHA
 stored in the projection. Binary, oversized, LFS, symlink, and submodule
 objects return safe metadata rather than editable text.

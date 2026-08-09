@@ -615,6 +615,168 @@ export class CoreClient {
     );
   }
 
+  async getModels(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelOverview"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getModelSource(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSource"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/source`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async syncModels(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSync"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/source/sync`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async listModelQuestions(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestionList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createModelQuestion(
+    projectId: string,
+    input: components["schemas"]["CreateModelQuestionRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestion"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async getModelQuestion(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestionDetail"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateModelQuestion(
+    projectId: string,
+    questionId: string,
+    input: components["schemas"]["UpdateModelQuestionRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestion"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async deleteModelQuestion(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async syncModelQuestion(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSync"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/sync`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async listModelSnapshots(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSnapshotList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/snapshots`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getModelSnapshot(
+    projectId: string,
+    questionId: string,
+    snapshotId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSnapshot"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateModelSnapshot(
+    projectId: string,
+    questionId: string,
+    snapshotId: string,
+    input: components["schemas"]["UpdateModelSnapshotRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSnapshot"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async diffModelSnapshots(
+    projectId: string,
+    questionId: string,
+    fromSnapshotId: string,
+    toSnapshotId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelDiff"]> {
+    const query = new URLSearchParams({
+      from_snapshot_id: fromSnapshotId,
+      to_snapshot_id: toSnapshotId,
+    });
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/diff?${query.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
   async initializeArtifactUpload(
     projectId: string,
     input: components["schemas"]["ArtifactInitializeUploadRequest"],

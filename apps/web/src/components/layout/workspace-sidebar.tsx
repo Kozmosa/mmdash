@@ -36,39 +36,63 @@ export function WorkspaceSidebar({
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-3">
-            <Link
-              aria-label="返回项目列表"
-              className="flex min-w-0 flex-1 items-center gap-3"
-              href="/projects"
-            >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <FlaskConical aria-hidden="true" className="size-4" />
-              </span>
-              {sidebarOpen ? (
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold">
-                    mmdash
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    数学建模协作平台
-                  </span>
-                </span>
-              ) : null}
-            </Link>
-            <Button
-              aria-label={sidebarOpen ? "收起导航" : "展开导航"}
-              className="hidden md:inline-flex"
-              onClick={toggleSidebar}
-              size="icon"
-              variant="ghost"
-            >
-              {sidebarOpen ? (
-                <PanelLeftClose aria-hidden="true" className="size-4" />
-              ) : (
-                <PanelLeftOpen aria-hidden="true" className="size-4" />
+          <div
+            className={cn(
+              "flex h-16 items-center border-b border-sidebar-border px-3",
+              sidebarOpen ? "gap-3" : "justify-center",
+            )}
+          >
+            <div
+              className={cn(
+                "relative min-w-0",
+                sidebarOpen ? "flex-1" : "group size-9",
               )}
-            </Button>
+            >
+              <Link
+                aria-label="返回项目列表"
+                className={cn(
+                  "flex min-w-0 items-center gap-3",
+                  sidebarOpen ? null : "size-9 justify-center",
+                )}
+                href="/projects"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <FlaskConical aria-hidden="true" className="size-4" />
+                </span>
+                {sidebarOpen ? (
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">
+                      mmdash
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      数学建模协作平台
+                    </span>
+                  </span>
+                ) : null}
+              </Link>
+              {!sidebarOpen ? (
+                <Button
+                  aria-label="展开导航"
+                  className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+                  onClick={toggleSidebar}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <PanelLeftOpen aria-hidden="true" className="size-4" />
+                </Button>
+              ) : null}
+            </div>
+            {sidebarOpen ? (
+              <Button
+                aria-label="收起导航"
+                className="hidden md:inline-flex"
+                onClick={toggleSidebar}
+                size="icon"
+                variant="ghost"
+              >
+                <PanelLeftClose aria-hidden="true" className="size-4" />
+              </Button>
+            ) : null}
           </div>
 
           <nav aria-label="项目一级导航" className="flex-1 overflow-y-auto p-2">

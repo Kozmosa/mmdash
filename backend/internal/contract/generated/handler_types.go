@@ -1316,3 +1316,89 @@ func (request ArtifactPreviewJobTransferRequest) Validate() error {
 	}
 	return nil
 }
+
+// CreateModelQuestionRequest is generated from the Core request-body schema.
+type CreateModelQuestionRequest struct {
+	Code         string `json:"code"`
+	Title        string `json:"title"`
+	NotionPageID string `json:"notion_page_id"`
+	Position     *int64 `json:"position,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateModelQuestionRequest) Validate() error {
+	if request.Code == "" {
+		return fmt.Errorf("code is required")
+	}
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.NotionPageID == "" {
+		return fmt.Errorf("notion_page_id is required")
+	}
+	if request.Position != nil {
+		if *request.Position < 0 {
+			return fmt.Errorf("position is below its minimum")
+		}
+	}
+	return nil
+}
+
+// UpdateModelQuestionRequest is generated from the Core request-body schema.
+type UpdateModelQuestionRequest struct {
+	Code         *string `json:"code,omitempty"`
+	Title        *string `json:"title,omitempty"`
+	NotionPageID *string `json:"notion_page_id,omitempty"`
+	Position     *int64  `json:"position,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateModelQuestionRequest) Validate() error {
+	if request.Code == nil && request.Title == nil && request.NotionPageID == nil && request.Position == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.Title != nil {
+		if len(*request.Title) < 1 {
+			return fmt.Errorf("title is too short")
+		}
+		if len(*request.Title) > 255 {
+			return fmt.Errorf("title is too long")
+		}
+	}
+	if request.Position != nil {
+		if *request.Position < 0 {
+			return fmt.Errorf("position is below its minimum")
+		}
+	}
+	return nil
+}
+
+// UpdateModelSnapshotRequest is generated from the Core request-body schema.
+type UpdateModelSnapshotRequest struct {
+	Tags        *[]string `json:"tags,omitempty"`
+	VersionNote *string   `json:"version_note,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateModelSnapshotRequest) Validate() error {
+	if request.Tags == nil && request.VersionNote == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.Tags != nil {
+		if len(*request.Tags) > 20 {
+			return fmt.Errorf("tags has too many items")
+		}
+	}
+	if request.VersionNote != nil {
+		if len(*request.VersionNote) > 4000 {
+			return fmt.Errorf("version_note is too long")
+		}
+	}
+	return nil
+}

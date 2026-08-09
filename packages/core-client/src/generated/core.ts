@@ -1897,6 +1897,215 @@ export interface paths {
     patch: operations["progress.settings.update"];
     trace?: never;
   };
+  "/v1/projects/{projectId}/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the project Model overview */
+    get: operations["model.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/source": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the single project Model source */
+    get: operations["model.source.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/source/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rediscover the configured Notion root and its descendant pages */
+    post: operations["model.source.sync"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/questions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List Model questions */
+    get: operations["model.questions.list"];
+    put?: never;
+    /** Create a Model question bound to one discovered Notion child page */
+    post: operations["model.questions.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/questions/{questionId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    /** Read one Model question */
+    get: operations["model.questions.get"];
+    put?: never;
+    post?: never;
+    /** Remove a Model question while retaining its referenced Artifacts */
+    delete: operations["model.questions.delete"];
+    options?: never;
+    head?: never;
+    /** Update Model question display metadata or bound descendant page */
+    patch: operations["model.questions.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/questions/{questionId}/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Manually synchronize one Model question
+     * @description A manual synchronization resets the project automatic synchronization countdown.
+     */
+    post: operations["model.questions.sync"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/questions/{questionId}/snapshots": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    /** List immutable Snapshots for one Model question */
+    get: operations["model.snapshots.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+        snapshotId: components["parameters"]["ModelSnapshotId"];
+      };
+      cookie?: never;
+    };
+    /** Read one fixed Model Snapshot */
+    get: operations["model.snapshots.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update user-managed Snapshot tags and version note */
+    patch: operations["model.snapshots.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/models/questions/{questionId}/diff": {
+    parameters: {
+      query: {
+        from_snapshot_id: string;
+        to_snapshot_id: string;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    /** Compare two Model Snapshots at character granularity */
+    get: operations["model.snapshots.diff"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/model-notion-jobs/{jobId}/export": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * Export Notion source data for one actively leased Model Worker Job
+     * @description The Notion credential remains inside Core; only page and block data leaves this route.
+     */
+    get: operations["model.worker.export"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/inbox": {
     parameters: {
       query?: never;
@@ -3240,6 +3449,292 @@ export interface components {
       article: components["schemas"]["HomeSection"];
       agent: components["schemas"]["HomeSection"];
     };
+    ModelOverview: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: date-time */
+      generated_at: string;
+      configured: boolean;
+      source?: components["schemas"]["ModelSource"];
+      discovered_pages: components["schemas"]["ModelSourcePage"][];
+      questions: components["schemas"]["ModelQuestion"][];
+    };
+    ModelSource: {
+      /** Format: uuid */
+      source_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      notion_root_page_id: string;
+      /** Format: uri */
+      notion_root_page_url: string;
+      notion_root_title: string;
+      auto_sync_enabled: boolean;
+      auto_sync_interval_seconds: number;
+      /** Format: date-time */
+      next_sync_at?: string;
+      countdown_seconds?: number;
+      /** Format: uuid */
+      last_sync_id?: string;
+      last_sync_status?: components["schemas"]["ModelSyncStatus"];
+      /** Format: date-time */
+      last_synced_at?: string;
+      last_error_code?: string;
+      last_error_message?: string;
+      sync_status: components["schemas"]["ModelSyncStatus"];
+      discovered_page_count: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ModelSourcePage: {
+      /** Format: uuid */
+      notion_page_id: string;
+      /** Format: uuid */
+      parent_page_id?: string;
+      title: string;
+      /** Format: uri */
+      url: string;
+      depth: number;
+      has_children: boolean;
+      /** Format: uuid */
+      bound_question_id?: string;
+      /** Format: date-time */
+      last_seen_at: string;
+    };
+    ModelQuestion: {
+      /** Format: uuid */
+      question_id: string;
+      /** Format: uuid */
+      project_id: string;
+      code: string;
+      title: string;
+      /** Format: uuid */
+      notion_page_id: string;
+      /** Format: uri */
+      notion_page_url: string;
+      position: number;
+      /** Format: uuid */
+      latest_snapshot_id?: string;
+      snapshot_count: number;
+      sync_status: components["schemas"]["ModelSyncStatus"];
+      /** Format: uuid */
+      last_sync_id?: string;
+      /** Format: date-time */
+      last_synced_at?: string;
+      last_error_code?: string;
+      last_error_message?: string;
+      /** Format: uuid */
+      created_by: string;
+      /** Format: uuid */
+      updated_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ModelQuestionList: {
+      items: components["schemas"]["ModelQuestion"][];
+    };
+    ModelQuestionDetail: {
+      question: components["schemas"]["ModelQuestion"];
+      latest_snapshot?: components["schemas"]["ModelSnapshot"];
+      snapshots: components["schemas"]["ModelSnapshotSummary"][];
+    };
+    CreateModelQuestionRequest: {
+      code: string;
+      title: string;
+      /** Format: uuid */
+      notion_page_id: string;
+      position?: number;
+    };
+    UpdateModelQuestionRequest: {
+      code?: string;
+      title?: string;
+      /** Format: uuid */
+      notion_page_id?: string;
+      position?: number;
+    };
+    /** @enum {string} */
+    ModelSyncStatus:
+      | "idle"
+      | "queued"
+      | "running"
+      | "succeeded"
+      | "unchanged"
+      | "failed"
+      | "cancelled"
+      | "timed_out";
+    ModelSync: {
+      /** Format: uuid */
+      sync_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      question_id?: string;
+      /** @enum {string} */
+      scope: "source" | "question";
+      /** @enum {string} */
+      trigger: "manual" | "scheduled" | "settings";
+      status: components["schemas"]["ModelSyncStatus"];
+      /** Format: uuid */
+      job_id: string;
+      /** Format: uuid */
+      requested_by: string;
+      /** Format: date-time */
+      requested_at: string;
+      /** Format: date-time */
+      started_at?: string;
+      /** Format: date-time */
+      finished_at?: string;
+      /** Format: uuid */
+      created_snapshot_id?: string;
+      error_code?: string;
+      error_message?: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ModelRichText: {
+      text: string;
+      expression?: string;
+      bold?: boolean;
+      italic?: boolean;
+      strikethrough?: boolean;
+      underline?: boolean;
+      code?: boolean;
+      color?: string;
+      /** Format: uri */
+      href?: string;
+    };
+    ModelBlock: {
+      block_id: string;
+      type: string;
+      text: string;
+      level?: number;
+      rich_text: components["schemas"]["ModelRichText"][];
+      language?: string;
+      expression?: string;
+      checked?: boolean;
+      rows?: string[][];
+      cells?: components["schemas"]["ModelRichText"][][];
+      /** Format: uri */
+      url?: string;
+      /** Format: uuid */
+      artifact_id?: string;
+      /** Format: uuid */
+      artifact_version_id?: string;
+      caption?: string;
+      children: components["schemas"]["ModelBlock"][];
+    };
+    ModelOutlineItem: {
+      block_id: string;
+      title: string;
+      level: number;
+    };
+    ModelSnapshotAsset: {
+      source_block_id: string;
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      artifact_version_id: string;
+      filename: string;
+      mime_type: string;
+    };
+    ModelSnapshotSummary: {
+      /** Format: uuid */
+      snapshot_id: string;
+      /** Format: uuid */
+      question_id: string;
+      /** Format: uuid */
+      previous_snapshot_id?: string;
+      title: string;
+      content_hash: string;
+      summary: string;
+      tags: string[];
+      version_note?: string;
+      /** Format: date-time */
+      captured_at: string;
+      /** Format: uuid */
+      triggered_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      metadata_updated_at: string;
+    };
+    ModelSnapshot: components["schemas"]["ModelSnapshotSummary"] & {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      notion_page_id: string;
+      /** Format: uri */
+      notion_page_url: string;
+      outline: components["schemas"]["ModelOutlineItem"][];
+      blocks: components["schemas"]["ModelBlock"][];
+      content_markdown: string;
+      content_text: string;
+      assets: components["schemas"]["ModelSnapshotAsset"][];
+    };
+    ModelSnapshotList: {
+      items: components["schemas"]["ModelSnapshotSummary"][];
+    };
+    UpdateModelSnapshotRequest: {
+      tags?: string[];
+      version_note?: string;
+    };
+    ModelDiffOperation: {
+      /** @enum {string} */
+      kind: "unchanged" | "added" | "deleted";
+      text: string;
+    };
+    ModelDiffBlock: {
+      block_id: string;
+      type: string;
+      /** @enum {string} */
+      change: "unchanged" | "added" | "deleted" | "modified";
+      block: components["schemas"]["ModelBlock"];
+      operations: components["schemas"]["ModelDiffOperation"][];
+    };
+    ModelDiff: {
+      /** Format: uuid */
+      question_id: string;
+      /** Format: uuid */
+      from_snapshot_id: string;
+      /** Format: uuid */
+      to_snapshot_id: string;
+      /** @enum {string} */
+      granularity: "character";
+      blocks: components["schemas"]["ModelDiffBlock"][];
+    };
+    ModelNotionExport: {
+      /** Format: uuid */
+      sync_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      source_id: string;
+      /** Format: uuid */
+      question_id?: string;
+      /** @enum {string} */
+      mode: "discover" | "snapshot";
+      root_title: string;
+      pages: {
+        /** Format: uuid */
+        page_id: string;
+        /** Format: uuid */
+        parent_page_id?: string;
+        title: string;
+        /** Format: uri */
+        url: string;
+        depth: number;
+        page: {
+          [key: string]: unknown;
+        };
+        blocks: {
+          [key: string]: unknown;
+        }[];
+      }[];
+    };
     Progress: {
       /** Format: uuid */
       project_id: string;
@@ -3725,6 +4220,8 @@ export interface components {
   };
   parameters: {
     ProjectId: string;
+    ModelQuestionId: string;
+    ModelSnapshotId: string;
     InvitationId: string;
     InboxItemId: string;
     NotificationChannelKey:
@@ -6808,6 +7305,337 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProgressSettings"];
+        };
+      };
+    };
+  };
+  "model.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The single source, discovered pages, questions, and current synchronization state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelOverview"];
+        };
+      };
+    };
+  };
+  "model.source.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project Model source and automatic synchronization countdown. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelSource"];
+        };
+      };
+    };
+  };
+  "model.source.sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Source discovery synchronization accepted. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelSync"];
+        };
+      };
+    };
+  };
+  "model.questions.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Questions ordered by their explicit position. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelQuestionList"];
+        };
+      };
+    };
+  };
+  "model.questions.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateModelQuestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Created Model question. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelQuestion"];
+        };
+      };
+    };
+  };
+  "model.questions.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Question and its current immutable Snapshot. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelQuestionDetail"];
+        };
+      };
+    };
+  };
+  "model.questions.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Model question removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "model.questions.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateModelQuestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Model question. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelQuestion"];
+        };
+      };
+    };
+  };
+  "model.questions.sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Question synchronization accepted. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelSync"];
+        };
+      };
+    };
+  };
+  "model.snapshots.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Newest-first Snapshot timeline. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelSnapshotList"];
+        };
+      };
+    };
+  };
+  "model.snapshots.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+        snapshotId: components["parameters"]["ModelSnapshotId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Immutable content plus editable tags and version note. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelSnapshot"];
+        };
+      };
+    };
+  };
+  "model.snapshots.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+        snapshotId: components["parameters"]["ModelSnapshotId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateModelSnapshotRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Snapshot metadata; immutable content and Hash are unchanged. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelSnapshot"];
+        };
+      };
+    };
+  };
+  "model.snapshots.diff": {
+    parameters: {
+      query: {
+        from_snapshot_id: string;
+        to_snapshot_id: string;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        questionId: components["parameters"]["ModelQuestionId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Block-preserving diff with contiguous character runs. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelDiff"];
+        };
+      };
+    };
+  };
+  "model.worker.export": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Job-bound raw Notion export. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelNotionExport"];
         };
       };
     };

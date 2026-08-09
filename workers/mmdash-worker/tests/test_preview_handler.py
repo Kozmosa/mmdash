@@ -100,4 +100,9 @@ def test_preview_handler_uses_job_bound_input_and_output_transfers() -> None:
 
 def test_production_registry_advertises_artifact_preview() -> None:
     registry = worker_registry(FakeTransferClient())
-    assert registry.names() == ("artifact.preview", "system.test")
+    assert registry.names() == (
+        "artifact.preview",
+        "model.notion.discover",
+        "model.notion.snapshot",
+        "system.test",
+    )
