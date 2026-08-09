@@ -1,5 +1,26 @@
 # mmdash v0.1 Stage 4 Home and Progress handoff
 
+## 2026-08-09 Notification routing correction
+
+Branch `codex/fix-notification` corrects the Stage 3.17/Stage 4 Notification
+implementation against the v0.1 baseline without changing the source module
+contract. The Type Registry now exclusively owns Inbox policy and Project
+Notification Rules exclusively own optional external delivery. The obsolete
+`inbox_enabled` API/database field is removed by migration
+`000023_notification_routing_model`; invitation remains required Inbox-only,
+while Progress reminders remain default-on in Inbox and optionally external.
+
+The Web now has one global Inbox icon/unread badge on `/projects` and project
+workspace chrome, a consistent global page shell, unread/all/processed and
+archive views, project/type/time filters, pagination, scoped batch read, safe
+rendered copy, and a detail route. Notification settings separate read-only
+Inbox policy from owner/maintainer-only channel/rule/Delivery management;
+explicit retry requires a reason. Focused Go, BFF, Web, contract, API, lint,
+test, and build checks passed. The first full test command hit a workstation
+permission error in pytest's system Temp directory; all 25 Python tests passed
+when rerun with a worktree-local `--basetemp`. Docker, smoke, and Caddy checks
+are intentionally omitted at the request of the user.
+
 - Updated: 2026-08-05
 - Branch: `codex/stage-4-home-progress`
 - Base: `origin/main@23057c4ebbea43d62ef388a63144fc4dad55be68`

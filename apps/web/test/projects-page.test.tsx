@@ -82,12 +82,25 @@ describe("projects recycle bin", () => {
             ],
           });
         }
+        if (path === "/inbox/unread-count" && !options?.method) {
+          return Promise.resolve({ count: 3 });
+        }
         if (options?.method === "DELETE") {
           return Promise.resolve(undefined);
         }
         throw new Error(`Unexpected request: ${path}`);
       },
     );
+  });
+
+  it("shows the global Inbox icon and unread badge", async () => {
+    render(<ProjectsPage />, { wrapper: Providers });
+
+    const inbox = await screen.findByRole("link", {
+      name: "收件箱，3 条未读消息",
+    });
+    expect(inbox).toHaveAttribute("href", "/inbox");
+    expect(inbox).toHaveTextContent("3");
   });
 
   it("routes a newly created Project to Artifact source setup", async () => {

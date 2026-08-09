@@ -53,6 +53,10 @@ Migrations `000020_notification_authoritative_fields` and
 `000021_notification_delivery_unique_target` persist typed browser-safe
 invitation Actions, target-aware Delivery idempotency, Rule/Settings snapshots,
 bounded retry limits, safe provider diagnostics, and Notification metrics.
+Migration `000023_notification_routing_model` aligns routing with the Type
+Registry: the Reminder Type remains default-on in Inbox, while the Project Rule
+can only opt into Feishu or Generic Webhook delivery. Progress never owns or
+changes a user's Inbox preference.
 
 ## HTTP and views
 
