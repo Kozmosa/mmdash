@@ -92,13 +92,14 @@ func TestCreateContextProposalWritesProposalObjectAndActivity(t *testing.T) {
 		Outbox:      outbox.Writer{Clock: clock.Fixed{Time: now.Add(10 * time.Minute)}, Generator: generator},
 		Transaction: transaction.Manager{DB: transaction.SQLBeginner{DB: db}},
 	}
-	proposal, err := store.CreateProposal(ctx, projectID, ProposalActor{
+	actor := ProposalActor{
 		AgentRunID:     runID,
 		AgentSessionID: sessionID,
 		ID:             agentInstanceID,
 		Kind:           "agent",
 		UserID:         "",
-	}, CreateProposalInput{
+	}
+	proposal, err := store.CreateProposal(ctx, projectID, actor, CreateProposalInput{
 		AgentRunID:     runID,
 		AgentSessionID: sessionID,
 		Content:        "proposal content",
@@ -172,6 +173,21 @@ func TestCreateContextProposalWritesProposalObjectAndActivity(t *testing.T) {
 		reviewed.ProposedByActorKind != "agent" {
 		t.Fatalf("reviewed proposal lost Agent provenance: %#v", reviewed)
 	}
+	var promotedObjectCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM data_objects
+		WHERE object_id = $1 AND project_id = $2
+		  AND object_type = 'project-context' AND source_module = 'datahub'
+		  AND source_id = $3
+	`, reviewed.PromotedContext, projectID, reviewed.PromotedContext).Scan(
+		&promotedObjectCount,
+	); err != nil {
+		t.Fatalf("read promoted context object: %v", err)
+	}
+	if promotedObjectCount != 1 {
+		t.Fatalf("promoted context object count: got %d, want 1", promotedObjectCount)
+	}
 
 	contexts, err := store.ListContext(ctx, projectID)
 	if err != nil {
@@ -212,5 +228,64 @@ func TestCreateContextProposalWritesProposalObjectAndActivity(t *testing.T) {
 		promotedActorKind != "agent" {
 		t.Fatalf("unexpected promoted provenance: legacy=%#v actor=%q kind=%q",
 			legacyProposer, promotedActorID, promotedActorKind)
+	}
+
+	rejectedProposal, err := store.CreateProposal(ctx, projectID, actor,
+		CreateProposalInput{
+			AgentRunID: runID, AgentSessionID: sessionID,
+			Content: "rejected proposal content", ContextType: "finding",
+			Rationale: "insufficient evidence", Title: "Rejected proposal",
+		})
+	if err != nil {
+		t.Fatalf("create proposal for rejection: %v", err)
+	}
+	rejected, err := store.ReviewProposal(ctx, projectID, rejectedProposal.ID, userID,
+		ReviewProposalInput{Decision: "rejected", Note: "Needs more evidence"})
+	if err != nil {
+		t.Fatalf("reject context proposal: %v", err)
+	}
+	if rejected.Status != "rejected" || rejected.PromotedContext != "" ||
+		rejected.ProposedBy != agentInstanceID ||
+		rejected.ProposedByActorID != agentInstanceID ||
+		rejected.ProposedByActorKind != "agent" {
+		t.Fatalf("rejected proposal lost Agent provenance: %#v", rejected)
+	}
+
+	var rejectedStatus, rejectedActorID, rejectedActorKind string
+	var rejectedPromotedContext sql.NullString
+	if err := db.QueryRowContext(ctx, `
+		SELECT status, proposed_by_actor_id::text, proposed_by_actor_kind,
+		       promoted_context_id::text
+		FROM data_context_proposals
+		WHERE proposal_id = $1 AND project_id = $2
+	`, rejected.ID, projectID).Scan(
+		&rejectedStatus, &rejectedActorID, &rejectedActorKind,
+		&rejectedPromotedContext,
+	); err != nil {
+		t.Fatalf("read rejected proposal provenance: %v", err)
+	}
+	if rejectedStatus != "rejected" || rejectedActorID != agentInstanceID ||
+		rejectedActorKind != "agent" || rejectedPromotedContext.Valid {
+		t.Fatalf("unexpected rejected provenance: status=%q actor=%q kind=%q context=%#v",
+			rejectedStatus, rejectedActorID, rejectedActorKind, rejectedPromotedContext)
+	}
+
+	contexts, err = store.ListContext(ctx, projectID)
+	if err != nil {
+		t.Fatalf("list context after rejection: %v", err)
+	}
+	if len(contexts) != 1 || contexts[0].ID != reviewed.PromotedContext {
+		t.Fatalf("rejection created formal context: %#v", contexts)
+	}
+	var rejectedActivityCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM data_activity
+		WHERE object_id = $1 AND activity_type = 'context.proposal.rejected'
+	`, rejected.ID).Scan(&rejectedActivityCount); err != nil {
+		t.Fatalf("read rejected proposal activity: %v", err)
+	}
+	if rejectedActivityCount != 1 {
+		t.Fatalf("rejected activity count: got %d, want 1", rejectedActivityCount)
 	}
 }

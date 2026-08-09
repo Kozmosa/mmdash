@@ -304,13 +304,15 @@ func (store PostgresStore) ReviewProposal(
 				current.ProposedByActorID, current.ProposedByActorKind); err != nil {
 				return err
 			}
+			// Keep the UUID object ID and text source ID on distinct bind parameters.
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO data_objects (
 					object_id, project_id, object_type, source_module, source_id,
 					title, summary, status, metadata, occurred_at, created_at, updated_at
-				) VALUES ($1, $2, 'project-context', 'datahub', $1, $3, $4,
+				) VALUES ($1, $2, 'project-context', 'datahub', $6, $3, $4,
 				          'confirmed', '{}'::jsonb, $5, $5, $5)
-			`, contextID, projectID, current.Title, current.Content, now); err != nil {
+			`, contextID, projectID, current.Title, current.Content, now,
+				contextID); err != nil {
 				return err
 			}
 		}
