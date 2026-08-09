@@ -154,8 +154,8 @@ func (store PostgresStore) CreateProposal(
 		AgentRunID: actor.AgentRunID, AgentSessionID: actor.AgentSessionID,
 		Content: input.Content, ContextType: input.ContextType, CreatedAt: now,
 		ID: proposalID, ProjectID: projectID, ProposedBy: actor.ID,
-		ProposedByKind: actor.Kind,
-		Rationale:      input.Rationale, ReviewNote: "",
+		ProposedByActorID: actor.ID, ProposedByActorKind: actor.Kind,
+		Rationale: input.Rationale, ReviewNote: "",
 		SourceObjectIDs: nonNilStrings(input.SourceObjectIDs),
 		Status:          "pending", Title: input.Title, UpdatedAt: now,
 	}
@@ -301,7 +301,7 @@ func (store PostgresStore) ReviewProposal(
 			`, contextID, projectID, current.Title, current.Content,
 				current.ContextType, sourceIDs,
 				legacyProposer(current), reviewerID, now,
-				current.ProposedBy, current.ProposedByKind); err != nil {
+				current.ProposedByActorID, current.ProposedByActorKind); err != nil {
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `
@@ -607,9 +607,10 @@ func scanActivity(scan scanFunc) (Activity, error) {
 func scanProposal(scan scanFunc) (ContextProposal, error) {
 	var item ContextProposal
 	var sourceIDs []byte
+	var proposedByActorID string
 	err := scan(&item.ID, &item.ProjectID, &item.Title, &item.Content,
-		&item.ContextType, &sourceIDs, &item.Rationale, &item.ProposedBy,
-		&item.ProposedByKind,
+		&item.ContextType, &sourceIDs, &item.Rationale, &proposedByActorID,
+		&item.ProposedByActorKind,
 		&item.Status, &item.ReviewedBy, &item.ReviewedAt, &item.ReviewNote,
 		&item.PromotedContext, &item.AgentSessionID, &item.AgentRunID,
 		&item.CreatedAt, &item.UpdatedAt)
@@ -619,6 +620,8 @@ func scanProposal(scan scanFunc) (ContextProposal, error) {
 	if err := json.Unmarshal(sourceIDs, &item.SourceObjectIDs); err != nil {
 		return ContextProposal{}, err
 	}
+	item.ProposedBy = proposedByActorID
+	item.ProposedByActorID = proposedByActorID
 	return item, nil
 }
 
@@ -626,7 +629,7 @@ func scanContext(scan scanFunc) (ContextEntry, error) {
 	var item ContextEntry
 	var sourceIDs []byte
 	err := scan(&item.ID, &item.ProjectID, &item.Title, &item.Content,
-		&item.ContextType, &sourceIDs, &item.ProposedBy, &item.ProposedByKind,
+		&item.ContextType, &sourceIDs, &item.ProposedBy, &item.ProposedByActorKind,
 		&item.ConfirmedBy,
 		&item.ConfirmedAt, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
@@ -639,10 +642,10 @@ func scanContext(scan scanFunc) (ContextEntry, error) {
 }
 
 func legacyProposer(proposal ContextProposal) string {
-	if proposal.ProposedByKind == "agent" {
+	if proposal.ProposedByActorKind == "agent" {
 		return ""
 	}
-	return proposal.ProposedBy
+	return proposal.ProposedByActorID
 }
 
 func decodePage(value string) (string, string, error) {

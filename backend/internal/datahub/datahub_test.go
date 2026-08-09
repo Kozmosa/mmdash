@@ -2,6 +2,7 @@ package datahub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -28,10 +29,11 @@ func TestProgressReferenceValidationSkipsEmptyInput(t *testing.T) {
 type accessStub struct {
 	authorized []project.Permission
 	err        error
+	identity   auth.Identity
 }
 
 func (stub *accessStub) Authenticate(context.Context, string) (auth.Identity, error) {
-	return auth.Identity{}, stub.err
+	return stub.identity, stub.err
 }
 
 func (stub *accessStub) Authorize(
@@ -45,9 +47,13 @@ func (stub *accessStub) Authorize(
 }
 
 type storeStub struct {
-	createdActor ProposalActor
-	createdInput CreateProposalInput
-	reviewed     bool
+	contexts       []ContextEntry
+	createdActor   ProposalActor
+	createdInput   CreateProposalInput
+	createdResult  ContextProposal
+	proposals      []ContextProposal
+	reviewed       bool
+	reviewedResult ContextProposal
 }
 
 type problemProviderStub struct {
@@ -114,6 +120,9 @@ func (stub *storeStub) CreateProposal(
 ) (ContextProposal, error) {
 	stub.createdActor = actor
 	stub.createdInput = input
+	if stub.createdResult.ID != "" {
+		return stub.createdResult, nil
+	}
 	return ContextProposal{ID: "proposal"}, nil
 }
 func (stub *storeStub) GetContext(context.Context, string, string) (ContextEntry, error) {
@@ -131,6 +140,9 @@ func (stub *storeStub) ListActivity(
 	return ActivityPage{Items: []Activity{}}, nil
 }
 func (stub *storeStub) ListContext(context.Context, string) ([]ContextEntry, error) {
+	if stub.contexts != nil {
+		return stub.contexts, nil
+	}
 	return []ContextEntry{}, nil
 }
 func (stub *storeStub) ListObjects(
@@ -139,12 +151,18 @@ func (stub *storeStub) ListObjects(
 	return ObjectPage{Items: []Object{}}, nil
 }
 func (stub *storeStub) ListProposals(context.Context, string) ([]ContextProposal, error) {
+	if stub.proposals != nil {
+		return stub.proposals, nil
+	}
 	return []ContextProposal{}, nil
 }
 func (stub *storeStub) ReviewProposal(
 	context.Context, string, string, string, ReviewProposalInput,
 ) (ContextProposal, error) {
 	stub.reviewed = true
+	if stub.reviewedResult.ID != "" {
+		return stub.reviewedResult, nil
+	}
 	return ContextProposal{Status: "accepted"}, nil
 }
 
@@ -490,5 +508,183 @@ func TestModuleExposesHomeAggregateRoute(t *testing.T) {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Fatalf("home response is missing %s: %s", fragment, response.Body.String())
 		}
+	}
+}
+
+func TestModuleContextResponsesMatchOpenAPIActorProvenance(t *testing.T) {
+	const (
+		agentID    = "00000000-0000-4000-8000-000000000001"
+		contextID  = "00000000-0000-4000-8000-000000000002"
+		projectID  = "00000000-0000-4000-8000-000000000003"
+		proposalID = "00000000-0000-4000-8000-000000000004"
+		reviewerID = "00000000-0000-4000-8000-000000000005"
+		runID      = "00000000-0000-4000-8000-000000000006"
+		sessionID  = "00000000-0000-4000-8000-000000000007"
+	)
+	now := time.Date(2026, time.August, 9, 8, 30, 0, 0, time.UTC)
+	pending := ContextProposal{
+		AgentRunID: runID, AgentSessionID: sessionID,
+		Content: "Agent finding", ContextType: "finding", CreatedAt: now,
+		ID: proposalID, ProjectID: projectID, ProposedBy: agentID,
+		ProposedByActorID: agentID, ProposedByActorKind: "agent",
+		Rationale: "Run evidence", ReviewNote: "", SourceObjectIDs: []string{},
+		Status: "pending", Title: "Candidate context", UpdatedAt: now,
+	}
+	reviewedAt := now.Add(time.Minute)
+	reviewed := pending
+	reviewed.PromotedContext = contextID
+	reviewed.ReviewedAt = &reviewedAt
+	reviewed.ReviewedBy = reviewerID
+	reviewed.ReviewNote = "Approved"
+	reviewed.Status = "accepted"
+	reviewed.UpdatedAt = reviewedAt
+	store := &storeStub{
+		contexts: []ContextEntry{{
+			ConfirmedAt: reviewedAt, ConfirmedBy: reviewerID,
+			Content: pending.Content, ContextType: pending.ContextType,
+			CreatedAt: reviewedAt, ID: contextID, ProjectID: projectID,
+			ProposedBy: agentID, ProposedByActorKind: "agent",
+			SourceObjectIDs: []string{}, Title: pending.Title, UpdatedAt: reviewedAt,
+		}},
+		createdResult:  pending,
+		proposals:      []ContextProposal{pending},
+		reviewedResult: reviewed,
+	}
+	agentModule := Module{Service: Service{
+		Access: &accessStub{identity: auth.Identity{
+			AgentInstanceID: agentID, AllowedTools: []string{"context.promote"},
+			CredentialStatus: "active", Kind: "agent", ProjectID: projectID,
+		}},
+		AgentProvenance: &provenanceValidatorStub{},
+		Store:           store,
+	}}
+	humanModule := Module{Service: Service{
+		Access: &accessStub{identity: auth.Identity{
+			Kind: "session", User: auth.User{ID: reviewerID},
+		}},
+		Store: store,
+	}}
+	agentMux, humanMux := http.NewServeMux(), http.NewServeMux()
+	agentModule.RegisterRoutes(agentMux)
+	humanModule.RegisterRoutes(humanMux)
+
+	proposalKeys := []string{
+		"agent_run_id", "agent_session_id", "content", "context_type",
+		"created_at", "proposal_id", "project_id", "proposed_by",
+		"proposed_by_actor_id", "proposed_by_actor_kind", "rationale",
+		"review_note", "source_object_ids", "status", "title", "updated_at",
+	}
+
+	t.Run("create returns the explicit Agent actor", func(t *testing.T) {
+		body := `{"title":"Candidate context","content":"Agent finding",` +
+			`"context_type":"finding","agent_session_id":"` + sessionID +
+			`","agent_run_id":"` + runID + `"}`
+		response := serveDataHubJSON(t, agentMux, http.MethodPost,
+			"/v1/data/projects/"+projectID+"/context/proposals", body,
+			http.StatusCreated)
+		assertExactJSONKeys(t, response, proposalKeys)
+		assertAgentProposalJSON(t, response, agentID)
+	})
+
+	t.Run("list returns the explicit Agent actor", func(t *testing.T) {
+		response := serveDataHubJSON(t, agentMux, http.MethodGet,
+			"/v1/data/projects/"+projectID+"/context/proposals", "",
+			http.StatusOK)
+		items, ok := response["items"].([]interface{})
+		if !ok || len(items) != 1 {
+			t.Fatalf("unexpected proposal list: %#v", response)
+		}
+		proposal, ok := items[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("unexpected proposal response: %#v", items[0])
+		}
+		assertExactJSONKeys(t, proposal, proposalKeys)
+		assertAgentProposalJSON(t, proposal, agentID)
+	})
+
+	t.Run("review preserves the Agent actor", func(t *testing.T) {
+		response := serveDataHubJSON(t, humanMux, http.MethodPost,
+			"/v1/data/projects/"+projectID+"/context/proposals/"+proposalID+"/review",
+			`{"decision":"accepted","review_note":"Approved"}`, http.StatusOK)
+		assertExactJSONKeys(t, response, append(proposalKeys,
+			"promoted_context_id", "reviewed_at", "reviewed_by"))
+		assertAgentProposalJSON(t, response, agentID)
+		if !store.reviewed || response["promoted_context_id"] != contextID {
+			t.Fatalf("proposal was not reviewed and promoted: %#v", response)
+		}
+	})
+
+	t.Run("promoted context omits internal actor kind", func(t *testing.T) {
+		response := serveDataHubJSON(t, humanMux, http.MethodGet,
+			"/v1/data/projects/"+projectID+"/context", "", http.StatusOK)
+		items, ok := response["items"].([]interface{})
+		if !ok || len(items) != 1 {
+			t.Fatalf("unexpected context list: %#v", response)
+		}
+		entry, ok := items[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("unexpected context response: %#v", items[0])
+		}
+		assertExactJSONKeys(t, entry, []string{
+			"confirmed_at", "confirmed_by", "content", "context_id", "context_type",
+			"created_at", "project_id", "proposed_by", "source_object_ids", "title",
+			"updated_at",
+		})
+		if entry["proposed_by"] != agentID {
+			t.Fatalf("promoted context lost Agent provenance: %#v", entry)
+		}
+	})
+}
+
+func serveDataHubJSON(
+	t *testing.T,
+	handler http.Handler,
+	method string,
+	path string,
+	body string,
+	wantStatus int,
+) map[string]interface{} {
+	t.Helper()
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != wantStatus {
+		t.Fatalf("unexpected status %d: %s", response.Code, response.Body.String())
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(response.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode response: %v: %s", err, response.Body.String())
+	}
+	return decoded
+}
+
+func assertExactJSONKeys(t *testing.T, value map[string]interface{}, want []string) {
+	t.Helper()
+	if len(value) != len(want) {
+		t.Fatalf("unexpected JSON fields: got %#v, want %v", value, want)
+	}
+	for _, key := range want {
+		if _, ok := value[key]; !ok {
+			t.Fatalf("JSON response is missing %q: %#v", key, value)
+		}
+	}
+}
+
+func assertAgentProposalJSON(
+	t *testing.T,
+	proposal map[string]interface{},
+	agentID string,
+) {
+	t.Helper()
+	if proposal["proposed_by"] != agentID ||
+		proposal["proposed_by_actor_id"] != agentID ||
+		proposal["proposed_by_actor_kind"] != "agent" {
+		t.Fatalf("Agent provenance is incomplete: %#v", proposal)
+	}
+	if _, leaked := proposal["proposed_by_kind"]; leaked {
+		t.Fatalf("undocumented proposed_by_kind leaked: %#v", proposal)
 	}
 }

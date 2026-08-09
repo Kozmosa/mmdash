@@ -55,40 +55,41 @@ type Activity struct {
 
 // ContextProposal is an untrusted suggestion awaiting human review.
 type ContextProposal struct {
-	AgentRunID      string     `json:"agent_run_id,omitempty"`
-	AgentSessionID  string     `json:"agent_session_id,omitempty"`
-	Content         string     `json:"content"`
-	ContextType     string     `json:"context_type"`
-	CreatedAt       time.Time  `json:"created_at"`
-	ID              string     `json:"proposal_id"`
-	ProjectID       string     `json:"project_id"`
-	PromotedContext string     `json:"promoted_context_id,omitempty"`
-	ProposedBy      string     `json:"proposed_by"`
-	ProposedByKind  string     `json:"proposed_by_kind"`
-	Rationale       string     `json:"rationale"`
-	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
-	ReviewedBy      string     `json:"reviewed_by,omitempty"`
-	ReviewNote      string     `json:"review_note"`
-	SourceObjectIDs []string   `json:"source_object_ids"`
-	Status          string     `json:"status"`
-	Title           string     `json:"title"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	AgentRunID          string     `json:"agent_run_id,omitempty"`
+	AgentSessionID      string     `json:"agent_session_id,omitempty"`
+	Content             string     `json:"content"`
+	ContextType         string     `json:"context_type"`
+	CreatedAt           time.Time  `json:"created_at"`
+	ID                  string     `json:"proposal_id"`
+	ProjectID           string     `json:"project_id"`
+	PromotedContext     string     `json:"promoted_context_id,omitempty"`
+	ProposedBy          string     `json:"proposed_by"`
+	ProposedByActorID   string     `json:"proposed_by_actor_id,omitempty"`
+	ProposedByActorKind string     `json:"proposed_by_actor_kind,omitempty"`
+	Rationale           string     `json:"rationale"`
+	ReviewedAt          *time.Time `json:"reviewed_at,omitempty"`
+	ReviewedBy          string     `json:"reviewed_by,omitempty"`
+	ReviewNote          string     `json:"review_note"`
+	SourceObjectIDs     []string   `json:"source_object_ids"`
+	Status              string     `json:"status"`
+	Title               string     `json:"title"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // ContextEntry is project context made formal by a human reviewer.
 type ContextEntry struct {
-	ConfirmedAt     time.Time `json:"confirmed_at"`
-	ConfirmedBy     string    `json:"confirmed_by"`
-	Content         string    `json:"content"`
-	ContextType     string    `json:"context_type"`
-	CreatedAt       time.Time `json:"created_at"`
-	ID              string    `json:"context_id"`
-	ProjectID       string    `json:"project_id"`
-	ProposedBy      string    `json:"proposed_by"`
-	ProposedByKind  string    `json:"proposed_by_kind"`
-	SourceObjectIDs []string  `json:"source_object_ids"`
-	Title           string    `json:"title"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ConfirmedAt         time.Time `json:"confirmed_at"`
+	ConfirmedBy         string    `json:"confirmed_by"`
+	Content             string    `json:"content"`
+	ContextType         string    `json:"context_type"`
+	CreatedAt           time.Time `json:"created_at"`
+	ID                  string    `json:"context_id"`
+	ProjectID           string    `json:"project_id"`
+	ProposedBy          string    `json:"proposed_by"`
+	ProposedByActorKind string    `json:"-"`
+	SourceObjectIDs     []string  `json:"source_object_ids"`
+	Title               string    `json:"title"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // ObjectPage and ActivityPage expose opaque continuation cursors.

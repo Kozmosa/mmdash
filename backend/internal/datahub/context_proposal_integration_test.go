@@ -3,6 +3,7 @@ package datahub
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -111,6 +112,39 @@ func TestCreateContextProposalWritesProposalObjectAndActivity(t *testing.T) {
 	if proposal.ID == "" || proposal.Status != "pending" {
 		t.Fatalf("unexpected proposal: %#v", proposal)
 	}
+	if proposal.ProposedBy != agentInstanceID ||
+		proposal.ProposedByActorID != agentInstanceID ||
+		proposal.ProposedByActorKind != "agent" {
+		t.Fatalf("created proposal lost Agent provenance: %#v", proposal)
+	}
+
+	persisted, err := store.GetProposal(ctx, projectID, proposal.ID)
+	if err != nil {
+		t.Fatalf("get context proposal: %v", err)
+	}
+	if persisted.ProposedBy != agentInstanceID ||
+		persisted.ProposedByActorID != agentInstanceID ||
+		persisted.ProposedByActorKind != "agent" {
+		t.Fatalf("persisted proposal lost Agent provenance: %#v", persisted)
+	}
+	listed, err := store.ListProposals(ctx, projectID)
+	if err != nil {
+		t.Fatalf("list context proposals: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != proposal.ID ||
+		listed[0].ProposedByActorID != agentInstanceID ||
+		listed[0].ProposedByActorKind != "agent" {
+		t.Fatalf("listed proposal lost Agent provenance: %#v", listed)
+	}
+	proposalJSON, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatalf("marshal context proposal: %v", err)
+	}
+	var proposalView map[string]interface{}
+	if err := json.Unmarshal(proposalJSON, &proposalView); err != nil {
+		t.Fatalf("decode context proposal: %v", err)
+	}
+	assertAgentProposalJSON(t, proposalView, agentInstanceID)
 
 	var objectCount int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM data_objects WHERE source_module='datahub' AND object_type='context-proposal' AND source_id=$1 AND object_id=$2`, proposal.ID, proposal.ID).Scan(&objectCount); err != nil {
@@ -126,5 +160,57 @@ func TestCreateContextProposalWritesProposalObjectAndActivity(t *testing.T) {
 	}
 	if activityCount != 1 {
 		t.Fatalf("proposal activity count: got %d, want 1", activityCount)
+	}
+
+	reviewed, err := store.ReviewProposal(ctx, projectID, proposal.ID, userID,
+		ReviewProposalInput{Decision: "accepted", Note: "Reviewed evidence"})
+	if err != nil {
+		t.Fatalf("review context proposal: %v", err)
+	}
+	if reviewed.Status != "accepted" || reviewed.PromotedContext == "" ||
+		reviewed.ProposedByActorID != agentInstanceID ||
+		reviewed.ProposedByActorKind != "agent" {
+		t.Fatalf("reviewed proposal lost Agent provenance: %#v", reviewed)
+	}
+
+	contexts, err := store.ListContext(ctx, projectID)
+	if err != nil {
+		t.Fatalf("list promoted context: %v", err)
+	}
+	if len(contexts) != 1 || contexts[0].ID != reviewed.PromotedContext ||
+		contexts[0].ProposedBy != agentInstanceID ||
+		contexts[0].ProposedByActorKind != "agent" {
+		t.Fatalf("promoted context lost Agent provenance: %#v", contexts)
+	}
+	contextJSON, err := json.Marshal(contexts[0])
+	if err != nil {
+		t.Fatalf("marshal promoted context: %v", err)
+	}
+	var contextView map[string]interface{}
+	if err := json.Unmarshal(contextJSON, &contextView); err != nil {
+		t.Fatalf("decode promoted context: %v", err)
+	}
+	if contextView["proposed_by"] != agentInstanceID {
+		t.Fatalf("promoted context response lost proposer: %#v", contextView)
+	}
+	if _, leaked := contextView["proposed_by_kind"]; leaked {
+		t.Fatalf("promoted context leaked undocumented actor kind: %#v", contextView)
+	}
+
+	var legacyProposer sql.NullString
+	var promotedActorID, promotedActorKind string
+	if err := db.QueryRowContext(ctx, `
+		SELECT proposed_by::text, proposed_by_actor_id::text, proposed_by_actor_kind
+		FROM data_context_entries
+		WHERE context_id = $1
+	`, reviewed.PromotedContext).Scan(
+		&legacyProposer, &promotedActorID, &promotedActorKind,
+	); err != nil {
+		t.Fatalf("read promoted context provenance: %v", err)
+	}
+	if legacyProposer.Valid || promotedActorID != agentInstanceID ||
+		promotedActorKind != "agent" {
+		t.Fatalf("unexpected promoted provenance: legacy=%#v actor=%q kind=%q",
+			legacyProposer, promotedActorID, promotedActorKind)
 	}
 }
