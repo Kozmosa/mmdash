@@ -10,22 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ProgressTrackingPanel } from "@/features/progress/progress-tracking-panel";
+import type { ProgressAggregate as Progress, ProgressMilestone as Milestone, ProgressProposal as Proposal, ProgressTask as Task } from "@/features/progress/types";
 import { apiClient } from "@/lib/api-client";
-
-type Task = { task_id: string; title: string; description: string; status: string; due_at?: string; source: string; source_run_id?: string };
-type Milestone = { milestone_id: string; title: string; description: string; status: string; critical: boolean; target_at?: string };
-type Proposal = { proposal_id: string; proposal_type: string; title: string; rationale: string; changes: Record<string, unknown>; status: string; source: string; source_run_id?: string; created_at: string };
-type Progress = {
-  milestones: Milestone[];
-  tasks: Task[];
-  today: Task[];
-  overdue: Task[];
-  blocked: Task[];
-  proposals: Proposal[];
-  reminders: { reminder_id: string; note: string; status: string; remind_at: string }[];
-  board: { todo: Task[]; in_progress: Task[]; blocked: Task[]; done: Task[] };
-  gantt: { id: string; kind: string; title: string; target_at?: string; status: string }[];
-};
 
 type View = "board" | "list" | "gantt" | "today" | "proposals";
 type CreateReminderRequest = {
@@ -37,6 +24,7 @@ type CreateReminderRequest = {
 type ReminderTargetType = "task" | "milestone";
 
 const progressManageRoles = new Set(["owner", "maintainer", "editor"]);
+const progressEvaluateRoles = new Set(["owner", "maintainer", "editor", "viewer"]);
 
 export default function ProgressPage() {
   const project = useCurrentProject();
@@ -45,6 +33,7 @@ export default function ProgressPage() {
   const [milestoneTitle, setMilestoneTitle] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const canManageProgress = progressManageRoles.has(project.role ?? "");
+  const canEvaluateProgress = progressEvaluateRoles.has(project.role ?? "");
   const progress = useQuery({
     queryKey: ["progress", project.id],
     queryFn: () => apiClient.request<Progress>(`/projects/${encodeURIComponent(project.id)}/progress`),
@@ -78,6 +67,8 @@ export default function ProgressPage() {
         </div>
         <Button onClick={refresh} variant="outline"><RotateCcw aria-hidden="true" className="size-4" />刷新</Button>
       </header>
+
+      {data ? <ProgressTrackingPanel canEvaluate={canEvaluateProgress} canManage={canManageProgress} progress={data} projectId={project.id} /> : null}
 
       {canManageProgress ? <div className="grid gap-3 md:grid-cols-2">
         <Card>

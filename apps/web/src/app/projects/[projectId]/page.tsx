@@ -47,6 +47,13 @@ type HomeAggregate = {
   experiments: HomeSection;
   article: HomeSection;
   agent: HomeSection;
+  progress_tracking?: {
+    detected_stage: string;
+    effective_stage: string;
+    stage_overridden: boolean;
+    summary: string;
+    last_evaluated_at?: string;
+  };
 };
 
 type HomeSection = {
@@ -290,6 +297,14 @@ function ProgressHomeCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
+        <div className="rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">当前阶段</span>
+            <Badge>{aggregate?.progress_tracking?.effective_stage || "尚未评估"}</Badge>
+          </div>
+          {aggregate?.progress_tracking?.summary ? <p className="mt-2 text-xs text-muted-foreground">{aggregate.progress_tracking.summary}</p> : null}
+          {aggregate?.progress_tracking?.stage_overridden ? <p className="mt-2 text-xs text-muted-foreground">人工覆盖（自动检测：{aggregate.progress_tracking.detected_stage || "—"}）</p> : null}
+        </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">关键节点</span>
           <Badge>{aggregate?.milestones.total ?? 0}</Badge>
