@@ -19,6 +19,7 @@ tags:
   - name: Repo
   - name: Artifact
   - name: Pages
+  - name: Data Hub
   - name: Progress
   - name: Agent
   - name: Notification
@@ -438,6 +439,50 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ProjectPermissions"
+  /api/projects/{projectId}/context/proposals:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Data Hub]
+      summary: List project Context Proposals for human review
+      operationId: bff.data.context.proposals.list
+      responses:
+        "200":
+          description: Context Proposals visible to the current collaborator.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ContextProposalList" }
+  /api/projects/{projectId}/context/proposals/{proposalId}/review:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: proposalId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Data Hub]
+      summary: Accept or reject a Context Proposal as a human reviewer
+      description: Requires a signed browser session and project.context.review.
+      operationId: bff.data.context.proposals.review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/ReviewContextProposalRequest",
+              }
+      responses:
+        "200":
+          description: Reviewed proposal with its original provenance retained.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ContextProposal" }
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/projects/{projectId}/agent-instances:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:

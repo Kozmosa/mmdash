@@ -29,7 +29,9 @@ export default function SettingsPage() {
       <AgentSettingsPanel />
       <NotificationSettingsPanel />
       <SettingsSlotGrid
-        slots={settingsSlots.list().filter((slot) => slot.id !== "repo")}
+        slots={settingsSlots
+          .list()
+          .filter((slot) => slot.id !== "repo" && slot.id !== "agent")}
       />
       <MemberManagement />
       <section
