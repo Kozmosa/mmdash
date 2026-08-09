@@ -42,8 +42,14 @@ type Store interface {
 	UpdateSession(context.Context, string, SessionRecord, string, time.Time) (SessionRecord, error)
 
 	ActivateRun(context.Context, string, RunRecord, time.Time) (RunRecord, error)
+	ApplyNextRunApprovalResponse(context.Context, string, time.Time) (RunRecord, string, error)
+	ApplyRunApprovalResponse(context.Context, string, string, time.Time) (RunRecord, error)
+	ClaimRunApproval(context.Context, string, string, string, time.Time) (RunRecord, error)
+	CompleteRunApproval(context.Context, string, string, string, time.Time) (RunRecord, error)
 	FailRunReservation(context.Context, string, string, string, time.Time) error
 	GetRun(context.Context, string, string) (RunRecord, error)
+	RecordRunApproval(context.Context, string, string, time.Time) (RunRecord, error)
+	ReleaseRunApprovalClaim(context.Context, string, string, string, time.Time) (RunRecord, error)
 	ReserveRun(context.Context, RunRecord) (RunRecord, error)
 	UpdateRun(context.Context, string, string, string, time.Time) (RunRecord, error)
 	UpsertToolCall(context.Context, ToolCallRecord) (ToolCallRecord, error)
@@ -715,16 +721,355 @@ func (store PostgresStore) GetRun(ctx context.Context, sessionID, runID string) 
 	if err != nil {
 		return RunRecord{}, err
 	}
-	defer rows.Close()
 	item.ToolCalls = []ToolCallRecord{}
 	for rows.Next() {
 		call, scanErr := scanToolCall(rows.Scan)
 		if scanErr != nil {
+			_ = rows.Close()
 			return RunRecord{}, scanErr
 		}
 		item.ToolCalls = append(item.ToolCalls, call)
 	}
-	return item, rows.Err()
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return RunRecord{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return RunRecord{}, err
+	}
+	approvalRows, err := store.DB.QueryContext(ctx, `
+		SELECT approval_id
+		FROM agent_run_approvals
+		WHERE run_id=$1 AND status IN ('pending','responding')
+		ORDER BY approval_order
+	`, runID)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	defer approvalRows.Close()
+	item.PendingApprovalIDs = []string{}
+	for approvalRows.Next() {
+		var approvalID string
+		if err := approvalRows.Scan(&approvalID); err != nil {
+			return RunRecord{}, err
+		}
+		item.PendingApprovalIDs = append(item.PendingApprovalIDs, approvalID)
+	}
+	return item, approvalRows.Err()
+}
+
+func (store PostgresStore) RecordRunApproval(
+	ctx context.Context,
+	runID string,
+	approvalID string,
+	now time.Time,
+) (RunRecord, error) {
+	var sessionID string
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var runStatus string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT session_id,status FROM agent_runs WHERE run_id=$1 FOR UPDATE
+		`, runID).Scan(&sessionID, &runStatus); err != nil {
+			return mapNotFound(err)
+		}
+		if terminalRunStatus(runStatus) || runStatus == RunRecordStopping {
+			return ErrConflict
+		}
+		var approvalStatus string
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO agent_run_approvals(
+				run_id,approval_id,status,claim_id,requested_at,resolved_at,updated_at
+			) VALUES($1,$2,'pending',NULL,$3,NULL,$3)
+			ON CONFLICT (run_id,approval_id) DO UPDATE SET
+				updated_at=agent_run_approvals.updated_at
+			RETURNING status
+		`, runID, approvalID, now).Scan(&approvalStatus); err != nil {
+			return err
+		}
+		if (approvalStatus != "pending" && approvalStatus != "responding") ||
+			runStatus == RunRecordWaitingForApproval {
+			return nil
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE agent_runs
+			SET status='waiting_for_approval',safe_error_code=NULL,
+				updated_at=$2,version=version+1
+			WHERE run_id=$1 AND status IN ('queued','running')
+		`, runID, now)
+		if err := requireAffected(result, err); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return ErrConflict
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return RunRecord{}, err
+	}
+	return store.GetRun(ctx, sessionID, runID)
+}
+
+func (store PostgresStore) ClaimRunApproval(
+	ctx context.Context,
+	runID string,
+	approvalID string,
+	claimID string,
+	now time.Time,
+) (RunRecord, error) {
+	var sessionID string
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var runStatus string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT session_id,status FROM agent_runs WHERE run_id=$1 FOR UPDATE
+		`, runID).Scan(&sessionID, &runStatus); err != nil {
+			return mapNotFound(err)
+		}
+		if runStatus != RunRecordWaitingForApproval {
+			return ErrConflict
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE agent_run_approvals
+			SET status='responding',claim_id=$3,updated_at=$4
+			WHERE run_id=$1 AND approval_id=$2
+			  AND (
+				status='pending'
+				OR (status='responding' AND updated_at <= $5)
+			  )
+			  AND approval_order = (
+				SELECT MIN(approval_order) FROM agent_run_approvals
+				WHERE run_id=$1 AND status IN ('pending','responding')
+			  )
+		`, runID, approvalID, claimID, now, now.Add(-runApprovalClaimLease))
+		if err := requireAffected(result, err); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return ErrConflict
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return RunRecord{}, err
+	}
+	return store.GetRun(ctx, sessionID, runID)
+}
+
+func (store PostgresStore) ReleaseRunApprovalClaim(
+	ctx context.Context,
+	runID string,
+	approvalID string,
+	claimID string,
+	now time.Time,
+) (RunRecord, error) {
+	var sessionID string
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT session_id FROM agent_runs WHERE run_id=$1 FOR UPDATE
+		`, runID).Scan(&sessionID); err != nil {
+			return mapNotFound(err)
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE agent_run_approvals
+			SET status='pending',claim_id=NULL,updated_at=$4
+			WHERE run_id=$1 AND approval_id=$2
+			  AND status='responding' AND claim_id=$3
+		`, runID, approvalID, claimID, now)
+		if err := requireAffected(result, err); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return ErrConflict
+			}
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return RunRecord{}, err
+	}
+	return store.GetRun(ctx, sessionID, runID)
+}
+
+func (store PostgresStore) CompleteRunApproval(
+	ctx context.Context,
+	runID string,
+	approvalID string,
+	claimID string,
+	now time.Time,
+) (RunRecord, error) {
+	var sessionID string
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var runStatus string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT session_id,status FROM agent_runs WHERE run_id=$1 FOR UPDATE
+		`, runID).Scan(&sessionID, &runStatus); err != nil {
+			return mapNotFound(err)
+		}
+		var approvalStatus, currentClaimID string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT status,COALESCE(claim_id::text,'') FROM agent_run_approvals
+			WHERE run_id=$1 AND approval_id=$2 FOR UPDATE
+		`, runID, approvalID).Scan(&approvalStatus, &currentClaimID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrConflict
+			}
+			return err
+		}
+		if approvalStatus == "resolved" && currentClaimID == claimID {
+			return nil
+		}
+		if approvalStatus != "responding" || currentClaimID != claimID ||
+			runStatus != RunRecordWaitingForApproval {
+			return ErrConflict
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE agent_run_approvals
+			SET status='resolved',resolved_at=$3,updated_at=$3
+			WHERE run_id=$1 AND approval_id=$2
+			  AND status='responding' AND claim_id=$4
+		`, runID, approvalID, now, claimID)
+		if err := requireAffected(result, err); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return ErrConflict
+			}
+			return err
+		}
+		return updateRunAfterApprovalResolution(ctx, tx, runID, now)
+	})
+	if err != nil {
+		return RunRecord{}, err
+	}
+	return store.GetRun(ctx, sessionID, runID)
+}
+
+func (store PostgresStore) ApplyRunApprovalResponse(
+	ctx context.Context,
+	runID string,
+	approvalID string,
+	now time.Time,
+) (RunRecord, error) {
+	var sessionID string
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var runStatus, approvalStatus string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT session_id,status FROM agent_runs WHERE run_id=$1 FOR UPDATE
+		`, runID).Scan(&sessionID, &runStatus); err != nil {
+			return mapNotFound(err)
+		}
+		if err := tx.QueryRowContext(ctx, `
+			SELECT status FROM agent_run_approvals
+			WHERE run_id=$1 AND approval_id=$2 FOR UPDATE
+		`, runID, approvalID).Scan(&approvalStatus); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrConflict
+			}
+			return err
+		}
+		if approvalStatus == "resolved" {
+			return nil
+		}
+		if (approvalStatus != "pending" && approvalStatus != "responding") ||
+			runStatus != RunRecordWaitingForApproval {
+			return ErrConflict
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE agent_run_approvals
+			SET status='resolved',resolved_at=$3,updated_at=$3
+			WHERE run_id=$1 AND approval_id=$2
+			  AND status IN ('pending','responding')
+		`, runID, approvalID, now)
+		if err := requireAffected(result, err); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return ErrConflict
+			}
+			return err
+		}
+		return updateRunAfterApprovalResolution(ctx, tx, runID, now)
+	})
+	if err != nil {
+		return RunRecord{}, err
+	}
+	return store.GetRun(ctx, sessionID, runID)
+}
+
+func (store PostgresStore) ApplyNextRunApprovalResponse(
+	ctx context.Context,
+	runID string,
+	now time.Time,
+) (RunRecord, string, error) {
+	var sessionID, approvalID string
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var runStatus string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT session_id,status FROM agent_runs WHERE run_id=$1 FOR UPDATE
+		`, runID).Scan(&sessionID, &runStatus); err != nil {
+			return mapNotFound(err)
+		}
+		if runStatus != RunRecordWaitingForApproval {
+			return ErrConflict
+		}
+		if err := tx.QueryRowContext(ctx, `
+			SELECT approval_id FROM agent_run_approvals
+			WHERE run_id=$1 AND status IN ('pending','responding')
+			ORDER BY approval_order
+			LIMIT 1 FOR UPDATE
+		`, runID).Scan(&approvalID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrConflict
+			}
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE agent_run_approvals
+			SET status='resolved',resolved_at=$3,updated_at=$3
+			WHERE run_id=$1 AND approval_id=$2
+			  AND status IN ('pending','responding')
+		`, runID, approvalID, now)
+		if err := requireAffected(result, err); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return ErrConflict
+			}
+			return err
+		}
+		return updateRunAfterApprovalResolution(ctx, tx, runID, now)
+	})
+	if err != nil {
+		return RunRecord{}, "", err
+	}
+	item, err := store.GetRun(ctx, sessionID, runID)
+	return item, approvalID, err
+}
+
+func updateRunAfterApprovalResolution(
+	ctx context.Context,
+	tx transaction.Tx,
+	runID string,
+	now time.Time,
+) error {
+	var hasPending bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM agent_run_approvals
+			WHERE run_id=$1 AND status IN ('pending','responding')
+		)
+	`, runID).Scan(&hasPending); err != nil {
+		return err
+	}
+	nextStatus := RunRecordRunning
+	if hasPending {
+		nextStatus = RunRecordWaitingForApproval
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE agent_runs
+		SET status=$2,safe_error_code=NULL,updated_at=$3,version=version+1
+		WHERE run_id=$1 AND status='waiting_for_approval'
+	`, runID, nextStatus, now)
+	if err := requireAffected(result, err); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return ErrConflict
+		}
+		return err
+	}
+	return nil
 }
 
 func (store PostgresStore) UpdateRun(
@@ -744,9 +1089,30 @@ func (store PostgresStore) UpdateRun(
 			return mapNotFound(err)
 		}
 		item = current
+		if status == RunRecordRunning {
+			var hasPending bool
+			if err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS(
+					SELECT 1 FROM agent_run_approvals
+					WHERE run_id=$1 AND status IN ('pending','responding')
+				)
+			`, runID).Scan(&hasPending); err != nil {
+				return err
+			}
+			if hasPending {
+				status = RunRecordWaitingForApproval
+			}
+		}
 		completedAt := item.CompletedAt
 		if completed {
 			completedAt = &now
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE agent_run_approvals
+				SET status='expired',claim_id=NULL,resolved_at=$2,updated_at=$2
+				WHERE run_id=$1 AND status IN ('pending','responding')
+			`, runID, now); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE agent_runs SET status=$2, safe_error_code=NULLIF($3,''),

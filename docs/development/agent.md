@@ -25,6 +25,17 @@ After Stage 4 fixes are integrated, migration `000026_agent_sessions` owns:
 - resource-scoped encrypted Settings values for per-instance Hermes secrets;
 - Context Proposal actor kind plus optional Agent Session/Run provenance.
 
+Migration `000027_agent_run_approvals` adds the Runtime-neutral approval
+lifecycle index without rewriting `000026`: each stable mmdash approval ID is
+bound to its local Run and remains `pending`, short-lease `responding`,
+`resolved`, or terminally `expired`. Core claims only the oldest pending ID
+before calling Hermes, releases the claim after a transport failure, and
+allows a later Core process to reclaim an abandoned claim only after the
+ten-minute lease. A resolved row may retain its claim ID so the original
+request can complete idempotently if the Hermes SSE response wins the database
+race. Pending IDs are never returned in the Run projection; the normalized SSE
+approval event remains the browser boundary.
+
 Migrations `000023_progress_reminder_processing`,
 `000024_progress_project_references`, and `000025_project_invitation_expiry`
 belong to the accepted Stage 4 fixes and must remain before this migration.
@@ -53,6 +64,32 @@ fixtures for health, authentication, capabilities, Sessions, messages, Runs,
 approvals, streaming, stopping, Jobs, and Dashboard MCP management. Never infer
 an upstream route or event from an older Hermes release. A contract change
 requires updating the pinned fixture and documenting the upstream evidence.
+
+### Pinned approval limitation
+
+Hermes v2026.8.3 does not expose an approval ID. At pinned commit
+`3c27eb6234bf91b8ceee9e9071591b31e9b148cb`,
+the nested `_approval_notify` callback in
+`gateway/platforms/api_server.py::_handle_runs` (lines 6422-6447 at that
+commit) emits `approval.request` without `approval_id` or `request_id`.
+`::_handle_run_approval` (lines 6730-6818) reads only `choice` plus
+`all`/`resolve_all` before calling `resolve_gateway_approval`; its response and
+`approval.responded` SSE event also omit an ID. The authoritative request
+fixtures are `tests/gateway/test_api_server_runs.py:336-469`.
+The FIFO rule itself is explicit in `tools/approval.py:2338-2363`:
+`resolve_all=false` pops exactly `queue[0]`.
+
+The adapter therefore creates a stable event-derived mmdash ID and Core
+persists FIFO insertion order. Only the oldest pending ID can be claimed,
+matching Hermes `resolve_all=false` oldest-pending semantics; an ordinary
+response must report exactly one resolution. Unknown, non-head, resolved,
+expired, or live-claimed IDs are rejected before Hermes is called. If a new
+stream receives an ID-less `approval.responded` event without replaying the
+request, Core resolves the oldest persisted pending row and puts that mmdash ID
+back into the normalized browser event. Network retries and expired crash
+claims reuse the same local ID, but the pinned Hermes wire request cannot carry
+it. Provider-targetable approval IDs require a future verified Hermes contract
+and a new pin; do not add an unrecognized `approval_id` field to this version.
 
 Hermes Jobs are mapped and probed in this stage but are not scheduled by the
 product. Do not add automatic Progress evaluation, Cron creation, event

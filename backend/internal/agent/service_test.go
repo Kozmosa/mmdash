@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,15 +50,20 @@ func (projects *agentServiceTestProjects) Get(
 }
 
 type agentServiceTestStore struct {
-	instances       map[string]Instance
-	sessions        map[string]SessionRecord
-	runs            map[string]RunRecord
-	rotations       map[string]TokenRotation
-	promptOverrides map[string]string
-	createdEvents   []string
-	updatedEvents   []string
-	savedChecks     int
-	instanceUpdates int
+	instances         map[string]Instance
+	sessions          map[string]SessionRecord
+	runs              map[string]RunRecord
+	rotations         map[string]TokenRotation
+	approvalStates    map[string]map[string]string
+	approvalClaims    map[string]map[string]string
+	approvalUpdated   map[string]map[string]time.Time
+	approvalOrder     map[string]map[string]int64
+	nextApprovalOrder int64
+	promptOverrides   map[string]string
+	createdEvents     []string
+	updatedEvents     []string
+	savedChecks       int
+	instanceUpdates   int
 }
 
 func newAgentServiceTestStore() *agentServiceTestStore {
@@ -66,6 +72,10 @@ func newAgentServiceTestStore() *agentServiceTestStore {
 		sessions:        map[string]SessionRecord{},
 		runs:            map[string]RunRecord{},
 		rotations:       map[string]TokenRotation{},
+		approvalStates:  map[string]map[string]string{},
+		approvalClaims:  map[string]map[string]string{},
+		approvalUpdated: map[string]map[string]time.Time{},
+		approvalOrder:   map[string]map[string]int64{},
 		promptOverrides: map[string]string{},
 	}
 }
@@ -349,7 +359,198 @@ func (store *agentServiceTestStore) GetRun(
 	if !ok || item.SessionID != sessionID {
 		return RunRecord{}, ErrNotFound
 	}
+	item.PendingApprovalIDs = store.pendingApprovalIDs(runID)
 	return item, nil
+}
+
+func (store *agentServiceTestStore) RecordRunApproval(
+	_ context.Context,
+	runID string,
+	approvalID string,
+	now time.Time,
+) (RunRecord, error) {
+	item, ok := store.runs[runID]
+	if !ok {
+		return RunRecord{}, ErrNotFound
+	}
+	if terminalRunStatus(item.Status) || item.Status == RunRecordStopping {
+		return RunRecord{}, ErrConflict
+	}
+	states := store.approvalStates[runID]
+	if states == nil {
+		states = map[string]string{}
+		store.approvalStates[runID] = states
+	}
+	if _, exists := states[approvalID]; !exists {
+		states[approvalID] = "pending"
+		store.nextApprovalOrder++
+		orders := store.approvalOrder[runID]
+		if orders == nil {
+			orders = map[string]int64{}
+			store.approvalOrder[runID] = orders
+		}
+		orders[approvalID] = store.nextApprovalOrder
+		updated := store.approvalUpdated[runID]
+		if updated == nil {
+			updated = map[string]time.Time{}
+			store.approvalUpdated[runID] = updated
+		}
+		updated[approvalID] = now
+	}
+	if states[approvalID] == "pending" || states[approvalID] == "responding" {
+		if item.Status != RunRecordWaitingForApproval {
+			item.Status, item.UpdatedAt = RunRecordWaitingForApproval, now
+			item.Version++
+			store.runs[runID] = item
+		}
+	}
+	return store.GetRun(context.Background(), item.SessionID, runID)
+}
+
+func (store *agentServiceTestStore) ClaimRunApproval(
+	_ context.Context,
+	runID string,
+	approvalID string,
+	claimID string,
+	now time.Time,
+) (RunRecord, error) {
+	item, ok := store.runs[runID]
+	if !ok {
+		return RunRecord{}, ErrNotFound
+	}
+	state := store.approvalStates[runID][approvalID]
+	staleClaim := state == "responding" &&
+		!store.approvalUpdated[runID][approvalID].After(now.Add(-runApprovalClaimLease))
+	pending := store.pendingApprovalIDs(runID)
+	if item.Status != RunRecordWaitingForApproval ||
+		(state != "pending" && !staleClaim) || len(pending) == 0 ||
+		pending[0] != approvalID {
+		return RunRecord{}, ErrConflict
+	}
+	store.approvalStates[runID][approvalID] = "responding"
+	claims := store.approvalClaims[runID]
+	if claims == nil {
+		claims = map[string]string{}
+		store.approvalClaims[runID] = claims
+	}
+	claims[approvalID] = claimID
+	store.approvalUpdated[runID][approvalID] = now
+	item.UpdatedAt = now
+	store.runs[runID] = item
+	return store.GetRun(context.Background(), item.SessionID, runID)
+}
+
+func (store *agentServiceTestStore) ReleaseRunApprovalClaim(
+	_ context.Context,
+	runID string,
+	approvalID string,
+	claimID string,
+	now time.Time,
+) (RunRecord, error) {
+	item, ok := store.runs[runID]
+	if !ok {
+		return RunRecord{}, ErrNotFound
+	}
+	if store.approvalStates[runID][approvalID] != "responding" ||
+		store.approvalClaims[runID][approvalID] != claimID {
+		return RunRecord{}, ErrConflict
+	}
+	store.approvalStates[runID][approvalID] = "pending"
+	delete(store.approvalClaims[runID], approvalID)
+	store.approvalUpdated[runID][approvalID] = now
+	item.UpdatedAt = now
+	store.runs[runID] = item
+	return store.GetRun(context.Background(), item.SessionID, runID)
+}
+
+func (store *agentServiceTestStore) CompleteRunApproval(
+	_ context.Context,
+	runID string,
+	approvalID string,
+	claimID string,
+	now time.Time,
+) (RunRecord, error) {
+	item, ok := store.runs[runID]
+	if !ok {
+		return RunRecord{}, ErrNotFound
+	}
+	state := store.approvalStates[runID][approvalID]
+	currentClaim := store.approvalClaims[runID][approvalID]
+	if state == "resolved" && currentClaim == claimID {
+		return store.GetRun(context.Background(), item.SessionID, runID)
+	}
+	if item.Status != RunRecordWaitingForApproval || state != "responding" ||
+		currentClaim != claimID {
+		return RunRecord{}, ErrConflict
+	}
+	store.approvalStates[runID][approvalID] = "resolved"
+	store.approvalUpdated[runID][approvalID] = now
+	return store.finishApproval(item, now)
+}
+
+func (store *agentServiceTestStore) ApplyRunApprovalResponse(
+	_ context.Context,
+	runID string,
+	approvalID string,
+	now time.Time,
+) (RunRecord, error) {
+	item, ok := store.runs[runID]
+	if !ok {
+		return RunRecord{}, ErrNotFound
+	}
+	state := store.approvalStates[runID][approvalID]
+	if state == "resolved" {
+		return store.GetRun(context.Background(), item.SessionID, runID)
+	}
+	if item.Status != RunRecordWaitingForApproval ||
+		(state != "pending" && state != "responding") {
+		return RunRecord{}, ErrConflict
+	}
+	store.approvalStates[runID][approvalID] = "resolved"
+	store.approvalUpdated[runID][approvalID] = now
+	return store.finishApproval(item, now)
+}
+
+func (store *agentServiceTestStore) ApplyNextRunApprovalResponse(
+	ctx context.Context,
+	runID string,
+	now time.Time,
+) (RunRecord, string, error) {
+	pending := store.pendingApprovalIDs(runID)
+	if len(pending) == 0 {
+		return RunRecord{}, "", ErrConflict
+	}
+	approvalID := pending[0]
+	item, err := store.ApplyRunApprovalResponse(ctx, runID, approvalID, now)
+	return item, approvalID, err
+}
+
+func (store *agentServiceTestStore) finishApproval(
+	item RunRecord,
+	now time.Time,
+) (RunRecord, error) {
+	item.Status = RunRecordRunning
+	if len(store.pendingApprovalIDs(item.ID)) > 0 {
+		item.Status = RunRecordWaitingForApproval
+	}
+	item.UpdatedAt = now
+	item.Version++
+	store.runs[item.ID] = item
+	return store.GetRun(context.Background(), item.SessionID, item.ID)
+}
+
+func (store *agentServiceTestStore) pendingApprovalIDs(runID string) []string {
+	values := []string{}
+	for approvalID, status := range store.approvalStates[runID] {
+		if status == "pending" || status == "responding" {
+			values = append(values, approvalID)
+		}
+	}
+	sort.Slice(values, func(left, right int) bool {
+		return store.approvalOrder[runID][values[left]] <
+			store.approvalOrder[runID][values[right]]
+	})
+	return values
 }
 
 func (store *agentServiceTestStore) ReserveRun(
@@ -375,9 +576,19 @@ func (store *agentServiceTestStore) UpdateRun(
 		return RunRecord{}, ErrNotFound
 	}
 	item.Status, item.SafeErrorCode, item.UpdatedAt = status, code, now
+	if status == RunRecordRunning && len(store.pendingApprovalIDs(runID)) > 0 {
+		item.Status = RunRecordWaitingForApproval
+	}
 	item.Version++
 	if terminalRunStatus(status) {
 		item.CompletedAt = &now
+		for approvalID, approvalStatus := range store.approvalStates[runID] {
+			if approvalStatus == "pending" || approvalStatus == "responding" {
+				store.approvalStates[runID][approvalID] = "expired"
+				delete(store.approvalClaims[runID], approvalID)
+				store.approvalUpdated[runID][approvalID] = now
+			}
+		}
 	}
 	store.runs[runID] = item
 	return item, nil
@@ -459,6 +670,10 @@ type agentServiceTestAdapter struct {
 	stopRunResult         Run
 	approvalResult        ApprovalResult
 	approvalRequest       ApprovalRequest
+	approvalErr           error
+	approvalCalls         int
+	approvalMu            sync.Mutex
+	onApprove             func(ApprovalRequest)
 	configureAccessResult ProjectAccessResult
 	onConfigureAccess     func(ProjectAccessRequest)
 	rotateAccessResult    ProjectAccessResult
@@ -470,6 +685,8 @@ type agentServiceTestAdapter struct {
 	getRunCalls           int
 	stopRunCalls          int
 	streamRunCalls        int
+	streamRunEvents       []Event
+	streamRunErr          error
 	forkCalls             int
 	rotateAccessCalls     int
 	finalizeAccessCalls   int
@@ -560,7 +777,19 @@ func (adapter *agentServiceTestAdapter) StreamRun(
 	handler EventHandler,
 ) error {
 	adapter.streamRunCalls++
-	return handler(ctx, Event{Type: EventHeartbeat})
+	if adapter.streamRunErr != nil {
+		return adapter.streamRunErr
+	}
+	events := adapter.streamRunEvents
+	if len(events) == 0 {
+		events = []Event{{Type: EventHeartbeat}}
+	}
+	for _, event := range events {
+		if err := handler(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (adapter *agentServiceTestAdapter) ApproveRun(
@@ -568,8 +797,16 @@ func (adapter *agentServiceTestAdapter) ApproveRun(
 	_ string,
 	request ApprovalRequest,
 ) (ApprovalResult, error) {
+	adapter.approvalMu.Lock()
+	adapter.approvalCalls++
 	adapter.approvalRequest = request
-	return adapter.approvalResult, nil
+	callback := adapter.onApprove
+	result, err := adapter.approvalResult, adapter.approvalErr
+	adapter.approvalMu.Unlock()
+	if callback != nil {
+		callback(request)
+	}
+	return result, err
 }
 
 func (adapter *agentServiceTestAdapter) StopRun(context.Context, string) (Run, error) {
@@ -976,6 +1213,18 @@ func (fixture *agentServiceFixture) seedRun(status string) RunRecord {
 		Version: 1,
 	}
 	fixture.store.runs[item.ID] = item
+	if status == RunRecordWaitingForApproval {
+		fixture.store.approvalStates[item.ID] = map[string]string{"approval-1": "pending"}
+		fixture.store.approvalClaims[item.ID] = map[string]string{}
+		fixture.store.approvalUpdated[item.ID] = map[string]time.Time{
+			"approval-1": agentServiceTestNow,
+		}
+		fixture.store.nextApprovalOrder++
+		fixture.store.approvalOrder[item.ID] = map[string]int64{
+			"approval-1": fixture.store.nextApprovalOrder,
+		}
+		item.PendingApprovalIDs = []string{"approval-1"}
+	}
 	return item
 }
 
@@ -1193,7 +1442,9 @@ func TestServiceApproveRunRequiresWaitingStateAndPersistsRunning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("approve run: %v", err)
 	}
-	if item.Status != RunRecordRunning || fixture.adapter.approvalRequest.Choice != ApprovalSession {
+	if item.Status != RunRecordRunning || len(item.PendingApprovalIDs) != 0 ||
+		fixture.adapter.approvalRequest.RemoteID != "approval-1" ||
+		fixture.adapter.approvalRequest.Choice != ApprovalSession {
 		t.Fatalf("approval not persisted: item=%#v request=%#v", item, fixture.adapter.approvalRequest)
 	}
 	if len(fixture.audit.events) != 1 || fixture.audit.events[0].Action != "agent.run.approve" {
@@ -1207,6 +1458,200 @@ func TestServiceApproveRunRequiresWaitingStateAndPersistsRunning(t *testing.T) {
 		"approval-1", ApprovalOnce,
 	); !errors.Is(err, ErrConflict) {
 		t.Fatalf("approval outside waiting state: %v", err)
+	}
+}
+
+func TestServiceApproveRunRejectsForgedAndStaleIDsBeforeHermes(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.seedRun(RunRecordWaitingForApproval)
+	if _, err := fixture.store.RecordRunApproval(
+		context.Background(), "run-1", "approval-2", agentServiceTestNow.Add(time.Second),
+	); err != nil {
+		t.Fatalf("record queued approval: %v", err)
+	}
+	for _, approvalID := range []string{
+		"forged-approval", "approval-from-previous-run", "approval-2",
+	} {
+		if _, err := fixture.service.ApproveRun(
+			context.Background(), fixture.caller, "project-1", "agent-1",
+			"session-1", "run-1", approvalID, ApprovalOnce,
+		); !errors.Is(err, ErrConflict) {
+			t.Fatalf("%s was not rejected: %v", approvalID, err)
+		}
+	}
+	if fixture.adapter.approvalCalls != 0 {
+		t.Fatalf("forged or stale approval reached Hermes: %d", fixture.adapter.approvalCalls)
+	}
+	actual, err := fixture.store.GetRun(context.Background(), "session-1", "run-1")
+	if err != nil || actual.Status != RunRecordWaitingForApproval ||
+		len(actual.PendingApprovalIDs) != 2 || actual.PendingApprovalIDs[0] != "approval-1" {
+		t.Fatalf("pending approval changed after rejection: %#v %v", actual, err)
+	}
+}
+
+func TestServiceApproveRunReleasesClaimAfterHermesFailure(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.seedRun(RunRecordWaitingForApproval)
+	fixture.adapter.approvalErr = &AdapterError{Code: ErrorUnavailable}
+	if _, err := fixture.service.ApproveRun(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		"session-1", "run-1", "approval-1", ApprovalOnce,
+	); !errors.Is(err, ErrRuntime) {
+		t.Fatalf("Hermes failure: %v", err)
+	}
+	actual, err := fixture.store.GetRun(context.Background(), "session-1", "run-1")
+	if err != nil || fixture.store.approvalStates["run-1"]["approval-1"] != "pending" ||
+		!containsApprovalID(actual.PendingApprovalIDs, "approval-1") {
+		t.Fatalf("failed approval was not safely released: %#v %v", actual, err)
+	}
+	fixture.adapter.approvalErr = nil
+	if _, err := fixture.service.ApproveRun(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		"session-1", "run-1", "approval-1", ApprovalOnce,
+	); err != nil {
+		t.Fatalf("retry same stable approval ID: %v", err)
+	}
+	if fixture.adapter.approvalCalls != 2 ||
+		fixture.adapter.approvalRequest.RemoteID != "approval-1" {
+		t.Fatalf("stable approval ID was not retried: calls=%d request=%#v",
+			fixture.adapter.approvalCalls, fixture.adapter.approvalRequest)
+	}
+}
+
+func TestServiceApproveRunClaimsBeforeCallingHermes(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.seedRun(RunRecordWaitingForApproval)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	fixture.adapter.onApprove = func(ApprovalRequest) {
+		close(started)
+		<-release
+	}
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := fixture.service.ApproveRun(
+			context.Background(), fixture.caller, "project-1", "agent-1",
+			"session-1", "run-1", "approval-1", ApprovalOnce,
+		)
+		firstResult <- err
+	}()
+	<-started
+	if _, err := fixture.service.ApproveRun(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		"session-1", "run-1", "approval-1", ApprovalOnce,
+	); !errors.Is(err, ErrConflict) {
+		close(release)
+		t.Fatalf("concurrent response was not rejected: %v", err)
+	}
+	fixture.adapter.approvalMu.Lock()
+	approvalCalls := fixture.adapter.approvalCalls
+	fixture.adapter.approvalMu.Unlock()
+	if approvalCalls != 1 {
+		close(release)
+		t.Fatalf("concurrent response reached Hermes: %d calls", approvalCalls)
+	}
+	close(release)
+	if err := <-firstResult; err != nil {
+		t.Fatalf("claimed approval failed: %v", err)
+	}
+}
+
+func TestServiceApproveRunReclaimsExpiredClaim(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.seedRun(RunRecordWaitingForApproval)
+	fixture.store.approvalStates["run-1"]["approval-1"] = "responding"
+	fixture.store.approvalClaims["run-1"]["approval-1"] = "abandoned-claim"
+	fixture.store.approvalUpdated["run-1"]["approval-1"] =
+		agentServiceTestNow.Add(-runApprovalClaimLease - time.Second)
+	if _, err := fixture.service.ApproveRun(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		"session-1", "run-1", "approval-1", ApprovalDeny,
+	); err != nil {
+		t.Fatalf("reclaim abandoned response after restart: %v", err)
+	}
+	if fixture.adapter.approvalCalls != 1 ||
+		fixture.adapter.approvalRequest.RemoteID != "approval-1" {
+		t.Fatalf("reclaimed response did not reuse stable ID: %#v",
+			fixture.adapter.approvalRequest)
+	}
+}
+
+func TestServiceStreamRunTracksApprovalIDsIndependently(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.seedRun(RunRecordRunning)
+	fixture.adapter.streamRunEvents = []Event{
+		{Type: EventApprovalRequested, Approval: &ApprovalEvent{RemoteID: "approval-1"}},
+		{Type: EventApprovalRequested, Approval: &ApprovalEvent{RemoteID: "approval-2"}},
+		{Type: EventApprovalResponded, Approval: &ApprovalEvent{RemoteID: "approval-1"}},
+		{Type: EventRunCompleted},
+	}
+	var afterOldResponse RunRecord
+	if err := fixture.service.StreamRun(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		"session-1", "run-1", "", func(ctx context.Context, event Event) error {
+			if event.Type == EventApprovalResponded {
+				var err error
+				afterOldResponse, err = fixture.store.GetRun(ctx, "session-1", "run-1")
+				return err
+			}
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("stream run: %v", err)
+	}
+	if afterOldResponse.Status != RunRecordWaitingForApproval ||
+		len(afterOldResponse.PendingApprovalIDs) != 1 ||
+		afterOldResponse.PendingApprovalIDs[0] != "approval-2" {
+		t.Fatalf("old response cleared a different pending approval: %#v", afterOldResponse)
+	}
+	terminal, err := fixture.store.GetRun(context.Background(), "session-1", "run-1")
+	if err != nil || terminal.Status != RunRecordCompleted ||
+		len(terminal.PendingApprovalIDs) != 0 ||
+		fixture.store.approvalStates["run-1"]["approval-2"] != "expired" {
+		t.Fatalf("terminal run did not expire pending approvals: %#v %v", terminal, err)
+	}
+}
+
+func TestServiceStreamRunMapsUnidentifiedResponseToOldestPersistedApproval(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.seedRun(RunRecordRunning)
+	if _, err := fixture.store.RecordRunApproval(
+		context.Background(), "run-1", "approval-1", agentServiceTestNow,
+	); err != nil {
+		t.Fatalf("record first persisted approval: %v", err)
+	}
+	if _, err := fixture.store.RecordRunApproval(
+		context.Background(), "run-1", "approval-2", agentServiceTestNow.Add(time.Second),
+	); err != nil {
+		t.Fatalf("record second persisted approval: %v", err)
+	}
+	fixture.adapter.streamRunEvents = []Event{{
+		Type: EventApprovalResponded,
+		Approval: &ApprovalEvent{
+			Choice: ApprovalOnce, Resolved: 1,
+		},
+	}}
+	var browserApprovalID string
+	if err := fixture.service.StreamRun(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		"session-1", "run-1", "", func(_ context.Context, event Event) error {
+			browserApprovalID = event.Approval.RemoteID
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("resume unidentified approval response: %v", err)
+	}
+	actual, err := fixture.store.GetRun(context.Background(), "session-1", "run-1")
+	if err != nil || browserApprovalID != "approval-1" ||
+		len(actual.PendingApprovalIDs) != 1 || actual.PendingApprovalIDs[0] != "approval-2" {
+		t.Fatalf("unidentified response was not mapped FIFO: browser=%q run=%#v err=%v",
+			browserApprovalID, actual, err)
 	}
 }
 

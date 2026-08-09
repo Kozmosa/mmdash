@@ -4,6 +4,11 @@ package agent
 
 import "time"
 
+// A Hermes approval request is bounded by the instance request timeout (at
+// most five minutes). A longer lease lets a new Core process recover a claim
+// abandoned by a crash without allowing two live requests to reach Hermes.
+const runApprovalClaimLease = 10 * time.Minute
+
 const (
 	AdapterHermes = "hermes"
 
@@ -114,20 +119,21 @@ type SessionRecord struct {
 }
 
 type RunRecord struct {
-	CompletedAt   *time.Time       `json:"completed_at,omitempty"`
-	CreatedAt     time.Time        `json:"created_at"`
-	CreatedBy     string           `json:"created_by"`
-	ID            string           `json:"run_id"`
-	RemoteRunID   string           `json:"remote_run_id"`
-	SafeErrorCode string           `json:"safe_error_code,omitempty"`
-	SessionID     string           `json:"session_id"`
-	Source        string           `json:"source"`
-	SourceRunID   string           `json:"source_run_id,omitempty"`
-	StartedAt     *time.Time       `json:"started_at,omitempty"`
-	Status        string           `json:"status"`
-	ToolCalls     []ToolCallRecord `json:"tool_calls"`
-	UpdatedAt     time.Time        `json:"updated_at"`
-	Version       int64            `json:"version"`
+	CompletedAt        *time.Time       `json:"completed_at,omitempty"`
+	CreatedAt          time.Time        `json:"created_at"`
+	CreatedBy          string           `json:"created_by"`
+	ID                 string           `json:"run_id"`
+	PendingApprovalIDs []string         `json:"-"`
+	RemoteRunID        string           `json:"remote_run_id"`
+	SafeErrorCode      string           `json:"safe_error_code,omitempty"`
+	SessionID          string           `json:"session_id"`
+	Source             string           `json:"source"`
+	SourceRunID        string           `json:"source_run_id,omitempty"`
+	StartedAt          *time.Time       `json:"started_at,omitempty"`
+	Status             string           `json:"status"`
+	ToolCalls          []ToolCallRecord `json:"tool_calls"`
+	UpdatedAt          time.Time        `json:"updated_at"`
+	Version            int64            `json:"version"`
 }
 
 type ToolCallRecord struct {

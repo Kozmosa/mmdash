@@ -1280,7 +1280,7 @@ func (service Service) ApproveRun(
 		return RunRecord{}, err
 	}
 	approvalID = strings.TrimSpace(approvalID)
-	if approvalID == "" || !validApprovalChoice(choice) {
+	if !validApprovalID(approvalID) || !validApprovalChoice(choice) {
 		return RunRecord{}, ErrInvalid
 	}
 	item, adapter, err := service.runAdapter(ctx, projectID, instanceID, sessionID, runID)
@@ -1290,15 +1290,35 @@ func (service Service) ApproveRun(
 	if item.Status != RunRecordWaitingForApproval {
 		return RunRecord{}, ErrConflict
 	}
-	result, err := adapter.ApproveRun(ctx, item.RemoteRunID,
-		ApprovalRequest{Choice: choice})
+	claimID, err := service.Generator.New()
 	if err != nil {
+		return RunRecord{}, err
+	}
+	if _, err := service.Store.ClaimRunApproval(
+		ctx, runID, approvalID, claimID, service.now(),
+	); err != nil {
+		return RunRecord{}, err
+	}
+	result, err := adapter.ApproveRun(ctx, item.RemoteRunID,
+		ApprovalRequest{RemoteID: approvalID, Choice: choice})
+	if err != nil {
+		_, _ = service.Store.ReleaseRunApprovalClaim(
+			context.WithoutCancel(ctx), runID, approvalID, claimID, service.now(),
+		)
 		return RunRecord{}, mapAdapterError(err)
 	}
-	if result.Resolved < 1 {
-		return RunRecord{}, ErrConflict
+	if result.Resolved < 1 ||
+		(result.RemoteID != "" && result.RemoteID != approvalID) ||
+		(result.RunRemoteID != "" && result.RunRemoteID != item.RemoteRunID) ||
+		(result.Choice != "" && result.Choice != choice) {
+		_, _ = service.Store.ReleaseRunApprovalClaim(
+			context.WithoutCancel(ctx), runID, approvalID, claimID, service.now(),
+		)
+		return RunRecord{}, ErrRuntime
 	}
-	updated, err := service.Store.UpdateRun(ctx, runID, RunRecordRunning, "", service.now())
+	updated, err := service.Store.CompleteRunApproval(
+		ctx, runID, approvalID, claimID, service.now(),
+	)
 	if err != nil {
 		return RunRecord{}, err
 	}
@@ -1337,6 +1357,48 @@ func (service Service) StreamRun(
 	return adapter.StreamRun(ctx, item.RemoteRunID,
 		StreamOptions{LastEventID: lastEventID}, func(eventContext context.Context, event Event) error {
 			now := service.now()
+			if event.Approval != nil {
+				approvalID := strings.TrimSpace(event.Approval.RemoteID)
+				switch event.Type {
+				case EventApprovalRequested:
+					if !validApprovalID(approvalID) {
+						return ErrRuntime
+					}
+					event.Approval.RemoteID = approvalID
+					updated, persistErr := service.Store.RecordRunApproval(
+						eventContext, runID, approvalID, now,
+					)
+					if errors.Is(persistErr, ErrConflict) {
+						return nil
+					}
+					if persistErr != nil {
+						return persistErr
+					}
+					if !containsApprovalID(updated.PendingApprovalIDs, approvalID) {
+						return nil
+					}
+				case EventApprovalResponded:
+					var persistErr error
+					if approvalID == "" {
+						_, approvalID, persistErr = service.Store.ApplyNextRunApprovalResponse(
+							eventContext, runID, now,
+						)
+					} else if validApprovalID(approvalID) {
+						_, persistErr = service.Store.ApplyRunApprovalResponse(
+							eventContext, runID, approvalID, now,
+						)
+					} else {
+						return ErrRuntime
+					}
+					if persistErr != nil {
+						if errors.Is(persistErr, ErrConflict) {
+							return nil
+						}
+						return persistErr
+					}
+					event.Approval.RemoteID = approvalID
+				}
+			}
 			if event.Tool != nil && event.Tool.RemoteID != "" {
 				callID, generateErr := service.Generator.New()
 				if generateErr != nil {
@@ -1932,13 +1994,24 @@ func terminalEventStatus(eventType EventType) string {
 
 func eventRunStatus(eventType EventType) string {
 	switch eventType {
-	case EventRunStarted, EventApprovalResponded:
+	case EventRunStarted:
 		return RunRecordRunning
-	case EventApprovalRequested:
-		return RunRecordWaitingForApproval
 	default:
 		return terminalEventStatus(eventType)
 	}
+}
+
+func validApprovalID(value string) bool {
+	return value != "" && len(value) <= 500 && !strings.ContainsAny(value, "\r\n\x00")
+}
+
+func containsApprovalID(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeToolStatus(eventType EventType, status string) string {
