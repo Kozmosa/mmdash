@@ -72,6 +72,14 @@ func TestCoreHTTPNotificationRuleRoundTrip(t *testing.T) {
 
 	path := coreURL + "/v1/projects/" + projectID + "/notification-rules/" + TypeReminderDue
 	channelPath := coreURL + "/v1/projects/" + projectID + "/notification-channels/notification.generic_webhook"
+	var fresh map[string]interface{}
+	status, err = notificationHTTPJSON(ctx, client, http.MethodGet, channelPath, token, nil, &fresh)
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("get unconfigured channel: status=%d err=%v", status, err)
+	}
+	if fresh["configured"] != false || fresh["enabled"] != false {
+		t.Fatalf("unconfigured channel projection: %#v", fresh)
+	}
 	status, err = notificationHTTPJSON(ctx, client, http.MethodPatch, channelPath, token, map[string]interface{}{
 		"values": map[string]interface{}{
 			"enabled":        true,

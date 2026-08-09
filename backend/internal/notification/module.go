@@ -198,7 +198,14 @@ func (module Module) handleChannel(w http.ResponseWriter, r *http.Request, ident
 	switch r.Method {
 	case http.MethodGet:
 		setting, err := module.Settings.Get(r.Context(), identity, settings.ScopeProject, projectID, key)
-		if err != nil {
+		if errors.Is(err, settings.ErrNotFound) {
+			setting = settings.Setting{
+				Scope:   settings.ScopeProject,
+				ScopeID: projectID,
+				TypeKey: key,
+				Values:  map[string]interface{}{},
+			}
+		} else if err != nil {
 			writeError(w, r, err)
 			return
 		}
