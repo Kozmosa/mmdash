@@ -527,6 +527,54 @@ describe("MCP Gateway", () => {
     });
   });
 
+  it("accepts Core first-write verification evidence on repeated tools/list", async () => {
+    let firstEvidence: Record<string, string> | undefined;
+    const recordAgentTokenVerification = vi.fn(
+      async (tokenId: string, input: Record<string, string>) => {
+        firstEvidence ??= {
+          ...input,
+          evidence_id: "00000000-0000-4000-8000-000000000042",
+          token_id: tokenId,
+          verified_at: "2026-08-06T00:00:00Z",
+        };
+        return firstEvidence;
+      },
+    );
+    const gateway = buildGateway({
+      config: productAgentConfig(),
+      coreClient: {
+        currentIdentity: vi
+          .fn()
+          .mockResolvedValue(productAgentIdentity("pending")),
+        recordAgentTokenVerification,
+      } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+
+    for (const name of ["first", "second"]) {
+      const sessionFetch = createSessionFetch(gateway, productAgentToken);
+      const transport = new StreamableHTTPClientTransport(
+        new URL("http://test.local/mcp"),
+        { fetch: sessionFetch.fetch },
+      );
+      const client = new Client(
+        { name: `mmdash-pending-agent-${name}`, version: "0.1.0" },
+        { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+      );
+      await client.connect(transport);
+      await expect(client.listTools()).resolves.toMatchObject({
+        tools: expect.any(Array),
+      });
+      await client.close();
+    }
+
+    expect(recordAgentTokenVerification).toHaveBeenCalledTimes(2);
+    const firstInput = recordAgentTokenVerification.mock.calls[0]![1];
+    const secondInput = recordAgentTokenVerification.mock.calls[1]![1];
+    expect(secondInput.mcp_session_id).not.toBe(firstInput.mcp_session_id);
+    expect(secondInput.request_id).not.toBe(firstInput.request_id);
+  });
+
   it("does not verify an uninitialized or incomplete pending Agent tool list", async () => {
     const recordAgentTokenVerification = vi.fn();
     const gateway = buildGateway({
