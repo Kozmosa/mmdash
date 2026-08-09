@@ -39,6 +39,12 @@ def main() -> None:
     client = CoreJobClient(
         os.environ.get("MMDASH_CORE_URL", "http://localhost:8080"),
         token,
+        model_export_timeout_seconds=float(
+            os.environ.get("MMDASH_WORKER_MODEL_EXPORT_TIMEOUT_SECONDS", "300")
+        ),
+        model_completion_timeout_seconds=float(
+            os.environ.get("MMDASH_WORKER_MODEL_COMPLETION_TIMEOUT_SECONDS", "300")
+        ),
     )
     runtime = WorkerRuntime(
         client,

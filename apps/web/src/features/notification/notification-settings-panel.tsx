@@ -1,11 +1,19 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, RotateCw } from "lucide-react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useQueries,
+} from "@tanstack/react-query";
+import { Bell, CheckCircle2, RotateCw, Send, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
 
 import { useCurrentProject } from "@/components/providers/project-provider";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -13,97 +21,58 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiClient } from "@/lib/api-client";
 
-const notificationTypes = [
-  {
-    key: "project.invitation.received",
-    title: "项目邀请",
-    description: "邀请始终保留在收件箱中，不会广播到外部群组。",
-    requiredInbox: true,
-  },
-  {
-    key: "progress.reminder.due",
-    title: "Progress 提醒",
-    description:
-      "由 Progress 发布稳定事件，再由 Notification 负责站内和外部投递。",
-    requiredInbox: false,
-  },
-] as const;
+import type { NotificationRule } from "./types";
 
 const channelTypes = [
   {
-    key: "notification.feishu_webhook",
-    title: "飞书群机器人 Webhook",
     endpointKey: "webhook_url",
+    key: "notification.feishu_webhook",
     secretKey: null,
+    title: "飞书群机器人",
   },
   {
-    key: "notification.generic_webhook",
-    title: "通用签名 Webhook",
     endpointKey: "endpoint",
+    key: "notification.generic_webhook",
     secretKey: "signing_secret",
+    title: "通用签名 Webhook",
   },
 ] as const;
 
-type NotificationRule = {
-  project_id: string;
-  type_key: string;
-  inbox_enabled: boolean;
-  external_enabled: boolean;
-  channel_keys: string[];
-  minimum_priority: "low" | "normal" | "high" | "urgent";
-  version: number;
-};
-
-type Delivery = {
-  delivery_id: string;
-  notification_id: string;
+type ChannelDefinition = (typeof channelTypes)[number];
+type ChannelState = {
   channel_key: string;
-  status: string;
+  configured: boolean;
+  enabled: boolean;
+  settings_version: number;
+};
+type Delivery = {
   attempts: number;
+  channel_key: string;
+  created_at: string;
+  delivery_id: string;
+  has_more?: boolean;
   last_error_code?: string;
   last_error?: string;
-  created_at: string;
+  notification_id: string;
+  status: string;
+};
+type DeliveryPage = {
+  has_more: boolean;
+  items: Delivery[];
+  next_cursor?: string;
 };
 
 export function NotificationSettingsPanel() {
   const project = useCurrentProject();
   const canManage = project.role === "owner" || project.role === "maintainer";
-  const deliveries = useQuery({
-    queryKey: ["notification-deliveries", project.id],
-    queryFn: () =>
-      apiClient.request<{ items: Delivery[] }>(
-        `/projects/${encodeURIComponent(project.id)}/notification-deliveries?limit=8`,
-      ),
-    enabled: canManage,
-  });
-
-  if (!canManage) {
-    return (
-      <section
-        className="space-y-2"
-        aria-labelledby="notification-settings-title"
-      >
-        <h2
-          className="flex items-center gap-2 text-lg font-semibold"
-          id="notification-settings-title"
-        >
-          <Bell aria-hidden="true" className="size-5" />
-          Notification 规则与投递
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          仅 Project owner 或 maintainer 可以管理通知规则并查看投递诊断。
-        </p>
-      </section>
-    );
-  }
 
   return (
     <section
-      className="space-y-4"
       aria-labelledby="notification-settings-title"
+      className="space-y-6"
     >
       <div>
         <h2
@@ -111,159 +80,231 @@ export function NotificationSettingsPanel() {
           id="notification-settings-title"
         >
           <Bell aria-hidden="true" className="size-5" />
-          Notification 规则与投递
+          通知与投递
         </h2>
-        <p className="text-sm text-muted-foreground">
-          渠道密钥由 Settings 加密保存；这里仅管理 Type 规则和安全投递诊断。
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+          Notification 统一接收领域消息并按类型策略投递。Inbox
+          是站内渠道；飞书和 Webhook
+          是项目级外部渠道，三者共享消息事实但各自保存投递状态。
         </p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {channelTypes.map((definition) => (
-          <NotificationChannelCard
-            definition={definition}
-            key={definition.key}
-            projectId={project.id}
-          />
-        ))}
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {notificationTypes.map((definition) => (
-          <NotificationRuleCard
-            definition={definition}
-            key={definition.key}
-            projectId={project.id}
-          />
-        ))}
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">最近外部投递</CardTitle>
-          <CardDescription>
-            只展示状态和脱敏错误，不展示 URL、Secret 或 Provider 原文。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {deliveries.isLoading ? (
-            <p className="text-sm text-muted-foreground">正在读取投递记录…</p>
-          ) : null}
-          {deliveries.isError ? (
-            <p className="text-sm text-destructive">无法读取投递诊断。</p>
-          ) : null}
-          {!deliveries.isLoading &&
-          !deliveries.isError &&
-          !deliveries.data?.items.length ? (
-            <p className="text-sm text-muted-foreground">
-              还没有外部投递记录。
+
+      <InboxPolicyCard />
+
+      <section aria-labelledby="external-channels-title" className="space-y-3">
+        <div>
+          <h3 className="font-semibold" id="external-channels-title">
+            外部渠道
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            项目成员可查看脱敏状态；只有 owner 和 maintainer
+            可以修改或测试凭据。
+          </p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {channelTypes.map((definition) => (
+            <NotificationChannelCard
+              canManage={canManage}
+              definition={definition}
+              key={definition.key}
+              projectId={project.id}
+            />
+          ))}
+        </div>
+      </section>
+
+      {canManage ? (
+        <>
+          <ExternalRuleCard projectId={project.id} />
+          <DeliveryDiagnostics projectId={project.id} />
+        </>
+      ) : (
+        <Card>
+          <CardContent className="flex items-start gap-3 p-5 text-sm text-muted-foreground">
+            <ShieldCheck
+              aria-hidden="true"
+              className="mt-0.5 size-5 shrink-0"
+            />
+            <p>
+              外部投递规则和 Delivery 诊断仅对 owner、maintainer
+              开放；你的个人消息仍可在全局 Inbox 中查看和管理。
             </p>
-          ) : null}
-          <ul className="space-y-2 text-sm">
-            {deliveries.data?.items.map((delivery) => (
-              <DeliveryRow
-                delivery={delivery}
-                key={delivery.delivery_id}
-                projectId={project.id}
-                onRetried={() => void deliveries.refetch()}
-              />
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </section>
   );
 }
 
+function InboxPolicyCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <CheckCircle2 aria-hidden="true" className="size-4" />
+          站内 Inbox
+        </CardTitle>
+        <CardDescription>
+          Inbox 是否接收消息由 Notification Type 的安全策略决定，不属于 Project
+          外部投递规则。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+        <div className="rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium">项目邀请</span>
+            <Badge>必须进入 Inbox</Badge>
+          </div>
+          <p className="mt-2 text-muted-foreground">
+            只发送给被邀请人，不允许广播到项目外部群渠道。
+          </p>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium">Progress 提醒</span>
+            <Badge>默认进入 Inbox</Badge>
+          </div>
+          <p className="mt-2 text-muted-foreground">
+            可额外开启项目外部投递；未来的个人订阅偏好不会由项目管理员代替设置。
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function NotificationChannelCard({
+  canManage,
   definition,
   projectId,
-}: {
-  definition: (typeof channelTypes)[number];
+}: Readonly<{
+  canManage: boolean;
+  definition: ChannelDefinition;
   projectId: string;
-}) {
+}>) {
   const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: ["notification-channel", projectId, definition.key],
+  const channel = useQuery({
     queryFn: () =>
-      apiClient.request<{
-        channel_key: string;
-        enabled: boolean;
-        configured: boolean;
-        settings_version: number;
-      }>(
-        `/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(definition.key)}`,
+      apiClient.request<ChannelState>(
+        "/projects/" +
+          encodeURIComponent(projectId) +
+          "/notification-channels/" +
+          encodeURIComponent(definition.key),
       ),
+    queryKey: ["notification", "channel", projectId, definition.key],
   });
-  const [enabled, setEnabled] = useState(false);
+
+  if (channel.isPending) {
+    return <Card className="min-h-48 animate-pulse bg-muted/20" />;
+  }
+  if (channel.isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{definition.title}</CardTitle>
+          <CardDescription>无法读取渠道状态。</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+  if (!canManage) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-3 text-base">
+            {definition.title}
+            <Badge>{channel.data.enabled ? "已启用" : "未启用"}</Badge>
+          </CardTitle>
+          <CardDescription>
+            {channel.data.configured ? "凭据已安全配置" : "尚未配置凭据"}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <ChannelEditor
+      channel={channel.data}
+      definition={definition}
+      key={channel.data.settings_version}
+      onChanged={() =>
+        void queryClient.invalidateQueries({
+          queryKey: ["notification", "channel", projectId, definition.key],
+        })
+      }
+      projectId={projectId}
+    />
+  );
+}
+
+function ChannelEditor({
+  channel,
+  definition,
+  onChanged,
+  projectId,
+}: Readonly<{
+  channel: ChannelState;
+  definition: ChannelDefinition;
+  onChanged: () => void;
+  projectId: string;
+}>) {
+  const [enabled, setEnabled] = useState(channel.enabled);
   const [endpoint, setEndpoint] = useState("");
   const [secret, setSecret] = useState("");
-
-  useEffect(() => {
-    if (query.data) {
-      setEnabled(query.data.enabled);
-    }
-  }, [query.data]);
-
+  const basePath =
+    "/projects/" +
+    encodeURIComponent(projectId) +
+    "/notification-channels/" +
+    encodeURIComponent(definition.key);
   const update = useMutation({
     mutationFn: () => {
       const values: Record<string, unknown> = { enabled };
-      if (endpoint.trim()) {
-        values[definition.endpointKey] = endpoint.trim();
-      }
+      if (endpoint.trim()) values[definition.endpointKey] = endpoint.trim();
       if (definition.secretKey && secret.trim()) {
         values[definition.secretKey] = secret;
       }
-      return apiClient.request(
-        `/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(definition.key)}`,
-        { method: "PATCH", body: { values } },
-      );
-    },
-    onSuccess: () => {
-      setSecret("");
-      setEndpoint("");
-      void queryClient.invalidateQueries({
-        queryKey: ["notification-channel", projectId, definition.key],
+      return apiClient.request(basePath, {
+        body: { values },
+        method: "PATCH",
       });
-      toast.success("通知渠道已保存");
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "通知渠道保存失败"),
+      toast.error(error instanceof Error ? error.message : "渠道保存失败"),
+    onSuccess: () => {
+      setEndpoint("");
+      setSecret("");
+      onChanged();
+      toast.success("外部渠道已保存");
+    },
   });
   const test = useMutation({
-    mutationFn: () =>
-      apiClient.request(
-        `/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(definition.key)}/test`,
-        { method: "POST" },
-      ),
-    onSuccess: () => toast.success("连接测试已完成"),
+    mutationFn: () => apiClient.request(basePath + "/test", { method: "POST" }),
     onError: (error) =>
       toast.error(error instanceof Error ? error.message : "连接测试失败"),
+    onSuccess: () => toast.success("连接测试通过"),
   });
   const remove = useMutation({
-    mutationFn: () =>
-      apiClient.request(
-        `/projects/${encodeURIComponent(projectId)}/notification-channels/${encodeURIComponent(definition.key)}`,
-        { method: "DELETE" },
-      ),
-    onSuccess: () => {
-      setEnabled(false);
-      setEndpoint("");
-      setSecret("");
-      void queryClient.invalidateQueries({
-        queryKey: ["notification-channel", projectId, definition.key],
-      });
-      toast.success("通知渠道已删除");
-    },
+    mutationFn: () => apiClient.request(basePath, { method: "DELETE" }),
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "通知渠道删除失败"),
+      toast.error(error instanceof Error ? error.message : "渠道删除失败"),
+    onSuccess: () => {
+      onChanged();
+      toast.success("外部渠道已删除");
+    },
   });
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{definition.title}</CardTitle>
+        <CardTitle className="flex items-center justify-between gap-3 text-base">
+          {definition.title}
+          <Badge>{channel.enabled ? "已启用" : "未启用"}</Badge>
+        </CardTitle>
         <CardDescription>
-          {query.data?.configured
-            ? `已配置 · Settings v${query.data.settings_version}`
-            : "尚未配置；密钥不会回显。"}
+          {channel.configured
+            ? "凭据已保存；留空不会覆盖。Settings v" + channel.settings_version
+            : "尚未配置；密钥保存后不会回显。"}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -281,29 +322,23 @@ function NotificationChannelCard({
               onChange={(event) => setEnabled(event.target.checked)}
               type="checkbox"
             />
-            启用渠道
+            启用此渠道
           </label>
-          <input
-            aria-label={`${definition.title} endpoint`}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+          <Input
+            aria-label={definition.title + " 地址"}
             onChange={(event) => setEndpoint(event.target.value)}
             placeholder={
-              query.data?.configured
-                ? "Endpoint 已保存，留空以保留"
-                : "https://…"
+              channel.configured ? "地址已保存，留空以保留" : "https://…"
             }
             type="url"
             value={endpoint}
           />
           {definition.secretKey ? (
-            <input
-              aria-label={`${definition.title} secret`}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            <Input
+              aria-label={definition.title + " 签名密钥"}
               onChange={(event) => setSecret(event.target.value)}
               placeholder={
-                query.data?.configured
-                  ? "Secret 已保存，留空以保留"
-                  : "签名 Secret"
+                channel.configured ? "密钥已保存，留空以保留" : "签名密钥"
               }
               type="password"
               value={secret}
@@ -311,10 +346,10 @@ function NotificationChannelCard({
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button disabled={update.isPending} type="submit">
-              保存
+              保存渠道
             </Button>
             <Button
-              disabled={!query.data?.configured || test.isPending}
+              disabled={!channel.configured || test.isPending}
               onClick={() => test.mutate()}
               type="button"
               variant="outline"
@@ -322,12 +357,12 @@ function NotificationChannelCard({
               测试连接
             </Button>
             <Button
-              disabled={!query.data?.configured || remove.isPending}
+              disabled={!channel.configured || remove.isPending}
               onClick={() => remove.mutate()}
               type="button"
               variant="ghost"
             >
-              删除
+              删除渠道
             </Button>
           </div>
         </form>
@@ -336,182 +371,360 @@ function NotificationChannelCard({
   );
 }
 
-function NotificationRuleCard({
-  definition,
-  projectId,
-}: {
-  definition: (typeof notificationTypes)[number];
-  projectId: string;
-}) {
+function ExternalRuleCard({ projectId }: Readonly<{ projectId: string }>) {
   const queryClient = useQueryClient();
-  const query = useQuery({
-    queryKey: ["notification-rule", projectId, definition.key],
+  const rule = useQuery({
     queryFn: () =>
       apiClient.request<NotificationRule>(
-        `/projects/${encodeURIComponent(projectId)}/notification-rules/${encodeURIComponent(definition.key)}`,
+        "/projects/" +
+          encodeURIComponent(projectId) +
+          "/notification-rules/progress.reminder.due",
       ),
+    queryKey: ["notification", "rule", projectId, "progress.reminder.due"],
   });
-  const update = useMutation({
-    mutationFn: (input: Partial<NotificationRule>) =>
+  const channelQueries = useQueries({
+    queries: channelTypes.map((definition) => ({
+      queryFn: () =>
+        apiClient.request<ChannelState>(
+          "/projects/" +
+            encodeURIComponent(projectId) +
+            "/notification-channels/" +
+            encodeURIComponent(definition.key),
+        ),
+      queryKey: ["notification", "channel", projectId, definition.key],
+    })),
+  });
+  const channels = channelQueries.flatMap((query, index) =>
+    query.data ? [{ definition: channelTypes[index], state: query.data }] : [],
+  );
+
+  return (
+    <section aria-labelledby="external-rules-title" className="space-y-3">
+      <div>
+        <h3 className="font-semibold" id="external-rules-title">
+          外部投递规则
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          规则只决定是否把允许外发的消息额外投递到项目渠道，不改变任何人的
+          Inbox。
+        </p>
+      </div>
+      {rule.isPending ? (
+        <Card className="min-h-48 animate-pulse bg-muted/20" />
+      ) : null}
+      {rule.isError ? (
+        <Card>
+          <CardContent className="p-5 text-sm text-destructive">
+            无法读取 Progress 提醒投递规则。
+          </CardContent>
+        </Card>
+      ) : null}
+      {rule.data ? (
+        <ExternalRuleEditor
+          channels={channels}
+          key={rule.data.version}
+          onSaved={(saved) => {
+            queryClient.setQueryData(
+              ["notification", "rule", projectId, "progress.reminder.due"],
+              saved,
+            );
+          }}
+          projectId={projectId}
+          rule={rule.data}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function ExternalRuleEditor({
+  channels,
+  onSaved,
+  projectId,
+  rule,
+}: Readonly<{
+  channels: Array<{ definition: ChannelDefinition; state: ChannelState }>;
+  onSaved: (rule: NotificationRule) => void;
+  projectId: string;
+  rule: NotificationRule;
+}>) {
+  const [externalEnabled, setExternalEnabled] = useState(rule.external_enabled);
+  const [channelKeys, setChannelKeys] = useState(rule.channel_keys);
+  const [minimumPriority, setMinimumPriority] = useState<
+    NotificationRule["minimum_priority"]
+  >(rule.minimum_priority);
+  const save = useMutation({
+    mutationFn: () =>
       apiClient.request<NotificationRule>(
-        `/projects/${encodeURIComponent(projectId)}/notification-rules/${encodeURIComponent(definition.key)}`,
+        "/projects/" +
+          encodeURIComponent(projectId) +
+          "/notification-rules/progress.reminder.due",
         {
-          method: "PUT",
           body: {
-            inbox_enabled:
-              input.inbox_enabled ?? query.data?.inbox_enabled ?? true,
-            external_enabled:
-              input.external_enabled ?? query.data?.external_enabled ?? false,
-            channel_keys: input.channel_keys ?? query.data?.channel_keys ?? [],
-            minimum_priority:
-              input.minimum_priority ??
-              query.data?.minimum_priority ??
-              "normal",
-            version: input.version ?? query.data?.version ?? 0,
+            channel_keys: channelKeys,
+            external_enabled: externalEnabled,
+            minimum_priority: minimumPriority,
+            version: rule.version,
           },
+          method: "PUT",
         },
       ),
-    onSuccess: (rule) => {
-      queryClient.setQueryData(
-        ["notification-rule", projectId, definition.key],
-        rule,
-      );
-      toast.success("Notification 规则已保存");
-    },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "规则保存失败"),
+      toast.error(error instanceof Error ? error.message : "投递规则保存失败"),
+    onSuccess: (saved) => {
+      onSaved(saved);
+      toast.success("外部投递规则已保存");
+    },
   });
 
-  const rule = query.data;
+  function toggleChannel(key: string, checked: boolean) {
+    setChannelKeys((current) =>
+      checked
+        ? Array.from(new Set([...current, key]))
+        : current.filter((value) => value !== key),
+    );
+  }
+
+  const canEnable = channels.some((channel) => channel.state.enabled);
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{definition.title}</CardTitle>
-        <CardDescription>{definition.description}</CardDescription>
+        <CardTitle className="text-base">Progress 提醒</CardTitle>
+        <CardDescription>
+          Inbox 默认保留；这里可以额外选择已启用的项目外部渠道。
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {query.isLoading ? (
-          <p className="text-sm text-muted-foreground">正在读取规则…</p>
-        ) : null}
-        {query.isError ? (
-          <p className="text-sm text-destructive">无法读取规则。</p>
-        ) : null}
-        {rule ? (
-          <>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                checked={definition.requiredInbox || rule.inbox_enabled}
-                disabled={definition.requiredInbox || update.isPending}
-                onChange={(event) =>
-                  update.mutate({ inbox_enabled: event.target.checked })
-                }
-                type="checkbox"
-              />
-              保留在 Inbox
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                checked={rule.external_enabled}
-                disabled={!definition.requiredInbox && update.isPending}
-                onChange={(event) =>
-                  update.mutate({ external_enabled: event.target.checked })
-                }
-                type="checkbox"
-              />
-              启用外部投递
-            </label>
-            <fieldset className="space-y-2 text-sm">
-              <legend className="text-muted-foreground">投递渠道</legend>
-              {channelTypes.map((channel) => (
-                <label className="flex items-center gap-2" key={channel.key}>
-                  <input
-                    checked={rule.channel_keys.includes(channel.key)}
-                    disabled={!rule.external_enabled || update.isPending}
-                    onChange={(event) => {
-                      const keys = new Set(rule.channel_keys);
-                      if (event.target.checked) {
-                        keys.add(channel.key);
-                      } else {
-                        keys.delete(channel.key);
-                      }
-                      update.mutate({ channel_keys: [...keys] });
-                    }}
-                    type="checkbox"
-                  />
-                  {channel.title}
-                </label>
-              ))}
-            </fieldset>
-            <label className="flex items-center justify-between gap-3 text-sm">
-              最低优先级
-              <select
-                className="rounded-md border border-border bg-background px-2 py-1"
-                disabled={update.isPending}
-                onChange={(event) =>
-                  update.mutate({
-                    minimum_priority: event.target
-                      .value as NotificationRule["minimum_priority"],
-                  })
-                }
-                value={rule.minimum_priority}
-              >
-                <option value="low">低</option>
-                <option value="normal">普通</option>
-                <option value="high">高</option>
-                <option value="urgent">紧急</option>
-              </select>
-            </label>
-          </>
-        ) : null}
+      <CardContent>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (externalEnabled && channelKeys.length === 0) {
+              toast.error("启用外部投递前，请至少选择一个已启用渠道");
+              return;
+            }
+            save.mutate();
+          }}
+        >
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              checked={externalEnabled}
+              disabled={(!canEnable && !externalEnabled) || save.isPending}
+              onChange={(event) => setExternalEnabled(event.target.checked)}
+              type="checkbox"
+            />
+            额外发送到外部渠道
+          </label>
+          {!canEnable ? (
+            <p className="text-sm text-muted-foreground">
+              请先在上方配置并启用至少一个外部渠道。
+            </p>
+          ) : null}
+          <fieldset className="space-y-2 text-sm">
+            <legend className="font-medium">选择渠道</legend>
+            {channels.map(({ definition, state }) => (
+              <label className="flex items-center gap-2" key={definition.key}>
+                <input
+                  checked={channelKeys.includes(definition.key)}
+                  disabled={
+                    save.isPending ||
+                    (!state.enabled && !channelKeys.includes(definition.key))
+                  }
+                  onChange={(event) =>
+                    toggleChannel(definition.key, event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                {definition.title}
+                <span className="text-xs text-muted-foreground">
+                  {state.enabled ? "已启用" : "不可用"}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <label className="grid max-w-xs gap-1.5 text-sm font-medium">
+            最低优先级
+            <select
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              disabled={save.isPending}
+              onChange={(event) =>
+                setMinimumPriority(
+                  event.target.value as NotificationRule["minimum_priority"],
+                )
+              }
+              value={minimumPriority}
+            >
+              <option value="low">低</option>
+              <option value="normal">普通</option>
+              <option value="high">高</option>
+              <option value="urgent">紧急</option>
+            </select>
+          </label>
+          <Button disabled={save.isPending} type="submit">
+            <Send aria-hidden="true" className="size-4" />
+            保存投递规则
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );
 }
 
-function DeliveryRow({
-  delivery,
-  projectId,
-  onRetried,
-}: {
-  delivery: Delivery;
-  projectId: string;
-  onRetried: () => void;
-}) {
-  const retry = useMutation({
-    mutationFn: () =>
-      apiClient.request<Delivery>(
-        `/projects/${encodeURIComponent(projectId)}/notification-deliveries/${encodeURIComponent(delivery.delivery_id)}/retry`,
-        {
-          method: "POST",
-          body: { reason: "Manual retry from Notification settings" },
-        },
+function DeliveryDiagnostics({ projectId }: Readonly<{ projectId: string }>) {
+  const deliveries = useInfiniteQuery({
+    getNextPageParam: (lastPage: DeliveryPage) => lastPage.next_cursor,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiClient.request<DeliveryPage>(
+        "/projects/" +
+          encodeURIComponent(projectId) +
+          "/notification-deliveries",
+        { query: { cursor: pageParam, limit: 8 } },
       ),
-    onSuccess: () => {
-      toast.success("已创建新的投递尝试");
-      onRetried();
-    },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "重试失败"),
+    queryKey: ["notification", "deliveries", projectId],
   });
+  const items = deliveries.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2">
-      <span>
-        <code>{delivery.channel_key}</code> · {delivery.status} ·{" "}
-        {delivery.attempts} 次尝试
-        {delivery.last_error_code ? ` · ${delivery.last_error_code}` : ""}
-      </span>
-      {delivery.status === "failed" ? (
-        <button
-          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
-          disabled={retry.isPending}
-          onClick={() => retry.mutate()}
-          type="button"
-        >
-          <RotateCw aria-hidden="true" className="size-3" />
-          重试
-        </button>
+    <section aria-labelledby="delivery-diagnostics-title" className="space-y-3">
+      <div>
+        <h3 className="font-semibold" id="delivery-diagnostics-title">
+          外部投递诊断
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          只展示脱敏状态和安全错误。显式重投必须填写原因并写入 Audit。
+        </p>
+      </div>
+      <Card>
+        <CardContent className="p-5">
+          {deliveries.isPending ? (
+            <p className="text-sm text-muted-foreground">正在读取投递记录…</p>
+          ) : null}
+          {deliveries.isError ? (
+            <p className="text-sm text-destructive">无法读取投递诊断。</p>
+          ) : null}
+          {!deliveries.isPending &&
+          !deliveries.isError &&
+          items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              还没有外部投递记录。
+            </p>
+          ) : null}
+          <ul className="space-y-3">
+            {items.map((delivery) => (
+              <DeliveryRow
+                delivery={delivery}
+                key={delivery.delivery_id}
+                onRetried={() => void deliveries.refetch()}
+                projectId={projectId}
+              />
+            ))}
+          </ul>
+          {deliveries.hasNextPage ? (
+            <Button
+              className="mt-4"
+              disabled={deliveries.isFetchingNextPage}
+              onClick={() => void deliveries.fetchNextPage()}
+              variant="outline"
+            >
+              {deliveries.isFetchingNextPage ? "正在加载…" : "加载更多记录"}
+            </Button>
+          ) : null}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function DeliveryRow({
+  delivery,
+  onRetried,
+  projectId,
+}: Readonly<{
+  delivery: Delivery;
+  onRetried: () => void;
+  projectId: string;
+}>) {
+  const [reason, setReason] = useState("");
+  const retry = useMutation({
+    mutationFn: () =>
+      apiClient.request(
+        "/projects/" +
+          encodeURIComponent(projectId) +
+          "/notification-deliveries/" +
+          encodeURIComponent(delivery.delivery_id) +
+          "/retry",
+        { body: { reason: reason.trim() }, method: "POST" },
+      ),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "重投失败"),
+    onSuccess: () => {
+      setReason("");
+      onRetried();
+      toast.success("已创建新的投递尝试");
+    },
+  });
+  const retryable =
+    delivery.status === "failed" || delivery.status === "retrying";
+
+  return (
+    <li className="rounded-lg border border-border p-3 text-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">
+            {channelLabel(delivery.channel_key)} ·{" "}
+            {statusLabel(delivery.status)}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {new Date(delivery.created_at).toLocaleString()} · 已尝试{" "}
+            {delivery.attempts} 次
+            {delivery.last_error_code ? " · " + delivery.last_error_code : ""}
+          </p>
+        </div>
+        {retryable ? (
+          <div className="flex flex-wrap gap-2">
+            <Input
+              aria-label="重投原因"
+              className="h-8 w-56"
+              maxLength={1000}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="填写重投原因"
+              value={reason}
+            />
+            <Button
+              disabled={!reason.trim() || retry.isPending}
+              onClick={() => retry.mutate()}
+              size="sm"
+              variant="outline"
+            >
+              <RotateCw aria-hidden="true" className="size-3" />
+              重投
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      {delivery.last_error ? (
+        <p className="mt-2 rounded bg-muted/50 p-2 text-xs text-muted-foreground">
+          {delivery.last_error}
+        </p>
       ) : null}
     </li>
+  );
+}
+
+function channelLabel(key: string): string {
+  return channelTypes.find((channel) => channel.key === key)?.title ?? key;
+}
+
+function statusLabel(status: string): string {
+  return (
+    {
+      cancelled: "已取消",
+      delivered: "已送达",
+      failed: "失败",
+      pending: "等待发送",
+      retrying: "等待重试",
+      sending: "发送中",
+    }[status] ?? status
   );
 }

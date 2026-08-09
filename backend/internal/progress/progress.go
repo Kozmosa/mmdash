@@ -334,6 +334,19 @@ func (service Service) List(ctx context.Context, identity auth.Identity, project
 	for _, task := range result.Tasks {
 		result.Gantt = append(result.Gantt, GanttItem{ID: task.ID, Kind: "task", Title: task.Title, StartAt: task.StartAt, TargetAt: task.DueAt, Status: task.Status})
 	}
+	// Empty columns must serialize as [] rather than null so Web/CLI/MCP
+	// consumers can always read .length on every Progress collection.
+	result.Dependencies = nonNilDependencies(result.Dependencies)
+	result.Reminders = nonNilReminders(result.Reminders)
+	result.Proposals = nonNilProposals(result.Proposals)
+	result.Blocked = nonNilTasks(result.Blocked)
+	result.Overdue = nonNilTasks(result.Overdue)
+	result.Today = nonNilTasks(result.Today)
+	result.Board.Todo = nonNilTasks(result.Board.Todo)
+	result.Board.InProgress = nonNilTasks(result.Board.InProgress)
+	result.Board.Blocked = nonNilTasks(result.Board.Blocked)
+	result.Board.Done = nonNilTasks(result.Board.Done)
+	result.Gantt = nonNilGantt(result.Gantt)
 	return result, nil
 }
 
@@ -644,6 +657,34 @@ func (service Service) record(ctx context.Context, identity auth.Identity, actio
 func nonNilMilestones(items []Milestone) []Milestone {
 	if items == nil {
 		return []Milestone{}
+	}
+	return items
+}
+
+func nonNilDependencies(items []Dependency) []Dependency {
+	if items == nil {
+		return []Dependency{}
+	}
+	return items
+}
+
+func nonNilReminders(items []Reminder) []Reminder {
+	if items == nil {
+		return []Reminder{}
+	}
+	return items
+}
+
+func nonNilProposals(items []Proposal) []Proposal {
+	if items == nil {
+		return []Proposal{}
+	}
+	return items
+}
+
+func nonNilGantt(items []GanttItem) []GanttItem {
+	if items == nil {
+		return []GanttItem{}
 	}
 	return items
 }

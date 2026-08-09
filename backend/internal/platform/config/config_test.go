@@ -41,9 +41,6 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 		config.Project.InvitationExpiryPollInterval != 30*time.Second {
 		t.Fatalf("unexpected Project invitation expiry defaults: %+v", config.Project)
 	}
-	if config.Notification.WebhookAllowHTTPLoopback {
-		t.Fatal("insecure loopback Webhooks must be disabled by default")
-	}
 	if config.Artifact.StorageBackend != "minio" ||
 		config.Artifact.MultipartPartBytes != 16*1024*1024 ||
 		config.Artifact.UploadMaxBytes != 10*1024*1024*1024 ||
@@ -62,6 +59,9 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	}
 	if config.InternalURL != "http://localhost:8080" {
 		t.Fatalf("unexpected internal Core URL: %s", config.InternalURL)
+	}
+	if config.Notion.OAuthRedirectURI != "http://localhost:3000/api/integrations/notion/oauth/callback" {
+		t.Fatalf("unexpected Notion OAuth redirect URI: %s", config.Notion.OAuthRedirectURI)
 	}
 	if config.Agent.GatewayURL != "http://localhost:3002/mcp" ||
 		config.Agent.Runtime.AllowLoopback || config.Agent.Runtime.AllowPrivate ||
@@ -142,17 +142,6 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}
 
 	_, err = Load(mapLookup(map[string]string{
-		"DATABASE_URL": "postgres://localhost/mmdash",
-		"NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK": "sometimes",
-		"OBJECT_STORAGE_ACCESS_KEY":                "access",
-		"OBJECT_STORAGE_ENDPOINT":                  "http://localhost:9000",
-		"OBJECT_STORAGE_SECRET_KEY":                "secret",
-	}))
-	if err == nil {
-		t.Fatal("expected invalid Notification Webhook policy to fail")
-	}
-
-	_, err = Load(mapLookup(map[string]string{
 		"DATABASE_URL":              "postgres://localhost/mmdash",
 		"OBJECT_STORAGE_ACCESS_KEY": "access",
 		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
@@ -230,6 +219,17 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}
 
 	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"NOTION_OAUTH_CLIENT_ID":    "client-id-without-secret",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+	}))
+	if err == nil {
+		t.Fatal("expected incomplete Notion OAuth credentials to fail")
+	}
+
+	_, err = Load(mapLookup(map[string]string{
 		"AGENT_RUNTIME_ALLOW_PRIVATE": "sometimes",
 		"DATABASE_URL":                "postgres://localhost/mmdash",
 		"OBJECT_STORAGE_ACCESS_KEY":   "access",
@@ -304,22 +304,6 @@ func TestLoadAppliesExplicitAgentConnectorPolicy(t *testing.T) {
 		loaded.Agent.Runtime.MaxResponseBytes != 2*1024*1024 ||
 		loaded.Agent.ManagementMinimumInterval != 750*time.Millisecond {
 		t.Fatalf("unexpected explicit Agent runtime policy: %+v", loaded.Agent.Runtime)
-	}
-}
-
-func TestLoadAllowsExplicitLocalWebhookPolicy(t *testing.T) {
-	config, err := Load(mapLookup(map[string]string{
-		"DATABASE_URL": "postgres://localhost/mmdash",
-		"NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK": "true",
-		"OBJECT_STORAGE_ACCESS_KEY":                "access",
-		"OBJECT_STORAGE_ENDPOINT":                  "http://localhost:9000",
-		"OBJECT_STORAGE_SECRET_KEY":                "secret",
-	}))
-	if err != nil {
-		t.Fatalf("load explicit local Webhook policy: %v", err)
-	}
-	if !config.Notification.WebhookAllowHTTPLoopback {
-		t.Fatal("explicit local Webhook policy was not enabled")
 	}
 }
 

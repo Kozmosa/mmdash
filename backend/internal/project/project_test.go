@@ -527,6 +527,25 @@ func TestArtifactPermissionsMatchCollaborationRoles(t *testing.T) {
 	}
 }
 
+func TestModelSyncPermissionIsAvailableToEveryHumanProjectMember(t *testing.T) {
+	cases := []struct {
+		role Role
+		sync bool
+	}{
+		{RoleOwner, true},
+		{RoleMaintainer, true},
+		{RoleEditor, true},
+		{RoleViewer, true},
+		{RoleAgent, false},
+		{RoleBox, false},
+	}
+	for _, testCase := range cases {
+		if got := hasPermission(permissionsByRole[testCase.role], PermissionModelSync); got != testCase.sync {
+			t.Fatalf("Model sync permission for %s = %t, want %t", testCase.role, got, testCase.sync)
+		}
+	}
+}
+
 func TestAgentRoleIsReadOnlyOutsideExplicitContextPromotion(t *testing.T) {
 	permissions := permissionsByRole[RoleAgent]
 	for _, permission := range []Permission{

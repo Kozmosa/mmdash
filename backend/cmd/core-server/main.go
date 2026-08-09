@@ -22,6 +22,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/events"
 	"github.com/mmdash/mmdash/backend/internal/example"
 	"github.com/mmdash/mmdash/backend/internal/jobs"
+	"github.com/mmdash/mmdash/backend/internal/model"
 	"github.com/mmdash/mmdash/backend/internal/notification"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/config"
@@ -53,6 +54,26 @@ func main() {
 }
 
 type registrationSettingsPolicy struct{ Store settings.Store }
+
+type modelArtifactImporter struct{ Service *artifact.Service }
+
+func (adapter modelArtifactImporter) ImportModelFile(ctx context.Context, input model.ModelFileImport) (model.ModelFileReference, error) {
+	detail, err := adapter.Service.ImportModelFile(ctx, artifact.ModelFileImport{
+		ProjectID: input.ProjectID, CreatedBy: input.CreatedBy,
+		SourceObjectID: input.SourceObjectID, SourceBlockID: input.SourceBlockID,
+		URL: input.URL, Filename: input.Filename, MIMEType: input.MIMEType,
+	})
+	if err != nil {
+		return model.ModelFileReference{}, err
+	}
+	if detail.CurrentVersion == nil {
+		return model.ModelFileReference{}, artifact.ErrNotAvailable
+	}
+	return model.ModelFileReference{
+		ArtifactID: detail.Artifact.ID, VersionID: detail.CurrentVersion.ID,
+		Filename: detail.CurrentVersion.Filename, MIMEType: detail.CurrentVersion.MIMEType,
+	}, nil
+}
 
 func (policy registrationSettingsPolicy) AllowOpenRegistration(ctx context.Context) (bool, error) {
 	stored, err := policy.Store.Get(ctx, settings.ScopeSystem, "system", "auth")
@@ -312,18 +333,12 @@ func run(logger *logging.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initialize settings encryption: %w", err)
 	}
-	webhookHTTPClient := notification.NewWebhookHTTPClient(http.DefaultClient)
-	feishuWebhookAdapter := notification.FeishuWebhook{
-		AllowHTTPLoopback: processConfig.Notification.WebhookAllowHTTPLoopback,
-		Client:            webhookHTTPClient,
-		Clock:             func() time.Time { return systemClock.Now().UTC() },
-	}
-	genericWebhookAdapter := notification.GenericWebhook{
-		AllowHTTPLoopback: processConfig.Notification.WebhookAllowHTTPLoopback,
-		Client:            webhookHTTPClient,
-		Clock:             func() time.Time { return systemClock.Now().UTC() },
-	}
 	settingsRegistry := settings.NewRegistry()
+	notionClient := model.NotionClient{}
+	notionOAuthClient := &model.NotionOAuthClient{
+		ClientID: processConfig.Notion.OAuthClientID, ClientSecret: processConfig.Notion.OAuthClientSecret,
+		RedirectURI: processConfig.Notion.OAuthRedirectURI,
+	}
 	if err := settingsRegistry.Register(settings.TypeDefinition{
 		Description: "Controls public account registration.",
 		Fields: []settings.FieldDefinition{
@@ -331,6 +346,9 @@ func run(logger *logging.Logger) error {
 		},
 		Key: "auth", Order: 10, Owner: "auth", Scopes: []settings.Scope{settings.ScopeSystem}, Title: "Authentication",
 	}); err != nil {
+		return err
+	}
+	if err := settingsRegistry.Register(model.SettingDefinition(notionClient)); err != nil {
 		return err
 	}
 	if err := settingsRegistry.Register(agent.SettingDefinition()); err != nil {
@@ -342,7 +360,7 @@ func run(logger *logging.Logger) error {
 			{Key: "enabled", Kind: settings.FieldBoolean, Label: "Enabled", Required: true},
 			{Key: "webhook_url", Kind: settings.FieldSecret, Label: "Webhook URL", Required: true},
 		},
-		Key: "notification.feishu_webhook", Order: 70, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Title: "Feishu Webhook", Tester: notification.SettingTester{Adapter: feishuWebhookAdapter}, Validator: feishuWebhookAdapter,
+		Key: "notification.feishu_webhook", Order: 70, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Title: "Feishu Webhook", Tester: notification.SettingTester{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }},
 	}); err != nil {
 		return err
 	}
@@ -353,7 +371,7 @@ func run(logger *logging.Logger) error {
 			{Key: "endpoint", Kind: settings.FieldURL, Label: "Endpoint", Required: true},
 			{Key: "signing_secret", Kind: settings.FieldSecret, Label: "Signing secret", Required: true},
 		},
-		Key: "notification.generic_webhook", Order: 71, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Tester: notification.SettingTester{Adapter: genericWebhookAdapter}, Title: "Generic Webhook", Validator: genericWebhookAdapter,
+		Key: "notification.generic_webhook", Order: 71, Owner: "notification", Scopes: []settings.Scope{settings.ScopeProject}, Tester: notification.SettingTester{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }}, Title: "Generic Webhook",
 	}); err != nil {
 		return err
 	}
@@ -413,6 +431,55 @@ func run(logger *logging.Logger) error {
 			Outbox:      outboxWriter,
 			Transaction: transactionManager,
 		},
+	}
+	modelStore := model.PostgresStore{
+		DB: db, Generator: idGenerator, Jobs: jobStore,
+		Outbox: outboxWriter, Transaction: transactionManager,
+	}
+	modelService := &model.Service{
+		Access: projectService, Artifacts: modelArtifactImporter{Service: &artifactService},
+		Audit: auditRecorder, Clock: systemClock, Generator: idGenerator,
+		Jobs: jobService, Notion: notionClient, OAuth: notionOAuthClient,
+		OAuthSettings: settingsService, Settings: settingsService,
+		Store: modelStore,
+	}
+	jobStore.Hooks = []jobs.LifecycleHook{artifactService, *modelService}
+	jobService.Hooks = []jobs.LifecycleHook{artifactService, *modelService}
+	jobService.Store = jobStore
+	artifactService.Jobs = jobService
+	modelService.Jobs = jobService
+	modelModule := model.Module{Service: *modelService}
+	dataService.Models = modelService
+	if err := dataAdapters.Register("model_source", datahub.ReaderFunc(
+		func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			return modelService.GetSource(ctx, caller, object.ProjectID)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("model_question", datahub.ReaderFunc(
+		func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			return modelService.GetQuestion(ctx, caller, object.ProjectID, object.SourceID)
+		},
+	)); err != nil {
+		return err
+	}
+	if err := dataAdapters.Register("model_snapshot", datahub.ReaderFunc(
+		func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			questionID, _ := object.Metadata["question_id"].(string)
+			if questionID == "" {
+				return nil, datahub.ErrInvalid
+			}
+			return modelService.GetSnapshot(ctx, caller, object.ProjectID, questionID, object.SourceID)
+		},
+	)); err != nil {
+		return err
+	}
+	modelProjector := model.DataHubProjector{Store: modelStore, Sink: dataStore}
+	for _, eventType := range []string{"model.source.changed", "model.question.changed", "model.snapshot.created"} {
+		if err := projections.Register(eventType, datahub.ProjectorFunc(modelProjector.Project)); err != nil {
+			return err
+		}
 	}
 	notificationService.Settings = settingsService
 	authService.Policy = registrationSettingsPolicy{Store: settingsService.Store}
@@ -578,6 +645,11 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := eventBus.Register(eventbus.Consumer{
+		Name: "model.settings", Patterns: []string{"settings.updated", "settings.deleted"}, Handler: modelService.ApplySettingEvent,
+	}); err != nil {
+		return err
+	}
+	if err := eventBus.Register(eventbus.Consumer{
 		Name: "notification.inbox-project-invitations", Patterns: []string{"project.member.invited", "project.member.joined", "project.invitation.revoked", "project.invitation.expired"}, Handler: notificationService.HandleEvent,
 	}); err != nil {
 		return err
@@ -616,6 +688,7 @@ func run(logger *logging.Logger) error {
 	if err := modules.Register(project.Module{
 		Agent:        agentModule.ProjectHandler(),
 		Artifact:     artifactModule.ProjectHandler(),
+		Model:        modelModule.ProjectHandler(),
 		Notification: notification.Module{Auth: authService, Service: notificationService, Settings: settingsService}.ProjectHandler(),
 		Progress:     progress.Module{Service: *progressService}.ProjectHandler(),
 		Repository:   repoModule.ProjectHandler(),
@@ -636,6 +709,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(progress.Module{Service: *progressService}); err != nil {
+		return err
+	}
+	if err := modules.Register(modelModule); err != nil {
 		return err
 	}
 	if err := modules.Register(jobs.Module{Service: jobService}); err != nil {
@@ -740,10 +816,10 @@ func run(logger *logging.Logger) error {
 		})
 	})
 	notificationAdapters := notification.NewAdapterRegistry()
-	if err := notificationAdapters.Register(feishuWebhookAdapter); err != nil {
+	if err := notificationAdapters.Register(notification.FeishuWebhook{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }}); err != nil {
 		return err
 	}
-	if err := notificationAdapters.Register(genericWebhookAdapter); err != nil {
+	if err := notificationAdapters.Register(notification.GenericWebhook{Client: http.DefaultClient, Clock: func() time.Time { return systemClock.Now().UTC() }}); err != nil {
 		return err
 	}
 	notificationProcessorID, err := idGenerator.New()
@@ -820,6 +896,11 @@ func run(logger *logging.Logger) error {
 		},
 		Service: artifactService,
 	}).Run(ctx)
+	modelSchedulerID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Model scheduler identity: %w", err)
+	}
+	go runModelScheduler(ctx, modelService, "core-model-"+modelSchedulerID, logger)
 
 	return server.New(
 		processConfig.Addr,
@@ -827,6 +908,21 @@ func run(logger *logging.Logger) error {
 		logger,
 		processConfig.ShutdownTimeout,
 	).Run(ctx)
+}
+
+func runModelScheduler(ctx context.Context, service *model.Service, owner string, logger *logging.Logger) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		if _, err := service.RunScheduledSyncs(ctx, owner, 20); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("model.scheduler.failed", map[string]interface{}{"error": err.Error()})
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 type progressReminderRunner interface {

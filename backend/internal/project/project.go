@@ -54,6 +54,9 @@ const (
 	PermissionProgressRead      Permission = "project.progress.read"
 	PermissionProgressManage    Permission = "project.progress.manage"
 	PermissionProgressPropose   Permission = "project.progress.propose"
+	PermissionModelRead         Permission = "project.model.read"
+	PermissionModelSync         Permission = "project.model.sync"
+	PermissionModelManage       Permission = "project.model.manage"
 	PermissionAgentRead         Permission = "project.agent.read"
 	PermissionAgentUse          Permission = "project.agent.use"
 	PermissionAgentManage       Permission = "project.agent.manage"
@@ -87,6 +90,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionModelRead,
+		PermissionModelSync,
+		PermissionModelManage,
 		PermissionAgentRead,
 		PermissionAgentUse,
 		PermissionAgentManage,
@@ -117,6 +123,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionModelRead,
+		PermissionModelSync,
+		PermissionModelManage,
 		PermissionAgentRead,
 		PermissionAgentUse,
 		PermissionAgentManage,
@@ -141,6 +150,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionModelRead,
+		PermissionModelSync,
+		PermissionModelManage,
 		PermissionAgentRead,
 		PermissionAgentUse,
 	},
@@ -154,6 +166,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactRead,
 		PermissionArtifactDownload,
 		PermissionProgressRead,
+		PermissionModelRead,
+		PermissionModelSync,
 		PermissionAgentRead,
 	},
 	RoleAgent: {
@@ -173,6 +187,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionAuditWrite,
 		PermissionRepoRead,
 		PermissionProgressRead,
+		PermissionModelRead,
 	},
 }
 

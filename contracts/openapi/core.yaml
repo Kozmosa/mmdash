@@ -55,6 +55,16 @@ tags:
     description: Append-only security/activity audit ingestion and authorized search.
   - name: Progress
     description: Authoritative milestones, tasks, dependencies, reminders, and human-reviewed proposals.
+  - name: Model
+    description: Notion-backed model questions, immutable snapshots, synchronization, and character-level comparison.
+    x-error-codes:
+      - MODEL_NOT_CONFIGURED
+      - MODEL_NOT_FOUND
+      - MODEL_INVALID_REQUEST
+      - MODEL_PAGE_NOT_DISCOVERED
+      - MODEL_SYNC_CONFLICT
+      - MODEL_SYNC_UNAVAILABLE
+      - MODEL_NOTION_UNAVAILABLE
   - name: Agent
     description: Runtime-independent Agent instances, project grants, sessions, Runs, prompts, and credential lifecycle.
   - name: Notification
@@ -3010,6 +3020,284 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProgressSettings"
+  /v1/projects/{projectId}/models:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Model]
+      summary: Read the project Model overview
+      operationId: model.get
+      responses:
+        "200":
+          description: The single source, discovered pages, questions, and current synchronization state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelOverview"
+  /v1/projects/{projectId}/models/source:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Model]
+      summary: Read the single project Model source
+      operationId: model.source.get
+      responses:
+        "200":
+          description: Project Model source and automatic synchronization countdown.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSource"
+  /v1/projects/{projectId}/models/source/sync:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Model]
+      summary: Rediscover the Notion descendants, then synchronize every bound Model question
+      description: Every human Project member may trigger this operation. It resets the automatic countdown and reuses an active discovery request when present.
+      operationId: model.source.sync
+      responses:
+        "202":
+          description: Full Model synchronization accepted and automatic countdown reset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSync"
+  /v1/projects/{projectId}/models/notion/oauth:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Model]
+      summary: Read the public Notion integration and Project authorization status
+      operationId: model.notion.oauth.get
+      responses:
+        "200":
+          description: Browser-safe OAuth availability and workspace identity; no token is returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotionOAuthConnection"
+  /v1/projects/{projectId}/models/notion/oauth/authorizations:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Model]
+      summary: Start a one-time Notion public integration authorization
+      operationId: model.notion.oauth.start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartNotionOAuthRequest"
+      responses:
+        "201":
+          description: Short-lived authorization URL bound to the user, Project, and root-page configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotionOAuthAuthorization"
+  /v1/projects/{projectId}/models/notion/oauth/connection:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    delete:
+      tags: [Model]
+      summary: Revoke and remove the Project Notion OAuth authorization
+      operationId: model.notion.oauth.disconnect
+      responses:
+        "204": { description: Local authorization removed; existing immutable Snapshots are retained. }
+  /v1/model-notion/oauth/callback:
+    post:
+      tags: [Model]
+      summary: Complete a browser Notion OAuth callback
+      operationId: model.notion.oauth.callback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteNotionOAuthRequest"
+      responses:
+        "200":
+          description: Callback status and the state-bound Project used for a safe relative browser redirect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotionOAuthCallbackResult"
+  /v1/projects/{projectId}/models/questions:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Model]
+      summary: List Model questions
+      operationId: model.questions.list
+      responses:
+        "200":
+          description: Questions ordered by their explicit position.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelQuestionList"
+    post:
+      tags: [Model]
+      summary: Create a Model question bound to one discovered Notion child page
+      operationId: model.questions.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelQuestionRequest"
+      responses:
+        "201":
+          description: Created Model question.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelQuestion"
+  /v1/projects/{projectId}/models/questions/{questionId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ModelQuestionId"
+    get:
+      tags: [Model]
+      summary: Read one Model question
+      operationId: model.questions.get
+      responses:
+        "200":
+          description: Question and its current immutable Snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelQuestionDetail"
+    patch:
+      tags: [Model]
+      summary: Update Model question display metadata or bound descendant page
+      operationId: model.questions.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModelQuestionRequest"
+      responses:
+        "200":
+          description: Updated Model question.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelQuestion"
+    delete:
+      tags: [Model]
+      summary: Remove a Model question while retaining its referenced Artifacts
+      operationId: model.questions.delete
+      responses:
+        "204": { description: Model question removed. }
+  /v1/projects/{projectId}/models/questions/{questionId}/sync:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ModelQuestionId"
+    post:
+      tags: [Model]
+      summary: Manually synchronize one Model question
+      description: Every human Project member may trigger this operation. It resets the project automatic synchronization countdown and reuses an active request for the same question when present.
+      operationId: model.questions.sync
+      responses:
+        "202":
+          description: Question synchronization accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSync"
+  /v1/projects/{projectId}/models/questions/{questionId}/snapshots:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ModelQuestionId"
+    get:
+      tags: [Model]
+      summary: List immutable Snapshots for one Model question
+      operationId: model.snapshots.list
+      responses:
+        "200":
+          description: Newest-first Snapshot timeline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSnapshotList"
+  /v1/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ModelQuestionId"
+      - $ref: "#/components/parameters/ModelSnapshotId"
+    get:
+      tags: [Model]
+      summary: Read one fixed Model Snapshot
+      operationId: model.snapshots.get
+      responses:
+        "200":
+          description: Immutable content plus editable tags and version note.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSnapshot"
+    patch:
+      tags: [Model]
+      summary: Update user-managed Snapshot tags and version note
+      operationId: model.snapshots.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModelSnapshotRequest"
+      responses:
+        "200":
+          description: Updated Snapshot metadata; immutable content and Hash are unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSnapshot"
+  /v1/projects/{projectId}/models/questions/{questionId}/diff:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ModelQuestionId"
+      - name: from_snapshot_id
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+      - name: to_snapshot_id
+        in: query
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Model]
+      summary: Compare two Model Snapshots at character granularity
+      operationId: model.snapshots.diff
+      responses:
+        "200":
+          description: Block-preserving diff with contiguous character runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelDiff"
+  /v1/internal/model-notion-jobs/{jobId}/export:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Model, Jobs]
+      summary: Export Notion source data for one actively leased Model Worker Job
+      description: The Notion credential remains inside Core; only page and block data leaves this route.
+      operationId: model.worker.export
+      responses:
+        "200":
+          description: Job-bound raw Notion export.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelNotionExport"
   /v1/inbox:
     get:
       tags: [Notification]
@@ -3046,6 +3334,25 @@ paths:
             required: false,
             schema:
               { type: string, enum: [active, resolved, revoked, expired] },
+          }
+        - {
+            name: outcome_group,
+            in: query,
+            required: false,
+            description: Named UI grouping for terminal business outcomes.,
+            schema: { type: string, enum: [processed] },
+          }
+        - {
+            name: occurred_from,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: occurred_to,
+            in: query,
+            required: false,
+            schema: { type: string, format: date-time },
           }
         - { name: cursor, in: query, required: false, schema: { type: string } }
         - {
@@ -3375,6 +3682,16 @@ components:
       schema:
         type: string
         format: uuid
+    ModelQuestionId:
+      name: questionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ModelSnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     InvitationId:
       name: invitationId
       in: path
@@ -6392,6 +6709,363 @@ components:
           $ref: "#/components/schemas/HomeSection"
         agent:
           $ref: "#/components/schemas/HomeSection"
+    ModelOverview:
+      type: object
+      additionalProperties: false
+      required: [project_id, generated_at, configured, discovered_pages, questions]
+      properties:
+        project_id: { type: string, format: uuid }
+        generated_at: { type: string, format: date-time }
+        configured: { type: boolean }
+        source: { $ref: "#/components/schemas/ModelSource" }
+        discovered_pages:
+          type: array
+          items: { $ref: "#/components/schemas/ModelSourcePage" }
+        questions:
+          type: array
+          items: { $ref: "#/components/schemas/ModelQuestion" }
+    NotionOAuthConnection:
+      type: object
+      additionalProperties: false
+      required: [available, connected]
+      properties:
+        available: { type: boolean }
+        connected: { type: boolean }
+        bot_id: { type: string, maxLength: 200 }
+        workspace_id: { type: string, maxLength: 200 }
+        workspace_name: { type: string, maxLength: 255 }
+        workspace_icon: { type: string, format: uri }
+    StartNotionOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [root_page_url, auto_sync_enabled, auto_sync_interval_seconds]
+      properties:
+        root_page_url: { type: string, format: uri, maxLength: 2048 }
+        auto_sync_enabled: { type: boolean }
+        auto_sync_interval_seconds: { type: integer, minimum: 60, maximum: 86400 }
+    NotionOAuthAuthorization:
+      type: object
+      additionalProperties: false
+      required: [authorization_url, expires_at]
+      properties:
+        authorization_url: { type: string, format: uri }
+        expires_at: { type: string, format: date-time }
+    CompleteNotionOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { type: string, minLength: 32, maxLength: 512 }
+        code: { type: string, minLength: 1, maxLength: 2048 }
+        error: { type: string, minLength: 1, maxLength: 200 }
+    NotionOAuthCallbackResult:
+      type: object
+      additionalProperties: false
+      required: [project_id, status]
+      properties:
+        project_id: { type: string, format: uuid }
+        status: { type: string, enum: [connected, denied] }
+    ModelSource:
+      type: object
+      additionalProperties: false
+      required:
+        [source_id, project_id, notion_root_page_id, notion_root_page_url, notion_root_title, auto_sync_enabled, auto_sync_interval_seconds, sync_status, discovered_page_count, created_at, updated_at]
+      properties:
+        source_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        notion_root_page_id: { type: string, format: uuid }
+        notion_root_page_url: { type: string, format: uri }
+        notion_root_title: { type: string, maxLength: 255 }
+        auto_sync_enabled: { type: boolean }
+        auto_sync_interval_seconds: { type: integer, minimum: 60, maximum: 86400 }
+        next_sync_at: { type: string, format: date-time }
+        countdown_seconds: { type: integer, minimum: 0 }
+        last_sync_id: { type: string, format: uuid }
+        last_sync_status: { $ref: "#/components/schemas/ModelSyncStatus" }
+        last_synced_at: { type: string, format: date-time }
+        last_error_code: { type: string, maxLength: 200 }
+        last_error_message: { type: string, maxLength: 2000 }
+        sync_status: { $ref: "#/components/schemas/ModelSyncStatus" }
+        discovered_page_count: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ModelSourcePage:
+      type: object
+      additionalProperties: false
+      required: [notion_page_id, title, url, depth, has_children, last_seen_at]
+      properties:
+        notion_page_id: { type: string, format: uuid }
+        parent_page_id: { type: string, format: uuid }
+        title: { type: string, maxLength: 255 }
+        url: { type: string, format: uri }
+        depth: { type: integer, minimum: 1, maximum: 64 }
+        has_children: { type: boolean }
+        bound_question_id: { type: string, format: uuid }
+        last_seen_at: { type: string, format: date-time }
+    ModelQuestion:
+      type: object
+      additionalProperties: false
+      required:
+        [question_id, project_id, code, title, notion_page_id, notion_page_url, position, snapshot_count, sync_status, created_by, updated_by, created_at, updated_at]
+      properties:
+        question_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        code: { type: string, pattern: "^[A-Za-z][A-Za-z0-9_-]{0,31}$" }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        notion_page_id: { type: string, format: uuid }
+        notion_page_url: { type: string, format: uri }
+        position: { type: integer, minimum: 0 }
+        latest_snapshot_id: { type: string, format: uuid }
+        snapshot_count: { type: integer, minimum: 0 }
+        sync_status: { $ref: "#/components/schemas/ModelSyncStatus" }
+        last_sync_id: { type: string, format: uuid }
+        last_synced_at: { type: string, format: date-time }
+        last_error_code: { type: string, maxLength: 200 }
+        last_error_message: { type: string, maxLength: 2000 }
+        created_by: { type: string, format: uuid }
+        updated_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ModelQuestionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ModelQuestion" }
+    ModelQuestionDetail:
+      type: object
+      additionalProperties: false
+      required: [question, snapshots]
+      properties:
+        question: { $ref: "#/components/schemas/ModelQuestion" }
+        latest_snapshot: { $ref: "#/components/schemas/ModelSnapshot" }
+        snapshots:
+          type: array
+          items: { $ref: "#/components/schemas/ModelSnapshotSummary" }
+    CreateModelQuestionRequest:
+      type: object
+      additionalProperties: false
+      required: [code, title, notion_page_id]
+      properties:
+        code: { type: string, pattern: "^[A-Za-z][A-Za-z0-9_-]{0,31}$" }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        notion_page_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 0 }
+    UpdateModelQuestionRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        code: { type: string, pattern: "^[A-Za-z][A-Za-z0-9_-]{0,31}$" }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        notion_page_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 0 }
+    ModelSyncStatus:
+      type: string
+      enum: [idle, queued, running, succeeded, unchanged, failed, cancelled, timed_out]
+    ModelSync:
+      type: object
+      additionalProperties: false
+      required: [sync_id, project_id, scope, trigger, status, job_id, requested_by, requested_at, updated_at]
+      properties:
+        sync_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        question_id: { type: string, format: uuid }
+        scope: { type: string, enum: [source, question] }
+        trigger: { type: string, enum: [manual, scheduled, settings] }
+        status: { $ref: "#/components/schemas/ModelSyncStatus" }
+        job_id: { type: string, format: uuid }
+        requested_by: { type: string, format: uuid }
+        requested_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        created_snapshot_id: { type: string, format: uuid }
+        error_code: { type: string, maxLength: 200 }
+        error_message: { type: string, maxLength: 2000 }
+        updated_at: { type: string, format: date-time }
+    ModelRichText:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text: { type: string }
+        expression: { type: string }
+        bold: { type: boolean }
+        italic: { type: boolean }
+        strikethrough: { type: boolean }
+        underline: { type: boolean }
+        code: { type: boolean }
+        color: { type: string }
+        href: { type: string, format: uri }
+    ModelBlock:
+      type: object
+      additionalProperties: false
+      required: [block_id, type, text, rich_text, children]
+      properties:
+        block_id: { type: string }
+        type: { type: string }
+        text: { type: string }
+        level: { type: integer, minimum: 0, maximum: 6 }
+        rich_text:
+          type: array
+          items: { $ref: "#/components/schemas/ModelRichText" }
+        language: { type: string }
+        expression: { type: string }
+        checked: { type: boolean }
+        rows:
+          type: array
+          items:
+            type: array
+            items: { type: string }
+        cells:
+          type: array
+          items:
+            type: array
+            items: { $ref: "#/components/schemas/ModelRichText" }
+        url: { type: string, format: uri }
+        artifact_id: { type: string, format: uuid }
+        artifact_version_id: { type: string, format: uuid }
+        caption: { type: string }
+        children:
+          type: array
+          items: { $ref: "#/components/schemas/ModelBlock" }
+    ModelOutlineItem:
+      type: object
+      additionalProperties: false
+      required: [block_id, title, level]
+      properties:
+        block_id: { type: string }
+        title: { type: string }
+        level: { type: integer, minimum: 1, maximum: 6 }
+    ModelSnapshotAsset:
+      type: object
+      additionalProperties: false
+      required: [source_block_id, artifact_id, artifact_version_id, filename, mime_type]
+      properties:
+        source_block_id: { type: string }
+        artifact_id: { type: string, format: uuid }
+        artifact_version_id: { type: string, format: uuid }
+        filename: { type: string }
+        mime_type: { type: string }
+    ModelSnapshotSummary:
+      type: object
+      additionalProperties: false
+      required: [snapshot_id, question_id, title, content_hash, summary, tags, captured_at, triggered_by, created_at, metadata_updated_at]
+      properties:
+        snapshot_id: { type: string, format: uuid }
+        question_id: { type: string, format: uuid }
+        previous_snapshot_id: { type: string, format: uuid }
+        title: { type: string, maxLength: 255 }
+        content_hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        summary: { type: string, maxLength: 10000 }
+        tags:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 64 }
+        version_note: { type: string, maxLength: 4000 }
+        captured_at: { type: string, format: date-time }
+        triggered_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        metadata_updated_at: { type: string, format: date-time }
+    ModelSnapshot:
+      allOf:
+        - $ref: "#/components/schemas/ModelSnapshotSummary"
+        - type: object
+          additionalProperties: false
+          required: [project_id, notion_page_id, notion_page_url, outline, blocks, content_markdown, content_text, assets]
+          properties:
+            project_id: { type: string, format: uuid }
+            notion_page_id: { type: string, format: uuid }
+            notion_page_url: { type: string, format: uri }
+            outline:
+              type: array
+              items: { $ref: "#/components/schemas/ModelOutlineItem" }
+            blocks:
+              type: array
+              items: { $ref: "#/components/schemas/ModelBlock" }
+            content_markdown: { type: string }
+            content_text: { type: string }
+            assets:
+              type: array
+              items: { $ref: "#/components/schemas/ModelSnapshotAsset" }
+    ModelSnapshotList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ModelSnapshotSummary" }
+    UpdateModelSnapshotRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        tags:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 64 }
+        version_note: { type: string, maxLength: 4000 }
+    ModelDiffOperation:
+      type: object
+      additionalProperties: false
+      required: [kind, text]
+      properties:
+        kind: { type: string, enum: [unchanged, added, deleted] }
+        text: { type: string, minLength: 1 }
+    ModelDiffBlock:
+      type: object
+      additionalProperties: false
+      required: [block_id, type, change, block, operations]
+      properties:
+        block_id: { type: string }
+        type: { type: string }
+        change: { type: string, enum: [unchanged, added, deleted, modified] }
+        block: { $ref: "#/components/schemas/ModelBlock" }
+        operations:
+          type: array
+          items: { $ref: "#/components/schemas/ModelDiffOperation" }
+    ModelDiff:
+      type: object
+      additionalProperties: false
+      required: [question_id, from_snapshot_id, to_snapshot_id, granularity, blocks]
+      properties:
+        question_id: { type: string, format: uuid }
+        from_snapshot_id: { type: string, format: uuid }
+        to_snapshot_id: { type: string, format: uuid }
+        granularity: { type: string, enum: [character] }
+        blocks:
+          type: array
+          items: { $ref: "#/components/schemas/ModelDiffBlock" }
+    ModelNotionExport:
+      type: object
+      additionalProperties: false
+      required: [sync_id, project_id, source_id, mode, root_title, pages]
+      properties:
+        sync_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        source_id: { type: string, format: uuid }
+        question_id: { type: string, format: uuid }
+        mode: { type: string, enum: [discover, snapshot] }
+        root_title: { type: string, minLength: 1, maxLength: 255 }
+        pages:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [page_id, title, url, depth, page, blocks]
+            properties:
+              page_id: { type: string, format: uuid }
+              parent_page_id: { type: string, format: uuid }
+              title: { type: string }
+              url: { type: string, format: uri }
+              depth: { type: integer, minimum: 0, maximum: 64 }
+              page: { type: object, additionalProperties: true }
+              blocks:
+                type: array
+                items: { type: object, additionalProperties: true }
     Progress:
       type: object
       additionalProperties: false
@@ -6883,7 +7557,6 @@ components:
         [
           project_id,
           type_key,
-          inbox_enabled,
           external_enabled,
           channel_keys,
           minimum_priority,
@@ -6892,7 +7565,6 @@ components:
       properties:
         project_id: { type: string, format: uuid }
         type_key: { type: string }
-        inbox_enabled: { type: boolean }
         external_enabled: { type: boolean }
         channel_keys:
           type: array
@@ -6906,9 +7578,8 @@ components:
     UpdateNotificationRuleRequest:
       type: object
       additionalProperties: false
-      required: [inbox_enabled, external_enabled, version]
+      required: [external_enabled, version]
       properties:
-        inbox_enabled: { type: boolean }
         external_enabled: { type: boolean }
         channel_keys:
           type: array
