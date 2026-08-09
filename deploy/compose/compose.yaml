@@ -96,9 +96,32 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-local-auth-jwt-secret-change-before-production}
       # 浏览器和 CLI 的短期访问 Token、可刷新 Session 与设备授权时限。
       AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-24h}
+      # 专用 Gateway API Token ID；用于 Agent verification callback 和业务请求 attestation。
+      AUTH_AGENT_VERIFICATION_TOKEN_ID: ${AUTH_AGENT_VERIFICATION_TOKEN_ID:-}
       AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-720h}
       AUTH_DEVICE_AUTHORIZATION_TTL: ${AUTH_DEVICE_AUTHORIZATION_TTL:-10m}
       AUTH_DEVICE_POLL_INTERVAL: ${AUTH_DEVICE_POLL_INTERVAL:-5s}
+      # Endpoint written into Hermes. It must be reachable from the Hermes runtime.
+      AGENT_MCP_GATEWAY_URL: ${AGENT_MCP_GATEWAY_URL:-http://localhost:3002/mcp}
+      # Runtime API Connector policy; secure defaults reject loopback and private networks.
+      AGENT_RUNTIME_ALLOW_LOOPBACK: ${AGENT_RUNTIME_ALLOW_LOOPBACK:-false}
+      AGENT_RUNTIME_ALLOW_PRIVATE: ${AGENT_RUNTIME_ALLOW_PRIVATE:-false}
+      AGENT_RUNTIME_ALLOWED_PORTS: ${AGENT_RUNTIME_ALLOWED_PORTS:-80,443,8642}
+      AGENT_RUNTIME_CONNECT_TIMEOUT: ${AGENT_RUNTIME_CONNECT_TIMEOUT:-5s}
+      AGENT_RUNTIME_RESPONSE_HEADER_TIMEOUT: ${AGENT_RUNTIME_RESPONSE_HEADER_TIMEOUT:-10s}
+      AGENT_RUNTIME_REQUEST_TIMEOUT: ${AGENT_RUNTIME_REQUEST_TIMEOUT:-30s}
+      AGENT_RUNTIME_MAX_REDIRECTS: ${AGENT_RUNTIME_MAX_REDIRECTS:-3}
+      AGENT_RUNTIME_MAX_RESPONSE_BYTES: ${AGENT_RUNTIME_MAX_RESPONSE_BYTES:-4194304}
+      # Dashboard management Connector policy; private access requires an explicit deployment opt-in.
+      AGENT_MANAGEMENT_ALLOW_LOOPBACK: ${AGENT_MANAGEMENT_ALLOW_LOOPBACK:-false}
+      AGENT_MANAGEMENT_ALLOW_PRIVATE: ${AGENT_MANAGEMENT_ALLOW_PRIVATE:-false}
+      AGENT_MANAGEMENT_ALLOWED_PORTS: ${AGENT_MANAGEMENT_ALLOWED_PORTS:-80,443,9119}
+      AGENT_MANAGEMENT_CONNECT_TIMEOUT: ${AGENT_MANAGEMENT_CONNECT_TIMEOUT:-5s}
+      AGENT_MANAGEMENT_RESPONSE_HEADER_TIMEOUT: ${AGENT_MANAGEMENT_RESPONSE_HEADER_TIMEOUT:-10s}
+      AGENT_MANAGEMENT_REQUEST_TIMEOUT: ${AGENT_MANAGEMENT_REQUEST_TIMEOUT:-30s}
+      AGENT_MANAGEMENT_MINIMUM_INTERVAL: ${AGENT_MANAGEMENT_MINIMUM_INTERVAL:-250ms}
+      AGENT_MANAGEMENT_MAX_REDIRECTS: ${AGENT_MANAGEMENT_MAX_REDIRECTS:-3}
+      AGENT_MANAGEMENT_MAX_RESPONSE_BYTES: ${AGENT_MANAGEMENT_MAX_RESPONSE_BYTES:-4194304}
       # 首个管理员邮箱；生产必须设置为受控管理员账号。
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-admin@mmdash.local}
       # 首个管理员显示名；生产应设置为实际运维/管理员名称。
@@ -107,12 +130,22 @@ services:
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-mmdash-local-admin}
       # Settings AES-GCM 加密主密钥；生产必须替换为稳定的 Secret，轮换需有迁移方案。
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-development-settings-encryption-key-change-me}
+      # 生产保持 false；仅本机开发接收器可显式开启，且 Core 仍只允许明确 loopback 主机。
+      NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK: ${NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK:-false}
       # Core 使用的 PostgreSQL DSN；生产必须使用生产主机、账号、密码和 TLS。
       DATABASE_URL: postgres://${POSTGRES_USER:-mmdash}:${POSTGRES_PASSWORD:-mmdash}@postgres:5432/${POSTGRES_DB:-mmdash}?sslmode=disable
       # 空闲数据库连接上限；生产按数据库容量与副本数调优。
       DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
       # 数据库连接池总上限；生产必须按数据库容量与 Core 副本数调优。
       DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
+      # Progress 到期提醒由 Core 多副本共享 PostgreSQL 租约队列处理。
+      PROGRESS_REMINDER_POLL_INTERVAL: ${PROGRESS_REMINDER_POLL_INTERVAL:-1s}
+      PROGRESS_REMINDER_BATCH_SIZE: ${PROGRESS_REMINDER_BATCH_SIZE:-20}
+      PROGRESS_REMINDER_LEASE: ${PROGRESS_REMINDER_LEASE:-30s}
+      PROGRESS_REMINDER_RETRY_DELAY: ${PROGRESS_REMINDER_RETRY_DELAY:-2s}
+      # Project 邀请过期由 Core 多副本使用 PostgreSQL SKIP LOCKED 分批推进。
+      PROJECT_INVITATION_EXPIRY_POLL_INTERVAL: ${PROJECT_INVITATION_EXPIRY_POLL_INTERVAL:-30s}
+      PROJECT_INVITATION_EXPIRY_BATCH_SIZE: ${PROJECT_INVITATION_EXPIRY_BATCH_SIZE:-100}
       # S3/MinIO 服务地址；生产必须替换为受控对象存储的内部 HTTPS 地址。
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:-http://localhost:9000}
@@ -220,7 +253,9 @@ services:
       # Agent Token 可访问项目范围；生产必须收敛为显式项目 ID，禁止使用 *。
       MCP_AGENT_PROJECTS: ${MCP_AGENT_PROJECTS:-*}
       # Agent 调用鉴权 Token；生产必须使用 Secret 管理器注入的强随机值。
-      MCP_AGENT_TOKEN: ${MCP_AGENT_TOKEN:-local-agent-token-change-before-production}
+      # 生产镜像以 NODE_ENV=production 运行，静态 Agent Token 被拒绝；
+      # 产品 Agent Token 必须由 Core 签发并经 MCP_CORE_ACCESS_TOKEN 校验。
+      MCP_AGENT_TOKEN: ${MCP_AGENT_TOKEN:-}
       # Agent 可调用 Tool 范围；生产必须设置最小权限清单，禁止使用 *。
       MCP_AGENT_TOOLS: ${MCP_AGENT_TOOLS:-*}
       # 允许的 Host Header；生产必须仅包含正式域名。
@@ -237,8 +272,9 @@ services:
       MCP_GATEWAY_HOST: 0.0.0.0
       # MCP Gateway 监听端口；生产可保留或按平台端口策略调整。
       MCP_GATEWAY_PORT: 3002
-      # 写入 Core Audit 的专用 Token；生产启用 MCP 审计时必须由 Core 签发并注入。
+      # Agent verification callback 与业务请求 attestation 使用的专用 Core admin API Token。
       MCP_CORE_ACCESS_TOKEN: ${MCP_CORE_ACCESS_TOKEN:-}
+      # 写入 Core Audit 的可独立轮换 Token；生产启用 MCP 审计时必须由 Core 签发并注入。
       MCP_CORE_AUDIT_TOKEN: ${MCP_CORE_AUDIT_TOKEN:-}
       # MCP Gateway 版本；生产必须与发布版本/构建号保持一致。
       MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}

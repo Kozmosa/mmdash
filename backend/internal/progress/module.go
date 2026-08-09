@@ -388,6 +388,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusConflict, "PROGRESS_PROPOSAL_REQUIRED", "This automatic change must be submitted as a Progress Proposal"
 	case errors.Is(err, ErrInvalid):
 		status, code, message = http.StatusBadRequest, "INVALID_PROGRESS_REQUEST", "Progress input is invalid"
+	case errors.Is(err, ErrReferenceInvalid):
+		status, code, message = http.StatusBadRequest, "PROGRESS_REFERENCE_INVALID", "Progress reference is invalid"
 	case errors.Is(err, ErrConflict):
 		status, code, message = http.StatusConflict, "PROGRESS_CONFLICT", "The Progress record has changed or is already resolved"
 	case errors.Is(err, ErrNotFound):

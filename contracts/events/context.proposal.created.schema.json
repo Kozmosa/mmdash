@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/context.proposal.created.schema.json",
+  "title": "context.proposal.created payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["proposal_id", "context_type"],
+  "properties": {
+    "proposal_id": { "type": "string", "format": "uuid" },
+    "context_type": { "type": "string", "minLength": 1, "maxLength": 100 }
+  }
+}

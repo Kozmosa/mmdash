@@ -13,11 +13,13 @@ import (
 )
 
 type memoryStore struct {
-	devices      map[string]DeviceAuthorization
-	passwordHash string
-	sessions     map[string]Session
-	tokens       map[string]Token
-	user         User
+	activatedRemoteAccessID string
+	agentTokens             map[string]AgentToken
+	devices                 map[string]DeviceAuthorization
+	passwordHash            string
+	sessions                map[string]Session
+	tokens                  map[string]Token
+	user                    User
 }
 
 type projectAuthorizerStub struct{}
@@ -86,10 +88,108 @@ func (projectAuthorizerStub) AuthorizeTokenManagement(
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
-		devices:  map[string]DeviceAuthorization{},
-		sessions: map[string]Session{},
-		tokens:   map[string]Token{},
+		agentTokens: map[string]AgentToken{},
+		devices:     map[string]DeviceAuthorization{},
+		sessions:    map[string]Session{},
+		tokens:      map[string]Token{},
 	}
+}
+
+func (store *memoryStore) CreateAgentToken(_ context.Context, token AgentToken) error {
+	store.agentTokens[token.ID] = token
+	return nil
+}
+
+func (store *memoryStore) FindAgentToken(_ context.Context, tokenHash string, now time.Time) (AgentToken, error) {
+	for _, token := range store.agentTokens {
+		if token.TokenHash == tokenHash && token.RevokedAt == nil &&
+			(token.ExpiresAt == nil || token.ExpiresAt.After(now)) {
+			return token, nil
+		}
+	}
+	return AgentToken{}, ErrNotFound
+}
+
+func (store *memoryStore) GetAgentToken(_ context.Context, tokenID string) (AgentToken, error) {
+	token, ok := store.agentTokens[tokenID]
+	if !ok {
+		return AgentToken{}, ErrNotFound
+	}
+	return token, nil
+}
+
+func (store *memoryStore) ListAgentTokens(_ context.Context, grantID string) ([]AgentToken, error) {
+	items := []AgentToken{}
+	for _, token := range store.agentTokens {
+		if token.GrantID == grantID {
+			items = append(items, token)
+		}
+	}
+	return items, nil
+}
+
+func (store *memoryStore) TouchAgentToken(_ context.Context, tokenID string, now time.Time) error {
+	token, ok := store.agentTokens[tokenID]
+	if !ok {
+		return ErrNotFound
+	}
+	token.LastUsedAt = &now
+	store.agentTokens[tokenID] = token
+	return nil
+}
+
+func (store *memoryStore) MarkAgentTokenVerified(
+	_ context.Context,
+	evidence AgentTokenVerificationEvidence,
+) (AgentTokenVerificationEvidence, error) {
+	token, ok := store.agentTokens[evidence.TokenID]
+	if !ok || token.Status != "pending" || token.RevokedAt != nil ||
+		token.AgentInstanceID != evidence.AgentInstanceID ||
+		token.ProjectID != evidence.ProjectID {
+		return AgentTokenVerificationEvidence{}, ErrConflict
+	}
+	if token.Verification != nil {
+		return *token.Verification, nil
+	}
+	token.Verification = &evidence
+	store.agentTokens[evidence.TokenID] = token
+	return evidence, nil
+}
+
+func (store *memoryStore) ActivateAgentToken(
+	_ context.Context,
+	tokenID string,
+	oldTokenID string,
+	newRemoteAccessID string,
+	now time.Time,
+) (AgentToken, error) {
+	store.activatedRemoteAccessID = newRemoteAccessID
+	token, ok := store.agentTokens[tokenID]
+	if !ok || token.Status != "pending" || token.Verification == nil ||
+		token.Verification.MCPMethod != AgentTokenVerificationMethod {
+		return AgentToken{}, ErrNotFound
+	}
+	if oldTokenID != "" {
+		old, exists := store.agentTokens[oldTokenID]
+		if !exists || old.Status != "active" {
+			return AgentToken{}, ErrConflict
+		}
+		old.Status, old.RevokedAt = "revoked", &now
+		store.agentTokens[oldTokenID] = old
+	}
+	token.Status, token.ActivatedAt = "active", &now
+	store.agentTokens[tokenID] = token
+	return token, nil
+}
+
+func (store *memoryStore) RevokeAgentToken(_ context.Context, tokenID string, now time.Time) error {
+	token, ok := store.agentTokens[tokenID]
+	if !ok {
+		return ErrNotFound
+	}
+	token.Status, token.RevokedAt = "revoked", &now
+	store.agentTokens[tokenID] = token
+	return nil
 }
 
 func (store *memoryStore) CreateDeviceAuthorization(_ context.Context, authorization DeviceAuthorization) error {
@@ -458,13 +558,13 @@ func TestIssuedAgentTokenIsHashedAndProjectScoped(t *testing.T) {
 		ProjectTokens: projectAuthorizerStub{},
 		Store:         store,
 	}
-	issued, err := service.IssueToken(
+	issued, err := service.IssueAgentToken(
 		context.Background(),
 		Identity{Kind: "session", User: store.user},
-		"agent",
-		"research agent",
-		"project-1",
-		nil,
+		IssueAgentTokenInput{
+			AgentInstanceID: "agent-1", AllowedTools: []string{"project.get"},
+			GrantID: "grant-1", Name: "research agent", ProjectID: "project-1",
+		},
 	)
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
@@ -476,8 +576,220 @@ func TestIssuedAgentTokenIsHashedAndProjectScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate token: %v", err)
 	}
-	if authenticated.Kind != "agent" || authenticated.ProjectID != "project-1" {
+	if authenticated.Kind != "agent" || authenticated.ProjectID != "project-1" ||
+		authenticated.AgentInstanceID != "agent-1" || authenticated.CredentialStatus != "pending" {
 		t.Fatalf("unexpected token identity: %#v", authenticated)
+	}
+	stored := store.agentTokens[issued.Token.ID]
+	if stored.LastUsedAt != nil || stored.Verification != nil {
+		t.Fatalf("ordinary authentication created pending verification evidence: %#v", stored)
+	}
+}
+
+func TestGenericTokenIssueRejectsCompatibilityAgentKind(t *testing.T) {
+	service := Service{}
+	_, err := service.IssueToken(
+		context.Background(),
+		Identity{Kind: "session", User: User{ID: "user-1"}},
+		"agent",
+		"legacy generic agent",
+		"project-1",
+		nil,
+	)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("generic agent token issue: got %v want ErrInvalid", err)
+	}
+}
+
+func TestTrustedGatewayVerificationIsRequiredBeforeAgentTokenActivation(t *testing.T) {
+	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	store.agentTokens["old-token"] = AgentToken{
+		AgentInstanceID: "agent-1", CreatedAt: now.Add(-time.Hour), GrantID: "grant-1",
+		ID: "old-token", ProjectID: "project-1", Status: "active",
+	}
+	store.agentTokens["pending-token"] = AgentToken{
+		AgentInstanceID: "agent-1", CreatedAt: now.Add(-time.Minute), GrantID: "grant-1",
+		ID: "pending-token", ProjectID: "project-1", Status: "pending",
+	}
+	service := Service{
+		AgentVerificationTokenID: "gateway-token",
+		Clock:                    clock.Fixed{Time: now},
+		Generator:                identity.Generator{Reader: bytes.NewReader(make([]byte, 16))},
+		ProjectTokens:            projectAuthorizerStub{},
+		Store:                    store,
+	}
+	trustedGateway := Identity{
+		Kind: "api", ProjectID: "project-1", TokenID: "gateway-token",
+		User: User{ID: "gateway-user", SystemRole: "admin"},
+	}
+
+	if _, err := service.ActivateAgentToken(
+		context.Background(), trustedGateway, "project-1", "pending-token", "old-token", "",
+	); !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrConflict) {
+		t.Fatalf("activation without trusted evidence: %v", err)
+	}
+	if store.agentTokens["old-token"].Status != "active" {
+		t.Fatal("old token was revoked before trusted verification")
+	}
+
+	evidence, err := service.RecordAgentTokenVerification(
+		context.Background(), trustedGateway, "pending-token",
+		RecordAgentTokenVerificationInput{
+			AgentInstanceID: "agent-1", MCPMethod: AgentTokenVerificationMethod,
+			MCPSessionID: "mcp-session-1", ProjectID: "project-1", RequestID: "request-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("record trusted verification: %v", err)
+	}
+	if evidence.MCPMethod != "tools/list" || evidence.VerifiedByTokenID != "gateway-token" ||
+		evidence.EvidenceID == "" || !evidence.VerifiedAt.Equal(now) {
+		t.Fatalf("unexpected verification evidence: %#v", evidence)
+	}
+	pending := store.agentTokens["pending-token"]
+	pending.Verification.VerifiedByTokenID = "ordinary-admin-token"
+	store.agentTokens["pending-token"] = pending
+	if _, err := service.ActivateAgentToken(
+		context.Background(), trustedGateway, "project-1", "pending-token", "old-token", "",
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("activation with untrusted verifier evidence: %v", err)
+	}
+	if store.agentTokens["old-token"].Status != "active" {
+		t.Fatal("untrusted verifier evidence revoked the old token")
+	}
+	pending.Verification.VerifiedByTokenID = "gateway-token"
+	store.agentTokens["pending-token"] = pending
+	const remoteAccessID = " remote/access::v2 "
+	activated, err := service.ActivateAgentToken(
+		context.Background(), trustedGateway, "project-1", "pending-token", "old-token", remoteAccessID,
+	)
+	if err != nil {
+		t.Fatalf("activate verified token: %v", err)
+	}
+	if activated.Status != "active" || store.agentTokens["old-token"].Status != "revoked" {
+		t.Fatalf("unexpected activation outcome: new=%#v old=%#v", activated, store.agentTokens["old-token"])
+	}
+	if store.activatedRemoteAccessID != remoteAccessID {
+		t.Fatalf("remote access ID was interpreted by Auth: got %q want %q",
+			store.activatedRemoteAccessID, remoteAccessID)
+	}
+}
+
+func TestAgentTokenVerificationRejectsUntrustedOrMismatchedEvidence(t *testing.T) {
+	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	store.agentTokens["pending-token"] = AgentToken{
+		AgentInstanceID: "agent-1", CreatedAt: now, GrantID: "grant-1",
+		ID: "pending-token", ProjectID: "project-1", Status: "pending",
+	}
+	service := Service{
+		AgentVerificationTokenID: "gateway-token",
+		Clock:                    clock.Fixed{Time: now},
+		Generator:                identity.Generator{Reader: bytes.NewReader(make([]byte, 48))},
+		Store:                    store,
+	}
+	input := RecordAgentTokenVerificationInput{
+		AgentInstanceID: "agent-1", MCPMethod: AgentTokenVerificationMethod,
+		MCPSessionID: "mcp-session-1", ProjectID: "project-1", RequestID: "request-1",
+	}
+	if _, err := service.RecordAgentTokenVerification(
+		context.Background(), Identity{Kind: "session", User: User{SystemRole: "admin"}},
+		"pending-token", input,
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("browser session recorded evidence: %v", err)
+	}
+	untrustedAPI := Identity{
+		Kind: "api", ProjectID: "project-2", TokenID: "api-token",
+		User: User{SystemRole: "admin"},
+	}
+	if _, err := service.RecordAgentTokenVerification(
+		context.Background(), untrustedAPI, "pending-token", input,
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("cross-project API token recorded evidence: %v", err)
+	}
+	ordinaryAdminAPI := Identity{
+		Kind: "api", ProjectID: "project-1", TokenID: "ordinary-admin-token",
+		User: User{SystemRole: "admin"},
+	}
+	if _, err := service.RecordAgentTokenVerification(
+		context.Background(), ordinaryAdminAPI, "pending-token", input,
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("ordinary admin API token recorded Gateway evidence: %v", err)
+	}
+	trustedGateway := Identity{
+		Kind: "api", ProjectID: "project-1", TokenID: "gateway-token",
+		User: User{SystemRole: "admin"},
+	}
+	input.MCPMethod = "initialize"
+	if _, err := service.RecordAgentTokenVerification(
+		context.Background(), trustedGateway, "pending-token", input,
+	); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("initialize created evidence: %v", err)
+	}
+}
+
+func TestExpiredOrCrossProjectPendingAgentTokenCannotVerifyOrActivate(t *testing.T) {
+	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	expiresAt := now.Add(-time.Second)
+	store := newMemoryStore()
+	store.agentTokens["old-token"] = AgentToken{
+		AgentInstanceID: "agent-1", CreatedAt: now.Add(-time.Hour), GrantID: "grant-1",
+		ID: "old-token", ProjectID: "project-1", Status: "active",
+	}
+	store.agentTokens["expired-token"] = AgentToken{
+		AgentInstanceID: "agent-1", CreatedAt: now.Add(-time.Minute),
+		ExpiresAt: &expiresAt, GrantID: "grant-1", ID: "expired-token",
+		ProjectID: "project-1", Status: "pending",
+	}
+	service := Service{
+		AgentVerificationTokenID: "gateway-token",
+		Clock:                    clock.Fixed{Time: now},
+		Generator:                identity.Generator{Reader: bytes.NewReader(make([]byte, 16))},
+		ProjectTokens:            projectAuthorizerStub{},
+		Store:                    store,
+	}
+	trustedGateway := Identity{
+		Kind: "api", ProjectID: "project-1", TokenID: "gateway-token",
+		User: User{ID: "gateway-user", SystemRole: "admin"},
+	}
+	input := RecordAgentTokenVerificationInput{
+		AgentInstanceID: "agent-1", MCPMethod: AgentTokenVerificationMethod,
+		MCPSessionID: "mcp-session-1", ProjectID: "project-1", RequestID: "request-1",
+	}
+	if _, err := service.RecordAgentTokenVerification(
+		context.Background(), trustedGateway, "expired-token", input,
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expired token verification: got %v", err)
+	}
+	expired := store.agentTokens["expired-token"]
+	expired.Verification = &AgentTokenVerificationEvidence{
+		AgentInstanceID: "agent-1", EvidenceID: "evidence-1",
+		MCPMethod: AgentTokenVerificationMethod, MCPSessionID: "mcp-session-1",
+		ProjectID: "project-1", RequestID: "request-1", TokenID: "expired-token",
+		VerifiedAt: now.Add(-2 * time.Second), VerifiedByTokenID: "gateway-token",
+	}
+	store.agentTokens["expired-token"] = expired
+	if _, err := service.ActivateAgentToken(
+		context.Background(), trustedGateway, "project-1", "expired-token", "old-token", "",
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expired token activation: got %v", err)
+	}
+	if store.agentTokens["old-token"].Status != "active" {
+		t.Fatal("expired replacement revoked the old token")
+	}
+	if _, err := service.ActivateAgentToken(
+		context.Background(), trustedGateway, "project-2", "expired-token", "old-token", "",
+	); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-project token activation: got %v", err)
+	}
+	if err := service.RevokeAgentToken(
+		context.Background(), trustedGateway, "project-2", "expired-token",
+	); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-project token revoke: got %v", err)
+	}
+	if store.agentTokens["expired-token"].Status != "pending" {
+		t.Fatal("cross-project revoke changed the target token")
 	}
 }
 

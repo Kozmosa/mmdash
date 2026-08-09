@@ -46,9 +46,18 @@ func TestRegistryRejectsUnsafeAndIncompleteDescriptors(t *testing.T) {
 }
 
 type notificationStoreStub struct {
-	created      []Notification
-	listInboxHit bool
-	upsertedRule Rule
+	created           []Notification
+	deliveries        DeliveryPage
+	invitationOutcome InvitationOutcome
+	getRuleHit        bool
+	listInboxHit      bool
+	listDeliveriesHit bool
+	markAllReadCalled bool
+	markAllReadFilter Filter
+	markAllReadUserID string
+	retry             Delivery
+	retryErr          error
+	upsertedRule      Rule
 }
 
 func (stub *notificationStoreStub) CreateEvent(_ context.Context, notification Notification, _ []RecipientInput, _ bool, _ []DeliveryIntent) error {
@@ -56,7 +65,8 @@ func (stub *notificationStoreStub) CreateEvent(_ context.Context, notification N
 	return nil
 }
 func (*notificationStoreStub) ClaimEmailRecipients(context.Context, string, string) error { return nil }
-func (*notificationStoreStub) ApplyInvitationOutcome(context.Context, string, string) error {
+func (stub *notificationStoreStub) ApplyInvitationOutcome(_ context.Context, outcome InvitationOutcome) error {
+	stub.invitationOutcome = outcome
 	return nil
 }
 func (stub *notificationStoreStub) ListInbox(context.Context, string, Filter, pagination.Request) (Page, error) {
@@ -69,22 +79,29 @@ func (*notificationStoreStub) GetInbox(context.Context, string, string) (InboxIt
 func (*notificationStoreStub) UpdateInbox(context.Context, string, string, *string, *bool) (InboxItem, error) {
 	return InboxItem{}, nil
 }
-func (*notificationStoreStub) MarkAllRead(context.Context, string, Filter) error { return nil }
+func (stub *notificationStoreStub) MarkAllRead(_ context.Context, userID string, filter Filter) error {
+	stub.markAllReadCalled = true
+	stub.markAllReadUserID = userID
+	stub.markAllReadFilter = filter
+	return nil
+}
 func (*notificationStoreStub) UnreadCount(context.Context, string, string) (int64, error) {
 	return 0, nil
 }
-func (*notificationStoreStub) GetRule(context.Context, string, string) (Rule, error) {
+func (stub *notificationStoreStub) GetRule(context.Context, string, string) (Rule, error) {
+	stub.getRuleHit = true
 	return Rule{InboxEnabled: true, MinimumPriority: "normal"}, nil
 }
 func (stub *notificationStoreStub) UpsertRule(_ context.Context, rule Rule) (Rule, error) {
 	stub.upsertedRule = rule
 	return rule, nil
 }
-func (*notificationStoreStub) ListDeliveries(context.Context, string, string, pagination.Request) (DeliveryPage, error) {
-	return DeliveryPage{}, nil
+func (stub *notificationStoreStub) ListDeliveries(context.Context, string, string, pagination.Request) (DeliveryPage, error) {
+	stub.listDeliveriesHit = true
+	return stub.deliveries, nil
 }
-func (*notificationStoreStub) CreateRetry(context.Context, string, string, string) (Delivery, error) {
-	return Delivery{}, nil
+func (stub *notificationStoreStub) CreateRetry(context.Context, string, string, string) (Delivery, error) {
+	return stub.retry, stub.retryErr
 }
 
 func TestHandleEventCreatesEveryRegisteredTypeForOneEvent(t *testing.T) {

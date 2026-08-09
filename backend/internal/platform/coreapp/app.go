@@ -24,14 +24,26 @@ import (
 
 // Options contains explicitly composed Core dependencies.
 type Options struct {
-	Audit       func(context.Context, HTTPObservation) error
-	Health      health.Handler
-	Logger      *logging.Logger
-	Modules     *module.Registry
-	Metrics     *metrics.Registry
-	OpenAPI     []byte
-	IDGenerator identity.Generator
+	AgentRequestGuard AgentRequestGuard
+	Audit             func(context.Context, HTTPObservation) error
+	Health            health.Handler
+	Logger            *logging.Logger
+	Modules           *module.Registry
+	Metrics           *metrics.Registry
+	OpenAPI           []byte
+	IDGenerator       identity.Generator
 }
+
+// AgentRequestGuard verifies the dedicated Gateway-to-Core attestation for a
+// request whose primary Authorization credential may be a product Agent Token.
+// Implementations must keep the primary Agent identity authoritative.
+type AgentRequestGuard func(
+	context.Context,
+	string,
+	string,
+	string,
+	string,
+) error
 
 // HTTPObservation is the bounded, secret-free request audit surface.
 type HTTPObservation struct {
@@ -58,10 +70,38 @@ func NewHandler(options Options) http.Handler {
 		)
 	})
 
-	handler := recoveryMiddleware(options.Logger, mux)
+	var handler http.Handler = mux
+	handler = agentRequestGuardMiddleware(options.AgentRequestGuard, handler)
+	handler = recoveryMiddleware(options.Logger, handler)
 	handler = accessLogMiddleware(options.Logger, options.Metrics, options.Audit, handler)
 	handler = requestctx.Middleware(options.IDGenerator, handler)
 	return handler
+}
+
+func agentRequestGuardMiddleware(
+	guard AgentRequestGuard,
+	next http.Handler,
+) http.Handler {
+	if guard == nil {
+		return next
+	}
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if strings.HasPrefix(request.URL.Path, "/v1/") {
+			if err := guard(
+				request.Context(), request.Method, request.URL.Path,
+				request.Header.Get("Authorization"),
+				request.Header.Get("X-Mmdash-Gateway-Authorization"),
+			); err != nil {
+				httpx.WriteError(response, request, apperror.New(
+					http.StatusForbidden,
+					"AGENT_GATEWAY_ATTESTATION_REQUIRED",
+					"Agent requests must be relayed by the trusted MCP Gateway",
+				))
+				return
+			}
+		}
+		next.ServeHTTP(response, request)
+	})
 }
 
 func registerOpenAPI(mux *http.ServeMux, contract []byte) {
