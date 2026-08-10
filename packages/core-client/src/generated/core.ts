@@ -5444,6 +5444,7 @@ export interface components {
       management_mode: components["schemas"]["AgentManagementMode"];
       /** Format: uri */
       runtime_url: string;
+      /** @description Canonical Hermes profile identifier. The built-in default profile is represented by the special identifier `default`; Hermes reserved names remain unavailable for named profiles. */
       profile?: string;
       request_timeout_seconds: number;
       /**

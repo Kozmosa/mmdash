@@ -972,8 +972,11 @@ func (request CreateAgentInstanceRequest) Validate() error {
 		if len(*request.Profile) < 1 {
 			return fmt.Errorf("profile is too short")
 		}
-		if len(*request.Profile) > 120 {
+		if len(*request.Profile) > 64 {
 			return fmt.Errorf("profile is too long")
+		}
+		if matched, err := regexp.MatchString("^[a-z0-9][a-z0-9_-]{0,63}$", *request.Profile); err != nil || !matched {
+			return fmt.Errorf("profile has an invalid format")
 		}
 	}
 	if request.RequestTimeoutSeconds != nil {
@@ -1075,8 +1078,11 @@ func (request UpdateAgentInstanceRequest) Validate() error {
 		if len(*request.Profile) < 1 {
 			return fmt.Errorf("profile is too short")
 		}
-		if len(*request.Profile) > 120 {
+		if len(*request.Profile) > 64 {
 			return fmt.Errorf("profile is too long")
+		}
+		if matched, err := regexp.MatchString("^[a-z0-9][a-z0-9_-]{0,63}$", *request.Profile); err != nil || !matched {
+			return fmt.Errorf("profile has an invalid format")
 		}
 	}
 	if request.RequestTimeoutSeconds != nil {

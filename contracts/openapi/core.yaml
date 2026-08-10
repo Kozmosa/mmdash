@@ -8238,7 +8238,14 @@ components:
         runtime_url:
           type: string
           format: uri
-        profile: { type: string }
+        profile:
+          type: string
+          maxLength: 64
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+          description: >-
+            Canonical Hermes profile identifier. The built-in default profile
+            is represented by the special identifier `default`; Hermes
+            reserved names remain unavailable for named profiles.
         request_timeout_seconds:
           type: integer
           minimum: 1
@@ -8307,7 +8314,8 @@ components:
         profile:
           type: string
           minLength: 1
-          maxLength: 120
+          maxLength: 64
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
         request_timeout_seconds:
           type: integer
           minimum: 1
@@ -8368,7 +8376,8 @@ components:
         profile:
           type: string
           minLength: 1
-          maxLength: 120
+          maxLength: 64
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
         request_timeout_seconds:
           type: integer
           minimum: 1

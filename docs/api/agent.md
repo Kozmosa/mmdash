@@ -38,6 +38,12 @@ and event-triggered Runs belong to Stage 6.
 An Agent instance has one Project Grant, one exact Tool allowlist, and one of
 two management modes:
 
+Its Hermes `profile` is a canonical lowercase identifier matching
+`[a-z0-9][a-z0-9_-]{0,63}`. The special `default` profile is valid; `hermes`,
+`test`, `tmp`, `root`, and `sudo` are reserved. Profile input is never silently
+trimmed or lowercased. When `profile` is omitted while creating an instance,
+the `default` profile is used.
+
 | Mode     | mmdash responsibility | User responsibility |
 | -------- | --------------------- | ------------------- |
 | `manual` | Check Hermes runtime, issue a one-time Agent Token, and verify a real Hermes-to-Gateway call | Install or update the mmdash MCP entry in Hermes and rotate its credential |

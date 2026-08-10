@@ -30,17 +30,18 @@ func New(config Config) (*Adapter, error) {
 	if err := validateProfile(config.Profile); err != nil {
 		return nil, err
 	}
+	profile := config.Profile
 	runtimeConnector, err := newConnector(config.RuntimeURL, config.RuntimePolicy)
 	if err != nil {
 		return nil, err
 	}
 	result := &Adapter{
 		instanceID: strings.TrimSpace(config.InstanceID),
-		profile:    strings.TrimSpace(config.Profile),
+		profile:    profile,
 		runtime: &apiClient{
 			connector:   runtimeConnector,
 			bearerToken: config.APIKey,
-			profile:     strings.TrimSpace(config.Profile),
+			profile:     profile,
 		},
 	}
 	if config.Management != nil && strings.TrimSpace(config.Management.URL) != "" && config.Management.DashboardSessionToken != "" {
@@ -50,7 +51,7 @@ func New(config Config) (*Adapter, error) {
 		}
 		result.management = newManagementClient(
 			managementConnector,
-			strings.TrimSpace(config.Profile),
+			profile,
 			*config.Management,
 			config.ManagementMinimumInterval,
 		)

@@ -151,9 +151,11 @@ func (service Service) CreateInstance(
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.RuntimeURL = strings.TrimSpace(input.RuntimeURL)
 	input.DashboardURL = strings.TrimSpace(input.DashboardURL)
-	input.Profile = strings.TrimSpace(input.Profile)
 	if input.Profile == "" {
 		input.Profile = "default"
+	}
+	if err := ValidateHermesProfile(input.Profile); err != nil {
+		return InstanceResult{}, ErrInvalid
 	}
 	if input.DisplayName == "" || input.APIKey == "" ||
 		!validOrigin(input.RuntimeURL) || !validManagementMode(input.ManagementMode) {
@@ -288,6 +290,9 @@ func (service Service) UpdateInstance(
 	if err != nil {
 		return InstanceResult{}, err
 	}
+	if input.Profile != nil && (*input.Profile == "" || ValidateHermesProfile(*input.Profile) != nil) {
+		return InstanceResult{}, ErrInvalid
+	}
 	resolved, err := service.Settings.ResolveResource(ctx, settings.ScopeProject,
 		projectID, SettingTypeAgentHermes, instanceID)
 	if err != nil {
@@ -361,7 +366,7 @@ func (service Service) UpdateInstance(
 	applySecret(settingCFClientID, input.CloudflareClientID)
 	applySecret(settingCFClientSecret, input.CloudflareClientSecret)
 	if input.Profile != nil {
-		item.Profile = strings.TrimSpace(*input.Profile)
+		item.Profile = *input.Profile
 		patch[settingProfile] = item.Profile
 	}
 	if input.RequestTimeoutSeconds != nil {

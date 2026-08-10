@@ -1732,6 +1732,69 @@ func TestServiceVerifyTokenRequiresTrustedGatewayEvidenceInBothModes(t *testing.
 	}
 }
 
+func TestServiceCreateInstanceValidatesCanonicalHermesProfile(t *testing.T) {
+	base := CreateInstanceInput{
+		APIKey:         "runtime-secret",
+		AllowedTools:   append([]string(nil), DefaultAllowedTools...),
+		DisplayName:    "New Hermes",
+		ManagementMode: ManagementManual,
+		RuntimeURL:     "https://runtime.example.test",
+	}
+	for _, profile := range []string{" research ", "Research", "research.profile", "research/profile", "hermes", "test", "tmp", "root", "sudo"} {
+		fixture := newAgentServiceFixture(t)
+		input := base
+		input.Profile = profile
+		if _, err := fixture.service.CreateInstance(context.Background(), fixture.caller, "project-1", input); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("CreateInstance accepted profile %q: %v", profile, err)
+		}
+		if len(fixture.store.instances) != 1 || fixture.settingsStore.upsertCalls != 0 {
+			t.Fatalf("invalid profile %q caused a write: instances=%d settings=%d", profile, len(fixture.store.instances), fixture.settingsStore.upsertCalls)
+		}
+	}
+	for _, profile := range []string{"", "default", "research"} {
+		fixture := newAgentServiceFixture(t)
+		input := base
+		input.Profile = profile
+		result, err := fixture.service.CreateInstance(context.Background(), fixture.caller, "project-1", input)
+		if err != nil {
+			t.Fatalf("CreateInstance rejected profile %q: %v", profile, err)
+		}
+		want := profile
+		if want == "" {
+			want = "default"
+		}
+		if result.Instance.Profile != want || fixture.settingsStore.upsertCalls == 0 {
+			t.Fatalf("CreateInstance profile %q normalized to %q or did not persist", profile, result.Instance.Profile)
+		}
+	}
+}
+
+func TestServiceUpdateInstanceValidatesCanonicalHermesProfileBeforeWrites(t *testing.T) {
+	for _, profile := range []string{"", " research ", "Research", "research.profile", "research/profile", "hermes", "test", "tmp", "root", "sudo"} {
+		fixture := newAgentServiceFixture(t)
+		_, err := fixture.service.UpdateInstance(
+			context.Background(), fixture.caller, "project-1", "agent-1",
+			UpdateInstanceInput{Profile: stringPointer(profile)},
+		)
+		if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("UpdateInstance accepted profile %q: %v", profile, err)
+		}
+		if fixture.settingsStore.upsertCalls != 0 || fixture.store.instanceUpdates != 0 || fixture.store.instances["agent-1"].Profile != "default" {
+			t.Fatalf("invalid profile %q caused a write: settings=%d instances=%d stored=%q", profile, fixture.settingsStore.upsertCalls, fixture.store.instanceUpdates, fixture.store.instances["agent-1"].Profile)
+		}
+	}
+	for _, profile := range []string{"default", "research"} {
+		fixture := newAgentServiceFixture(t)
+		result, err := fixture.service.UpdateInstance(
+			context.Background(), fixture.caller, "project-1", "agent-1",
+			UpdateInstanceInput{Profile: stringPointer(profile)},
+		)
+		if err != nil || result.Instance.Profile != profile || fixture.settingsStore.upsertCalls != 1 || fixture.store.instanceUpdates != 1 {
+			t.Fatalf("UpdateInstance profile %q result=%#v err=%v settings=%d instances=%d", profile, result.Instance, err, fixture.settingsStore.upsertCalls, fixture.store.instanceUpdates)
+		}
+	}
+}
+
 func TestServiceUpdateInstanceRejectsCrossOriginSecretReuseBeforePersistence(t *testing.T) {
 	t.Run("runtime origin requires an explicit API key replacement", func(t *testing.T) {
 		for _, apiKey := range []*string{nil, stringPointer(settings.RedactedSecret)} {
