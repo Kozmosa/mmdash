@@ -278,14 +278,18 @@ func normalizedSchedule(value any) string {
 	if !ok {
 		return ""
 	}
-	for _, key := range []string{"expression", "cron", "schedule", "at", "every"} {
+	// Hermes v2026.8.3 stores parsed schedules as {kind, expr, display}
+	// (with run_at/minutes for one-shot/interval schedules). Keep the older
+	// expression/cron/type forms accepted for existing deployments and tests.
+	for _, key := range []string{"expr", "expression", "cron", "schedule", "at", "run_at", "every", "value", "display"} {
 		if text := stringValue(object[key]); text != "" {
 			return text
 		}
 	}
-	kind := stringValue(object["type"])
-	if kind != "" {
-		return kind
+	for _, key := range []string{"kind", "type"} {
+		if kind := stringValue(object[key]); kind != "" {
+			return kind
+		}
 	}
 	return ""
 }

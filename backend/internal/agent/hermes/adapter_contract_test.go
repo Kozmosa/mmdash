@@ -291,7 +291,7 @@ func TestRunAndJobMapping(t *testing.T) {
 	}
 
 	jobs, err := adapter.ListJobs(ctx, true)
-	if err != nil || len(jobs) != 1 || !jobs[0].HasLastError || !jobs[0].HasDeliveryError || jobs[0].RepeatTimes != 3 || jobs[0].RepeatCompleted != 1 {
+	if err != nil || len(jobs) != 1 || jobs[0].Schedule != "0 * * * *" || jobs[0].ScheduleDisplay != "0 * * * *" || !jobs[0].HasLastError || !jobs[0].HasDeliveryError || jobs[0].RepeatTimes != 3 || jobs[0].RepeatCompleted != 1 {
 		t.Fatalf("jobs: %#v %v", jobs, err)
 	}
 	created, err := adapter.CreateJob(ctx, agent.CreateJobRequest{Name: "progress", Schedule: "0 * * * *", Prompt: "check", Deliver: "local", Skills: []string{"research"}, Repeat: 3})
@@ -374,11 +374,31 @@ func sessionFixture(id string) map[string]any {
 func jobFixture(id string) map[string]any {
 	return map[string]any{
 		"id": id, "name": "progress", "prompt": "check", "skills": []any{"research"},
-		"schedule": map[string]any{"type": "cron", "expression": "0 * * * *"}, "schedule_display": "hourly",
+		"schedule": map[string]any{"kind": "cron", "expr": "0 * * * *", "display": "0 * * * *"}, "schedule_display": "0 * * * *",
 		"repeat": map[string]any{"times": 3, "completed": 1}, "enabled": true, "state": "scheduled",
 		"created_at": "2026-08-03T10:00:00Z", "next_run_at": 1_754_000_000, "last_run_at": 1_753_000_000,
 		"last_status": "failed", "last_error": "secret provider failure", "last_delivery_error": "secret delivery failure",
 		"deliver": "local", "origin": "api_server",
+	}
+}
+
+func TestNormalizedScheduleSupportsHermesAndLegacyShapes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{name: "hermes cron", value: map[string]any{"kind": "cron", "expr": "0 * * * *", "display": "0 * * * *"}, want: "0 * * * *"},
+		{name: "hermes display fallback", value: map[string]any{"kind": "interval", "display": "every 30m"}, want: "every 30m"},
+		{name: "legacy expression", value: map[string]any{"type": "cron", "expression": "*/5 * * * *"}, want: "*/5 * * * *"},
+		{name: "legacy string", value: "every 2h", want: "every 2h"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := normalizedSchedule(test.value); got != test.want {
+				t.Fatalf("normalizedSchedule(%#v) = %q, want %q", test.value, got, test.want)
+			}
+		})
 	}
 }
 
