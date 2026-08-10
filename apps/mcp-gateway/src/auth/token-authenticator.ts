@@ -7,11 +7,17 @@ import { GatewayError } from "../errors/gateway-error.js";
 
 export type TokenKind = "agent" | "cli";
 
+export type AgentCredentialStatus = "active" | "pending";
+
 export type Principal = {
+  agentInstanceId?: string;
+  credentialStatus?: AgentCredentialStatus;
   delegated: boolean;
   id: string;
   kind: TokenKind;
   projects: readonly string[];
+  sessionOwnerId: string;
+  tokenId?: string;
   tools: readonly string[];
 };
 
@@ -26,7 +32,7 @@ export class TokenAuthenticator {
   constructor(
     records: readonly TokenRecord[],
     private readonly coreClient?: CoreClient,
-    private readonly delegatedTools: readonly string[] = [],
+    private readonly delegatedCliTools: readonly string[] = [],
   ) {
     this.records = [...records];
   }
@@ -67,16 +73,7 @@ export class TokenAuthenticator {
         accessToken: token,
         requestId,
       });
-      if (identity.kind !== "session" && identity.kind !== "api") {
-        throw unauthenticated();
-      }
-      return {
-        delegated: true,
-        id: `cli:${identity.user.id}`,
-        kind: "cli",
-        projects: identity.project_id ? [identity.project_id] : ["*"],
-        tools: this.delegatedTools,
-      };
+      return delegatedPrincipal(identity, this.delegatedCliTools);
     } catch (error) {
       if (error instanceof GatewayError) {
         throw error;
@@ -105,24 +102,28 @@ export class TokenAuthenticator {
   ): TokenAuthenticator {
     const records: TokenRecord[] = [];
     if (config.cliToken) {
+      const id = tokenIdentity("cli", config.cliToken);
       records.push({
         principal: {
           delegated: false,
-          id: tokenIdentity("cli", config.cliToken),
+          id,
           kind: "cli",
           projects: config.cliProjects,
+          sessionOwnerId: id,
           tools: config.cliTools,
         },
         token: config.cliToken,
       });
     }
     if (config.agentToken) {
+      const id = tokenIdentity("agent", config.agentToken);
       records.push({
         principal: {
           delegated: false,
-          id: tokenIdentity("agent", config.agentToken),
+          id,
           kind: "agent",
           projects: config.agentProjects,
+          sessionOwnerId: id,
           tools: config.agentTools,
         },
         token: config.agentToken,
@@ -131,6 +132,107 @@ export class TokenAuthenticator {
     return new TokenAuthenticator(records, coreClient, config.cliTools);
   }
 }
+
+function delegatedPrincipal(
+  identity: unknown,
+  delegatedCliTools: readonly string[],
+): Principal {
+  const record = asRecord(identity);
+  const kind = readString(record.kind);
+  if (kind === "session" || kind === "api") {
+    const user = asRecord(record.user);
+    const userId = readString(user.id);
+    if (!userId) {
+      throw unauthenticated();
+    }
+    const projectId = readString(record.project_id);
+    const id = `cli:${userId}`;
+    return {
+      delegated: true,
+      id,
+      kind: "cli",
+      projects: projectId ? [projectId] : ["*"],
+      sessionOwnerId: id,
+      tools: delegatedCliTools,
+    };
+  }
+  if (kind !== "agent") {
+    throw unauthenticated();
+  }
+
+  const credentialStatus =
+    readString(record.credential_status) ??
+    readString(record.token_status) ??
+    readString(record.status);
+  if (credentialStatus !== "active" && credentialStatus !== "pending") {
+    throw new GatewayError(
+      "AGENT_CREDENTIAL_INACTIVE",
+      "The Agent credential is not active",
+      401,
+    );
+  }
+  const agentInstanceId = readUUID(record.agent_instance_id);
+  const projectId = readUUID(record.project_id);
+  const tokenId = readUUID(record.token_id);
+  const tools = readExactTools(record.allowed_tools);
+  if (!agentInstanceId || !projectId || !tokenId || !tools) {
+    throw new GatewayError(
+      "AGENT_IDENTITY_INVALID",
+      "The Agent credential grant is invalid",
+      401,
+    );
+  }
+  const id = `agent:${agentInstanceId}`;
+  return {
+    agentInstanceId,
+    credentialStatus,
+    delegated: true,
+    id,
+    kind: "agent",
+    projects: [projectId],
+    sessionOwnerId: `${id}:credential:${tokenId}`,
+    tokenId,
+    tools,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readUUID(value: unknown): string | undefined {
+  const candidate = readString(value);
+  return candidate && uuidPattern.test(candidate) ? candidate : undefined;
+}
+
+function readExactTools(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const tools = value.map(readString);
+  if (
+    tools.length === 0 ||
+    tools.some(
+      (tool) =>
+        !tool ||
+        tool.includes("*") ||
+        !exactToolNamePattern.test(tool),
+    )
+  ) {
+    return undefined;
+  }
+  return [...new Set(tools as string[])];
+}
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const exactToolNamePattern = /^[a-z][a-z0-9_.-]*$/;
 
 function unauthenticated(): GatewayError {
   return new GatewayError(
@@ -150,6 +252,7 @@ export function principalFromAuthInfo(
     !("id" in principal) ||
     !("kind" in principal) ||
     !("projects" in principal) ||
+    !("sessionOwnerId" in principal) ||
     !("tools" in principal)
   ) {
     throw new GatewayError(

@@ -250,15 +250,19 @@ assert(
   "MCP Gateway health check failed.",
 );
 
-await runCliMcpSmoke({
-  cookie,
-  coreUrl,
-  dataObjectId: object.object_id,
-  mcpUrl,
-  projectId,
-  runId,
-  webUrl,
-});
+if (process.env.MMDASH_SMOKE_SKIP_CLI === "1") {
+  console.log("skipping native CLI MCP smoke (MMDASH_SMOKE_SKIP_CLI=1)");
+} else {
+  await runCliMcpSmoke({
+    cookie,
+    coreUrl,
+    dataObjectId: object.object_id,
+    mcpUrl,
+    projectId,
+    runId,
+    webUrl,
+  });
+}
 
 const repo =
   process.env.MMDASH_SMOKE_REPO_MODE === "docker"

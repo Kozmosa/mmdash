@@ -10,19 +10,16 @@ import (
 )
 
 type processorDeliveryStub struct {
-	delivery        *Delivery
-	notification    Notification
-	claimedOwner    string
-	completed       bool
-	completedID     string
-	completedOwner  string
-	completedResult ProviderSendResult
-	cancelled       bool
-	failed          bool
-	failureCode     string
-	failureRetry    bool
-	failureDelay    time.Duration
-	cancelledError  string
+	delivery       *Delivery
+	notification   Notification
+	claimedOwner   string
+	completed      bool
+	cancelled      bool
+	failed         bool
+	failureCode    string
+	failureRetry   bool
+	failureDelay   time.Duration
+	cancelledError string
 }
 
 func (stub *processorDeliveryStub) EnqueueDelivery(context.Context, Notification, string, int64) (Delivery, error) {
@@ -32,11 +29,8 @@ func (stub *processorDeliveryStub) ClaimDelivery(_ context.Context, owner string
 	stub.claimedOwner = owner
 	return stub.delivery, stub.notification, nil
 }
-func (stub *processorDeliveryStub) CompleteDelivery(_ context.Context, deliveryID, owner string, result ProviderSendResult) error {
+func (stub *processorDeliveryStub) CompleteDelivery(context.Context, string, string) error {
 	stub.completed = true
-	stub.completedID = deliveryID
-	stub.completedOwner = owner
-	stub.completedResult = result
 	return nil
 }
 func (stub *processorDeliveryStub) FailDelivery(_ context.Context, _ string, _ string, code string, _ int, _ string, retryable bool, delay time.Duration) error {
@@ -63,9 +57,8 @@ func (stub processorSettingsStub) Resolve(context.Context, settings.Scope, strin
 }
 
 type processorAdapter struct {
-	key        string
-	sendResult ProviderSendResult
-	sendError  error
+	key       string
+	sendError error
 }
 
 func (adapter processorAdapter) Key() string                                        { return adapter.key }
@@ -74,8 +67,8 @@ func (adapter processorAdapter) Test(context.Context, map[string]interface{}) er
 func (adapter processorAdapter) Render(context.Context, Notification, int) (RenderedMessage, error) {
 	return RenderedMessage{Body: []byte("{}"), ContentType: "application/json"}, nil
 }
-func (adapter processorAdapter) Send(context.Context, map[string]interface{}, string, string, RenderedMessage) (ProviderSendResult, error) {
-	return adapter.sendResult, adapter.sendError
+func (adapter processorAdapter) Send(context.Context, map[string]interface{}, string, string, RenderedMessage) error {
+	return adapter.sendError
 }
 
 func TestDeliveryProcessorRequiresDependencies(t *testing.T) {
@@ -130,28 +123,5 @@ func TestDeliveryProcessorCompletesSuccessfulSend(t *testing.T) {
 	worked, err := processor.RunOnce(context.Background())
 	if err != nil || !worked || !store.completed || store.failed || store.cancelled {
 		t.Fatalf("successful send result: worked=%t err=%v store=%#v", worked, err, store)
-	}
-	if store.completedResult != (ProviderSendResult{}) {
-		t.Fatalf("empty provider result changed: %#v", store.completedResult)
-	}
-}
-
-func TestDeliveryProcessorPersistsProviderResult(t *testing.T) {
-	delivery := &Delivery{ID: "delivery-4", ProjectID: "project-1", ChannelKey: "notification.feishu_webhook"}
-	store := &processorDeliveryStub{delivery: delivery, notification: Notification{TypeKey: TypeReminderDue, TemplateVersion: 1}}
-	want := ProviderSendResult{ProviderMessageID: "provider-message-4", ResponseSummary: "http_status=200; code=0; msg=success"}
-	registry := NewAdapterRegistry()
-	if err := registry.Register(processorAdapter{key: delivery.ChannelKey, sendResult: want}); err != nil {
-		t.Fatal(err)
-	}
-	processor := DeliveryProcessor{
-		Adapters: registry, Deliveries: store, Owner: "processor-4", Settings: processorSettingsStub{resolved: settings.ResolvedSetting{Values: map[string]interface{}{"enabled": true}}},
-	}
-	worked, err := processor.RunOnce(context.Background())
-	if err != nil || !worked || !store.completed {
-		t.Fatalf("provider result delivery: worked=%t err=%v store=%#v", worked, err, store)
-	}
-	if store.completedID != delivery.ID || store.completedOwner != processor.Owner || store.completedResult != want {
-		t.Fatalf("completed provider result: %#v", store)
 	}
 }

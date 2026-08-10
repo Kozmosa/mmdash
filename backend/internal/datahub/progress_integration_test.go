@@ -128,6 +128,28 @@ func TestProgressTaskDeletionHidesDataHubProjection(t *testing.T) {
 	if _, err := store.GetObject(ctx, projectID, page.Items[0].ID); err != nil {
 		t.Fatalf("read visible milestone projection: %v", err)
 	}
+
+	evaluationID := generator.MustNew()
+	evaluation := progressProjectionEvent(generator.MustNew(), "progress.evaluation.completed", projectID, evaluationID, "Progress evaluation", "succeeded", now.Add(8*time.Minute))
+	evaluation.Payload["resource_type"] = "progress_evaluation"
+	evaluation.Payload["stage"] = "execution"
+	if err := store.ProjectProgress(ctx, evaluation); err != nil {
+		t.Fatalf("project Progress evaluation: %v", err)
+	}
+	riskID := generator.MustNew()
+	risk := progressProjectionEvent(generator.MustNew(), "progress.risk.detected", projectID, riskID, "Deadline risk", "open", now.Add(9*time.Minute))
+	risk.Payload["resource_type"] = "progress_risk"
+	risk.Payload["evaluation_id"] = evaluationID
+	risk.Payload["severity"] = "high"
+	if err := store.ProjectProgress(ctx, risk); err != nil {
+		t.Fatalf("project Progress risk: %v", err)
+	}
+	for objectType, sourceID := range map[string]string{"progress_evaluation": evaluationID, "progress_risk": riskID} {
+		projected, listErr := store.ListObjects(ctx, projectID, objectType, pagination.Request{Limit: 20})
+		if listErr != nil || len(projected.Items) != 1 || projected.Items[0].SourceID != sourceID {
+			t.Fatalf("list %s projection: page=%#v err=%v", objectType, projected, listErr)
+		}
+	}
 }
 
 func progressProjectionEvent(eventID, eventType, projectID, resourceID, title, status string, occurredAt time.Time) contract.EventEnvelope {

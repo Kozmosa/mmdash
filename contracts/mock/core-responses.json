@@ -60,6 +60,21 @@
       }
     }
   },
+  "auth.agent_tokens.verification.record": {
+    "method": "POST",
+    "path": "/v1/auth/agent-tokens/{tokenId}/verification",
+    "status": 200,
+    "body": {
+      "evidence_id": "39883315-a0d0-4ca3-82ca-4dca57427298",
+      "token_id": "017a6159-05fd-48f0-9461-fdf44bbb67dd",
+      "agent_instance_id": "7698af8f-7af5-42d0-9f81-8c3b66cde960",
+      "project_id": "71818682-08ca-4a6f-8d28-2ca2fd05f39f",
+      "mcp_method": "tools/list",
+      "mcp_session_id": "mcp-session-mock-01",
+      "request_id": "request-mock-01",
+      "verified_at": "2026-08-06T10:04:00Z"
+    }
+  },
   "projects.list": {
     "method": "GET",
     "path": "/v1/projects",
@@ -128,6 +143,149 @@
       },
       "created_at": "2026-07-29T11:00:00Z",
       "updated_at": "2026-07-29T12:00:00Z"
+    }
+  },
+  "agent.instances.list": {
+    "method": "GET",
+    "path": "/v1/projects/{projectId}/agent-instances",
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "agent_instance_id": "7698af8f-7af5-42d0-9f81-8c3b66cde960",
+          "project_id": "71818682-08ca-4a6f-8d28-2ca2fd05f39f",
+          "adapter_type": "hermes",
+          "display_name": "Research Hermes",
+          "management_mode": "manual",
+          "runtime_url": "https://hermes.example.test",
+          "profile": "default",
+          "request_timeout_seconds": 30,
+          "management_url": "https://dashboard.example.test",
+          "status": "active",
+          "management_path": "direct",
+          "capabilities": {
+            "sessions": true,
+            "message_history": true,
+            "session_fork": true,
+            "session_chat_stream": true,
+            "runs": true,
+            "run_status": true,
+            "run_events": true,
+            "run_stop": true,
+            "run_approval": true,
+            "jobs": true,
+            "project_access": {
+              "verify": true,
+              "configure": true,
+              "rotate": true
+            }
+          },
+          "secrets": {
+            "hermes_api_key_configured": true,
+            "dashboard_session_token_configured": false,
+            "cloudflare_access_configured": false
+          },
+          "grant": {
+            "grant_id": "f182b715-71db-4581-aa80-420692f8490f",
+            "agent_instance_id": "7698af8f-7af5-42d0-9f81-8c3b66cde960",
+            "project_id": "71818682-08ca-4a6f-8d28-2ca2fd05f39f",
+            "status": "active",
+            "allowed_tools": ["project.get", "data.list", "data.read", "context.promote", "progress.get", "progress.recalculate"],
+            "project_access_status": "verified",
+            "version": 1,
+            "created_at": "2026-08-06T10:00:00Z",
+            "updated_at": "2026-08-06T10:05:00Z"
+          },
+          "credentials": [
+            {
+              "id": "017a6159-05fd-48f0-9461-fdf44bbb67dd",
+              "agent_instance_id": "7698af8f-7af5-42d0-9f81-8c3b66cde960",
+              "grant_id": "f182b715-71db-4581-aa80-420692f8490f",
+              "project_id": "71818682-08ca-4a6f-8d28-2ca2fd05f39f",
+              "name": "Hermes project access",
+              "allowed_tools": ["project.get", "data.list", "data.read", "context.promote", "progress.get", "progress.recalculate"],
+              "status": "active",
+              "activated_at": "2026-08-06T10:05:00Z",
+              "created_at": "2026-08-06T10:00:00Z"
+            }
+          ],
+          "version": 1,
+          "created_by": "06353678-91db-4e22-9dfb-2d4218546e22",
+          "created_at": "2026-08-06T10:00:00Z",
+          "updated_at": "2026-08-06T10:05:00Z"
+        }
+      ]
+    }
+  },
+  "agent.runs.approve": {
+    "method": "POST",
+    "path": "/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}",
+    "status": 200,
+    "body": {
+      "run_id": "066938ea-e080-4f4b-91a4-551dad97fbb3",
+      "session_id": "5f214a48-09cf-4599-82c4-d5ee58694995",
+      "remote_run_id": "run_mock_01",
+      "status": "running",
+      "source": "message",
+      "tool_calls": [],
+      "version": 2,
+      "created_at": "2026-08-06T10:10:00Z",
+      "started_at": "2026-08-06T10:10:00Z",
+      "updated_at": "2026-08-06T10:11:00Z"
+    }
+  },
+  "progress.recalculate": {
+    "method": "POST",
+    "path": "/v1/projects/{projectId}/progress/recalculate",
+    "status": 202,
+    "body": {
+      "request_id": "c182b715-71db-4581-aa80-420692f8490f",
+      "status": "pending",
+      "scheduled_for": "2026-08-10T10:00:00Z",
+      "merged": false
+    }
+  },
+  "progress.evaluations.list": {
+    "method": "GET",
+    "path": "/v1/projects/{projectId}/progress/evaluations",
+    "status": 200,
+    "body": {
+      "items": [],
+      "has_more": false
+    }
+  },
+  "progress.stage_override.set": {
+    "method": "POST",
+    "path": "/v1/projects/{projectId}/progress/stage-override",
+    "status": 200,
+    "body": {
+      "override_id": "d182b715-71db-4581-aa80-420692f8490f",
+      "project_id": "71818682-08ca-4a6f-8d28-2ca2fd05f39f",
+      "stage": "review",
+      "summary": "Human review stage",
+      "note": "Verified by the team",
+      "active": true,
+      "created_by": "06353678-91db-4e22-9dfb-2d4218546e22",
+      "created_at": "2026-08-10T10:00:00Z"
+    }
+  },
+  "progress.settings.update": {
+    "method": "PATCH",
+    "path": "/v1/projects/{projectId}/progress/settings",
+    "status": 200,
+    "body": {
+      "project_id": "71818682-08ca-4a6f-8d28-2ca2fd05f39f",
+      "auto_task_changes": true,
+      "auto_tracking_enabled": false,
+      "event_triggers_enabled": true,
+      "cron_enabled": false,
+      "cron_schedule": "0 */6 * * *",
+      "debounce_seconds": 60,
+      "min_interval_seconds": 300,
+      "evaluator_mode": "core_agent",
+      "cron_sync_status": "disabled",
+      "updated_by": "06353678-91db-4e22-9dfb-2d4218546e22",
+      "updated_at": "2026-08-10T10:00:00Z"
     }
   }
 }

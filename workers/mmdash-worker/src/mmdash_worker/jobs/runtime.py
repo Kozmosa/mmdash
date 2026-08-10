@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
+from mmdash_worker.jobs.client import JobAPIError
 from mmdash_worker.jobs.handlers import HandlerContext, HandlerError, HandlerRegistry
 
 
@@ -146,6 +147,15 @@ class WorkerRuntime:
             )
         except HandlerError as error:
             await self._submit_failure(job_id, error)
+        except JobAPIError as error:
+            await self._submit_failure(
+                job_id,
+                HandlerError(
+                    error.code,
+                    str(error),
+                    retryable=error.status == 0 or error.status >= 500,
+                ),
+            )
         except Exception:  # noqa: BLE001 - handler boundary must isolate plugin errors
             await self._submit_failure(
                 job_id,

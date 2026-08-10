@@ -1,0 +1,2 @@
+ALTER TABLE notification_rules
+    ADD COLUMN IF NOT EXISTS inbox_enabled BOOLEAN NOT NULL DEFAULT TRUE;

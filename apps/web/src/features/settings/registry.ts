@@ -51,7 +51,7 @@ export const settingsSlots = new SettingsSlotRegistry();
   {
     id: "agent",
     title: "Agent",
-    description: "Hermes 和自动进度跟踪",
+    description: "Hermes、Session 与 Agent Token",
     owner: "agent",
     order: 40,
   },

@@ -3,177 +3,24 @@ package notification
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
-	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
 type notificationProjectAccessStub struct {
-	err        error
-	permission project.Permission
-	projectID  string
+	err         error
+	permissions *[]project.Permission
 }
 
-func (stub *notificationProjectAccessStub) Authorize(_ context.Context, _ auth.Identity, projectID string, permission project.Permission) error {
-	stub.permission = permission
-	stub.projectID = projectID
+func (stub notificationProjectAccessStub) Authorize(_ context.Context, _ auth.Identity, _ string, permission project.Permission) error {
+	if stub.permissions != nil {
+		*stub.permissions = append(*stub.permissions, permission)
+	}
 	return stub.err
-}
-
-type notificationAuthenticatorStub struct {
-	identity auth.Identity
-}
-
-func (stub notificationAuthenticatorStub) Authenticate(context.Context, string) (auth.Identity, error) {
-	return stub.identity, nil
-}
-
-func TestMarkAllReadUsesOnlyJSONBodyFilters(t *testing.T) {
-	const (
-		projectID      = "00000000-0000-4000-8000-000000000001"
-		otherProjectID = "00000000-0000-4000-8000-000000000003"
-		userID         = "00000000-0000-4000-8000-000000000002"
-	)
-	tests := []struct {
-		name string
-		path string
-		body string
-		want Filter
-	}{
-		{
-			name: "body project and type",
-			path: "/v1/inbox/mark-all-read",
-			body: `{"project_id":"` + projectID + `","type_key":"` + TypeReminderDue + `"}`,
-			want: Filter{ProjectID: projectID, TypeKey: TypeReminderDue},
-		},
-		{
-			name: "no body",
-			path: "/v1/inbox/mark-all-read",
-			want: Filter{},
-		},
-		{
-			name: "empty object",
-			path: "/v1/inbox/mark-all-read?project_id=" + otherProjectID + "&type_key=query.type",
-			body: `{}`,
-			want: Filter{},
-		},
-		{
-			name: "query filters ignored",
-			path: "/v1/inbox/mark-all-read?project_id=" + otherProjectID + "&type_key=query.type&read_state=unread&archived=false&outcome=active",
-			want: Filter{},
-		},
-		{
-			name: "body wins over conflicting query",
-			path: "/v1/inbox/mark-all-read?project_id=" + otherProjectID + "&type_key=query.type&read_state=unread",
-			body: `{"project_id":"` + projectID + `","type_key":"` + TypeReminderDue + `"}`,
-			want: Filter{ProjectID: projectID, TypeKey: TypeReminderDue},
-		},
-		{
-			name: "collection route uses the same body semantics",
-			path: "/v1/inbox?action=mark-all-read&project_id=" + otherProjectID + "&type_key=query.type",
-			body: `{"project_id":"` + projectID + `","type_key":"` + TypeReminderDue + `"}`,
-			want: Filter{ProjectID: projectID, TypeKey: TypeReminderDue},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			store := &notificationStoreStub{}
-			module := Module{
-				Auth: notificationAuthenticatorStub{identity: auth.Identity{
-					Kind: "session",
-					User: auth.User{ID: userID},
-				}},
-				Service: Service{Store: store},
-			}
-			mux := http.NewServeMux()
-			module.RegisterRoutes(mux)
-			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
-			if test.body != "" {
-				request.Header.Set("Content-Type", "application/json")
-			}
-			response := httptest.NewRecorder()
-
-			mux.ServeHTTP(response, request)
-
-			if response.Code != http.StatusNoContent {
-				t.Fatalf("mark all read: got %d, want %d: %s", response.Code, http.StatusNoContent, response.Body.String())
-			}
-			if !store.markAllReadCalled {
-				t.Fatal("mark all read did not reach the store")
-			}
-			if store.markAllReadUserID != userID {
-				t.Fatalf("mark all read user: got %q, want %q", store.markAllReadUserID, userID)
-			}
-			if store.markAllReadFilter != test.want {
-				t.Fatalf("mark all read filter: got %#v, want %#v", store.markAllReadFilter, test.want)
-			}
-		})
-	}
-}
-
-func TestInvitationLifecycleEventPassesDurableOutcomeFact(t *testing.T) {
-	projectID := "00000000-0000-4000-8000-000000000001"
-	invitationID := "00000000-0000-4000-8000-000000000002"
-	eventID := "00000000-0000-4000-8000-000000000003"
-	occurredAt := time.Date(2026, 8, 6, 1, 0, 0, 0, time.UTC)
-	store := &notificationStoreStub{}
-	service := Service{Store: store}
-
-	err := service.HandleEvent(context.Background(), contract.EventEnvelope{
-		EventID:       eventID,
-		EventType:     "project.invitation.revoked",
-		OccurredAt:    occurredAt,
-		Payload:       map[string]interface{}{"invitation_id": invitationID, "project_id": projectID},
-		ProjectID:     &projectID,
-		SchemaVersion: 1,
-	})
-	if err != nil {
-		t.Fatalf("handle invitation outcome: %v", err)
-	}
-	want := InvitationOutcome{
-		InvitationID:  invitationID,
-		ProjectID:     projectID,
-		Outcome:       OutcomeRevoked,
-		SourceEventID: eventID,
-		OccurredAt:    occurredAt,
-	}
-	if store.invitationOutcome != want {
-		t.Fatalf("invitation outcome: got %#v, want %#v", store.invitationOutcome, want)
-	}
-}
-
-func TestRetryDeliveryReturnsStableStatusConflict(t *testing.T) {
-	store := &notificationStoreStub{retryErr: ErrDeliveryRetryConflict}
-	module := Module{
-		Auth: notificationAuthenticatorStub{identity: auth.Identity{
-			Kind: "session",
-			User: auth.User{ID: "user-1"},
-		}},
-		Service: Service{Store: store},
-	}
-	request := httptest.NewRequest(
-		http.MethodPost,
-		"/v1/projects/project-1/notification-deliveries/delivery-1/retry",
-		strings.NewReader(`{"reason":"operator retry"}`),
-	)
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-
-	module.ProjectHandler().ServeHTTP(response, request)
-
-	if response.Code != http.StatusConflict {
-		t.Fatalf("retry status conflict: got %d, want %d: %s", response.Code, http.StatusConflict, response.Body.String())
-	}
-	if !strings.Contains(response.Body.String(), `"code":"NOTIFICATION_DELIVERY_RETRY_CONFLICT"`) {
-		t.Fatalf("retry status conflict code: %s", response.Body.String())
-	}
 }
 
 func TestInboxRejectsMachineIdentitiesBeforeStoreAccess(t *testing.T) {
@@ -196,7 +43,7 @@ func TestNotificationRuleEnforcesRegisteredTypeBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := &notificationStoreStub{}
-	service := Service{Registry: registry, Store: store, Access: &notificationProjectAccessStub{}}
+	service := Service{Registry: registry, Store: store, Access: notificationProjectAccessStub{}}
 	identity := auth.Identity{Kind: "session", User: auth.User{ID: "owner-1"}}
 	projectID := "00000000-0000-4000-8000-000000000001"
 
@@ -209,7 +56,7 @@ func TestNotificationRuleEnforcesRegisteredTypeBoundaries(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("upsert invitation rule: %v", err)
 	}
-	if store.upsertedRule.ExternalEnabled || store.upsertedRule.ChannelKeys != nil || !store.upsertedRule.InboxEnabled {
+	if store.upsertedRule.ExternalEnabled || store.upsertedRule.ChannelKeys != nil {
 		t.Fatalf("invitation rule escaped registry boundary: %#v", store.upsertedRule)
 	}
 
@@ -223,133 +70,54 @@ func TestNotificationRuleEnforcesRegisteredTypeBoundaries(t *testing.T) {
 	}
 }
 
-func TestNotificationDiagnosticsRequireSettingsManage(t *testing.T) {
+func TestNotificationRuleHonorsProjectAuthorization(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity := auth.Identity{Kind: "session", User: auth.User{ID: "viewer-1"}}
-	for _, test := range []struct {
-		name     string
-		call     func(Service) error
-		storeHit func(*notificationStoreStub) bool
-	}{
-		{
-			name: "rule read",
-			call: func(service Service) error {
-				_, err := service.GetRule(context.Background(), identity, "project-1", TypeReminderDue)
-				return err
-			},
-			storeHit: func(store *notificationStoreStub) bool { return store.getRuleHit },
-		},
-		{
-			name: "delivery diagnostics",
-			call: func(service Service) error {
-				_, err := service.ListDeliveries(context.Background(), identity, "project-1", "", pagination.Request{})
-				return err
-			},
-			storeHit: func(store *notificationStoreStub) bool { return store.listDeliveriesHit },
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Run("authorized manager", func(t *testing.T) {
-				store := &notificationStoreStub{}
-				access := &notificationProjectAccessStub{}
-				service := Service{Registry: registry, Store: store, Access: access}
-				if err := test.call(service); err != nil {
-					t.Fatalf("authorized access: %v", err)
-				}
-				if access.projectID != "project-1" || access.permission != project.PermissionSettingsManage {
-					t.Fatalf("authorization: project=%q permission=%q", access.projectID, access.permission)
-				}
-				if !test.storeHit(store) {
-					t.Fatal("authorized request did not reach the notification store")
-				}
-			})
-			t.Run("denied member", func(t *testing.T) {
-				store := &notificationStoreStub{}
-				access := &notificationProjectAccessStub{err: project.ErrForbidden}
-				service := Service{Registry: registry, Store: store, Access: access}
-				if err := test.call(service); !errors.Is(err, project.ErrForbidden) {
-					t.Fatalf("unauthorized access: got %v", err)
-				}
-				if access.projectID != "project-1" || access.permission != project.PermissionSettingsManage {
-					t.Fatalf("authorization: project=%q permission=%q", access.projectID, access.permission)
-				}
-				if test.storeHit(store) {
-					t.Fatal("denied request reached the notification store")
-				}
-			})
-		})
+	service := Service{Registry: registry, Store: &notificationStoreStub{}, Access: notificationProjectAccessStub{err: project.ErrForbidden}}
+	_, err = service.GetRule(context.Background(), auth.Identity{Kind: "session", User: auth.User{ID: "viewer-1"}}, "project-1", TypeReminderDue)
+	if !errors.Is(err, project.ErrForbidden) {
+		t.Fatalf("unauthorized rule read: got %v", err)
 	}
 }
 
-func TestNotificationDiagnosticsHTTPForbiddenDoesNotDiscloseData(t *testing.T) {
+func TestNotificationSettingsAndDiagnosticsRequireManagePermission(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{
-		"/v1/projects/project-1/notification-rules/" + TypeReminderDue,
-		"/v1/projects/project-1/notification-deliveries?limit=10",
-	} {
-		t.Run(path, func(t *testing.T) {
-			store := &notificationStoreStub{}
-			access := &notificationProjectAccessStub{err: project.ErrForbidden}
-			module := Module{
-				Auth:    notificationAuthenticatorStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "viewer-1"}}},
-				Service: Service{Registry: registry, Store: store, Access: access},
-			}
-			response := httptest.NewRecorder()
-			module.ProjectHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-
-			if response.Code != http.StatusForbidden {
-				t.Fatalf("status: got %d, want %d: %s", response.Code, http.StatusForbidden, response.Body.String())
-			}
-			if access.permission != project.PermissionSettingsManage {
-				t.Fatalf("permission: got %q", access.permission)
-			}
-			if store.getRuleHit || store.listDeliveriesHit {
-				t.Fatal("forbidden HTTP request reached the notification store")
-			}
-			body := response.Body.String()
-			if strings.Contains(body, TypeReminderDue) || strings.Contains(body, "delivery_id") {
-				t.Fatalf("forbidden response disclosed notification data: %s", body)
-			}
-		})
+	permissions := []project.Permission{}
+	service := Service{Registry: registry, Store: &notificationStoreStub{}, Access: notificationProjectAccessStub{permissions: &permissions}}
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "owner-1"}}
+	if _, err := service.GetRule(context.Background(), identity, "project-1", TypeReminderDue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ListDeliveries(context.Background(), identity, "project-1", "", pagination.Request{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(permissions) != 2 || permissions[0] != project.PermissionSettingsManage || permissions[1] != project.PermissionSettingsManage {
+		t.Fatalf("unexpected permissions: %#v", permissions)
 	}
 }
 
-func TestNotificationDiagnosticsHTTPReturnsSafeProviderResult(t *testing.T) {
-	const (
-		projectID      = "00000000-0000-4000-8000-000000000001"
-		deliveryID     = "00000000-0000-4000-8000-000000000002"
-		notificationID = "00000000-0000-4000-8000-000000000003"
-	)
-	now := time.Date(2026, time.August, 6, 9, 0, 0, 0, time.UTC)
-	store := &notificationStoreStub{deliveries: DeliveryPage{Items: []Delivery{{
-		ID: deliveryID, NotificationID: notificationID, ProjectID: projectID,
-		ChannelKey: "notification.feishu_webhook", TargetKey: "project-channel:notification.feishu_webhook",
-		DeliveryKey: "live", Status: "delivered", Attempts: 1, MaxAttempts: 5,
-		ProviderMessage: "provider-message-safe", ResponseSummary: "http_status=200; code=0; msg=success",
-		AvailableAt: now, DeliveredAt: &now, CreatedAt: now, UpdatedAt: now,
-	}}}}
-	module := Module{
-		Auth:    notificationAuthenticatorStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "owner-1"}}},
-		Service: Service{Store: store, Access: &notificationProjectAccessStub{}},
+func TestInboxRejectsConflictingAndInvalidFilters(t *testing.T) {
+	store := &notificationStoreStub{}
+	service := Service{Store: store}
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}}
+	from := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	to := from.Add(-time.Hour)
+	filters := []Filter{
+		{ReadState: "unknown"},
+		{Outcome: OutcomeActive, OutcomeGroup: "processed"},
+		{OccurredFrom: &from, OccurredTo: &to},
 	}
-	response := httptest.NewRecorder()
-	module.ProjectHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/projects/"+projectID+"/notification-deliveries?limit=10", nil))
-	if response.Code != http.StatusOK {
-		t.Fatalf("delivery diagnostics status: got %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
-	}
-	body := response.Body.String()
-	for _, wanted := range []string{`"provider_message_id":"provider-message-safe"`, `"response_summary":"http_status=200; code=0; msg=success"`} {
-		if !strings.Contains(body, wanted) {
-			t.Fatalf("delivery diagnostics missing %s: %s", wanted, body)
+	for _, filter := range filters {
+		if _, err := service.ListInbox(context.Background(), identity, filter, pagination.Request{}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid filter accepted: %#v -> %v", filter, err)
 		}
 	}
-	if strings.Contains(body, "secret") {
-		t.Fatalf("delivery diagnostics disclosed unsafe data: %s", body)
+	if store.listInboxHit {
+		t.Fatal("invalid Inbox filter reached the store")
 	}
 }

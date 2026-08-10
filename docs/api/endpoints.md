@@ -1,9 +1,68 @@
 # API endpoint catalog
 
-Stage 4 Progress operations:
 
-- Core: `progress.get`, `progress.milestones.list`, `progress.milestones.create`, `progress.milestones.update`, `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`, `progress.tasks.delete`, `progress.dependencies.list`, `progress.dependencies.create`, `progress.dependencies.delete`, `progress.reminders.list`, `progress.reminders.create`, `progress.reminders.trigger`, `progress.proposals.list`, `progress.proposals.create`, `progress.proposals.review`, `progress.settings.get`, and `progress.settings.update`.
-- Web BFF: `bff.progress.get`, `bff.progress.milestones.list`, `bff.progress.milestones.create`, `bff.progress.milestones.update`, `bff.progress.tasks.list`, `bff.progress.tasks.create`, `bff.progress.tasks.update`, `bff.progress.tasks.delete`, `bff.progress.dependencies.list`, `bff.progress.dependencies.create`, `bff.progress.dependencies.delete`, `bff.progress.reminders.list`, `bff.progress.reminders.create`, `bff.progress.reminders.trigger`, `bff.progress.proposals.list`, `bff.progress.proposals.create`, `bff.progress.proposals.review`, `bff.progress.settings.get`, and `bff.progress.settings.update`.
+Stage 7 Model operations:
+
+- Core: `model.get`, `model.source.get`, `model.source.sync`,
+  `model.notion.oauth.get`, `model.notion.oauth.start`,
+  `model.notion.oauth.disconnect`, `model.notion.oauth.callback`,
+  `model.questions.list`, `model.questions.create`, `model.questions.get`,
+  `model.questions.update`, `model.questions.delete`, `model.questions.sync`,
+  `model.snapshots.list`, `model.snapshots.get`, `model.snapshots.update`,
+  `model.snapshots.diff`, and the leased-Worker-only `model.worker.export`.
+- Web BFF: `bff.model.get`, `bff.model.source.get`,
+  `bff.model.source.sync`, `bff.model.notion.oauth.get`,
+  `bff.model.notion.oauth.start`, `bff.model.notion.oauth.disconnect`,
+  `bff.model.notion.oauth.callback`, `bff.model.questions.list`,
+  `bff.model.questions.create`, `bff.model.questions.get`,
+  `bff.model.questions.update`, `bff.model.questions.delete`,
+  `bff.model.questions.sync`, `bff.model.snapshots.list`,
+  `bff.model.snapshots.get`, `bff.model.snapshots.update`, and
+  `bff.model.snapshots.diff`.
+
+
+Stage 5 Agent operations are documented in
+[`agent.md`](agent.md). Core and Web BFF expose one-to-one instance, project
+access, Token, Prompt, Session, message, Run, and Run-SSE routes under their
+project-scoped Agent prefixes. The MCP catalog additionally exposes
+`context.promote` through the existing Context Proposal boundary. Stage 6
+extends the closed Agent Token scope with `progress.get` and
+`progress.recalculate`; create and update contracts reject every other Tool
+name.
+
+Stage 4 and Stage 6 Progress operations:
+
+- Core Stage 4: `progress.get`, `progress.milestones.list`,
+  `progress.milestones.create`, `progress.milestones.update`,
+  `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`,
+  `progress.tasks.delete`, `progress.dependencies.list`,
+  `progress.dependencies.create`, `progress.dependencies.delete`,
+  `progress.reminders.list`, `progress.reminders.create`,
+  `progress.reminders.trigger`, `progress.proposals.list`,
+  `progress.proposals.create`, `progress.proposals.review`,
+  `progress.settings.get`, and `progress.settings.update`.
+- Web BFF Stage 4: `bff.progress.get`, `bff.progress.milestones.list`,
+  `bff.progress.milestones.create`, `bff.progress.milestones.update`,
+  `bff.progress.tasks.list`, `bff.progress.tasks.create`,
+  `bff.progress.tasks.update`, `bff.progress.tasks.delete`,
+  `bff.progress.dependencies.list`, `bff.progress.dependencies.create`,
+  `bff.progress.dependencies.delete`, `bff.progress.reminders.list`,
+  `bff.progress.reminders.create`, `bff.progress.reminders.trigger`,
+  `bff.progress.proposals.list`, `bff.progress.proposals.create`,
+  `bff.progress.proposals.review`, `bff.progress.settings.get`, and
+  `bff.progress.settings.update`.
+- Core adds `progress.recalculate`, `progress.evaluations.list`,
+  `progress.evaluations.get`, `progress.evaluations.retry`,
+  `progress.stage_override.set`, `progress.stage_override.clear`, and the
+  leased-Worker-only `progress.worker.input` / `progress.worker.execute` to the
+  existing Stage 4 Progress operations.
+- Web BFF adds `bff.progress.recalculate`,
+  `bff.progress.evaluations.list`, `bff.progress.evaluations.get`,
+  `bff.progress.evaluations.retry`, `bff.progress.stage_override.set`, and
+  `bff.progress.stage_override.clear` to its existing one-to-one Progress
+  routes.
+- MCP Gateway exposes `progress.get` and `progress.recalculate` through exact
+  Agent Tool grants and the same Core RBAC boundary.
 
 Notification 3.17 operations:
 
@@ -56,6 +115,7 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Core        | HTTP          | `GET`         | `/v1/auth/tokens`                                                                | `auth.tokens.list`                         | auth                 | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/auth/tokens`                                                                | `auth.tokens.create`                       | auth                 | `core.yaml`        |
 | Core        | HTTP          | `DELETE`      | `/v1/auth/tokens/{tokenId}`                                                      | `auth.tokens.revoke`                       | auth                 | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/auth/agent-tokens/{tokenId}/verification`                                   | `auth.agent_tokens.verification.record`    | auth                 | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects`                                                                   | `projects.list`                            | project              | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/projects`                                                                   | `projects.create`                          | project              | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/projects/trash`                                                             | `projects.trash.list`                      | project              | `core.yaml`        |
@@ -98,6 +158,8 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Core        | HTTP          | `POST`        | `/v1/data/projects/{projectId}/context/proposals`                                | `data.context.proposals.create`            | datahub              | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/data/projects/{projectId}/context/proposals/{proposalId}/review`            | `data.context.proposals.review`            | datahub              | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/data/projects/{projectId}/home`                                             | `data.home.get`                            | datahub              | `core.yaml`        |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/context/proposals`                                    | `bff.data.context.proposals.list`          | datahub              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/context/proposals/{proposalId}/review`                | `bff.data.context.proposals.review`        | datahub              | `web-bff.yaml`     |
 | Core        | HTTP          | `GET`         | `/v1/audit/events`                                                               | `audit.events.list`                        | audit                | `core.yaml`        |
 | Core        | HTTP          | `POST`        | `/v1/audit/events`                                                               | `audit.events.record`                      | audit                | `core.yaml`        |
 | Core        | HTTP          | `GET`         | `/v1/inbox`                                                                     | `notification.inbox.list`                 | notification         | `core.yaml`        |
@@ -160,6 +222,41 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | File stream   | `GET`         | `/api/projects/{projectId}/files/{filePath}`                                     | `bff.file.download`                        | file proxy           | `web-bff.yaml`     |
 | Web BFF     | File metadata | `HEAD`        | `/api/projects/{projectId}/files/{filePath}`                                     | `bff.file.head`                            | file proxy           | `web-bff.yaml`     |
 | Web BFF     | File stream   | `PUT`         | `/api/projects/{projectId}/files/{filePath}`                                     | `bff.file.upload`                          | file proxy           | `web-bff.yaml`     |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models`                                                | `model.get`                                | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/source`                                         | `model.source.get`                         | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/source/sync`                                    | `model.source.sync`                        | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/notion/oauth`                                   | `model.notion.oauth.get`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/notion/oauth/authorizations`                    | `model.notion.oauth.start`                 | model                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/models/notion/oauth/connection`                        | `model.notion.oauth.disconnect`            | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/model-notion/oauth/callback`                                                | `model.notion.oauth.callback`              | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions`                                      | `model.questions.list`                     | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/questions`                                      | `model.questions.create`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}`                         | `model.questions.get`                      | model                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/models/questions/{questionId}`                         | `model.questions.update`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/models/questions/{questionId}`                         | `model.questions.delete`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/models/questions/{questionId}/sync`                    | `model.questions.sync`                     | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}/snapshots`               | `model.snapshots.list`                     | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}`  | `model.snapshots.get`                      | model                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}`  | `model.snapshots.update`                   | model                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/models/questions/{questionId}/diff`                    | `model.snapshots.diff`                     | model                | `core.yaml`        |
+| Core        | Internal HTTP | `GET`         | `/v1/internal/model-notion-jobs/{jobId}/export`                                  | `model.worker.export`                      | model                | `core.yaml`        |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models`                                               | `bff.model.get`                            | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/source`                                        | `bff.model.source.get`                     | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/source/sync`                                   | `bff.model.source.sync`                    | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/notion/oauth`                                  | `bff.model.notion.oauth.get`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/notion/oauth/authorizations`                   | `bff.model.notion.oauth.start`             | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/models/notion/oauth/connection`                       | `bff.model.notion.oauth.disconnect`        | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/integrations/notion/oauth/callback`                                        | `bff.model.notion.oauth.callback`           | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions`                                     | `bff.model.questions.list`                 | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/questions`                                     | `bff.model.questions.create`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}`                        | `bff.model.questions.get`                  | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/models/questions/{questionId}`                        | `bff.model.questions.update`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/models/questions/{questionId}`                        | `bff.model.questions.delete`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/models/questions/{questionId}/sync`                   | `bff.model.questions.sync`                 | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}/snapshots`              | `bff.model.snapshots.list`                 | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}` | `bff.model.snapshots.get`                  | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}` | `bff.model.snapshots.update`               | model                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/models/questions/{questionId}/diff`                   | `bff.model.snapshots.diff`                 | model                | `web-bff.yaml`     |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository`                                            | `repo.get`                                 | repo                 | `core.yaml`        |
 | Core        | HTTP          | `PUT`         | `/v1/projects/{projectId}/repository`                                            | `repo.connect`                             | repo                 | `core.yaml`        |
 | Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/repository`                                            | `repo.disconnect`                          | repo                 | `core.yaml`        |
@@ -231,6 +328,83 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews` | `bff.artifact.previews.list`               | artifact             | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/artifacts/{artifactId}/restore`                       | `bff.artifact.restore`                     | artifact             | `web-bff.yaml`     |
 | Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/artifacts/{artifactId}/purge`                         | `bff.artifact.purge`                       | artifact             | `web-bff.yaml`     |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances`                                       | `agent.instances.list`                     | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances`                                       | `agent.instances.create`                   | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}`                     | `agent.instances.get`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}`                     | `agent.instances.update`                   | agent                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}`                     | `agent.instances.disable`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/checks`              | `agent.instances.check`                    | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify` | `agent.project_access.verify`            | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate`       | `agent.tokens.rotate`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify` | `agent.tokens.verify`                   | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort` | `agent.tokens.abort`                     | agent                | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}`    | `agent.tokens.revoke`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`              | `agent.prompt.get`                         | agent                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`              | `agent.prompt.update`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/prompt/reset`        | `agent.prompt.reset`                       | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`            | `agent.sessions.list`                      | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`            | `agent.sessions.create`                    | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `agent.sessions.get`                     | agent                | `core.yaml`        |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `agent.sessions.update`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/end` | `agent.sessions.end`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/continue` | `agent.sessions.continue`        | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/fork` | `agent.sessions.fork`                | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/default` | `agent.sessions.default`          | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/messages` | `agent.sessions.messages.list`  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs` | `agent.runs.start`                  | agent                | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}` | `agent.runs.get`             | agent                | `core.yaml`        |
+| Core        | SSE           | `GET`         | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/events` | `agent.runs.events`  | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}` | `agent.runs.approve` | agent | `core.yaml` |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop` | `agent.runs.stop`       | agent                | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate` | `agent.runs.regenerate` | agent          | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun` | `agent.runs.rerun`     | agent                | `core.yaml`        |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances`                                      | `bff.agent.instances.list`                 | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances`                                      | `bff.agent.instances.create`               | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}`                    | `bff.agent.instances.get`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/agent-instances/{agentInstanceId}`                    | `bff.agent.instances.update`               | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/agent-instances/{agentInstanceId}`                    | `bff.agent.instances.disable`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/checks`             | `bff.agent.instances.check`                | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify` | `bff.agent.project_access.verify`        | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate`      | `bff.agent.tokens.rotate`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify` | `bff.agent.tokens.verify`               | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort` | `bff.agent.tokens.abort`                 | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}`   | `bff.agent.tokens.revoke`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`             | `bff.agent.prompt.get`                     | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt`             | `bff.agent.prompt.update`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/prompt/reset`       | `bff.agent.prompt.reset`                   | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`           | `bff.agent.sessions.list`                  | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions`           | `bff.agent.sessions.create`                | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `bff.agent.sessions.get`                 | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}` | `bff.agent.sessions.update`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/end` | `bff.agent.sessions.end`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/continue` | `bff.agent.sessions.continue`    | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/fork` | `bff.agent.sessions.fork`            | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/default` | `bff.agent.sessions.default`      | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/messages` | `bff.agent.sessions.messages.list` | agent              | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs` | `bff.agent.runs.start`              | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}` | `bff.agent.runs.get`         | agent                | `web-bff.yaml`     |
+| Web BFF     | SSE           | `GET`         | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/events` | `bff.agent.runs.events` | agent            | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/approvals/{approvalId}` | `bff.agent.runs.approve` | agent | `web-bff.yaml` |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop` | `bff.agent.runs.stop`   | agent                | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate` | `bff.agent.runs.regenerate` | agent      | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun` | `bff.agent.runs.rerun` | agent                | `web-bff.yaml`     |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/recalculate`                                  | `progress.recalculate`                     | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/progress/evaluations`                                  | `progress.evaluations.list`                | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/progress/evaluations/{evaluationId}`                   | `progress.evaluations.get`                 | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/evaluations/{evaluationId}/retry`             | `progress.evaluations.retry`               | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/stage-override`                               | `progress.stage_override.set`              | progress tracking    | `core.yaml`        |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/progress/stage-override`                               | `progress.stage_override.clear`            | progress tracking    | `core.yaml`        |
+| Core        | Internal HTTP | `GET`         | `/v1/internal/progress-evaluation-jobs/{jobId}/input`                            | `progress.worker.input`                    | progress tracking    | `core.yaml`        |
+| Core        | Internal HTTP | `POST`        | `/v1/internal/progress-evaluation-jobs/{jobId}/execute`                          | `progress.worker.execute`                  | progress tracking    | `core.yaml`        |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/recalculate`                                 | `bff.progress.recalculate`                 | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/progress/evaluations`                                 | `bff.progress.evaluations.list`            | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/progress/evaluations/{evaluationId}`                  | `bff.progress.evaluations.get`             | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/evaluations/{evaluationId}/retry`            | `bff.progress.evaluations.retry`           | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/stage-override`                              | `bff.progress.stage_override.set`          | progress tracking    | `web-bff.yaml`     |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/progress/stage-override`                              | `bff.progress.stage_override.clear`        | progress tracking    | `web-bff.yaml`     |
+| MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `context.promote`                          | datahub proposal     | `context.promote.json` |
+| MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `progress.get`                             | progress tracking    | `progress.get.json` |
+| MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `progress.recalculate`                     | progress tracking    | `progress.recalculate.json` |
 | MCP Gateway | MCP Tool      | `tools/call`  | `/mcp`                                                                           | `system.echo`                              | engineering baseline | `system.echo.json` |
 
 ## Browser BFF conventions

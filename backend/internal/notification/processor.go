@@ -85,8 +85,7 @@ func (processor DeliveryProcessor) RunOnce(ctx context.Context) (bool, error) {
 		outcome = "failed"
 		return true, processor.Deliveries.FailDelivery(ctx, delivery.ID, processor.Owner, "rendering_error", 0, "notification rendering failed", false, 0)
 	}
-	result, err := adapter.Send(ctx, resolved.Values, delivery.ID, notification.TypeKey, message)
-	if err != nil {
+	if err = adapter.Send(ctx, resolved.Values, delivery.ID, notification.TypeKey, message); err != nil {
 		var providerErr ProviderError
 		if errors.As(err, &providerErr) {
 			delay := providerErr.RetryAfter
@@ -104,7 +103,7 @@ func (processor DeliveryProcessor) RunOnce(ctx context.Context) (bool, error) {
 		return true, processor.Deliveries.FailDelivery(ctx, delivery.ID, processor.Owner, "provider_error", 0, "provider send failed", true, backoff(delivery.Attempts))
 	}
 	outcome = "delivered"
-	return true, processor.Deliveries.CompleteDelivery(ctx, delivery.ID, processor.Owner, result)
+	return true, processor.Deliveries.CompleteDelivery(ctx, delivery.ID, processor.Owner)
 }
 
 func backoff(attempt int) time.Duration {

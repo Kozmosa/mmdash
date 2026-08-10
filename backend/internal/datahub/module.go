@@ -195,7 +195,9 @@ func (module Module) handleProposals(
 		}
 		proposal, err := module.Service.CreateProposal(
 			request.Context(), identity, projectID, CreateProposalInput{
-				Content: body.Content, ContextType: body.ContextType,
+				AgentRunID:     optionalString(body.AgentRunID),
+				AgentSessionID: optionalString(body.AgentSessionID),
+				Content:        body.Content, ContextType: body.ContextType,
 				Rationale:       optionalString(body.Rationale),
 				SourceObjectIDs: optionalStrings(body.SourceObjectIDs),
 				Title:           body.Title,

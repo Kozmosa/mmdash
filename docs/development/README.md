@@ -103,3 +103,8 @@ layer only when their module documentation explains why.
 - [Artifact development, deployment, and Core acceptance](artifact.md)
 - [Artifact Web, BFF, and resumable upload behavior](artifact-web.md)
 - [Stage 4 Progress](progress.md)
+
+- [Stage 7 Model](model.md)
+
+
+- [Stage 5 Agent sessions](agent.md)

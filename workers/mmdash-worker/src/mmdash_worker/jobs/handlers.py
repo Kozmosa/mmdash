@@ -105,9 +105,11 @@ def baseline_registry() -> HandlerRegistry:
 
 
 def worker_registry(artifact_client: Any) -> HandlerRegistry:
-    """Return the production registry with Stage 2 Artifact preview support."""
+    """Return the production registry with Artifact and Model handlers."""
 
+    from mmdash_worker.model_sync import ModelNotionHandler
     from mmdash_worker.preview import ArtifactPreviewHandler, PreviewConfig, PreviewProcessor
+    from mmdash_worker.progress_tracking import ProgressEvaluationHandler
 
     registry = baseline_registry()
     registry.register(
@@ -116,5 +118,12 @@ def worker_registry(artifact_client: Any) -> HandlerRegistry:
             artifact_client,
             PreviewProcessor(PreviewConfig.from_environment()),
         ),
+    )
+    model_handler = ModelNotionHandler(artifact_client)
+    registry.register("model.notion.discover", model_handler)
+    registry.register("model.notion.snapshot", model_handler)
+    registry.register(
+        "progress.evaluate",
+        ProgressEvaluationHandler.from_environment(artifact_client),
     )
     return registry

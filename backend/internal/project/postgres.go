@@ -494,6 +494,29 @@ func (store PostgresStore) Get(
 	return project, err
 }
 
+// GetForAgent reads the authoritative Project without pretending the Agent is
+// an auth_user/project_member. The Agent grant has already been resolved by
+// Service.Authorize and the returned role is the constrained collaboration
+// projection used by clients.
+func (store PostgresStore) GetForAgent(
+	ctx context.Context,
+	projectID string,
+) (Project, error) {
+	project, err := scanProject(store.DB.QueryRowContext(ctx, `
+		SELECT project_id, name, problem_title, problem_summary,
+		       project_constraints, source_artifact_ids, created_by,
+		       archived_at, deleted_at, purge_at,
+		       project.created_at, project.updated_at, 'agent'::text
+		FROM projects AS project
+		WHERE project.project_id = $1
+		  AND project.deleted_at IS NULL
+	`, projectID).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Project{}, ErrNotFound
+	}
+	return project, err
+}
+
 func (store PostgresStore) FindRole(
 	ctx context.Context,
 	userID string,

@@ -9,6 +9,8 @@ Git, Hermes, or Box directly.
 | Route                               | Purpose                              |
 | ----------------------------------- | ------------------------------------ |
 | `/login`                            | Browser-authentication shell         |
+| `/inbox`                            | Global unread/all/processed Inbox    |
+| `/inbox/[inboxItemId]`              | Controlled Inbox message detail      |
 | `/projects`                         | Project-list shell                   |
 | `/projects/[projectId]`             | Project workspace and home slot      |
 | `/projects/[projectId]/agent`       | mmdash Agent slot                    |
@@ -22,6 +24,12 @@ Git, Hermes, or Box directly.
 The canonical seven-item navigation registry is
 `apps/web/src/lib/navigation.ts`. A feature route must be registered there and
 tested before it appears in the sidebar.
+
+Inbox is global rather than one of the seven project modules. The shared
+`InboxNavLink` renders the same icon-only link and unread badge in the global
+project-list header and project workspace navbar. Inbox copy comes from the
+Core-rendered snapshot; the browser does not derive arbitrary presentation
+from raw event payloads.
 
 The Repository browser is intentionally reached from Repo settings and is not
 registered in the workspace sidebar. The experiment route remains reserved for
@@ -58,6 +66,12 @@ Reusable components live under `apps/web/src/components`:
 
 Heavy editors are dynamically imported and should stay outside initial route
 bundles. Domain-specific components belong under `features/<module>`.
+
+Notification UI lives under `features/notification`. `/inbox` defaults to
+unread and unarchived messages and supports processed/project/type/time views,
+cursor pagination, archive/read mutations, scoped batch read, and typed source
+actions. Project settings display Type-owned Inbox policy as read-only context;
+their editable Rule surface is exclusively for external channels.
 
 ## Settings slots
 

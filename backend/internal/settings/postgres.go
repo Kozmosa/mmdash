@@ -28,15 +28,35 @@ func (store PostgresStore) Get(
 	scopeID string,
 	typeKey string,
 ) (StoredSetting, error) {
+	return store.GetResource(ctx, scope, scopeID, typeKey, "")
+}
+
+func (store PostgresStore) GetResource(
+	ctx context.Context,
+	scope Scope,
+	scopeID string,
+	typeKey string,
+	resourceID string,
+) (StoredSetting, error) {
 	return scanStored(store.DB.QueryRowContext(ctx, `
-		SELECT scope_type, scope_id, type_key, public_values,
+		SELECT scope_type, scope_id, type_key, resource_id, public_values,
 		       encrypted_secrets, version, updated_by, created_at, updated_at
 		FROM settings_values
 		WHERE scope_type = $1 AND scope_id = $2 AND type_key = $3
-	`, scope, scopeID, typeKey).Scan)
+		  AND resource_id = $4
+	`, scope, scopeID, typeKey, resourceID).Scan)
 }
 
 func (store PostgresStore) Upsert(
+	ctx context.Context,
+	actorID string,
+	setting StoredSetting,
+) (StoredSetting, error) {
+	setting.ResourceID = ""
+	return store.UpsertResource(ctx, actorID, setting)
+}
+
+func (store PostgresStore) UpsertResource(
 	ctx context.Context,
 	actorID string,
 	setting StoredSetting,
@@ -58,21 +78,21 @@ func (store PostgresStore) Upsert(
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		updated, err = scanStored(tx.QueryRowContext(ctx, `
 			INSERT INTO settings_values (
-				setting_id, scope_type, scope_id, type_key,
+				setting_id, scope_type, scope_id, type_key, resource_id,
 				public_values, encrypted_secrets, version,
 				updated_by, created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $8)
-			ON CONFLICT (scope_type, scope_id, type_key)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9, $9)
+			ON CONFLICT (scope_type, scope_id, type_key, resource_id)
 			DO UPDATE SET
 				public_values = EXCLUDED.public_values,
 				encrypted_secrets = EXCLUDED.encrypted_secrets,
 				version = settings_values.version + 1,
 				updated_by = EXCLUDED.updated_by,
 				updated_at = EXCLUDED.updated_at
-			RETURNING scope_type, scope_id, type_key, public_values,
+			RETURNING scope_type, scope_id, type_key, resource_id, public_values,
 			          encrypted_secrets, version, updated_by, created_at, updated_at
 		`, settingID, setting.Scope, setting.ScopeID, setting.TypeKey,
-			publicValues, encryptedSecrets, actorID, now).Scan)
+			setting.ResourceID, publicValues, encryptedSecrets, actorID, now).Scan)
 		if err != nil {
 			return err
 		}
@@ -80,10 +100,11 @@ func (store PostgresStore) Upsert(
 			Actor:     map[string]string{"user_id": actorID},
 			EventType: "settings.updated",
 			Payload: map[string]interface{}{
-				"scope":    setting.Scope,
-				"scope_id": setting.ScopeID,
-				"type_key": setting.TypeKey,
-				"version":  updated.Version,
+				"scope":       setting.Scope,
+				"scope_id":    setting.ScopeID,
+				"type_key":    setting.TypeKey,
+				"resource_id": setting.ResourceID,
+				"version":     updated.Version,
 			},
 			Producer:  "settings",
 			ProjectID: projectID(setting.Scope, setting.ScopeID),
@@ -96,6 +117,29 @@ func (store PostgresStore) Upsert(
 	return updated, nil
 }
 
+func (store PostgresStore) RotateSecrets(
+	ctx context.Context,
+	actorID string,
+	setting StoredSetting,
+) (StoredSetting, error) {
+	encryptedSecrets, err := json.Marshal(setting.EncryptedSecrets)
+	if err != nil {
+		return StoredSetting{}, err
+	}
+	now := store.Clock.Now().UTC()
+	updated, err := scanStored(store.DB.QueryRowContext(ctx, `
+		UPDATE settings_values
+		SET encrypted_secrets=$4,version=version+1,updated_by=$5,updated_at=$6
+		WHERE scope_type=$1 AND scope_id=$2 AND type_key=$3
+		RETURNING scope_type,scope_id,type_key,public_values,
+		          encrypted_secrets,version,updated_by,created_at,updated_at
+	`, setting.Scope, setting.ScopeID, setting.TypeKey, encryptedSecrets, actorID, now).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoredSetting{}, ErrNotFound
+	}
+	return updated, err
+}
+
 func (store PostgresStore) Delete(
 	ctx context.Context,
 	scope Scope,
@@ -103,11 +147,23 @@ func (store PostgresStore) Delete(
 	typeKey string,
 	actorID string,
 ) error {
+	return store.DeleteResource(ctx, scope, scopeID, typeKey, "", actorID)
+}
+
+func (store PostgresStore) DeleteResource(
+	ctx context.Context,
+	scope Scope,
+	scopeID string,
+	typeKey string,
+	resourceID string,
+	actorID string,
+) error {
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		result, err := tx.ExecContext(ctx, `
 			DELETE FROM settings_values
 			WHERE scope_type = $1 AND scope_id = $2 AND type_key = $3
-		`, scope, scopeID, typeKey)
+			  AND resource_id = $4
+		`, scope, scopeID, typeKey, resourceID)
 		if err != nil {
 			return err
 		}
@@ -122,9 +178,10 @@ func (store PostgresStore) Delete(
 			Actor:     map[string]string{"user_id": actorID},
 			EventType: "settings.deleted",
 			Payload: map[string]interface{}{
-				"scope":    scope,
-				"scope_id": scopeID,
-				"type_key": typeKey,
+				"scope":       scope,
+				"scope_id":    scopeID,
+				"type_key":    typeKey,
+				"resource_id": resourceID,
 			},
 			Producer:  "settings",
 			ProjectID: projectID(scope, scopeID),
@@ -143,6 +200,7 @@ func scanStored(scan settingScan) (StoredSetting, error) {
 		&setting.Scope,
 		&setting.ScopeID,
 		&setting.TypeKey,
+		&setting.ResourceID,
 		&publicValues,
 		&encryptedSecrets,
 		&setting.Version,

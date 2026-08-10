@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import { GatewayError } from "../errors/gateway-error.js";
 
 export const gatewaySessionHeader = "x-mmdash-session-id";
+export const mcpSessionHeader = "mcp-session-id";
 
 export type GatewaySession = {
   createdAt: number;
   expiresAt: number;
   id: string;
+  initialized: boolean;
   principalId: string;
   requestCount: number;
 };
@@ -56,10 +58,17 @@ export class SessionRegistry {
       createdAt,
       expiresAt: createdAt + this.ttlMs,
       id: randomUUID(),
+      initialized: false,
       principalId,
       requestCount: 1,
     };
     this.sessions.set(session.id, session);
+    return session;
+  }
+
+  markInitialized(sessionId: string, principalId: string): GatewaySession {
+    const session = this.requireOwned(sessionId, principalId);
+    session.initialized = true;
     return session;
   }
 
@@ -76,6 +85,28 @@ export class SessionRegistry {
       );
     }
     return this.sessions.delete(sessionId);
+  }
+
+  private requireOwned(
+    sessionId: string,
+    principalId: string,
+  ): GatewaySession {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new GatewayError(
+        "SESSION_NOT_FOUND",
+        "The gateway session is unavailable",
+        404,
+      );
+    }
+    if (session.principalId !== principalId) {
+      throw new GatewayError(
+        "SESSION_PRINCIPAL_MISMATCH",
+        "The gateway session belongs to another principal",
+        403,
+      );
+    }
+    return session;
   }
 
   private prune(): void {
