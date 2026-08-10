@@ -34,9 +34,20 @@ bounded writable output mount, and a disk quota. `disabled` and `restricted`
 network policies use Docker `none`; only explicit `enabled` uses the bridge
 network.
 
-The E2B package implements the same `sandbox.Runtime` interface and is tested
-against a provider-neutral fake for run/cancel/destroy semantics. It does not
-claim real E2B acceptance without an external E2B account and credential.
+The E2B package implements the same `sandbox.Runtime` interface using the
+official Platform REST, Envd Connect JSON, and `/files` HTTP chain. Its
+permanent provider mock covers create/detail/metrics/delete, secure routing,
+workspace transfer, direct argv, logs, output collection, timeout,
+cancellation, malformed-create reconciliation, credential redaction, and
+cleanup. A paid hosted acceptance on 2026-08-11 passed success/artifact,
+two-second timeout, active cancellation, and final zero leaked sandboxes.
+
+E2B can be self-hosted only by operating the complete E2B infrastructure, not
+by starting a standalone sandbox container. `E2B_DOMAIN`, `E2B_API_URL`, and
+`E2B_SANDBOX_URL` support hosted, BYOC, and self-hosted routing. With no fixed
+Sandbox URL, custom domains use the sandbox-specific domain returned by the
+create API, matching the official SDK. Only `E2B_API_KEY` is sent; dashboard
+API Key IDs and Project IDs are not request credentials.
 
 ## Configuration
 
@@ -49,6 +60,30 @@ claim real E2B acceptance without an external E2B account and credential.
 | `MMDASH_BOX_WORKSPACE_COMMIT` | Commit recorded in the checkout marker |
 | `MMDASH_BOX_LOCAL_IMAGE` | Predefined Sandbox image |
 | `MMDASH_BOX_STATE_PATH` | User-only restart state file |
+| `MMDASH_BOX_CPU_MILLIS` | Box-wide CPU admission ceiling |
+| `MMDASH_BOX_MEMORY_BYTES` | Box-wide memory admission ceiling |
+| `MMDASH_BOX_TIMEOUT_SECONDS` | Box-wide execution timeout ceiling |
+| `MMDASH_BOX_DISK_BYTES` | Box-wide output/disk admission ceiling |
+| `MMDASH_BOX_PIDS` | Box-wide process ceiling |
+| `MMDASH_BOX_NETWORK` | Maximum network policy: disabled/restricted/enabled |
+| `MMDASH_BOX_MAX_CONCURRENT` | Concurrent task capacity |
+| `E2B_API_KEY` | Secret platform credential; enables E2B advertisement |
+| `E2B_DOMAIN` | Hosted or self-hosted base domain; default `e2b.app` |
+| `E2B_API_URL` | Optional Platform API origin override |
+| `E2B_SANDBOX_URL` | Optional fixed Envd/proxy origin override |
+| `MMDASH_E2B_TEMPLATE` | Fixed E2B Template ID or alias; default `base` |
+| `MMDASH_E2B_USER` | Unprivileged execution user; default `user` |
+| `MMDASH_E2B_ADMIN_USER` | Setup user; default `root` |
+| `MMDASH_E2B_REQUEST_TIMEOUT` | Platform/setup request timeout |
+| `MMDASH_E2B_CLEANUP_TIMEOUT` | Bounded delete/reconciliation timeout |
+| `MMDASH_E2B_SANDBOX_GRACE` | Provider TTL grace beyond task timeout |
+
+E2B is omitted from Box heartbeats when `E2B_API_KEY` is empty. The hosted
+`base` Template exposed 512 MiB in the acceptance environment, so experiments
+using it must request at most `536870912` memory bytes. Custom Templates may
+provide different CPU/memory capacity; the adapter reads the created sandbox
+detail and rejects requests that exceed it. Keep Box-wide advertised limits no
+higher than the capacity operators intend every enabled runtime to accept.
 
 When using the optional Compose profile with Local Docker, set `DOCKER_GID`
 to the host Docker socket group ID. Mounting `/var/run/docker.sock` grants the
@@ -60,4 +95,12 @@ Build and test the independent module with:
 ```bash
 go test ./box/...
 go build ./box/cmd/mmdash-box
+```
+
+Run the opt-in paid provider acceptance only with a short-lived credential in
+the process environment:
+
+```bash
+export E2B_API_KEY
+E2B_LIVE_ACCEPTANCE=1 go test ./box/runtimes/e2b -run TestLiveE2BAcceptance -count=1 -v
 ```

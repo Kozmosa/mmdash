@@ -1,6 +1,8 @@
 FROM golang:1.26-alpine AS build
+ENV GOPROXY=https://goproxy.cn
 WORKDIR /src
-COPY box/go.mod ./go.mod
+COPY box/go.mod box/go.sum ./
+RUN go mod download
 COPY box/ ./
 RUN CGO_ENABLED=0 go build -o /out/mmdash-box ./cmd/mmdash-box
 

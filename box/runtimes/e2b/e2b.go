@@ -1,5 +1,6 @@
-// Package e2b is a provider-neutral E2B Runtime Adapter. Provider fields are
-// kept behind the SandboxRuntime interface and never enter Core contracts.
+// Package e2b implements the E2B Runtime Adapter. Provider fields and
+// credentials stay behind the Sandbox Runtime interface and never enter Core
+// contracts.
 package e2b
 
 import (

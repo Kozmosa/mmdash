@@ -8,9 +8,10 @@
   this isolated branch but has not been pushed to or changed on the original
   `main` worktree.
 - Migration: `000033_stage8_box_experiment`
-- Delivery state: Stage 8 implementation complete on this branch; keep the PR
-  Draft and never merge it. The real E2B provider acceptance is not complete
-  without external E2B credentials.
+- Delivery state: Stage 8 implementation and direct E2B provider acceptance
+  are complete on this branch. Keep the PR Draft and never merge it while the
+  remaining operator-gated full Box terminal workflow and headless CLI
+  credential-store acceptance are not claimed.
 
 ## Stage 8 implementation snapshot
 
@@ -23,7 +24,7 @@ Implemented in this worktree:
 - Artifact-side `artifact.zip` stream staging with manifest, path, symlink,
   zip-slip, file count, uncompressed size, file hash, and declared-size checks.
 - Independent Go 1.26 Box Gateway, commit-marker workspace pinning, restart
-  state, Local Docker runtime, provider-neutral E2B adapter, and Sandbox
+  state, Local Docker runtime, official-protocol E2B adapter, and Sandbox
   artifact packaging.
 - Web/BFF, MCP Gateway, CLI, Worker handlers, contracts, event schemas,
   endpoint catalog, Stage 8 development guides, optional Compose Box profile,
@@ -33,6 +34,10 @@ Verification completed:
 
 - `pnpm contracts:generate`, `pnpm contracts:check`, `pnpm api:check`, and the
   complete `pnpm check` passed.
+- `go test -race ./box/...` passed with the permanent E2B Platform
+  REST/Envd Connect mock, including secure routing, transfer, logs, metrics,
+  timeout, cancellation, malformed-create reconciliation, redaction, and
+  cleanup.
 - The standard Compose command built all images, but could not bind Core's
   `8080` because unrelated services already occupy the host port; its created
   containers were stopped with ordinary `down`.
@@ -46,12 +51,33 @@ Verification completed:
 - The repository-requested `.localscripts/dev.ps1` entry point is absent in
   this checkout and was not claimed as used. Compose acceptance uses
   `up -d --build` and ordinary `down`, never `down -v`.
+- The final isolated Compose rerun used Web `13000`, BFF `13001`, MCP `13002`,
+  Core `18080`, PostgreSQL `15432`, and MinIO `19000/19001`. All long-running
+  services were healthy, migration/init jobs exited zero, baseline and
+  Repo-backed Stage 8 smoke passed, Box profile image build passed, and recent
+  logs contained no panic/fatal/error or E2B credential pattern. Containers
+  were stopped with ordinary `down`; volumes were preserved.
 
 ## Known limits and acceptance evidence
 
-- E2B has offline runtime conformance through the stable Sandbox interface but
-  no credentialed live E2B API acceptance. Keep the PR Draft and do not claim
-  real E2B completion until that external step passes.
+- The E2B adapter follows the official JavaScript SDK `2.38.3` source at
+  `cfd4bedd90558f12ddbf80763d90bcd3332423fe`: Platform REST create/detail/
+  metrics/delete, Envd Connect JSON and `/files`, secure access headers,
+  direct argv, dynamic custom-domain routing, and unconditional cleanup.
+- Paid hosted acceptance passed success/log/file/artifact collection, a
+  two-second timeout, active cancellation, and final sandbox count returning
+  to zero. The credential was not written to source, docs, handoff, logs, or
+  the PR. The dashboard API Key ID/Project ID is not sent by the API client.
+- The hosted `base` Template exposed one CPU, 512 MiB memory, and 10 GiB disk.
+  Live acceptance therefore requests 512 MiB. Production checks each created
+  sandbox's actual CPU/memory/disk capacity against the frozen request; Box
+  deployment limits should be configured conservatively for all enabled
+  runtimes.
+- The final hosted success/timeout/cancel run preceded the last custom-domain
+  routing and malformed-create cleanup hardening. Those changes do not alter
+  the hosted `sandbox.e2b.app` path and are covered by the permanent
+  high-fidelity mock; the credential was intentionally not persisted for an
+  automatic repeat run.
 - The default Box workspace mode consumes a Repo-owned detached checkout and
   requires a matching `.mmdash-commit` marker. It intentionally does not run
   Git or accept long-lived Git credentials.
