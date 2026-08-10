@@ -23,6 +23,8 @@ tags:
   - name: Progress
   - name: Model
   - name: Agent
+  - name: Experiment
+  - name: Box
   - name: Notification
   - name: Streams
 paths:
@@ -484,6 +486,212 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/experiments:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Experiment]
+      summary: List project experiments
+      operationId: bff.experiment.list
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/ExperimentLimit"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "./core.yaml#/components/schemas/ExperimentStatus"
+      responses:
+        "200":
+          description: Experiments visible to the current collaborator.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ExperimentPage"
+    post:
+      tags: [Experiment]
+      summary: Create a frozen project experiment
+      operationId: bff.experiment.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/CreateExperimentRequest"
+      responses:
+        "201":
+          description: Created experiment.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Experiment"
+  /api/projects/{projectId}/experiments/compare:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Experiment]
+      summary: Compare bounded experiment result summaries
+      operationId: bff.experiment.compare
+      parameters:
+        - name: experiment_id
+          in: query
+          required: true
+          schema:
+            type: array
+            minItems: 2
+            maxItems: 20
+            items:
+              type: string
+              format: uuid
+          style: form
+          explode: false
+      responses:
+        "200":
+          description: Comparison rows without buffering result files.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ExperimentComparison"
+  /api/projects/{projectId}/experiments/{experimentId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    get:
+      tags: [Experiment]
+      summary: Read one project experiment
+      operationId: bff.experiment.get
+      responses:
+        "200":
+          description: Experiment detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Experiment"
+  /api/projects/{projectId}/experiments/{experimentId}/run:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    post:
+      tags: [Experiment]
+      summary: Queue an experiment idempotently
+      operationId: bff.experiment.run
+      responses:
+        "202":
+          description: Queued experiment.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Experiment"
+  /api/projects/{projectId}/experiments/{experimentId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    post:
+      tags: [Experiment]
+      summary: Request experiment cancellation
+      operationId: bff.experiment.cancel
+      responses:
+        "202":
+          description: Cancellation accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Experiment"
+  /api/projects/{projectId}/experiments/{experimentId}/archive:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    post:
+      tags: [Experiment]
+      summary: Archive a terminal experiment
+      operationId: bff.experiment.archive
+      responses:
+        "202":
+          description: Archived experiment.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Experiment"
+  /api/projects/{projectId}/experiments/{experimentId}/logs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    get:
+      tags: [Experiment, Streams]
+      summary: Read a bounded experiment log page
+      operationId: bff.experiment.logs.list
+      parameters:
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Append-only log page.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ExperimentLogPage"
+  /api/projects/{projectId}/experiments/{experimentId}/result:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    get:
+      tags: [Experiment, Artifact]
+      summary: Read the primary experiment result pointer
+      operationId: bff.result.get
+      responses:
+        "200":
+          description: Result metadata; file content remains on the Artifact boundary.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ResultBundle"
+  /api/projects/{projectId}/boxes:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Box]
+      summary: List project Boxes
+      operationId: bff.box.list
+      responses:
+        "200":
+          description: Box status and capability list.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/BoxList"
+  /api/projects/{projectId}/box:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    put:
+      tags: [Box]
+      summary: Bind a Box to a project
+      operationId: bff.box.binding.set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/BoxBindingRequest"
+      responses:
+        "200":
+          description: Updated Box binding.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Box"
+    delete:
+      tags: [Box]
+      summary: Remove the project Box binding
+      operationId: bff.box.binding.delete
+      responses:
+        "204":
+          description: Binding removed.
   /api/projects/{projectId}/agent-instances:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:

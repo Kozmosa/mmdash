@@ -55,6 +55,19 @@ Stage 6 automatic Progress tracking adds:
 - `progress.stage.overridden.schema.json`
 - `progress.stage.override_cleared.schema.json`
 
+Stage 8 Experiment and Box lifecycle payloads are defined by:
+
+- `experiment.created.schema.json`
+- `experiment.started.schema.json`
+- `experiment.succeeded.schema.json`
+- `experiment.failed.schema.json`
+- `experiment.canceled.schema.json`
+- `experiment.archived.schema.json`
+- `box.registered.schema.json`
+- `box.heartbeat.received.schema.json`
+
+The result bundle is always named `artifact.zip` and contains `manifest.json`.
+
 Automatic Task and Proposal events may carry `source_evaluation_id`; Agent Run
 events may carry `source=progress_evaluation` and the originating evaluation
 as `source_evaluation_id`. `source_run_id` remains reserved for parent Run

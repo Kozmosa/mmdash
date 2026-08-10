@@ -3074,10 +3074,638 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/experiments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List project experiments */
+    get: operations["experiment.list"];
+    put?: never;
+    /** Create an experiment with a frozen execution specification */
+    post: operations["experiment.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/compare": {
+    parameters: {
+      query: {
+        experiment_id: string[];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Compare bounded experiment result summaries */
+    get: operations["experiment.compare"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/{experimentId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    /** Read one experiment and its frozen run specification */
+    get: operations["experiment.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/{experimentId}/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Queue an experiment exactly once */
+    post: operations["experiment.run"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/{experimentId}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Request cancellation of an experiment */
+    post: operations["experiment.cancel"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/{experimentId}/archive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Archive a terminal Experiment */
+    post: operations["experiment.archive"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/{experimentId}/logs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    /** Read bounded experiment logs */
+    get: operations["experiment.logs.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/{experimentId}/result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    /** Read the primary result bundle pointer and manifest summary */
+    get: operations["result.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List registered Boxes visible to the caller */
+    get: operations["box.list"];
+    put?: never;
+    /** Register a Box and issue its one-time bootstrap token */
+    post: operations["box.register"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    /** Read one Box status and capabilities */
+    get: operations["box.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Record Box heartbeat, load, and capability advertisement */
+    post: operations["box.heartbeat"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/box": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /** Bind one Box to a Project */
+    put: operations["box.binding.set"];
+    post?: never;
+    /** Remove the Project Box binding */
+    delete: operations["box.binding.delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}/tasks/claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Atomically claim one queued Box task using SKIP LOCKED */
+    post: operations["box.tasks.claim"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}/tasks/{taskId}/heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Renew a Box task lease and receive cancellation state */
+    post: operations["box.tasks.heartbeat"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}/tasks/{taskId}/logs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Append a bounded Box task log line */
+    post: operations["box.tasks.logs.append"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}/tasks/{taskId}/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report a monotonic Box task status transition */
+    post: operations["box.tasks.status"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}/tasks/{taskId}/result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Submit a validated standalone artifact.zip result bundle */
+    post: operations["box.tasks.result"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/boxes/{boxId}/tasks/{taskId}/artifact": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stream one verified artifact.zip into the Core Artifact boundary */
+    post: operations["box.tasks.artifact.upload"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** @enum {string} */
+    ExperimentStatus:
+      | "created"
+      | "queued"
+      | "preparing"
+      | "running"
+      | "succeeded"
+      | "failed"
+      | "canceled"
+      | "archived";
+    /** @enum {string} */
+    BoxStatus: "registering" | "online" | "offline" | "revoked";
+    /** @enum {string} */
+    BoxTaskStatus:
+      | "queued"
+      | "preparing"
+      | "running"
+      | "succeeded"
+      | "failed"
+      | "canceled"
+      | "timed_out";
+    BoxCapability: {
+      name: string;
+      version: string;
+      features?: string[];
+    };
+    BoxRuntime: {
+      /** @enum {string} */
+      name: "local-docker" | "e2b";
+      version: string;
+      image?: string;
+    };
+    BoxResourceLimits: {
+      cpu_millis: number;
+      memory_bytes: number;
+      timeout_seconds: number;
+      disk_bytes: number;
+      pids: number;
+      /** @enum {string} */
+      network: "disabled" | "restricted" | "enabled";
+    };
+    BoxLoad: {
+      running_tasks: number;
+      capacity: number;
+      cpu_millis: number;
+      memory_bytes: number;
+    };
+    Box: {
+      /** Format: uuid */
+      box_id: string;
+      /** Format: uuid */
+      project_id: string;
+      name: string;
+      status: components["schemas"]["BoxStatus"];
+      version: string;
+      capabilities: components["schemas"]["BoxCapability"][];
+      runtimes: components["schemas"]["BoxRuntime"][];
+      limits: components["schemas"]["BoxResourceLimits"];
+      load: components["schemas"]["BoxLoad"];
+      /** Format: date-time */
+      last_heartbeat_at?: string;
+      /** Format: date-time */
+      disconnected_at?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    BoxList: {
+      items: components["schemas"]["Box"][];
+    };
+    RegisterBoxRequest: {
+      /** Format: uuid */
+      project_id: string;
+      name: string;
+      version: string;
+      capabilities: components["schemas"]["BoxCapability"][];
+      runtimes: components["schemas"]["BoxRuntime"][];
+      limits: components["schemas"]["BoxResourceLimits"];
+      idempotency_key: string;
+    };
+    BoxRegistration: {
+      box: components["schemas"]["Box"];
+      token: string;
+    };
+    BoxHeartbeatRequest: {
+      version: string;
+      capabilities: components["schemas"]["BoxCapability"][];
+      runtimes: components["schemas"]["BoxRuntime"][];
+      limits: components["schemas"]["BoxResourceLimits"];
+      load: components["schemas"]["BoxLoad"];
+    };
+    BoxHeartbeat: {
+      box: components["schemas"]["Box"];
+      cancel_task_ids: string[];
+    };
+    BoxBindingRequest: {
+      /** Format: uuid */
+      box_id: string;
+    };
+    ClaimBoxTaskRequest: {
+      /** @default 60 */
+      lease_seconds: number;
+    };
+    BoxTaskHeartbeatRequest: {
+      /** @default 60 */
+      lease_seconds: number;
+    };
+    BoxTaskLogRequest: {
+      /** @enum {string} */
+      level: "debug" | "info" | "warning" | "error";
+      message: string;
+      fields?: {
+        [key: string]: unknown;
+      };
+    };
+    BoxTaskStatusRequest: {
+      status: components["schemas"]["BoxTaskStatus"];
+      exit_code?: number;
+      error_code?: string;
+      error_message?: string;
+      resource_usage?: {
+        [key: string]: unknown;
+      };
+      summary?: string;
+    };
+    ArtifactPointer: {
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      /** @constant */
+      filename: "artifact.zip";
+      sha256: string;
+      size_bytes: number;
+    };
+    BoxTaskResultRequest: {
+      manifest: {
+        [key: string]: unknown;
+      };
+      artifact: components["schemas"]["ArtifactPointer"];
+    };
+    BoxTaskLease: {
+      /** Format: uuid */
+      task_id: string;
+      /** Format: date-time */
+      lease_expires_at: string;
+      cancel_requested: boolean;
+    };
+    BoxTask: {
+      /** Format: uuid */
+      task_id: string;
+      /** Format: uuid */
+      experiment_id: string;
+      /** Format: uuid */
+      project_id: string;
+      status: components["schemas"]["BoxTaskStatus"];
+      attempt: number;
+      max_attempts: number;
+      /** Format: date-time */
+      lease_expires_at?: string;
+      cancel_requested?: boolean;
+      run_spec: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CreateExperimentRequest: {
+      name: string;
+      source_commit: string;
+      entrypoint: string;
+      parameters: {
+        [key: string]: unknown;
+      };
+      environment: {
+        [key: string]: string;
+      };
+      inputs: {
+        [key: string]: unknown;
+      };
+      /** @enum {string} */
+      runtime: "local-docker" | "e2b";
+      limits: components["schemas"]["BoxResourceLimits"];
+      idempotency_key: string;
+      /** @default 1 */
+      max_attempts: number;
+    };
+    RunExperimentRequest: {
+      idempotency_key?: string;
+    };
+    Experiment: {
+      /** Format: uuid */
+      experiment_id: string;
+      /** Format: uuid */
+      project_id: string;
+      name: string;
+      status: components["schemas"]["ExperimentStatus"];
+      /** Format: uuid */
+      created_by: string;
+      source_commit: string;
+      entrypoint: string;
+      parameters: {
+        [key: string]: unknown;
+      };
+      environment: {
+        [key: string]: string;
+      };
+      inputs: {
+        [key: string]: unknown;
+      };
+      /** @enum {string} */
+      runtime: "local-docker" | "e2b";
+      limits: components["schemas"]["BoxResourceLimits"];
+      /** Format: uuid */
+      box_id?: string;
+      /** Format: uuid */
+      task_id?: string;
+      exit_code?: number;
+      failure_code?: string;
+      failure_message?: string;
+      resource_usage?: {
+        [key: string]: unknown;
+      };
+      summary?: string;
+      result?: components["schemas"]["ResultBundle"];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      started_at?: string;
+      /** Format: date-time */
+      finished_at?: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ExperimentPage: {
+      items: components["schemas"]["Experiment"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    ExperimentLog: {
+      /** Format: uuid */
+      log_id: string;
+      /** Format: uuid */
+      experiment_id: string;
+      /** @enum {string} */
+      level: "debug" | "info" | "warning" | "error";
+      message: string;
+      fields?: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      occurred_at: string;
+    };
+    ExperimentLogPage: {
+      items: components["schemas"]["ExperimentLog"][];
+      has_more: boolean;
+      next_cursor?: string;
+    };
+    ResultBundle: {
+      manifest: {
+        [key: string]: unknown;
+      };
+      artifact: components["schemas"]["ArtifactPointer"];
+      summary?: string;
+      analysis?: string;
+    };
+    ExperimentComparison: {
+      items: components["schemas"]["Experiment"][];
+    };
     User: {
       /** Format: uuid */
       id: string;
@@ -5282,7 +5910,7 @@ export interface components {
     /** @enum {string} */
     AgentAdapterType: "hermes";
     /**
-     * @description Closed Stage 6 product Agent Tool scope. Additional MCP tools require a later-stage domain and contract change before they can be granted.
+     * @description Closed product Agent Tool scope. Experiment tools are project-scoped and use the same Core RBAC, audit, and frozen run-spec boundary.
      * @enum {string}
      */
     AgentToolName:
@@ -5291,7 +5919,11 @@ export interface components {
       | "data.read"
       | "context.promote"
       | "progress.get"
-      | "progress.recalculate";
+      | "progress.recalculate"
+      | "experiment.create"
+      | "experiment.run"
+      | "experiment.status"
+      | "result.get";
     /** @enum {string} */
     AgentManagementMode: "manual" | "auto";
     /** @enum {string} */
@@ -5858,6 +6490,10 @@ export interface components {
     TypeKey: string;
     JobId: string;
     EventId: string;
+    ExperimentId: string;
+    BoxId: string;
+    BoxTaskId: string;
+    ExperimentLimit: number;
   };
   requestBodies: never;
   headers: never;
@@ -10735,6 +11371,537 @@ export interface operations {
       };
       404: components["responses"]["Error"];
       409: components["responses"]["Error"];
+    };
+  };
+  "experiment.list": {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["ExperimentLimit"];
+        status?: components["schemas"]["ExperimentStatus"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Newest-first experiment page. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentPage"];
+        };
+      };
+    };
+  };
+  "experiment.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateExperimentRequest"];
+      };
+    };
+    responses: {
+      /** @description Created experiment. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+    };
+  };
+  "experiment.compare": {
+    parameters: {
+      query: {
+        experiment_id: string[];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Comparison rows without buffering result files. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentComparison"];
+        };
+      };
+    };
+  };
+  "experiment.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Experiment detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+    };
+  };
+  "experiment.run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["RunExperimentRequest"];
+      };
+    };
+    responses: {
+      /** @description Experiment queued or already queued idempotently. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+    };
+  };
+  "experiment.cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cancellation accepted or already terminal. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+    };
+  };
+  "experiment.archive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Archived Experiment. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+    };
+  };
+  "experiment.logs.list": {
+    parameters: {
+      query?: {
+        cursor?: components["parameters"]["Cursor"];
+        limit?: components["parameters"]["ExperimentLimit"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Append-only log page. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentLogPage"];
+        };
+      };
+    };
+  };
+  "result.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Result bundle metadata; file content is transferred through Artifact. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ResultBundle"];
+        };
+      };
+    };
+  };
+  "box.list": {
+    parameters: {
+      query?: {
+        project_id?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Box list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxList"];
+        };
+      };
+    };
+  };
+  "box.register": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RegisterBoxRequest"];
+      };
+    };
+    responses: {
+      /** @description Registered Box and opaque token returned once. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxRegistration"];
+        };
+      };
+    };
+  };
+  "box.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Box status. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Box"];
+        };
+      };
+    };
+  };
+  "box.heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BoxHeartbeatRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Box and pending cancellation hints. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxHeartbeat"];
+        };
+      };
+    };
+  };
+  "box.binding.set": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BoxBindingRequest"];
+      };
+    };
+    responses: {
+      /** @description Project Box binding. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Box"];
+        };
+      };
+    };
+  };
+  "box.binding.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Binding removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "box.tasks.claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["ClaimBoxTaskRequest"];
+      };
+    };
+    responses: {
+      /** @description Claimed task. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxTask"];
+        };
+      };
+      /** @description No task available. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "box.tasks.heartbeat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["BoxTaskHeartbeatRequest"];
+      };
+    };
+    responses: {
+      /** @description Lease state. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxTaskLease"];
+        };
+      };
+    };
+  };
+  "box.tasks.logs.append": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BoxTaskLogRequest"];
+      };
+    };
+    responses: {
+      /** @description Appended log line. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentLog"];
+        };
+      };
+    };
+  };
+  "box.tasks.status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BoxTaskStatusRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Experiment. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+    };
+  };
+  "box.tasks.result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BoxTaskResultRequest"];
+      };
+    };
+    responses: {
+      /** @description Archived result. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+    };
+  };
+  "box.tasks.artifact.upload": {
+    parameters: {
+      query?: never;
+      header: {
+        "X-Mmdash-Artifact-SHA256": string;
+      };
+      path: {
+        boxId: components["parameters"]["BoxId"];
+        taskId: components["parameters"]["BoxTaskId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/zip": string;
+      };
+    };
+    responses: {
+      /** @description Archived Artifact pointer. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactPointer"];
+        };
+      };
     };
   };
 }
