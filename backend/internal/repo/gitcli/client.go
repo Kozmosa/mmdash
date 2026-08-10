@@ -12,6 +12,11 @@ import (
 	"time"
 )
 
+const (
+	maintenanceGitEmail = "repo@mmdash.local"
+	maintenanceGitName  = "mmdash"
+)
+
 // Credentials are injected only into one Git subprocess through AskPass.
 type Credentials struct {
 	Token    string
@@ -164,8 +169,23 @@ func (client *Client) commandEnvironment(request Command) []string {
 		"LC_ALL=C",
 		"LANG=C",
 	)
+	for _, value := range []struct {
+		key      string
+		fallback string
+	}{
+		{key: "GIT_AUTHOR_EMAIL", fallback: maintenanceGitEmail},
+		{key: "GIT_AUTHOR_NAME", fallback: maintenanceGitName},
+		{key: "GIT_COMMITTER_EMAIL", fallback: maintenanceGitEmail},
+		{key: "GIT_COMMITTER_NAME", fallback: maintenanceGitName},
+	} {
+		resolved := value.fallback
+		if override, ok := request.Environment[value.key]; ok {
+			resolved = override
+		}
+		environment = append(environment, value.key+"="+resolved)
+	}
 	for key, value := range request.Environment {
-		if allowedGitEnvironment[key] {
+		if allowedGitEnvironment[key] && !maintenanceIdentityKey(key) {
 			environment = append(environment, key+"="+value)
 		}
 	}
@@ -181,6 +201,11 @@ func (client *Client) commandEnvironment(request Command) []string {
 		)
 	}
 	return environment
+}
+
+func maintenanceIdentityKey(key string) bool {
+	return key == "GIT_AUTHOR_EMAIL" || key == "GIT_AUTHOR_NAME" ||
+		key == "GIT_COMMITTER_EMAIL" || key == "GIT_COMMITTER_NAME"
 }
 
 var allowedGitEnvironment = map[string]bool{

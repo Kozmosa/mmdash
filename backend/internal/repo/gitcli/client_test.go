@@ -49,6 +49,63 @@ func TestClientBoundsOutputRedactsCredentialsAndReportsTimeout(t *testing.T) {
 	}
 }
 
+func TestClientUsesStableMaintenanceIdentityAndActorOverrides(t *testing.T) {
+	client, err := NewClient(os.Args[0], "askpass", time.Second, 1, 1024)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	client.environment = func(string) (string, bool) { return "", false }
+
+	maintenance := environmentMap(t, client.commandEnvironment(Command{}))
+	for key, expected := range map[string]string{
+		"GIT_AUTHOR_EMAIL":    maintenanceGitEmail,
+		"GIT_AUTHOR_NAME":     maintenanceGitName,
+		"GIT_COMMITTER_EMAIL": maintenanceGitEmail,
+		"GIT_COMMITTER_NAME":  maintenanceGitName,
+	} {
+		if maintenance[key] != expected {
+			t.Fatalf("unexpected maintenance %s: %q", key, maintenance[key])
+		}
+	}
+
+	actor := environmentMap(t, client.commandEnvironment(Command{
+		Environment: map[string]string{
+			"GIT_AUTHOR_EMAIL":    "actor@example.test",
+			"GIT_AUTHOR_NAME":     "Actor",
+			"GIT_COMMITTER_EMAIL": "committer@example.test",
+			"GIT_COMMITTER_NAME":  "Committer",
+			"GIT_AUTHOR_DATE":     "2026-08-10T00:00:00Z",
+		},
+	}))
+	for key, expected := range map[string]string{
+		"GIT_AUTHOR_EMAIL":    "actor@example.test",
+		"GIT_AUTHOR_NAME":     "Actor",
+		"GIT_COMMITTER_EMAIL": "committer@example.test",
+		"GIT_COMMITTER_NAME":  "Committer",
+		"GIT_AUTHOR_DATE":     "2026-08-10T00:00:00Z",
+	} {
+		if actor[key] != expected {
+			t.Fatalf("unexpected actor %s: %q", key, actor[key])
+		}
+	}
+}
+
+func environmentMap(t *testing.T, environment []string) map[string]string {
+	t.Helper()
+	values := make(map[string]string, len(environment))
+	for _, entry := range environment {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			t.Fatalf("invalid environment entry: %q", entry)
+		}
+		if _, exists := values[key]; exists {
+			t.Fatalf("duplicate environment key: %s", key)
+		}
+		values[key] = value
+	}
+	return values
+}
+
 func TestGitClientHelper(t *testing.T) {
 	separator := -1
 	for index, argument := range os.Args {
