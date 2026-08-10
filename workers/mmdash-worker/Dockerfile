@@ -15,6 +15,7 @@ COPY pyproject.toml uv.lock ./
 COPY workers/mmdash-worker workers/mmdash-worker
 
 RUN uv sync --frozen --no-dev --package mmdash-worker
+RUN chmod -R a+rX workers/mmdash-worker
 
 ENV PATH="/app/.venv/bin:${PATH}"
 

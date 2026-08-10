@@ -1,4 +1,80 @@
-# mmdash v0.1 Stage 7 Model handoff
+# mmdash v0.1 Stage 6 automatic Progress tracking handoff
+
+- Updated: 2026-08-10
+- Branch: `codex/stage-6-auto-progress`
+- Base: `origin/main@52e398f`
+- Migration: `000028_progress_auto_tracking`
+- Delivery state: Stage 6 complete in Ready PR #33; CI passed; not merged
+
+## 2026-08-10 Stage 6 automatic Progress tracking
+
+Stage 6 is implemented as a complete vertical slice on top of the already
+merged Stage 4 Home/Progress, Stage 5 Agent, Stage 7 Model, and Notification
+work. Core remains the sole Progress writer and PostgreSQL remains the Job
+Queue; no Redis or parallel persistence path was introduced.
+
+Delivered behavior includes event, Cron, manual, and retry scheduling;
+debounce and source-event replay deduplication; recoverable assembly/Cron
+leases using `FOR UPDATE SKIP LOCKED`; canonical evaluation inputs and history;
+Worker evaluation in production `core_agent` and deterministic `mock` modes;
+automatic Task convergence; human-protected Task fields; milestone Proposals;
+human accept/reject and stage override controls; risks and failure recovery;
+RBAC, transactional Audit/Outbox, bounded metrics, and Project-scoped
+settings. Agent automation uses the existing Session, Run, and Jobs contracts,
+and Progress-generated Agent Runs and domain events do not recursively trigger
+new evaluations.
+
+The Web and BFF expose effective/detected stage, summary, recalculation,
+evaluation history/detail/provenance, risks, retry, settings, Agent/Cron state,
+Proposal review, and stage override controls. Home consumes the effective
+Progress tracker state. Data Hub adds authoritative `progress_evaluation` and
+`progress_risk` projections. MCP Gateway adds exact-scope `progress.get` and
+`progress.recalculate` tools, expanding the reviewed Agent tool set to six.
+
+Migration `000028_progress_auto_tracking` is additive and follows the current
+migration set without rewriting an existing migration. It adds evaluation
+requests/triggers/history, risks, tracker state and overrides, automatic
+Task/Proposal provenance and convergence keys, tracking/Cron settings, and the
+supporting lease/deduplication indexes.
+
+### Stage 6 verification
+
+- Fresh migrations through `000028` and an explicit `000028` down/up round
+  trip passed. Real PostgreSQL integration coverage includes debounce, replay,
+  lease recovery, input deduplication, automatic mutation convergence, manual
+  overrides, Proposal/risk/history/failure paths, Audit, Outbox, and stage
+  override restoration.
+- Core, Data Hub, Agent, Project, config, metrics, Worker, Web, BFF, and MCP
+  Gateway focused tests and builds passed. Contract generation/check and the
+  API catalog covering 368 operations passed.
+- Docker acceptance used the explicit deterministic mock evaluator because no
+  real Hermes instance was available. It exercised manual and event
+  evaluations, an automatic Task, pending/rejected/accepted Proposals, a
+  Proposal-created Milestone, blocked-task risk detection, stage override and
+  clearing, Home aggregation, Data Hub readers, and both Progress MCP tools.
+- The standard smoke path passed with only its native CLI subtest skipped: this
+  headless workstation has no unlocked Linux Secret Service, so the CLI cannot
+  persist its device-login session. The same live MCP Gateway was exercised
+  directly with the current Streamable HTTP protocol. All containers were
+  healthy, log scans found no error/fatal/panic or credential pattern, the
+  Worker token was revoked, and Compose was stopped with `down` without
+  deleting volumes.
+- The Worker image now normalizes copied source permissions before switching to
+  its non-root runtime user, avoiding host umask/directory-mode dependent
+  import failures.
+
+### Stage 6 operational notes
+
+- `MMDASH_PROGRESS_EVALUATOR_MODE=core_agent` is the production default;
+  `mock` is explicit deterministic development/acceptance behavior only.
+- Automatic tracking in `core_agent` mode requires an active Project Agent
+  instance. Cron synchronization uses the existing Hermes Jobs API and stores
+  only the remote Job ID/status in Progress settings.
+- Hermes-facing behavior is contract/mock tested; a real Hermes environment
+  remains the release-environment integration check.
+- PostgreSQL and MinIO acceptance volumes were preserved.
+
+## Previous Stage 7 and Notification handoff
 
 - Updated: 2026-08-09
 - Branch: `main`

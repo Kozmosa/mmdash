@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/progress.evaluation.completed.schema.json",
+  "title": "progress.evaluation.completed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resource_id", "resource_type", "title", "status", "stage", "effective_stage", "summary", "risk_count", "suggestion_count"],
+  "properties": {
+    "resource_id": { "type": "string", "format": "uuid" },
+    "resource_type": { "const": "progress_evaluation" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "const": "succeeded" },
+    "stage": { "type": "string" },
+    "effective_stage": { "type": "string" },
+    "summary": { "type": "string" },
+    "risk_count": { "type": "integer", "minimum": 0 },
+    "suggestion_count": { "type": "integer", "minimum": 0 }
+  }
+}

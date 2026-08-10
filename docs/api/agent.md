@@ -75,8 +75,9 @@ Grant, Project, and exact MCP Tool names; wildcards are not accepted. Token
 plaintext is returned at most once during a manual issue or rotation and is
 never returned by ordinary instance, credential, Audit, event, or log reads.
 
-The Stage 5 grant contract is deliberately closed to these four Tool names:
-`project.get`, `data.list`, `data.read`, and `context.promote`. OpenAPI request,
+The Stage 6 grant contract is deliberately closed to these six Tool names:
+`project.get`, `data.list`, `data.read`, `context.promote`, `progress.get`, and
+`progress.recalculate`. OpenAPI request,
 identity, Grant, and credential schemas use the same enum as the Core Agent
 domain; a syntactically valid but unowned MCP Tool name is therefore rejected
 at the browser/Core contract boundary. Expanding this set requires an explicit

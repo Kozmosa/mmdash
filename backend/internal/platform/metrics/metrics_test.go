@@ -32,6 +32,8 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 	registry.ObserveProgressReminder("triggered")
 	registry.ObserveProgressReminder("pending")
 	registry.ObserveProgressReminder("failed")
+	registry.ObserveProgressEvaluation("queued")
+	registry.ObserveProgressEvaluation("secret-project-id")
 	mux := http.NewServeMux()
 	registry.RegisterRoutes(mux)
 	response := httptest.NewRecorder()
@@ -69,12 +71,14 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 		`mmdash_progress_reminders_triggered_total 1`,
 		`mmdash_progress_reminder_retries_total 1`,
 		`mmdash_progress_reminder_failures_total 1`,
+		`mmdash_progress_evaluations_total{outcome="queued"} 1`,
+		`mmdash_progress_evaluations_total{outcome="other"} 1`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("metrics missing %q:\n%s", expected, body)
 		}
 	}
-	for _, secret := range []string{"secret-runtime-url", "secret-operation", "secret-outcome"} {
+	for _, secret := range []string{"secret-runtime-url", "secret-operation", "secret-outcome", "secret-project-id"} {
 		if strings.Contains(body, secret) {
 			t.Fatalf("metrics leaked unbounded Agent label %q:\n%s", secret, body)
 		}

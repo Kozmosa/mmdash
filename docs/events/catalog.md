@@ -36,15 +36,24 @@ All entries currently use envelope schema version `1`.
 | `artifact.deleted`            | artifact | yes            | `artifact_id`, `current_version_id`, `reason`, `trashed_at`                                                     | `datahub.projections`          |
 | `progress.milestone.created`  | progress | yes            | `resource_id`, `resource_type=milestone`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id`  | `datahub.projections`          |
 | `progress.milestone.updated`  | progress | yes            | `resource_id`, `resource_type=milestone`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id`  | `datahub.projections`          |
-| `progress.task.created`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id`       | `datahub.projections`          |
-| `progress.task.updated`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status`, `source`, optional `source_run_id`, `proposal_id`       | `datahub.projections`          |
+| `progress.task.created`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status`, `source`, optional `source_run_id`, `source_evaluation_id`, `proposal_id` | `datahub.projections` |
+| `progress.task.updated`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status`, `source`, optional `source_run_id`, `source_evaluation_id`, `proposal_id` | `datahub.projections` |
 | `progress.task.deleted`       | progress | yes            | `resource_id`, `resource_type=task`, `title`, `status=deleted`, `source`                                        | `datahub.projections`          |
 | `progress.dependency.created` | progress | yes            | `resource_id`, `resource_type=dependency`, `title`, `status`, `task_id`, `depends_on_task_id`                   | none                           |
 | `progress.dependency.deleted` | progress | yes            | `resource_id`, `resource_type=dependency`, `title`, `status=deleted`, `source`                                  | none                           |
 | `progress.reminder.created`   | progress | yes            | `resource_id`, `resource_type=reminder`, `title`, `status`, `remind_at`                                         | none                           |
 | `progress.reminder.due`       | progress | yes            | `resource_id`, `resource_type=reminder`, `title`, `status`, `reminder_id`, optional task/milestone IDs          | `notification.events`          |
-| `progress.proposal.created`   | progress | yes            | `resource_id`, `resource_type=progress_proposal`, `title`, `status`, `proposal_type`, `source`, `source_run_id` | `datahub.projections`          |
+| `progress.proposal.created`   | progress | yes            | `resource_id`, `resource_type=progress_proposal`, `title`, `status`, `proposal_type`, `source`, `source_run_id`, `source_evaluation_id` | `datahub.projections` |
 | `progress.proposal.reviewed`  | progress | yes            | `resource_id`, `resource_type=progress_proposal`, `title`, `status`, `proposal_type`, `decision`                | `datahub.projections`          |
+| `progress.evaluation.requested` | progress | yes          | `resource_id`, `resource_type=progress_evaluation`, `trigger_kind`, `scheduled_for`                             | none                           |
+| `progress.evaluation.queued`  | progress | yes            | `resource_id`, `resource_type=progress_evaluation`, `job_id`, `input_version`, `trigger_kind`                   | none                           |
+| `progress.evaluation.started` | progress | yes            | `resource_id`, `resource_type=progress_evaluation`, `job_id`, `attempt`                                         | none                           |
+| `progress.evaluation.completed` | progress | yes          | `resource_id`, `resource_type=progress_evaluation`, `status=succeeded`, detected/effective stage, summary and counts | `datahub.projections`       |
+| `progress.evaluation.failed`  | progress | yes            | `resource_id`, `resource_type=progress_evaluation`, `status=failed`, safe `error_code`, `attempts`              | `datahub.projections`          |
+| `progress.risk.detected`      | progress | yes            | `resource_id`, `resource_type=progress_risk`, `evaluation_id`, `risk_key`, title, severity, `status=open`       | `datahub.projections`          |
+| `progress.settings.updated`   | progress | yes            | `resource_id`, `resource_type=progress_settings`, automatic/Cron/debounce/minimum-interval settings             | none                           |
+| `progress.stage.overridden`   | progress | yes            | `resource_id`, `resource_type=progress_stage_override`, stage and summary                                       | none                           |
+| `progress.stage.override_cleared` | progress | yes        | `resource_id`, `resource_type=progress_stage_override`, prior stage                                             | none                           |
 | `model.sync.requested`        | model    | yes            | `sync_id`, `source_id`, optional `question_id`, `scope`, `trigger`, `job_id`, `requested_at`                    | none                           |
 | `model.source.changed`        | model    | yes            | `source_id`, `notion_root_page_id`, `action`, `status`                                                           | `datahub.projections`          |
 | `model.question.changed`      | model    | yes            | `question_id`, `source_id`, `code`, `title`, `notion_page_id`, `action`, `status`                               | `datahub.projections`          |
@@ -60,10 +69,10 @@ All entries currently use envelope schema version `1`.
 | `agent.session.continued`       | agent    | yes            | `project_id`, `resource_id`, `status=active`, `session_type`                                                    | none                           |
 | `agent.session.forked`          | agent    | yes            | `project_id`, `resource_id`, `agent_instance_id`, `parent_session_id`, `session_type`                           | none                           |
 | `agent.session.default_changed` | agent    | yes            | `project_id`, `resource_id`, `agent_instance_id`                                                                | none                           |
-| `agent.run.started`             | agent    | yes            | `project_id`, `resource_id`, `session_id`, `source`                                                             | none                           |
-| `agent.run.completed`           | agent    | yes            | `project_id`, `resource_id`, `session_id`, `status=completed`, empty `safe_error_code`                          | none                           |
-| `agent.run.failed`              | agent    | yes            | `project_id`, `resource_id`, `session_id`, `status=failed`, bounded `safe_error_code`                           | none                           |
-| `agent.run.stopped`             | agent    | yes            | `project_id`, `resource_id`, `session_id`, `status=stopped`, bounded `safe_error_code`                          | none                           |
+| `agent.run.started`             | agent    | yes            | `project_id`, `resource_id`, `session_id`, `source`, optional `source_run_id`; Stage 6 uses `source=progress_evaluation` | none                     |
+| `agent.run.completed`           | agent    | yes            | `project_id`, `resource_id`, `session_id`, `source`, optional `source_run_id`, `status=completed`, empty `safe_error_code` | none                  |
+| `agent.run.failed`              | agent    | yes            | `project_id`, `resource_id`, `session_id`, `source`, optional `source_run_id`, `status=failed`, bounded `safe_error_code` | none                   |
+| `agent.run.stopped`             | agent    | yes            | `project_id`, `resource_id`, `session_id`, `source`, optional `source_run_id`, `status=stopped`, bounded `safe_error_code` | none                  |
 | `agent.token.issued`            | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, non-terminal `status`                                         | none                           |
 | `agent.token.activated`         | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, optional replaced Token ID, `status=active`                   | none                           |
 | `agent.token.rotation_failed`   | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, safe code, whether an old Token remains active                | none                           |
@@ -106,6 +115,13 @@ Notification consumes stable invitation lifecycle, registration, and reminder
 events into its canonical Notification/Recipient/Inbox model. External delivery
 remains behind the Core Delivery Processor and registered Feishu/Generic Webhook
 adapters; Progress never sends provider requests.
+
+Automatic tracking ignores `progress.*` mutations carrying
+`source_evaluation_id` and Agent Run events with
+`source=progress_evaluation`, preventing its own Task/Proposal/Run output from
+recursively scheduling another evaluation. Evaluation and risk projections
+remain readable in Data Hub but are excluded from the next semantic input
+hash; the previous normalized output is supplied explicitly instead.
 
 Model events never contain the Notion integration token, temporary Notion file
 URLs, raw block content, or Artifact transfer credentials. A source or question

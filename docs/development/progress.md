@@ -1,9 +1,15 @@
-# Stage 4 Progress development
+# Stage 4 and Stage 6 Progress development
 
 Progress is the Core authority for a Project's Milestone, Task, Dependency,
 Reminder, and Progress Proposal records. The Web page, BFF routes, Data Hub
 projections, and MCP `data.list`/`data.read` paths all read this boundary; no
 consumer writes the Progress tables directly.
+
+Stage 6 adds automatic, versioned evaluation without changing that ownership:
+events and Cron create debounced requests, Core assembles a semantic snapshot,
+the PostgreSQL Job Queue leases `progress.evaluate` to the Worker, and the
+result returns through the Progress service transaction before any Task,
+Proposal, risk, tracker state, Audit, or Outbox mutation is committed.
 
 ## Persistence
 
@@ -57,6 +63,62 @@ OpenAPI contract. A later hide does not rewrite historical Tasks, so unrelated
 Task updates remain possible; explicitly submitting the hidden ID again is
 rejected.
 
+Migration `000028_progress_auto_tracking` owns:
+
+- project settings for automatic/event/Cron tracking, debounce, minimum
+  interval, selected Agent, and recoverable Hermes Cron reconciliation;
+- debounced request and trigger history, including unique source-event replay
+  protection and recoverable assembly leases;
+- immutable evaluation input/output snapshots, SHA-256 input versions,
+  attempts, safe failures, Agent Session/Run provenance, risks, and history;
+- detected/effective tracker state and append-only human stage overrides;
+- automatic Task/Proposal provenance and stable suggestion keys.
+
+The request and Cron claim paths use `FOR UPDATE SKIP LOCKED`. Project-level
+PostgreSQL advisory transaction locks serialize concurrent scheduling and
+evaluation application. There is no Redis or second queue. A request merges
+all triggers arriving inside the debounce window, respects the configured
+minimum interval, and is re-claimable after an assembly lease expires. A
+unique active input-version index merges queued, running, or successful
+evaluations with identical semantic input.
+
+Evaluation facts contain the Project problem, constraints, Data Hub objects
+and activity, confirmed context, Milestones, Tasks, tracking settings, active
+human override, and previous normalized output. Volatile timestamps, Progress
+source Run IDs, and the evaluation/risk projections produced by Stage 6 itself
+are excluded from the semantic version. Automatic Task updates are semantic
+no-ops when protected/current fields already match; `task.create` suggestion
+keys identify one logical Task, and identical pending Proposals are reused.
+These rules let a real change converge instead of creating an evaluation loop.
+
+Automatic trigger patterns include Repo commits, Model snapshots, archived
+Experiments, completed Article builds, available Artifacts, confirmed Context,
+ordinary Agent Runs, and human Progress Task/Milestone changes. Events carrying
+`source_evaluation_id`, plus Agent Runs with `source=progress_evaluation`, are
+ignored so evaluation output cannot recursively retrigger itself.
+
+## Evaluator and failure lifecycle
+
+`core_agent` is the production path. The Worker asks Core to execute the
+evaluation; Core uses only the existing Agent/Hermes Session, Run, and Jobs
+contracts, persists a `progress` Session and Run with
+`source=progress_evaluation`, and returns the normalized JSON output. No new or
+guessed Hermes API is introduced. Hermes Cron reconciliation uses the existing
+Jobs API and requires an active selected Agent.
+
+`mock` is an explicit deterministic local/acceptance mode. It derives planning,
+execution, or review from current Tasks and emits blocked-task risks without a
+Hermes dependency. Event and manual evaluation work without an Agent in mock
+mode; Hermes Cron remains disabled unless a real active Agent is selected.
+
+The Worker validates an exact bounded output shape: stage, summary, changes,
+completed/in-progress/blocked items, risks, suggestions, and pending questions.
+Invalid JSON, unknown fields, invalid suggestion/reference types, oversized
+output, provider failures, and exhausted retries become safe evaluation failure
+codes/history. A human may retry only a terminal failed evaluation. Job lease,
+retry, timeout, idempotency, and result completion remain owned by the existing
+Core Job Queue.
+
 ## Mutation policy
 
 - Browser sessions with `project.progress.manage` create and edit Milestones,
@@ -66,8 +128,18 @@ rejected.
   Proposal through the Progress service transaction.
 - Agents may create or update ordinary Tasks only when `auto_task_changes` is
   enabled. The service requires a non-empty `source_run_id` for those changes.
+- Stage 6 evaluation suggestions always pass through the same Progress-owned
+  validation transaction. Ordinary Task creates/updates auto-apply only when
+  `auto_task_changes=true`; every Milestone create/update always becomes a
+  pending Proposal.
 - With `auto_task_changes=false`, ordinary automatic Task changes return
   `PROGRESS_PROPOSAL_REQUIRED` and must use a Proposal.
+- A human edit records the changed Task fields in `manual_override_fields`.
+  Later evaluations may update only unprotected fields; a human edit also
+  clears the current `source_evaluation_id` while preserving history.
+- The Agent-detected stage is retained in evaluation history. A human stage
+  override controls the effective Home/Progress stage and summary until
+  explicitly cleared; later evaluations do not overwrite it.
 - Task deletion, Reminder/Dependency mutation, settings changes, and Proposal
   review remain human-session operations.
 - Direct Task, Dependency, and Reminder mutations reject missing,
@@ -124,6 +196,10 @@ processor logs never include Reminder note content.
 | `PROGRESS_REMINDER_BATCH_SIZE` | `20` | Maximum rows claimed per scan |
 | `PROGRESS_REMINDER_LEASE` | `30s` | Recoverable processing lease |
 | `PROGRESS_REMINDER_RETRY_DELAY` | `2s` | Delay after an event-write failure |
+| `PROGRESS_TRACKING_POLL_INTERVAL` | `1s` | Idle request/Cron reconciliation scan interval |
+| `PROGRESS_TRACKING_LEASE` | `2m` | Recoverable assembly/Cron claim lease |
+| `PROGRESS_TRACKING_RETRY_DELAY` | `30s` | Retry delay after input assembly, queue, or Cron sync failure |
+| `MMDASH_PROGRESS_EVALUATOR_MODE` | `core_agent` | `core_agent` or deterministic `mock` evaluator |
 
 ## HTTP and views
 
@@ -131,9 +207,11 @@ Core operations are under `/v1/projects/{projectId}/progress`; the browser-safe
 one-to-one BFF routes are under `/api/projects/{projectId}/progress`.
 `apps/web/src/app/projects/[projectId]/progress/page.tsx` renders the same Core
 aggregate as board, list, Gantt, today/overdue/blocked, reminder, and Proposal
-review views. Project Home uses the same aggregate for real Milestone and open
-Task counts. Model, Experiment, Article, and Agent cards stay typed Empty
-States until their owning stages exist.
+review views. Stage 6 adds detected/effective stage and summary, manual
+recalculation, evaluation history/detail and provenance, risks/failure retry,
+stage override controls, and automatic/event/Cron/TODO settings with Agent and
+Cron reconciliation status. Project Home uses the same aggregate for real
+Milestone/open-Task counts plus the effective stage and summary.
 
 ## Data Hub and MCP
 
@@ -144,11 +222,35 @@ The following object types are projected and have authoritative readers:
 | `milestone`         | Progress |
 | `task`              | Progress |
 | `progress_proposal` | Progress |
+| `progress_evaluation` | Progress |
+| `progress_risk`       | Progress |
 
 Dependency and Reminder events remain domain events but are not projected as
 Data Hub objects because Stage 4 does not expose standalone full-content
 readers for them. MCP clients read the supported Progress objects through the
 existing Core-routed `data.list` and `data.read` tools.
+
+Stage 6 additionally exposes direct `progress.get` and
+`progress.recalculate` MCP Tools. Both route through the generated Core Client,
+exact Tool grants, Project RBAC, and MCP/Core Audit. `progress.get` is read-only;
+an Agent may recalculate only as non-forced `cron`, while a human CLI identity
+may request `manual` and optionally force past the minimum interval. Proposal
+review and human override changes are never exposed as Agent Tools.
+
+## RBAC, Audit, Outbox, and metrics
+
+`project.progress.read` covers state/history reads;
+`project.progress.evaluate` covers scheduling and is granted to the Agent role;
+`project.progress.manage` remains human owner/maintainer control for settings,
+retry, Proposal review, and stage override. Exact `progress.get` and
+`progress.recalculate` Agent Tool grants are required in addition to role
+permission.
+
+Evaluation lifecycle, automatic Task/Proposal/risk mutations, settings, and
+stage overrides write append-only Audit events and transactional Outbox events.
+Metrics expose only bounded outcomes through
+`mmdash_progress_evaluations_total`; Project/evaluation IDs and provider text
+are never labels.
 
 ## Focused checks
 
@@ -159,6 +261,8 @@ go test ./backend/internal/progress ./backend/internal/notification ./backend/in
 MMDASH_TEST_DATABASE_URL=... go test ./backend/internal/progress -count=1
 MMDASH_TEST_DATABASE_URL=... MMDASH_TEST_CORE_URL=... go test ./backend/internal/notification -count=1
 pnpm api:check
+uv run --project workers/mmdash-worker pytest workers/mmdash-worker/tests
+uv run --project workers/mmdash-worker ruff check workers/mmdash-worker
 pnpm check
 ```
 

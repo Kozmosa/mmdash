@@ -59,8 +59,10 @@ const toolNameSchema = z.enum([
   "data.list",
   "data.read",
   "context.promote",
+  "progress.get",
+  "progress.recalculate",
 ]);
-const allowedToolsSchema = z.array(toolNameSchema).min(1).max(4).superRefine(
+const allowedToolsSchema = z.array(toolNameSchema).min(1).max(6).superRefine(
   (tools, context) => {
     if (new Set(tools).size !== tools.length) {
       context.addIssue({

@@ -52,7 +52,7 @@ type AgentForm = {
 };
 
 const emptyForm: AgentForm = {
-  allowedTools: ["project.get", "data.list", "data.read", "context.promote"],
+  allowedTools: [...reviewedAgentTools],
   cloudflareClientId: "",
   cloudflareClientSecret: "",
   dashboardSessionToken: "",

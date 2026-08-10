@@ -73,6 +73,8 @@ describe("MCP Gateway", () => {
       "context.promote",
       "data.list",
       "data.read",
+      "progress.get",
+      "progress.recalculate",
       "project.get",
       "project.list",
       "project.member.get",
@@ -148,6 +150,46 @@ describe("MCP Gateway", () => {
       "project.list",
       "project.get",
     ]);
+  });
+
+  it("reads and recalculates Progress through the delegated Core boundary", async () => {
+    const audit = new MemoryAuditSink();
+    const getProgress = vi.fn().mockResolvedValue({
+      project_id: "project-1",
+      tracking: { effective_stage: "execution" },
+    });
+    const recalculateProgress = vi.fn().mockResolvedValue({
+      merged: false,
+      request_id: "00000000-0000-4000-8000-000000000001",
+      scheduled_for: "2026-08-10T00:00:00Z",
+      status: "pending",
+    });
+    const gateway = buildGateway({
+      audit,
+      config: testConfig,
+      coreClient: { getProgress, recalculateProgress } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), { fetch: sessionFetch.fetch });
+    const client = new Client(
+      { name: "mmdash-progress-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const read = await client.callTool({ arguments: { project_id: "project-1" }, name: "progress.get" });
+    const recalculate = await client.callTool({ arguments: { force: false, project_id: "project-1", trigger_kind: "manual" }, name: "progress.recalculate" });
+    await client.close();
+
+    expect(read.structuredContent).toMatchObject({ tracking: { effective_stage: "execution" } });
+    expect(recalculate.structuredContent).toMatchObject({ status: "pending" });
+    expect(recalculateProgress).toHaveBeenCalledWith(
+      "project-1",
+      { force: false, trigger_kind: "manual" },
+      expect.objectContaining({ accessToken: "test-core-access-token-that-is-at-least-32-characters", projectId: "project-1" }),
+    );
+    expect(audit.events.map((event) => event.toolName)).toEqual(["progress.get", "progress.recalculate"]);
   });
 
   it("reads Data Hub objects through Core with project scope and audit", async () => {

@@ -54,6 +54,7 @@ const (
 	PermissionProgressRead      Permission = "project.progress.read"
 	PermissionProgressManage    Permission = "project.progress.manage"
 	PermissionProgressPropose   Permission = "project.progress.propose"
+	PermissionProgressEvaluate  Permission = "project.progress.evaluate"
 	PermissionModelRead         Permission = "project.model.read"
 	PermissionModelSync         Permission = "project.model.sync"
 	PermissionModelManage       Permission = "project.model.manage"
@@ -90,6 +91,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionProgressEvaluate,
 		PermissionModelRead,
 		PermissionModelSync,
 		PermissionModelManage,
@@ -123,6 +125,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionProgressEvaluate,
 		PermissionModelRead,
 		PermissionModelSync,
 		PermissionModelManage,
@@ -150,6 +153,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionProgressEvaluate,
 		PermissionModelRead,
 		PermissionModelSync,
 		PermissionModelManage,
@@ -166,6 +170,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactRead,
 		PermissionArtifactDownload,
 		PermissionProgressRead,
+		PermissionProgressEvaluate,
 		PermissionModelRead,
 		PermissionModelSync,
 		PermissionAgentRead,
@@ -178,6 +183,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactRead,
 		PermissionArtifactDownload,
 		PermissionProgressRead,
+		PermissionProgressEvaluate,
 	},
 	RoleBox: {
 		PermissionRead,
@@ -740,8 +746,12 @@ func agentToolAllowsPermission(identity auth.Identity, permission Permission) bo
 	case PermissionContextPropose:
 		requiredTools = []string{"context.promote"}
 	case PermissionRepoRead, PermissionArtifactRead,
-		PermissionArtifactDownload, PermissionProgressRead:
+		PermissionArtifactDownload:
 		requiredTools = []string{"data.read"}
+	case PermissionProgressRead:
+		requiredTools = []string{"data.read", "progress.get"}
+	case PermissionProgressEvaluate:
+		requiredTools = []string{"progress.recalculate"}
 	default:
 		return false
 	}

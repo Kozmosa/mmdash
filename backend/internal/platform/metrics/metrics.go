@@ -40,6 +40,7 @@ type Registry struct {
 	progressReminderTriggered       uint64
 	progressReminderRetries         uint64
 	progressReminderFailures        uint64
+	progressEvaluations             map[string]uint64
 }
 
 type agentKey struct {
@@ -92,17 +93,18 @@ type artifactDurationKey struct {
 
 func New(service, version string) *Registry {
 	return &Registry{
-		agent:             map[agentKey]uint64{},
-		agentChecks:       map[agentCheckKey]uint64{},
-		agentRuns:         map[string]uint64{},
-		agentTokens:       map[agentTokenKey]uint64{},
-		http:              map[httpKey]*httpMetric{},
-		repo:              map[repoKey]*httpMetric{},
-		repoDurations:     map[repoDurationKey]*httpMetric{},
-		artifact:          map[artifactKey]*httpMetric{},
-		artifactDurations: map[artifactDurationKey]*httpMetric{},
-		service:           strings.TrimSpace(service),
-		version:           strings.TrimSpace(version),
+		agent:               map[agentKey]uint64{},
+		agentChecks:         map[agentCheckKey]uint64{},
+		agentRuns:           map[string]uint64{},
+		agentTokens:         map[agentTokenKey]uint64{},
+		http:                map[httpKey]*httpMetric{},
+		repo:                map[repoKey]*httpMetric{},
+		repoDurations:       map[repoDurationKey]*httpMetric{},
+		artifact:            map[artifactKey]*httpMetric{},
+		artifactDurations:   map[artifactDurationKey]*httpMetric{},
+		progressEvaluations: map[string]uint64{},
+		service:             strings.TrimSpace(service),
+		version:             strings.TrimSpace(version),
 	}
 }
 
@@ -309,6 +311,24 @@ func (registry *Registry) ObserveProgressReminder(outcome string) {
 	case "failed":
 		registry.progressReminderFailures++
 	}
+}
+
+// ObserveProgressEvaluation records one bounded automatic tracking outcome.
+func (registry *Registry) ObserveProgressEvaluation(outcome string) {
+	if registry == nil {
+		return
+	}
+	outcome = boundedLabel(outcome, map[string]bool{
+		"assembly_failed": true,
+		"cron_failed":     true,
+		"cron_synced":     true,
+		"merged":          true,
+		"queue_failed":    true,
+		"queued":          true,
+	}, "other")
+	registry.mu.Lock()
+	registry.progressEvaluations[outcome]++
+	registry.mu.Unlock()
 }
 
 // ObserveRepoOperation records one bounded Repo operation. Callers supply only
@@ -532,6 +552,16 @@ func (registry *Registry) snapshot() string {
 	output.WriteString("# HELP mmdash_progress_reminder_failures_total Terminal Progress reminder processing failures.\n")
 	output.WriteString("# TYPE mmdash_progress_reminder_failures_total counter\n")
 	fmt.Fprintf(&output, "mmdash_progress_reminder_failures_total %d\n", registry.progressReminderFailures)
+	output.WriteString("# HELP mmdash_progress_evaluations_total Progress automatic tracking outcomes.\n")
+	output.WriteString("# TYPE mmdash_progress_evaluations_total counter\n")
+	progressOutcomes := make([]string, 0, len(registry.progressEvaluations))
+	for outcome := range registry.progressEvaluations {
+		progressOutcomes = append(progressOutcomes, outcome)
+	}
+	sort.Strings(progressOutcomes)
+	for _, outcome := range progressOutcomes {
+		fmt.Fprintf(&output, "mmdash_progress_evaluations_total{outcome=%s} %d\n", quote(outcome), registry.progressEvaluations[outcome])
+	}
 	output.WriteString("# HELP mmdash_repo_operations_total Completed Repo operations.\n")
 	output.WriteString("# TYPE mmdash_repo_operations_total counter\n")
 	output.WriteString(

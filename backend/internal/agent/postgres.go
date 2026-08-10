@@ -682,13 +682,13 @@ func (store PostgresStore) FailRunReservation(
 	now time.Time,
 ) error {
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		var sessionID, projectID string
+		var sessionID, projectID, source, sourceRunID string
 		if err := tx.QueryRowContext(ctx, `
 			UPDATE agent_runs SET status='failed', safe_error_code=$2,
 				completed_at=$3, updated_at=$3, version=version+1
 			WHERE run_id=$1 AND status='queued'
-			RETURNING session_id
-		`, runID, safeErrorCode, now).Scan(&sessionID); err != nil {
+			RETURNING session_id,source,COALESCE(source_run_id::text,'')
+		`, runID, safeErrorCode, now).Scan(&sessionID, &source, &sourceRunID); err != nil {
 			return mapNotFound(err)
 		}
 		if err := tx.QueryRowContext(ctx,
@@ -696,11 +696,15 @@ func (store PostgresStore) FailRunReservation(
 			sessionID).Scan(&projectID); err != nil {
 			return err
 		}
+		payload := map[string]interface{}{
+			"session_id": sessionID, "status": RunRecordFailed,
+			"safe_error_code": safeErrorCode, "source": source,
+		}
+		if sourceRunID != "" {
+			payload["source_run_id"] = sourceRunID
+		}
 		if err := store.event(ctx, tx, actorID, "session", projectID,
-			"agent.run.failed", runID, map[string]interface{}{
-				"session_id": sessionID, "status": RunRecordFailed,
-				"safe_error_code": safeErrorCode,
-			}); err != nil {
+			"agent.run.failed", runID, payload); err != nil {
 			return err
 		}
 		return store.record(ctx, tx, actorID, "session", projectID,
@@ -1132,11 +1136,15 @@ func (store PostgresStore) UpdateRun(
 			if status == RunRecordStopped {
 				eventType = "agent.run.stopped"
 			}
+			payload := map[string]interface{}{
+				"session_id": item.SessionID, "status": status,
+				"safe_error_code": safeErrorCode, "source": item.Source,
+			}
+			if item.SourceRunID != "" {
+				payload["source_run_id"] = item.SourceRunID
+			}
 			if err := store.event(ctx, tx, item.CreatedBy, "session", projectID,
-				eventType, runID, map[string]interface{}{
-					"session_id": item.SessionID, "status": status,
-					"safe_error_code": safeErrorCode,
-				}); err != nil {
+				eventType, runID, payload); err != nil {
 				return err
 			}
 			outcome := "success"

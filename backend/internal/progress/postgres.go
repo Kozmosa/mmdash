@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgconn"
+	"github.com/mmdash/mmdash/backend/internal/audit"
+	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
@@ -24,9 +27,12 @@ type ObjectReferenceValidator interface {
 }
 
 type PostgresStore struct {
+	Audit              audit.Recorder
 	Clock              clock.Clock
 	DB                 *sql.DB
+	EvaluatorMode      string
 	Generator          identity.Generator
+	Jobs               jobs.TransactionalWriter
 	Outbox             outbox.Writer
 	References         ObjectReferenceValidator
 	ReminderLease      time.Duration
@@ -212,6 +218,11 @@ func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorI
 		if err != nil {
 			return mapNotFound(err)
 		}
+		if source == "human" {
+			current.ManualOverrideFields = mergeOverrideFields(current.ManualOverrideFields, taskInputFields(input))
+		} else {
+			input = filterTaskInput(input, current.ManualOverrideFields)
+		}
 		if input.MilestoneID != nil {
 			current.MilestoneID = *input.MilestoneID
 		}
@@ -253,7 +264,8 @@ func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorI
 		}
 		current.Source, current.UpdatedBy, current.UpdatedAt = source, actorID, now
 		metadata, _ := json.Marshal(nonNilStrings(current.RelatedObjectIDs))
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,assignee_id=NULLIF($7,'')::uuid,start_at=$8,due_at=$9,completed_at=$10,source=$11,source_run_id=$12,related_object_ids=$13,updated_by=$14,updated_at=$15 WHERE project_id=$1 AND task_id=$2`, projectID, id, current.MilestoneID, current.Title, current.Description, current.Status, current.AssigneeID, current.StartAt, current.DueAt, current.CompletedAt, current.Source, current.SourceRunID, metadata, actorID, now); err != nil {
+		overrides, _ := json.Marshal(nonNilStrings(current.ManualOverrideFields))
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,assignee_id=NULLIF($7,'')::uuid,start_at=$8,due_at=$9,completed_at=$10,source=$11,source_run_id=$12,source_evaluation_id=NULL,related_object_ids=$13,manual_override_fields=$14,updated_by=$15,updated_at=$16 WHERE project_id=$1 AND task_id=$2`, projectID, id, current.MilestoneID, current.Title, current.Description, current.Status, current.AssigneeID, current.StartAt, current.DueAt, current.CompletedAt, current.Source, current.SourceRunID, metadata, overrides, actorID, now); err != nil {
 			return mapPostgresMutationError(err)
 		}
 		if err := store.progressEvent(ctx, tx, "progress.task.updated", projectID, actorID, id, "task", current.Title, current.Status, map[string]interface{}{"source": current.Source, "source_run_id": current.SourceRunID}); err != nil {
@@ -786,17 +798,22 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 
 func (store PostgresStore) GetSettings(ctx context.Context, projectID string) (Settings, error) {
 	var item Settings
-	err := store.DB.QueryRowContext(ctx, `SELECT project_id,auto_task_changes,updated_by,updated_at FROM progress_settings WHERE project_id=$1`, projectID).Scan(&item.ProjectID, &item.AutoTaskChanges, &item.UpdatedBy, &item.UpdatedAt)
+	err := store.DB.QueryRowContext(ctx, settingsSelect+` WHERE project_id=$1`, projectID).Scan(settingsScanTargets(&item)...)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Settings{ProjectID: projectID, AutoTaskChanges: true}, nil
+		item = defaultSettings(projectID)
+		err = nil
 	}
+	item.EvaluatorMode = store.evaluatorMode()
 	return item, err
 }
 
 func (store PostgresStore) UpdateSettings(ctx context.Context, projectID, actorID string, autoTaskChanges bool) (Settings, error) {
 	now := store.now()
 	_, err := store.DB.ExecContext(ctx, `INSERT INTO progress_settings(project_id,auto_task_changes,updated_by,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET auto_task_changes=EXCLUDED.auto_task_changes,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`, projectID, autoTaskChanges, actorID, now)
-	return Settings{ProjectID: projectID, AutoTaskChanges: autoTaskChanges, UpdatedBy: actorID, UpdatedAt: now}, err
+	if err != nil {
+		return Settings{}, err
+	}
+	return store.GetSettings(ctx, projectID)
 }
 
 func (store PostgresStore) progressEvent(ctx context.Context, tx transaction.Tx, eventType, projectID, actorID, resourceID, resourceType, title, status string, metadata map[string]interface{}) error {
@@ -822,11 +839,11 @@ func (store PostgresStore) now() time.Time {
 }
 
 const milestoneSelect = `SELECT milestone_id,project_id,title,description,status,critical,start_at,target_at,completed_at,source,source_run_id,created_by,updated_by,created_at,updated_at FROM progress_milestones`
-const taskSelect = `SELECT task_id,project_id,COALESCE(milestone_id::text,''),title,description,status,COALESCE(assignee_id::text,''),start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at FROM progress_tasks`
+const taskSelect = `SELECT task_id,project_id,COALESCE(milestone_id::text,''),title,description,status,COALESCE(assignee_id::text,''),start_at,due_at,completed_at,source,source_run_id,COALESCE(source_evaluation_id::text,''),manual_override_fields,related_object_ids,created_by,updated_by,created_at,updated_at FROM progress_tasks`
 const reminderColumns = `reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at,available_at,attempts,max_attempts,COALESCE(locked_by,''),lease_expires_at,last_error_code,last_error_message`
 const claimedReminderColumns = `reminder.reminder_id,reminder.project_id,COALESCE(reminder.task_id::text,''),COALESCE(reminder.milestone_id::text,''),reminder.remind_at,reminder.status,reminder.note,reminder.source,reminder.triggered_at,reminder.created_by,reminder.created_at,reminder.updated_at,reminder.available_at,reminder.attempts,reminder.max_attempts,COALESCE(reminder.locked_by,''),reminder.lease_expires_at,reminder.last_error_code,reminder.last_error_message`
 const reminderSelect = `SELECT ` + reminderColumns + ` FROM progress_reminders`
-const proposalSelect = `SELECT proposal_id,project_id,proposal_type,COALESCE(target_id::text,''),title,rationale,changes,source,source_run_id,proposed_by,status,COALESCE(reviewed_by::text,''),reviewed_at,review_note,created_at,updated_at FROM progress_proposals`
+const proposalSelect = `SELECT proposal_id,project_id,proposal_type,COALESCE(target_id::text,''),title,rationale,changes,source,source_run_id,COALESCE(source_evaluation_id::text,''),source_key,proposed_by,status,COALESCE(reviewed_by::text,''),reviewed_at,review_note,created_at,updated_at FROM progress_proposals`
 
 type scanFunc func(...interface{}) error
 
@@ -839,13 +856,18 @@ func scanMilestone(scan scanFunc) (Milestone, error) {
 }
 func scanTask(scan scanFunc) (Task, error) {
 	var item Task
-	var raw []byte
-	if err := scan(&item.ID, &item.ProjectID, &item.MilestoneID, &item.Title, &item.Description, &item.Status, &item.AssigneeID, &item.StartAt, &item.DueAt, &item.CompletedAt, &item.Source, &item.SourceRunID, &raw, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var overrides, related []byte
+	if err := scan(&item.ID, &item.ProjectID, &item.MilestoneID, &item.Title, &item.Description, &item.Status, &item.AssigneeID, &item.StartAt, &item.DueAt, &item.CompletedAt, &item.Source, &item.SourceRunID, &item.SourceEvaluationID, &overrides, &related, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return Task{}, err
 	}
-	if err := json.Unmarshal(raw, &item.RelatedObjectIDs); err != nil {
+	if err := json.Unmarshal(overrides, &item.ManualOverrideFields); err != nil {
 		return Task{}, err
 	}
+	if err := json.Unmarshal(related, &item.RelatedObjectIDs); err != nil {
+		return Task{}, err
+	}
+	item.ManualOverrideFields = nonNilStrings(item.ManualOverrideFields)
+	item.RelatedObjectIDs = nonNilStrings(item.RelatedObjectIDs)
 	return item, nil
 }
 func scanReminder(scan scanFunc) (Reminder, error) {
@@ -858,13 +880,98 @@ func scanReminder(scan scanFunc) (Reminder, error) {
 func scanProposal(scan scanFunc) (Proposal, error) {
 	var item Proposal
 	var raw []byte
-	if err := scan(&item.ID, &item.ProjectID, &item.ProposalType, &item.TargetID, &item.Title, &item.Rationale, &raw, &item.Source, &item.SourceRunID, &item.ProposedBy, &item.Status, &item.ReviewedBy, &item.ReviewedAt, &item.ReviewNote, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := scan(&item.ID, &item.ProjectID, &item.ProposalType, &item.TargetID, &item.Title, &item.Rationale, &raw, &item.Source, &item.SourceRunID, &item.SourceEvaluationID, &item.SourceKey, &item.ProposedBy, &item.Status, &item.ReviewedBy, &item.ReviewedAt, &item.ReviewNote, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return Proposal{}, err
 	}
 	if err := json.Unmarshal(raw, &item.Changes); err != nil {
 		return Proposal{}, err
 	}
 	return item, nil
+}
+
+func taskInputFields(input UpdateTaskInput) []string {
+	fields := []string{}
+	if input.MilestoneID != nil {
+		fields = append(fields, "milestone_id")
+	}
+	if input.Title != nil {
+		fields = append(fields, "title")
+	}
+	if input.Description != nil {
+		fields = append(fields, "description")
+	}
+	if input.Status != nil {
+		fields = append(fields, "status")
+	}
+	if input.AssigneeID != nil {
+		fields = append(fields, "assignee_id")
+	}
+	if input.StartAt != nil {
+		fields = append(fields, "start_at")
+	}
+	if input.DueAt != nil {
+		fields = append(fields, "due_at")
+	}
+	if input.RelatedObjectIDs != nil {
+		fields = append(fields, "related_object_ids")
+	}
+	return fields
+}
+
+func mergeOverrideFields(current, changed []string) []string {
+	seen := make(map[string]bool, len(current)+len(changed))
+	for _, field := range append(append([]string{}, current...), changed...) {
+		if field != "" {
+			seen[field] = true
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for field := range seen {
+		result = append(result, field)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func filterTaskInput(input UpdateTaskInput, overrideFields []string) UpdateTaskInput {
+	overridden := map[string]bool{}
+	for _, field := range overrideFields {
+		overridden[field] = true
+	}
+	if overridden["milestone_id"] {
+		input.MilestoneID = nil
+	}
+	if overridden["title"] {
+		input.Title = nil
+	}
+	if overridden["description"] {
+		input.Description = nil
+	}
+	if overridden["status"] {
+		input.Status = nil
+	}
+	if overridden["assignee_id"] {
+		input.AssigneeID = nil
+	}
+	if overridden["start_at"] {
+		input.StartAt = nil
+	}
+	if overridden["due_at"] {
+		input.DueAt = nil
+	}
+	if overridden["related_object_ids"] {
+		input.RelatedObjectIDs = nil
+	}
+	return input
+}
+
+func validProposalType(value string) bool {
+	switch value {
+	case "milestone.create", "milestone.update", "task.create", "task.update":
+		return true
+	default:
+		return false
+	}
 }
 
 func mapNotFound(err error) error {

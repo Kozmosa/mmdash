@@ -556,6 +556,7 @@ func TestAgentRoleIsReadOnlyOutsideExplicitContextPromotion(t *testing.T) {
 		PermissionArtifactRead,
 		PermissionArtifactDownload,
 		PermissionProgressRead,
+		PermissionProgressEvaluate,
 	} {
 		if !hasPermission(permissions, permission) {
 			t.Fatalf("Agent role is missing Stage 5 permission %q", permission)
@@ -599,6 +600,8 @@ func TestAgentAuthorizationRequiresMatchingProductToolGrant(t *testing.T) {
 		{name: "repo through data read", tools: []string{"data.read"}, permission: PermissionRepoRead, allowed: true},
 		{name: "data list", tools: []string{"data.list"}, permission: PermissionDataRead, allowed: true},
 		{name: "context proposal", tools: []string{"context.promote"}, permission: PermissionContextPropose, allowed: true},
+		{name: "progress read", tools: []string{"progress.get"}, permission: PermissionProgressRead, allowed: true},
+		{name: "progress evaluate", tools: []string{"progress.recalculate"}, permission: PermissionProgressEvaluate, allowed: true},
 		{name: "list cannot download", tools: []string{"data.list"}, permission: PermissionArtifactDownload},
 		{name: "project tool cannot read artifact", tools: []string{"project.get"}, permission: PermissionArtifactRead},
 		{name: "no tool grants management", tools: []string{"data.read"}, permission: PermissionProgressManage},

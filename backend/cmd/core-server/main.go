@@ -235,7 +235,8 @@ func run(logger *logging.Logger) error {
 		Transaction: transactionManager,
 	}
 	progressStore := progress.PostgresStore{
-		Clock: systemClock, DB: db, Generator: idGenerator,
+		Audit: auditRecorder, Clock: systemClock, DB: db, Generator: idGenerator,
+		EvaluatorMode: processConfig.Progress.EvaluatorMode, Jobs: jobStore,
 		Outbox: outboxWriter, ReminderLease: processConfig.Progress.ReminderLease,
 		References:         dataStore,
 		ReminderRetryDelay: processConfig.Progress.ReminderRetryDelay,
@@ -243,7 +244,8 @@ func run(logger *logging.Logger) error {
 	}
 	progressService := &progress.Service{
 		Access: projectService, Audit: auditRecorder, Clock: systemClock,
-		Generator: idGenerator, Store: progressStore,
+		EvaluatorMode: processConfig.Progress.EvaluatorMode, Facts: dataStore, Generator: idGenerator, Jobs: jobService,
+		Store: progressStore, Tracking: progressStore,
 	}
 	notificationRegistry, err := notification.DefaultRegistry()
 	if err != nil {
@@ -294,6 +296,12 @@ func run(logger *logging.Logger) error {
 		}},
 		{"progress_proposal", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
 			return progressService.ReadProposal(ctx, caller, projectID, sourceID)
+		}},
+		{"progress_evaluation", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return progressService.ReadEvaluation(ctx, caller, projectID, sourceID)
+		}},
+		{"progress_risk", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return progressService.ReadRisk(ctx, caller, projectID, sourceID)
 		}},
 	} {
 		definition := definition
@@ -443,8 +451,8 @@ func run(logger *logging.Logger) error {
 		OAuthSettings: settingsService, Settings: settingsService,
 		Store: modelStore,
 	}
-	jobStore.Hooks = []jobs.LifecycleHook{artifactService, *modelService}
-	jobService.Hooks = []jobs.LifecycleHook{artifactService, *modelService}
+	jobStore.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService}
+	jobService.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService}
 	jobService.Store = jobStore
 	artifactService.Jobs = jobService
 	modelService.Jobs = jobService
@@ -507,6 +515,7 @@ func run(logger *logging.Logger) error {
 		Generator: idGenerator, Metrics: metricRegistry, Projects: projectService,
 		Settings: &settingsService, Store: agentStore,
 	}
+	progressService.Agent = agentService
 	agentModule := agent.Module{Service: *agentService}
 	projectService.AgentGrants = agentStore
 	dataService.Agent = agentService
@@ -632,6 +641,8 @@ func run(logger *logging.Logger) error {
 		"progress.milestone.created", "progress.milestone.updated",
 		"progress.task.created", "progress.task.updated", "progress.task.deleted",
 		"progress.proposal.created", "progress.proposal.reviewed",
+		"progress.evaluation.completed", "progress.evaluation.failed",
+		"progress.risk.detected",
 	} {
 		if err := projections.Register(eventType, datahub.ProjectorFunc(dataStore.ProjectProgress)); err != nil {
 			return err
@@ -666,6 +677,11 @@ func run(logger *logging.Logger) error {
 	}
 	if err := eventBus.Register(eventbus.Consumer{
 		Name: "notification.settings", Patterns: []string{"settings.updated", "settings.deleted"}, Handler: notificationService.HandleSettingsEvent,
+	}); err != nil {
+		return err
+	}
+	if err := eventBus.Register(eventbus.Consumer{
+		Name: "progress.automatic-tracking", Patterns: progress.AutomaticTriggerPatterns(), Handler: progressService.HandleTrackingEvent,
 	}); err != nil {
 		return err
 	}
@@ -804,6 +820,19 @@ func run(logger *logging.Logger) error {
 		logger.Error("progress.reminder.processor.failed", map[string]interface{}{
 			"error": processorErr.Error(),
 		})
+	})
+	progressTrackingProcessorID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Progress tracking processor identity: %w", err)
+	}
+	go (progress.TrackingProcessor{
+		Agent: agentService, Facts: dataStore,
+		Lease: processConfig.Progress.TrackingLease, Metrics: metricRegistry,
+		Owner:      "core-progress-tracking-" + progressTrackingProcessorID,
+		Poll:       processConfig.Progress.TrackingPollInterval,
+		RetryDelay: processConfig.Progress.TrackingRetryDelay, Store: progressStore,
+	}).Run(ctx, func(processorErr error) {
+		logger.Error("progress.tracking.processor.failed", map[string]interface{}{"error": processorErr.Error()})
 	})
 	startInvitationExpiryProcessor(ctx, project.InvitationExpiryProcessor{
 		BatchSize: processConfig.Project.InvitationExpiryBatchSize,

@@ -78,6 +78,8 @@ function renderGoHandlerTypes(document) {
     "CreateProgressProposalRequest",
     "ReviewProgressProposalRequest",
     "UpdateProgressSettingsRequest",
+    "RecalculateProgressRequest",
+    "SetProgressStageOverrideRequest",
     "CreateAgentInstanceRequest",
     "UpdateAgentInstanceRequest",
     "RunAgentChecksRequest",
