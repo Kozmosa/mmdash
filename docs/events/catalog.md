@@ -77,6 +77,14 @@ All entries currently use envelope schema version `1`.
 | `agent.token.activated`         | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, optional replaced Token ID, `status=active`                   | none                           |
 | `agent.token.rotation_failed`   | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, safe code, whether an old Token remains active                | none                           |
 | `agent.token.revoked`           | agent    | yes            | `project_id`, Token `resource_id`, `status=revoked`                                                             | none                           |
+| `experiment.created`            | experiment | yes          | `experiment_id`, immutable `source_commit`, `entrypoint`, `status=created`                                    | `datahub.projections`, progress trigger |
+| `experiment.started`            | experiment | yes          | `experiment_id`, `task_id`, `box_id`, `runtime`, `status`                                                      | `datahub.projections`          |
+| `experiment.succeeded`          | experiment | yes          | `experiment_id`, `task_id`, `artifact_id`, `version_id`, `status=succeeded`                                    | `datahub.projections`          |
+| `experiment.failed`             | experiment | yes          | `experiment_id`, `task_id`, bounded `error_code`, optional `exit_code`, `status`                               | `datahub.projections`          |
+| `experiment.canceled`           | experiment | yes          | `experiment_id`, `task_id`, `status=canceled`                                                                  | `datahub.projections`          |
+| `experiment.archived`           | experiment | yes          | `experiment_id`, `status=archived`                                                                             | `datahub.projections`          |
+| `box.registered`                | boxcontrol | yes         | `box_id`, `project_id`, `version`, `status=registering`                                                        | `datahub.projections`          |
+| `box.heartbeat.received`        | boxcontrol | yes         | `box_id`, `project_id`, `version`, `running_tasks`, `status`                                                   | none                           |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/manifest.schema.json",
+  "title": "mmdash experiment result manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "experiment_id", "status", "files"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1" },
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "status": { "type": "string", "enum": ["succeeded", "failed", "canceled", "timed_out"] },
+    "summary": { "type": "string", "maxLength": 20000 },
+    "exit_code": { "type": "integer", "minimum": -255, "maximum": 255 },
+    "files": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "size_bytes", "kind"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*(?:^|/)\\.\\.\\s*$)[^\\x00]+$", "maxLength": 4096 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "size_bytes": { "type": "integer", "minimum": 0, "maximum": 10737418240 },
+          "kind": { "type": "string", "enum": ["file", "log", "figure", "table", "data", "model", "summary"] },
+          "mime_type": { "type": "string", "maxLength": 200 }
+        }
+      }
+    }
+  }
+}

@@ -114,6 +114,16 @@ function renderGoHandlerTypes(document) {
     "UpdateModelSnapshotRequest",
     "StartNotionOAuthRequest",
     "CompleteNotionOAuthRequest",
+    "RegisterBoxRequest",
+    "BoxHeartbeatRequest",
+    "BoxBindingRequest",
+    "ClaimBoxTaskRequest",
+    "BoxTaskHeartbeatRequest",
+    "BoxTaskLogRequest",
+    "BoxTaskStatusRequest",
+    "BoxTaskResultRequest",
+    "CreateExperimentRequest",
+    "RunExperimentRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {

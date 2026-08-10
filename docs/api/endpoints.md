@@ -1,5 +1,23 @@
 # API endpoint catalog
 
+Stage 8 Experiment and Box operations:
+
+- Core Experiment: `experiment.list`, `experiment.create`, `experiment.compare`,
+  `experiment.get`, `experiment.run`, `experiment.cancel`,
+  `experiment.archive`, `experiment.logs.list`, and `result.get`.
+- Core Box Control: `box.list`, `box.register`, `box.get`, `box.heartbeat`,
+  `box.binding.set`, `box.binding.delete`, `box.tasks.claim`,
+  `box.tasks.heartbeat`, `box.tasks.logs.append`, `box.tasks.status`, and
+  `box.tasks.result`, `box.tasks.artifact.upload`.
+- Web BFF: `bff.experiment.list`, `bff.experiment.create`,
+  `bff.experiment.compare`, `bff.experiment.get`, `bff.experiment.run`,
+  `bff.experiment.cancel`, `bff.experiment.archive`,
+  `bff.experiment.logs.list`, `bff.result.get`, `bff.box.list`,
+  `bff.box.binding.set`, and `bff.box.binding.delete`.
+- MCP Gateway and CLI expose the frozen `experiment.create`, `experiment.run`,
+  `experiment.status`, and `result.get` tools through the same Core RBAC and
+  Audit boundary.
+
 
 Stage 7 Model operations:
 
