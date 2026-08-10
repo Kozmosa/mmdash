@@ -102,8 +102,10 @@ ignored so evaluation output cannot recursively retrigger itself.
 `core_agent` is the production path. The Worker asks Core to execute the
 evaluation; Core uses only the existing Agent/Hermes Session, Run, and Jobs
 contracts, persists a `progress` Session and Run with
-`source=progress_evaluation`, and returns the normalized JSON output. No new or
-guessed Hermes API is introduced. Hermes Cron reconciliation uses the existing
+`source=progress_evaluation` plus a dedicated `source_evaluation_id`, and
+returns the normalized JSON output. The parent-Run `source_run_id` foreign key
+is never overloaded with an evaluation ID. No new or guessed Hermes API is
+introduced. Hermes Cron reconciliation uses the existing
 Jobs API and requires an active selected Agent.
 
 `mock` is an explicit deterministic local/acceptance mode. It derives planning,
@@ -172,7 +174,7 @@ Migrations `000020_notification_authoritative_fields` and
 invitation Actions, target-aware Delivery idempotency, Rule/Settings snapshots,
 bounded retry limits, safe provider diagnostics, and Notification metrics.
 
-Migration `000024_notification_routing_model` aligns routing with the Type
+Migration `000031_notification_routing_model` aligns routing with the Type
 Registry: the Reminder Type remains default-on in Inbox, while the Project Rule
 can only opt into Feishu or Generic Webhook delivery. Progress never owns or
 changes a user's Inbox preference.

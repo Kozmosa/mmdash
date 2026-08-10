@@ -57,7 +57,8 @@ Stage 6 automatic Progress tracking adds:
 
 Automatic Task and Proposal events may carry `source_evaluation_id`; Agent Run
 events may carry `source=progress_evaluation` and the originating evaluation
-as `source_run_id`. These references provide traceability and are also the
+as `source_evaluation_id`. `source_run_id` remains reserved for parent Run
+provenance. These references provide traceability and are also the
 explicit loop-prevention boundary for the automatic event consumer.
 
 Artifact event payloads contain stable IDs and immutable metadata only. They

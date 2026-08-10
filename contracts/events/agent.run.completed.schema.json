@@ -18,6 +18,7 @@
     "status": { "const": "completed" },
     "safe_error_code": { "const": "" },
     "source": { "type": "string", "enum": ["message", "regenerate", "rerun", "progress_evaluation"] },
-    "source_run_id": { "type": "string", "format": "uuid" }
+    "source_run_id": { "type": "string", "format": "uuid" },
+    "source_evaluation_id": { "type": "string", "format": "uuid" }
   }
 }

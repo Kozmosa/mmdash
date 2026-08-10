@@ -116,7 +116,12 @@ adding operator replay support.
 
 `cmd/migrate` takes a PostgreSQL advisory lock, applies sorted `*.up.sql` files
 transactionally, and records each version in `system_schema_migrations`.
-Domain migrations must only change their own table prefix and semantics.
+The catalog requires one six-digit number per migration, a continuous sequence,
+and a matching down file. An immutable legacy-alias ledger reconciles migration
+filenames that reached development databases before final integration: it
+records the canonical filename without executing the SQL again and retains the
+legacy record as upgrade evidence. Domain migrations must only change their own
+table prefix and semantics.
 
 Stage 6 Progress uses the same PostgreSQL Job Queue and Outbox. Core claims
 debounced evaluation requests and Hermes Cron reconciliation with

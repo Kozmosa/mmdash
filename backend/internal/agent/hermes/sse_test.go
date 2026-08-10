@@ -14,14 +14,14 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/agent"
 )
 
-func TestStreamChatNormalizesNamedHermesEventsAndForwardsLastEventID(t *testing.T) {
+func TestStreamChatNormalizesNamedHermesEventsAndDoesNotForwardLastEventID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assertRuntimeAuth(t, request)
 		if request.Method != http.MethodPost || request.URL.Path != "/api/sessions/session-main/chat/stream" {
 			t.Fatalf("unexpected request: %s %s", request.Method, request.URL.Path)
 		}
-		if request.Header.Get("Last-Event-ID") != "prior:7" {
-			t.Fatalf("Last-Event-ID not forwarded: %#v", request.Header)
+		if lastEventID := request.Header.Get("Last-Event-ID"); lastEventID != "" {
+			t.Fatalf("Last-Event-ID must not be forwarded to Hermes: %q", lastEventID)
 		}
 		body := decodeRequestMap(t, request)
 		if body["message"] != "hello" || body["instructions"] != "project prompt" {
@@ -84,14 +84,14 @@ func TestStreamChatNormalizesNamedHermesEventsAndForwardsLastEventID(t *testing.
 	}
 }
 
-func TestStreamRunNormalizesUnnamedEventsAndStopsOnHandlerError(t *testing.T) {
+func TestStreamRunNormalizesUnnamedEventsAndDoesNotForwardLastEventID(t *testing.T) {
 	stop := errors.New("stop callback")
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet || request.URL.Path != "/v1/runs/run-1/events" {
 			t.Fatalf("unexpected request: %s %s", request.Method, request.URL.Path)
 		}
-		if request.Header.Get("Last-Event-ID") != "run-1:3" {
-			t.Fatalf("missing Last-Event-ID: %#v", request.Header)
+		if lastEventID := request.Header.Get("Last-Event-ID"); lastEventID != "" {
+			t.Fatalf("Last-Event-ID must not be forwarded to Hermes: %q", lastEventID)
 		}
 		response.Header().Set("Content-Type", "text/event-stream")
 		_, _ = response.Write([]byte("data: {\"event\":\"reasoning.available\",\"run_id\":\"run-1\",\"text\":\"hidden reasoning\"}\n\n"))

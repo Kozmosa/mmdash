@@ -29,14 +29,37 @@ Commit: 3c27eb6234bf91b8ceee9e9071591b31e9b148cb
 ```
 
 The adapter maps Hermes health, authentication, capability, Session, message,
-SSE, Run, and Job APIs into the normalized boundary. Jobs are capability and
-API mappings only in Stage 5; automatic progress evaluation, Cron creation,
-and event-triggered Runs belong to Stage 6.
+SSE, Run, and Job APIs into the normalized boundary. The lightweight `Probe`
+requires the exact method and path for every Session and Run endpoint that
+mmdash calls. Hermes v2026.8.3 advertises `jobs_admin=false` and omits Jobs
+from its capability endpoint; the adapter therefore does not require Jobs in
+that payload. Job support is confirmed independently by a real `GET
+/api/jobs` probe, and automatic progress evaluation, Cron creation, and
+event-triggered Runs belong to Stage 6.
+
+`Probe` is not by itself evidence that the runtime can execute a chat Run.
+During instance creation and an explicit `runtime`/`all` connection check,
+Core follows a successful Probe with the adapter's bounded `CheckRuntime`
+exercise. It creates a temporary Session with a fixed, tool-free prompt,
+reads the Session and its messages, starts one short Run, calls the real
+`POST /v1/runs/{run_id}/stop`, drains the live SSE queue (Hermes does not
+replay it), reads Run status, and best-effort deletes the temporary Session.
+The stop-before-SSE order relies on Hermes v2026.8.3 retaining the queue until
+the stream drains; the exercise has explicit timeouts and never runs from a
+background health endpoint. Cleanup errors are surfaced without replacing a
+primary runtime error, and the persisted `runtime_check` remains an aggregate
+status/category rather than per-operation evidence.
 
 ## Instance setup and management modes
 
 An Agent instance has one Project Grant, one exact Tool allowlist, and one of
 two management modes:
+
+Its Hermes `profile` is a canonical lowercase identifier matching
+`[a-z0-9][a-z0-9_-]{0,63}`. The special `default` profile is valid; `hermes`,
+`test`, `tmp`, `root`, and `sudo` are reserved. Profile input is never silently
+trimmed or lowercased. When `profile` is omitted while creating an instance,
+the `default` profile is used.
 
 | Mode     | mmdash responsibility | User responsibility |
 | -------- | --------------------- | ------------------- |
@@ -182,12 +205,17 @@ parent Session and a distinct remote Session.
 
 The chat surface reads normalized Hermes message history and starts a Run for
 each user message. Product chat uses the Hermes Run API and Run SSE stream so a
-Run has a stable remote ID and can be stopped. SSE supports `Last-Event-ID`,
-passes through without proxy buffering, and returns normalized message,
-Tool Call start/progress/completion, approval, subagent, Run status, done,
-heartbeat, and safe error events. `tool.progress` carries only the normalized
-Tool Call summary. Raw Tool arguments, Tool results, reasoning, provider
-errors, and secrets are not part of the browser contract.
+Run has a stable remote ID and can be stopped. The normalized SSE stream passes
+through without proxy buffering and returns message, Tool Call
+start/progress/completion, approval, subagent, Run status, done, heartbeat, and
+safe error events. The Core boundary may accept `Last-Event-ID` for client
+compatibility, but pinned Hermes v2026.8.3 neither reads that header nor emits
+`id:` fields; the adapter therefore does not forward it. Hermes Run events are
+live-only and its queue is consumed once, so disconnect recovery relies on
+polling Run status and reconciling Hermes message history rather than event
+replay. `tool.progress` carries only the normalized Tool Call summary. Raw Tool
+arguments, Tool results, reasoning, provider errors, and secrets are not part
+of the browser contract.
 
 When a Run enters `waiting_for_approval`, the SSE event carries only the
 provider-neutral approval ID and allowed choices. The browser responds through
@@ -242,5 +270,14 @@ independently. Metrics use bounded adapter, mode, operation, and outcome labels;
 they never include URLs, Session IDs, Run IDs, Tool arguments, or Tokens.
 
 Automated acceptance uses a mock Hermes HTTP/SSE server pinned to the version
-above. Real Hermes interoperability is a separate environment-dependent check
-and must be reported explicitly when it was not run.
+above. Real Hermes interoperability remains an environment-dependent release
+check and must be reported explicitly when it was not run.
+
+The 2026-08-10 release check ran the pinned upstream tag and commit against the
+production Core, Worker, MCP Gateway, PostgreSQL, and Dashboard management
+paths. It covered capability probing, Sessions, numeric message IDs, Runs, SSE,
+stop, approvals, Jobs, Tool progress, manual and automatic MCP setup, Token
+activation and rotation, and a Stage 6 `core_agent` Progress evaluation. That
+check established two provider-compatibility rules now protected by contract
+tests: Hermes capability metadata may contain non-boolean values beside feature
+flags, and message IDs may be either JSON numbers or opaque strings.

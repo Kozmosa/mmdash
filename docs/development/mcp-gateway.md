@@ -10,10 +10,11 @@ The gateway uses the official MCP TypeScript SDK 2.x:
 
 - 2026-07-28 Streamable HTTP is the preferred wire protocol.
 - The SDK's stateless fallback serves 2025-era clients.
-- The current protocol removed `Mcp-Session-Id`. mmdash therefore uses the
-  application-owned `X-Mmdash-Session-Id` header for audit/session correlation,
-  with a sliding TTL and principal binding. This avoids claiming a removed MCP
-  protocol feature while preserving the design's logical session boundary.
+- The current protocol removed `Mcp-Session-Id`. mmdash therefore owns the
+  `X-Mmdash-Session-Id` header for audit/session correlation, with a sliding TTL
+  and principal binding. The pinned Hermes client still uses the 2025
+  Streamable HTTP `Mcp-Session-Id` header, so Gateway accepts and emits both
+  names with the same value. Conflicting dual headers are rejected.
 
 Clients send the returned mmdash session header on later requests. An
 authenticated `DELETE /mcp` with that header explicitly terminates it.

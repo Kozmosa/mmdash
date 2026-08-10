@@ -131,6 +131,7 @@ type RunRecord struct {
 	SessionID          string           `json:"session_id"`
 	Source             string           `json:"source"`
 	SourceRunID        string           `json:"source_run_id,omitempty"`
+	SourceEvaluationID string           `json:"source_evaluation_id,omitempty"`
 	StartedAt          *time.Time       `json:"started_at,omitempty"`
 	Status             string           `json:"status"`
 	ToolCalls          []ToolCallRecord `json:"tool_calls"`

@@ -24,6 +24,7 @@ import { loadConfig } from "./config.js";
 import { GatewayError } from "./errors/gateway-error.js";
 import {
   gatewaySessionHeader,
+  mcpSessionHeader,
   SessionRegistry,
 } from "./sessions/session-registry.js";
 import { dataListTool, dataReadTool } from "./tools/data.js";
@@ -185,7 +186,7 @@ async function handleGatewayRequest(
       requestId,
     );
     const mcpRequest = await readMcpRequest(request);
-    const suppliedSession = request.headers.get(gatewaySessionHeader);
+    const suppliedSession = readGatewaySession(request.headers);
     if (request.method === "DELETE" && suppliedSession) {
       sessions.terminate(suppliedSession, principal.sessionOwnerId);
       return new Response(null, { status: 204 });
@@ -538,12 +539,29 @@ function withGatewayHeaders(
 ): Response {
   const headers = new Headers(response.headers);
   headers.set(gatewaySessionHeader, sessionId);
+  // Hermes v2026.8.3 uses the 2025 Streamable HTTP session header. Keep the
+  // application-owned header for current-protocol clients and emit both with
+  // the same principal-bound logical session ID.
+  headers.set(mcpSessionHeader, sessionId);
   headers.set("x-request-id", requestId);
   return new Response(response.body, {
     headers,
     status: response.status,
     statusText: response.statusText,
   });
+}
+
+function readGatewaySession(headers: Headers): string | null {
+  const standard = headers.get(mcpSessionHeader);
+  const application = headers.get(gatewaySessionHeader);
+  if (standard && application && standard !== application) {
+    throw new GatewayError(
+      "MCP_SESSION_HEADER_CONFLICT",
+      "MCP session headers do not match",
+      400,
+    );
+  }
+  return standard ?? application;
 }
 
 function resolveRequestId(value: string | null): string {

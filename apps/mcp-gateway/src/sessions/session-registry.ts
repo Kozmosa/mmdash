@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { GatewayError } from "../errors/gateway-error.js";
 
 export const gatewaySessionHeader = "x-mmdash-session-id";
+export const mcpSessionHeader = "mcp-session-id";
 
 export type GatewaySession = {
   createdAt: number;
