@@ -830,6 +830,20 @@ func (store PostgresStore) CreateEvent(ctx context.Context, notification Notific
 }
 
 func (store PostgresStore) createEventTx(ctx context.Context, tx transaction.Tx, notification Notification, data, snapshot map[string]interface{}, recipients []RecipientInput, inboxEnabled bool, deliveries []DeliveryIntent, now time.Time) error {
+	if notification.ProjectID != "" {
+		var projectID string
+		err := tx.QueryRowContext(
+			ctx,
+			`SELECT project_id::text FROM projects WHERE project_id=$1 FOR KEY SHARE`,
+			notification.ProjectID,
+		).Scan(&projectID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 	dataJSON, err := json.Marshal(data)
 	if err != nil {
 		return err
