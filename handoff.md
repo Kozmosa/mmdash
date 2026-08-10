@@ -5,8 +5,99 @@
 - Base: `origin/main@f1df451`
 - Canonical migrations: continuous `000001` through
   `000032_agent_progress_evaluation_source`
-- Delivery state: real Hermes integration fixes and acceptance complete in the
-  isolated worktree; logical commits and push pending
+- Delivery state: official Hermes API-alignment hardening and real-runtime
+  acceptance complete in the isolated worktree; branch ready for a Ready PR
+
+## 2026-08-10 official Hermes API-alignment hardening
+
+Five independently implemented and reviewed issues close the remaining gaps
+against the official Hermes `v2026.8.3` Runtime contract:
+
+- Job schedules now preserve Hermes' `{kind, expr, display}` representation
+  instead of assuming a scalar cron expression.
+- Run SSE no longer forwards `Last-Event-ID` or advertises replay semantics
+  that Hermes does not implement; live queue consumption remains supported.
+- Profile validation now matches Hermes' canonical 64-character identifier,
+  reserved-name, and built-in `default` rules.
+- Capability probing validates the exact method and path for all 14 required
+  Session and Run endpoints while continuing to probe the Jobs endpoint live.
+- Explicit runtime checks now create/read/list a temporary Session, start and
+  stop a Run, require the matching live `run.cancelled` SSE event and final
+  cancelled status, and delete the temporary Session using a fresh bounded
+  cleanup context. Normal message history continues to accept Hermes'
+  resumed/descendant Session identifier semantics.
+
+The fixes are split into one logical commit per issue:
+
+- `4f8b4a4 fix(agent): normalize Hermes job schedules`
+- `46587a4 fix(agent): correct Hermes event replay semantics`
+- `a7e3b0d fix(agent): validate Hermes profile identifiers`
+- `7e84933 fix(agent): enforce Hermes capability endpoints`
+- `1ae6a10 fix(agent): exercise Hermes runtime connections`
+
+The OpenAPI Agent profile pattern and maximum length changed together with the
+generated clients and examples. There are no migration changes; the canonical
+catalog remains continuous through `000032_agent_progress_evaluation_source`.
+Contract generation/check and API catalog coverage passed, with 368 operations.
+
+### Official-instance acceptance
+
+The Compose mock Hermes service was stopped before any Agent acceptance. The
+official Hermes Agent repository tag `v2026.8.3`, commit
+`3c27eb6234bf91b8ceee9e9071591b31e9b148cb`, ran from an isolated `HERMES_HOME`
+with its locked Anthropic and messaging extras. The DeepSeek credential was
+read from the local credential file directly into the process environment and
+was never copied into source, command output, or logs.
+
+- Authenticated `/health`, `/health/detailed`, and `/v1/capabilities` passed;
+  detailed health reported the configured model, Gateway, API Server, state
+  database, disk, and background queues ready. The Core container reached the
+  host Hermes API over the isolated Compose network.
+- Creating a manual mmdash Agent instance ran the new runtime exercise and
+  returned `runtime_check.status=passed`. A second explicit runtime check also
+  passed runtime, authentication, capabilities, Sessions, messages, SSE, Runs,
+  and Jobs. Hermes reported zero remaining `mmdash_runtime_check` Sessions
+  after both cleanup paths.
+- A temporary Gateway-attestation API Token enabled the real manual reverse
+  connection. MCP `initialize` and exact `tools/list` returned the six reviewed
+  tools, the pending Agent Token activated, Project access passed, and the
+  instance became active.
+- Through the active mmdash Core boundary, a real Session and Run invoked the
+  configured DeepSeek Anthropic-compatible endpoint. The Run completed after
+  one provider API call, SSE contained `message.delta`, `tool.progress`, and
+  `run.completed`, message history contained user and assistant rows, and the
+  assistant returned `MMDASH_REAL_HERMES_OK`.
+- Complete `pnpm check` passed after one transient pair of pre-existing Repo
+  worktree timeout failures was rerun successfully. Docker smoke passed on the
+  isolated ports with only the native CLI credential-storage subtest skipped
+  because the workstation has no unlocked Secret Service. All six Compose
+  services and real Hermes were healthy; recent Compose logs contained no
+  panic/fatal/error and had zero exact matches for the Hermes, DeepSeek,
+  Gateway-attestation, Agent, or Core session credentials.
+- The temporary Agent instance and Project were disabled/trashed, the Agent
+  and Gateway-attestation credentials were revoked, official Hermes and the
+  task-owned mihomo process stopped cleanly, and the credential-bearing
+  isolated Hermes state was deleted. Compose stopped with `down` and no `-v`;
+  the PostgreSQL and MinIO volumes remain preserved.
+
+### Remaining upstream/runtime warnings
+
+- The Hermes Python 3.11 runtime links SQLite 3.50.4, so Hermes warns about the
+  upstream WAL-reset corruption issue and recommends SQLite 3.51.3+ (or the
+  listed backports). Its response store safely selected DELETE journaling, but
+  the other isolated acceptance databases retained WAL. This is an upstream
+  runtime/toolchain warning rather than an mmdash contract failure.
+- Binding the Hermes API Server to the Compose gateway requires a non-loopback
+  listener while its terminal backend remains local, so Hermes emits its
+  expected unsandboxed-terminal exposure warning. The listener was used only
+  for this local isolated acceptance and is not a production deployment model.
+- Hermes reports unavailable optional BFL, browser, image-generation, preview,
+  and web-search tools because those unrelated provider/runtime extras are not
+  configured. The no-tools DeepSeek Run and every mmdash-owned capability
+  completed successfully.
+- No messaging-platform allowlists were configured because this acceptance
+  enabled only the authenticated API Server. Hermes therefore emits its normal
+  warning that unknown messaging senders would be denied.
 
 ## 2026-08-10 real Hermes integration
 
