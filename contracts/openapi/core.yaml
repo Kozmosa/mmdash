@@ -3020,6 +3020,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProgressSettings"
+  /v1/projects/{projectId}/progress/recalculate:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Progress]
+      summary: Schedule an idempotent Progress evaluation
+      operationId: progress.recalculate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecalculateProgressRequest"
+      responses:
+        "202":
+          description: Evaluation request scheduled or merged into the active request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecalculateProgressResult"
+  /v1/projects/{projectId}/progress/evaluations:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Progress]
+      summary: List automatic Progress evaluation history
+      operationId: progress.evaluations.list
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Evaluation history page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressEvaluationPage"
+  /v1/projects/{projectId}/progress/evaluations/{evaluationId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: evaluationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Progress]
+      summary: Read one Progress evaluation
+      operationId: progress.evaluations.get
+      responses:
+        "200":
+          description: Evaluation input, output, triggers, risks, and provenance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressEvaluation"
+        "404": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/progress/evaluations/{evaluationId}/retry:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: evaluationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Progress]
+      summary: Retry a failed Progress evaluation
+      operationId: progress.evaluations.retry
+      responses:
+        "202":
+          description: Retry request scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecalculateProgressResult"
+  /v1/projects/{projectId}/progress/stage-override:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Progress]
+      summary: Override the automatically detected project stage
+      description: Human session only. The detected stage remains preserved in evaluation history.
+      operationId: progress.stage_override.set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetProgressStageOverrideRequest"
+      responses:
+        "200":
+          description: Active stage override.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressStageOverride"
+    delete:
+      tags: [Progress]
+      summary: Clear the active project stage override
+      operationId: progress.stage_override.clear
+      responses:
+        "200":
+          description: Cleared stage override.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressStageOverride"
   /v1/projects/{projectId}/models:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -3298,6 +3406,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelNotionExport"
+  /v1/internal/progress-evaluation-jobs/{jobId}/input:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Progress, Jobs]
+      summary: Read one actively leased Progress evaluation input
+      operationId: progress.worker.input
+      responses:
+        "200":
+          description: Job-bound secret-free evaluation record and input snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressEvaluation"
+  /v1/internal/progress-evaluation-jobs/{jobId}/execute:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Progress, Jobs]
+      summary: Execute one actively leased evaluation through the configured Agent
+      operationId: progress.worker.execute
+      responses:
+        "200":
+          description: Raw Agent output and persisted Agent provenance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressAgentExecution"
   /v1/inbox:
     get:
       tags: [Notification]
@@ -4113,7 +4255,7 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 4
+          maxItems: 6
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
@@ -6709,6 +6851,8 @@ components:
           $ref: "#/components/schemas/HomeSection"
         agent:
           $ref: "#/components/schemas/HomeSection"
+        progress_tracking:
+          $ref: "#/components/schemas/ProgressTrackerState"
     ModelOverview:
       type: object
       additionalProperties: false
@@ -7084,6 +7228,7 @@ components:
           board,
           gantt,
           settings,
+          tracking,
         ]
       properties:
         project_id: { type: string, format: uuid }
@@ -7129,6 +7274,10 @@ components:
               status: { type: string }
         settings:
           $ref: "#/components/schemas/ProgressSettings"
+        tracking:
+          $ref: "#/components/schemas/ProgressTrackerState"
+        latest_evaluation:
+          $ref: "#/components/schemas/ProgressEvaluation"
     Milestone:
       type: object
       additionalProperties: false
@@ -7203,6 +7352,7 @@ components:
           description,
           status,
           related_object_ids,
+          manual_override_fields,
           source,
           created_by,
           updated_by,
@@ -7223,6 +7373,13 @@ components:
         completed_at: { type: string, format: date-time }
         source: { type: string, enum: [human, agent, proposal] }
         source_run_id: { type: string, maxLength: 200 }
+        source_evaluation_id: { type: string, format: uuid }
+        manual_override_fields:
+          type: array
+          items:
+            type: string
+            enum:
+              [milestone_id, title, description, status, assignee_id, start_at, due_at, related_object_ids]
         related_object_ids:
           { type: array, items: { type: string, format: uuid } }
         created_by: { type: string, format: uuid }
@@ -7251,6 +7408,8 @@ components:
         related_object_ids:
           { type: array, items: { type: string, format: uuid } }
         source_run_id: { type: string, maxLength: 200 }
+        source_evaluation_id: { type: string, format: uuid }
+        source_key: { type: string, maxLength: 200 }
     UpdateTaskRequest:
       type: object
       additionalProperties: false
@@ -7426,18 +7585,238 @@ components:
     ProgressSettings:
       type: object
       additionalProperties: false
-      required: [project_id, auto_task_changes, updated_by, updated_at]
+      required:
+        [
+          project_id,
+          auto_task_changes,
+          auto_tracking_enabled,
+          event_triggers_enabled,
+          cron_enabled,
+          cron_schedule,
+          debounce_seconds,
+          min_interval_seconds,
+          cron_sync_status,
+          evaluator_mode,
+          updated_by,
+          updated_at,
+        ]
       properties:
         project_id: { type: string, format: uuid }
         auto_task_changes: { type: boolean }
+        auto_tracking_enabled: { type: boolean }
+        event_triggers_enabled: { type: boolean }
+        cron_enabled: { type: boolean }
+        cron_schedule: { type: string, minLength: 1, maxLength: 100 }
+        debounce_seconds: { type: integer, minimum: 0, maximum: 3600 }
+        min_interval_seconds: { type: integer, minimum: 0, maximum: 86400 }
+        evaluator_mode: { type: string, enum: [core_agent, mock] }
+        agent_instance_id: { type: string, format: uuid }
+        cron_remote_job_id: { type: string }
+        cron_sync_status:
+          { type: string, enum: [pending, syncing, ready, failed, disabled] }
+        cron_error_code: { type: string }
+        cron_synced_at: { type: string, format: date-time }
         updated_by: { type: string, format: uuid }
         updated_at: { type: string, format: date-time }
     UpdateProgressSettingsRequest:
       type: object
       additionalProperties: false
-      required: [auto_task_changes]
+      required:
+        [
+          auto_task_changes,
+          auto_tracking_enabled,
+          event_triggers_enabled,
+          cron_enabled,
+          cron_schedule,
+          debounce_seconds,
+          min_interval_seconds,
+        ]
       properties:
         auto_task_changes: { type: boolean }
+        auto_tracking_enabled: { type: boolean }
+        event_triggers_enabled: { type: boolean }
+        cron_enabled: { type: boolean }
+        cron_schedule: { type: string, minLength: 1, maxLength: 100 }
+        debounce_seconds: { type: integer, minimum: 0, maximum: 3600 }
+        min_interval_seconds: { type: integer, minimum: 0, maximum: 86400 }
+        agent_instance_id: { type: string, format: uuid }
+    ProgressTrackerState:
+      type: object
+      additionalProperties: false
+      required:
+        [project_id, detected_stage, effective_stage, stage_overridden, summary, changes_since_last, completed_items, in_progress_items, blockers, pending_questions, updated_at]
+      properties:
+        project_id: { type: string, format: uuid }
+        last_evaluation_id: { type: string, format: uuid }
+        detected_stage: { type: string, maxLength: 100 }
+        effective_stage: { type: string, maxLength: 100 }
+        stage_overridden: { type: boolean }
+        summary: { type: string, maxLength: 10000 }
+        changes_since_last: { type: array, items: { type: string } }
+        completed_items: { type: array, items: { type: string } }
+        in_progress_items: { type: array, items: { type: string } }
+        blockers: { type: array, items: { type: string } }
+        pending_questions: { type: array, items: { type: string } }
+        last_evaluated_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProgressEvaluationTrigger:
+      type: object
+      additionalProperties: false
+      required: [trigger_id, trigger_type, payload, occurred_at]
+      properties:
+        trigger_id: { type: string, format: uuid }
+        trigger_type: { type: string }
+        source_event_id: { type: string, format: uuid }
+        source_event_type: { type: string }
+        source_resource_id: { type: string }
+        source_version: { type: string }
+        payload: { type: object, additionalProperties: true }
+        occurred_at: { type: string, format: date-time }
+    ProgressRisk:
+      type: object
+      additionalProperties: false
+      required: [risk_id, evaluation_id, project_id, risk_key, title, severity, status, detail, created_at]
+      properties:
+        risk_id: { type: string, format: uuid }
+        evaluation_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        risk_key: { type: string }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        severity: { type: string, enum: [low, medium, high, critical] }
+        status: { type: string, enum: [open, mitigated, accepted] }
+        detail: { type: string }
+        created_at: { type: string, format: date-time }
+    ProgressEvaluationRiskInput:
+      type: object
+      additionalProperties: false
+      required: [key, title, severity, detail]
+      properties:
+        key: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        severity: { type: string, enum: [low, medium, high, critical] }
+        detail: { type: string }
+    ProgressEvaluationSuggestion:
+      type: object
+      additionalProperties: false
+      required: [key, proposal_type, title, rationale, changes]
+      properties:
+        key: { type: string, minLength: 1 }
+        proposal_type:
+          { type: string, enum: [milestone.create, milestone.update, task.create, task.update] }
+        target_id: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        rationale: { type: string }
+        changes: { type: object, additionalProperties: true }
+    ProgressEvaluationOutput:
+      type: object
+      additionalProperties: false
+      required: [stage, summary, changes_since_last, completed_items, in_progress_items, blockers, risks, suggestions, pending_questions]
+      properties:
+        stage: { type: string, minLength: 1, maxLength: 100 }
+        summary: { type: string, minLength: 1, maxLength: 10000 }
+        changes_since_last: { type: array, items: { type: string } }
+        completed_items: { type: array, items: { type: string } }
+        in_progress_items: { type: array, items: { type: string } }
+        blockers: { type: array, items: { type: string } }
+        risks:
+          { type: array, items: { $ref: "#/components/schemas/ProgressEvaluationRiskInput" } }
+        suggestions:
+          { type: array, items: { $ref: "#/components/schemas/ProgressEvaluationSuggestion" } }
+        pending_questions: { type: array, items: { type: string } }
+    ProgressEvaluation:
+      type: object
+      additionalProperties: false
+      required:
+        [evaluation_id, request_id, project_id, status, input_version, input_snapshot, detected_stage, summary, changes_since_last, completed_items, in_progress_items, blockers, pending_questions, source_event_ids, trigger_kind, evaluator_mode, attempts, requested_by, created_at, updated_at, triggers, risks]
+      properties:
+        evaluation_id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        job_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        input_version: { type: string, pattern: "^[0-9a-f]{64}$" }
+        input_snapshot: { type: object, additionalProperties: true }
+        output: { $ref: "#/components/schemas/ProgressEvaluationOutput" }
+        detected_stage: { type: string }
+        summary: { type: string }
+        changes_since_last: { type: array, items: { type: string } }
+        completed_items: { type: array, items: { type: string } }
+        in_progress_items: { type: array, items: { type: string } }
+        blockers: { type: array, items: { type: string } }
+        pending_questions: { type: array, items: { type: string } }
+        source_event_ids: { type: array, items: { type: string, format: uuid } }
+        trigger_kind: { type: string, enum: [event, manual, cron, retry] }
+        agent_instance_id: { type: string, format: uuid }
+        agent_session_id: { type: string, format: uuid }
+        agent_run_id: { type: string, format: uuid }
+        evaluator_mode: { type: string, enum: [core_agent, mock] }
+        attempts: { type: integer, minimum: 0 }
+        error_code: { type: string }
+        error_message: { type: string }
+        requested_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        triggers:
+          { type: array, items: { $ref: "#/components/schemas/ProgressEvaluationTrigger" } }
+        risks: { type: array, items: { $ref: "#/components/schemas/ProgressRisk" } }
+    ProgressEvaluationPage:
+      type: object
+      additionalProperties: false
+      required: [items, has_more]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ProgressEvaluation" } }
+        has_more: { type: boolean }
+        next_cursor: { type: string }
+    RecalculateProgressRequest:
+      type: object
+      additionalProperties: false
+      required: [trigger_kind, force]
+      properties:
+        trigger_kind: { type: string, enum: [manual, cron] }
+        force: { type: boolean }
+    RecalculateProgressResult:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, scheduled_for, merged]
+      properties:
+        request_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending] }
+        scheduled_for: { type: string, format: date-time }
+        merged: { type: boolean }
+    SetProgressStageOverrideRequest:
+      type: object
+      additionalProperties: false
+      required: [stage]
+      properties:
+        stage: { type: string, minLength: 1, maxLength: 100 }
+        summary: { type: string, maxLength: 2000 }
+        note: { type: string, maxLength: 2000 }
+    ProgressStageOverride:
+      type: object
+      additionalProperties: false
+      required: [override_id, project_id, stage, summary, note, active, created_by, created_at]
+      properties:
+        override_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        stage: { type: string }
+        summary: { type: string }
+        note: { type: string }
+        active: { type: boolean }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        cleared_by: { type: string, format: uuid }
+        cleared_at: { type: string, format: date-time }
+    ProgressAgentExecution:
+      type: object
+      additionalProperties: false
+      required: [output, agent_instance_id, agent_session_id, agent_run_id]
+      properties:
+        output: { type: string }
+        agent_instance_id: { type: string, format: uuid }
+        agent_session_id: { type: string, format: uuid }
+        agent_run_id: { type: string, format: uuid }
     Notification:
       type: object
       additionalProperties: false
@@ -7655,9 +8034,17 @@ components:
       enum: [hermes]
     AgentToolName:
       type: string
-      enum: [project.get, data.list, data.read, context.promote]
+      enum:
+        [
+          project.get,
+          data.list,
+          data.read,
+          context.promote,
+          progress.get,
+          progress.recalculate,
+        ]
       description: >-
-        Closed Stage 5 product Agent Tool scope. Additional MCP tools require
+        Closed Stage 6 product Agent Tool scope. Additional MCP tools require
         a later-stage domain and contract change before they can be granted.
     AgentManagementMode:
       type: string
@@ -7686,7 +8073,7 @@ components:
         [queued, running, waiting_for_approval, stopping, completed, failed, stopped]
     AgentRunSource:
       type: string
-      enum: [message, regenerate, rerun]
+      enum: [message, regenerate, rerun, progress_evaluation]
     AgentProjectAccessCapabilities:
       type: object
       additionalProperties: false
@@ -7772,11 +8159,11 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 4
+          maxItems: 6
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote]
+          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
         project_access_status:
           $ref: "#/components/schemas/AgentProjectAccessStatus"
         default_session_id: { type: string, format: uuid }
@@ -7806,11 +8193,11 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 4
+          maxItems: 6
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote]
+          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
         status:
           $ref: "#/components/schemas/AgentTokenStatus"
         replaces_token_id: { type: string, format: uuid }
@@ -7950,13 +8337,13 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 4
+          maxItems: 6
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote]
+          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
           description: >-
-            Exact reviewed Stage 5 MCP Tool names; product Agent grants do not
+            Exact reviewed Stage 6 MCP Tool names; product Agent grants do not
             accept wildcards or tools outside the closed Agent scope.
     UpdateAgentInstanceRequest:
       type: object
@@ -8011,13 +8398,13 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 4
+          maxItems: 6
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote]
+          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
           description: >-
-            Exact reviewed Stage 5 MCP Tool names; product Agent grants do not
+            Exact reviewed Stage 6 MCP Tool names; product Agent grants do not
             accept wildcards or tools outside the closed Agent scope.
     OneTimeAgentToken:
       type: object

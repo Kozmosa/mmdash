@@ -32,18 +32,21 @@ class CoreJobClient:
         timeout_seconds: float = 15.0,
         model_export_timeout_seconds: float = 300.0,
         model_completion_timeout_seconds: float = 300.0,
+        progress_evaluation_timeout_seconds: float = 900.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token.strip()
         self.timeout_seconds = timeout_seconds
         self.model_export_timeout_seconds = model_export_timeout_seconds
         self.model_completion_timeout_seconds = model_completion_timeout_seconds
+        self.progress_evaluation_timeout_seconds = progress_evaluation_timeout_seconds
         if not self.base_url or not self.api_token:
             raise ValueError("Core base URL and API token are required")
         if (
             self.timeout_seconds <= 0
             or self.model_export_timeout_seconds <= 0
             or self.model_completion_timeout_seconds <= 0
+            or self.progress_evaluation_timeout_seconds <= 0
         ):
             raise ValueError("Core request timeouts must be positive")
 
@@ -167,6 +170,20 @@ class CoreJobClient:
             "GET",
             f"/v1/internal/model-notion-jobs/{job_id}/export",
             timeout_seconds=self.model_export_timeout_seconds,
+        )
+
+    def get_progress_evaluation_input(self, job_id: str) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/v1/internal/progress-evaluation-jobs/{job_id}/input",
+            timeout_seconds=self.progress_evaluation_timeout_seconds,
+        )
+
+    def execute_progress_evaluation(self, job_id: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/internal/progress-evaluation-jobs/{job_id}/execute",
+            timeout_seconds=self.progress_evaluation_timeout_seconds,
         )
 
     def download_transfer(

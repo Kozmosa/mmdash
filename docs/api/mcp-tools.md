@@ -10,6 +10,8 @@ machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 | `data.list`    | List Data Hub object projections         | Yes            | CLI, Agent  | `data.list.json`      | Stage 1 read         |
 | `data.read`    | Read through the authoritative adapter   | Yes            | CLI, Agent  | `data.read.json`      | Stage 1 read         |
 | `context.promote` | Submit a pending Context Proposal     | Yes            | CLI, Agent  | `context.promote.json` | Stage 5 proposal    |
+| `progress.get` | Read Progress state and evaluation provenance | Yes       | CLI, Agent  | `progress.get.json`   | Stage 6 read         |
+| `progress.recalculate` | Schedule a versioned Progress evaluation | Yes   | CLI, Agent  | `progress.recalculate.json` | Stage 6 mutation |
 | `system.echo`  | Verify the complete MCP Gateway boundary | Yes            | CLI, Agent  | `system.echo.json`    | Foundation test tool |
 
 ## Client and principal paths
@@ -64,6 +66,11 @@ Stage 4 adds Progress projections for `milestone`, `task`, and
 Dependency and Reminder events stay in the domain event stream and are not
 advertised as standalone Data Hub object types yet.
 
+Stage 6 adds `progress_evaluation` and `progress_risk` projections. Their
+authoritative readers return the versioned input/output, trigger provenance,
+failure state, Agent Session/Run references, and bounded risk detail without
+exposing credentials or raw provider errors.
+
 Stage 7 adds `model_source`, `model_question`, and `model_snapshot`.
 `model_source` resolves the single authorized source and synchronization
 countdown; `model_question` resolves the question detail and latest Snapshot;
@@ -88,6 +95,20 @@ the authenticated Agent and Project and the Run belongs to the Session;
 mmdash-started Runs receive these local IDs through safe instructions.
 External Runs may omit both. The Tool cannot review proposals and never copies
 full Agent conversation history into the Project Data Hub.
+
+## `progress.get` and `progress.recalculate`
+
+`progress.get` reads the same authorized aggregate used by the Web Progress
+page: detected and effective stage, active human override, latest evaluation,
+history-linked Tasks/Proposals, and tracking Settings. It is read-only.
+
+`progress.recalculate` schedules work in the Core-owned PostgreSQL Job Queue;
+the Gateway never evaluates or writes Progress directly. Product Agent Tokens
+may request only `trigger_kind=cron` with `force=false`. A human CLI identity
+may request `manual` and may set `force=true` to bypass the configured minimum
+interval. The request is still project-scoped, debounced, input-versioned,
+audited, and subject to Core RBAC. Neither Tool can accept/reject a Proposal or
+remove a human stage/Task override.
 
 ## `system.echo`
 

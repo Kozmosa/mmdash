@@ -50,6 +50,14 @@ and an exact MCP Tool allowlist, stored by Hermes, and presented by Hermes
 directly to this Gateway. The user CLI has a separate user-delegated identity
 and does not proxy, mint, persist, or validate Hermes credentials.
 
+Stage 6 expands the reviewed exact Tool set to `progress.get` and
+`progress.recalculate`. The former reads the Core Progress aggregate. The
+latter schedules a Core-owned PostgreSQL evaluation request; Agent credentials
+are limited by Core to `trigger_kind=cron` and `force=false`. The Gateway never
+calls Hermes or PostgreSQL and never reviews Proposals or changes human
+overrides. Both Tools enforce Gateway Project/Tool scope, Core RBAC, safe error
+mapping, and the normal MCP/Core Audit path.
+
 A pending product Agent Token can authenticate only for its verification
 handshake. `auth.me`, current-protocol `server/discover`, and legacy
 `initialize` do not mark it verified. Once the client has negotiated an mmdash

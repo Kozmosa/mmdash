@@ -35,6 +35,10 @@ import {
   projectMemberListTool,
 } from "./tools/project-members.js";
 import { projectGetTool, projectListTool } from "./tools/projects.js";
+import {
+  progressGetTool,
+  progressRecalculateTool,
+} from "./tools/progress.js";
 
 export type GatewayFetchHandler = {
   close(): Promise<void>;
@@ -142,6 +146,8 @@ function createDefaultToolRegistry(): ToolRegistry {
   registry.register(dataReadTool);
   registry.register(projectGetTool);
   registry.register(projectListTool);
+  registry.register(progressGetTool);
+  registry.register(progressRecalculateTool);
   registry.register(systemEchoTool);
   registry.register(projectMemberListTool);
   registry.register(projectMemberGetTool);

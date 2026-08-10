@@ -1556,6 +1556,81 @@ export class CoreClient {
     );
   }
 
+  async recalculateProgress(
+    projectId: string,
+    input: components["schemas"]["RecalculateProgressRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RecalculateProgressResult"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/recalculate`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async listProgressEvaluations(
+    projectId: string,
+    query: { cursor?: string; limit?: number },
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressEvaluationPage"]> {
+    const params = new URLSearchParams();
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/evaluations${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getProgressEvaluation(
+    projectId: string,
+    evaluationId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressEvaluation"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/evaluations/${encodeURIComponent(evaluationId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async retryProgressEvaluation(
+    projectId: string,
+    evaluationId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RecalculateProgressResult"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/evaluations/${encodeURIComponent(evaluationId)}/retry`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async setProgressStageOverride(
+    projectId: string,
+    input: components["schemas"]["SetProgressStageOverrideRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressStageOverride"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/stage-override`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async clearProgressStageOverride(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressStageOverride"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/stage-override`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
   async recordAuditEvent(
     input: components["schemas"]["RecordAuditEventRequest"],
     context: CoreRequestContext,

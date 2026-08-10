@@ -23,6 +23,8 @@ export const reviewedAgentTools = [
   "data.list",
   "data.read",
   "context.promote",
+  "progress.get",
+  "progress.recalculate",
 ] as const;
 
 export const agentApi = {

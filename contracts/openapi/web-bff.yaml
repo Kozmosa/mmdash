@@ -1383,6 +1383,101 @@ paths:
                     },
                 },
             }
+  /api/projects/{projectId}/progress/recalculate:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Progress]
+      summary: Schedule a Progress evaluation
+      operationId: bff.progress.recalculate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/RecalculateProgressRequest" }
+      responses:
+        "202":
+          description: Evaluation scheduled or merged.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/RecalculateProgressResult" }
+  /api/projects/{projectId}/progress/evaluations:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    get:
+      tags: [Progress]
+      summary: List Progress evaluation history
+      operationId: bff.progress.evaluations.list
+      parameters:
+        - $ref: "./core.yaml#/components/parameters/Cursor"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Evaluation history.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ProgressEvaluationPage" }
+  /api/projects/{projectId}/progress/evaluations/{evaluationId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: evaluationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Progress]
+      summary: Read one Progress evaluation
+      operationId: bff.progress.evaluations.get
+      responses:
+        "200":
+          description: Evaluation detail.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ProgressEvaluation" }
+  /api/projects/{projectId}/progress/evaluations/{evaluationId}/retry:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/ProjectId"
+      - name: evaluationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Progress]
+      summary: Retry a failed Progress evaluation
+      operationId: bff.progress.evaluations.retry
+      responses:
+        "202":
+          description: Retry scheduled.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/RecalculateProgressResult" }
+  /api/projects/{projectId}/progress/stage-override:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Progress]
+      summary: Set the human Progress stage override
+      operationId: bff.progress.stage_override.set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "./core.yaml#/components/schemas/SetProgressStageOverrideRequest" }
+      responses:
+        "200":
+          description: Active override.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ProgressStageOverride" }
+    delete:
+      tags: [Progress]
+      summary: Clear the human Progress stage override
+      operationId: bff.progress.stage_override.clear
+      responses:
+        "200":
+          description: Cleared override.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ProgressStageOverride" }
   /api/projects/{projectId}/models:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:

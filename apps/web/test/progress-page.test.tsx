@@ -37,6 +37,20 @@ const progress = {
   ],
   overdue: [],
   proposals: [],
+  settings: {
+    auto_task_changes: true,
+    auto_tracking_enabled: false,
+    cron_enabled: false,
+    cron_schedule: "0 */6 * * *",
+    cron_sync_status: "disabled",
+    debounce_seconds: 60,
+    evaluator_mode: "core_agent",
+    event_triggers_enabled: true,
+    min_interval_seconds: 300,
+    project_id: "project-1",
+    updated_at: "2026-08-10T00:00:00Z",
+    updated_by: "00000000-0000-4000-8000-000000000001",
+  },
   reminders: [
     {
       note: "现有提醒",
@@ -55,6 +69,46 @@ const progress = {
     },
   ],
   today: [],
+  tracking: {
+    blockers: [],
+    changes_since_last: [],
+    completed_items: [],
+    detected_stage: "planning",
+    effective_stage: "planning",
+    in_progress_items: [],
+    pending_questions: [],
+    project_id: "project-1",
+    stage_overridden: false,
+    summary: "等待首轮自动评估。",
+    updated_at: "2026-08-10T00:00:00Z",
+  },
+};
+
+const failedEvaluation = {
+  attempts: 3,
+  blockers: [],
+  changes_since_last: [],
+  completed_items: [],
+  created_at: "2026-08-10T01:00:00Z",
+  detected_stage: "planning",
+  error_code: "PROGRESS_EVALUATION_FAILED",
+  error_message: "safe failure",
+  evaluation_id: "00000000-0000-4000-8000-000000000041",
+  evaluator_mode: "mock",
+  in_progress_items: [],
+  input_snapshot: { facts_schema_version: 1 },
+  input_version: "a".repeat(64),
+  pending_questions: [],
+  project_id: "project-1",
+  request_id: "00000000-0000-4000-8000-000000000042",
+  requested_by: "00000000-0000-4000-8000-000000000001",
+  risks: [{ created_at: "2026-08-10T01:00:00Z", detail: "blocked", evaluation_id: "00000000-0000-4000-8000-000000000041", project_id: "project-1", risk_id: "00000000-0000-4000-8000-000000000043", risk_key: "blocked", severity: "high", status: "open", title: "Blocked task" }],
+  source_event_ids: [],
+  status: "failed",
+  summary: "",
+  trigger_kind: "event",
+  triggers: [{ occurred_at: "2026-08-10T01:00:00Z", payload: {}, source_event_type: "repo.commit.created", trigger_id: "00000000-0000-4000-8000-000000000044", trigger_type: "repo.commit.created" }],
+  updated_at: "2026-08-10T01:00:00Z",
 };
 
 function renderProgress(role: typeof mocks.project.role = "owner") {
@@ -77,6 +131,8 @@ function renderProgress(role: typeof mocks.project.role = "owner") {
 function useSuccessfulRequests() {
   mocks.request.mockImplementation((path: string, options?: { method?: string }) => {
     if (path === "/projects/project-1/progress" && !options) return Promise.resolve(progress);
+    if (path === "/projects/project-1/progress/evaluations?limit=20" && !options) return Promise.resolve({ has_more: false, items: [] });
+    if (path === "/projects/project-1/agent-instances" && !options) return Promise.resolve({ items: [] });
     if (path === "/projects/project-1/progress/reminders" && options?.method === "POST") {
       return Promise.resolve({ reminder_id: "created-reminder" });
     }
@@ -227,5 +283,53 @@ describe("Progress reminder creation", () => {
     expect(screen.queryByText("建立任务")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "触发事件" })).not.toBeInTheDocument();
     expect(mocks.request.mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
+  });
+});
+
+describe("Progress automatic tracking", () => {
+  afterEach(() => {
+    cleanup();
+    mocks.request.mockReset();
+    mocks.project.role = "owner";
+  });
+
+  function useTrackingRequests() {
+    mocks.request.mockImplementation((path: string, options?: { body?: Record<string, unknown>; method?: string }) => {
+      if (path === "/projects/project-1/progress" && !options) return Promise.resolve({ ...progress, latest_evaluation: failedEvaluation });
+      if (path === "/projects/project-1/progress/evaluations?limit=20" && !options) return Promise.resolve({ has_more: false, items: [failedEvaluation] });
+      if (path === "/projects/project-1/agent-instances" && !options) return Promise.resolve({ items: [{ agent_instance_id: "00000000-0000-4000-8000-000000000051", display_name: "Hermes Progress", grant: { status: "active" }, status: "active" }] });
+      if (options?.method === "POST" || options?.method === "PATCH" || options?.method === "DELETE") return Promise.resolve({ status: "pending" });
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+  }
+
+  it("shows provenance, schedules a recalculation and retries a failed evaluation", async () => {
+    useTrackingRequests();
+    renderProgress();
+
+    expect(await screen.findByText("自动进度跟踪")).toBeInTheDocument();
+    expect(screen.getByText("PROGRESS_EVALUATION_FAILED")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新评估进度" }));
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith("/projects/project-1/progress/recalculate", { body: { force: false, trigger_kind: "manual" }, method: "POST" }));
+    fireEvent.click(screen.getByRole("button", { name: "重试评估" }));
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith("/projects/project-1/progress/evaluations/00000000-0000-4000-8000-000000000041/retry", { method: "POST" }));
+    expect(screen.getByText(/repo.commit.created/)).toBeInTheDocument();
+    expect(screen.getByText(/HIGH · Blocked task/)).toBeInTheDocument();
+  });
+
+  it("saves a human stage override and Agent-backed tracking settings", async () => {
+    useTrackingRequests();
+    renderProgress();
+    await screen.findByText("自动跟踪设置");
+
+    fireEvent.change(screen.getByLabelText("覆盖阶段"), { target: { value: "review" } });
+    fireEvent.change(screen.getByLabelText("覆盖摘要"), { target: { value: "Ready for review" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存覆盖" }));
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith("/projects/project-1/progress/stage-override", { body: { note: undefined, stage: "review", summary: "Ready for review" }, method: "POST" }));
+
+    fireEvent.click(screen.getByLabelText("启用自动跟踪"));
+    fireEvent.change(screen.getByLabelText("Progress Agent"), { target: { value: "00000000-0000-4000-8000-000000000051" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith("/projects/project-1/progress/settings", { body: expect.objectContaining({ agent_instance_id: "00000000-0000-4000-8000-000000000051", auto_tracking_enabled: true }), method: "PATCH" }));
   });
 });
