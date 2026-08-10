@@ -1,9 +1,12 @@
 package artifact
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -134,6 +137,12 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		},
 	}
 	service := newLocalTestService(t, store, projectService, now)
+	resultExperimentID := generator.MustNew()
+	resultBytes := makeResultArchive(t, resultExperimentID, []byte("summary"))
+	resultDetail, err := service.ArchiveExperimentResult(ctx, projectID, resultExperimentID, userID, digest(resultBytes), int64(len(resultBytes)), bytes.NewReader(resultBytes))
+	if err != nil || resultDetail.CurrentVersion == nil || resultDetail.CurrentVersion.Filename != "artifact.zip" || resultDetail.Artifact.Kind != KindExperimentResult {
+		t.Fatalf("archive experiment result: %#v, %v", resultDetail, err)
+	}
 	owner := auth.Identity{
 		Kind: "session", User: auth.User{ID: userID},
 	}
@@ -507,4 +516,29 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 			t.Fatalf("expected at least %d %s events, got %d", minimum, eventType, count)
 		}
 	}
+}
+
+func makeResultArchive(t *testing.T, experimentID string, contents []byte) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	archive := zip.NewWriter(&buffer)
+	manifest := `{"schema_version":"1","experiment_id":"` + experimentID + `","status":"succeeded","files":[{"path":"summary.md","sha256":"` + digest(contents) + `","size_bytes":` + fmt.Sprint(len(contents)) + `,"kind":"summary"}]}`
+	manifestEntry, err := archive.Create("manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manifestEntry.Write([]byte(manifest)); err != nil {
+		t.Fatal(err)
+	}
+	fileEntry, err := archive.Create("summary.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fileEntry.Write(contents); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
 }
