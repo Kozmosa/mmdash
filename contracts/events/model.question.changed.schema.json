@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.local/contracts/events/model.question.changed.schema.json",
+  "title": "model.question.changed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["question_id", "source_id", "code", "title", "notion_page_id", "action", "status"],
+  "properties": {
+    "question_id": { "type": "string", "format": "uuid" },
+    "source_id": { "type": "string", "format": "uuid" },
+    "code": { "type": "string" },
+    "title": { "type": "string" },
+    "notion_page_id": { "type": "string", "format": "uuid" },
+    "action": { "type": "string", "enum": ["created", "updated", "archived"] },
+    "status": { "type": "string", "enum": ["active", "hidden"] }
+  }
+}

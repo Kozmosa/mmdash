@@ -32,6 +32,7 @@ func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/auth/invitations/reject", module.handleInvitationReject)
 	mux.HandleFunc("/v1/auth/tokens", module.handleTokens)
 	mux.HandleFunc("/v1/auth/tokens/", module.handleToken)
+	mux.HandleFunc("/v1/auth/agent-tokens/", module.handleAgentTokenVerification)
 }
 
 func (module Module) handleRefresh(response http.ResponseWriter, request *http.Request) {
@@ -258,6 +259,10 @@ func (module Module) handleTokens(response http.ResponseWriter, request *http.Re
 		if !httpx.DecodeJSON(response, request, &body) {
 			return
 		}
+		if err := body.Validate(); err != nil {
+			writeDomainError(response, request, ErrInvalid)
+			return
+		}
 		issued, err := module.Service.IssueToken(
 			request.Context(),
 			identity,
@@ -279,6 +284,44 @@ func (module Module) handleTokens(response http.ResponseWriter, request *http.Re
 			"Method not allowed",
 		))
 	}
+}
+
+func (module Module) handleAgentTokenVerification(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(request.URL.Path, "/v1/auth/agent-tokens/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "verification" {
+		writeDomainError(response, request, ErrNotFound)
+		return
+	}
+	identity, err := module.Service.Authenticate(request.Context(), request.Header.Get("Authorization"))
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	var body contract.RecordAgentTokenVerificationRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	if err := body.Validate(); err != nil {
+		writeDomainError(response, request, ErrInvalid)
+		return
+	}
+	evidence, err := module.Service.RecordAgentTokenVerification(
+		request.Context(), identity, parts[0], RecordAgentTokenVerificationInput{
+			AgentInstanceID: body.AgentInstanceID,
+			MCPMethod:       body.McpMethod,
+			MCPSessionID:    body.McpSessionID,
+			ProjectID:       body.ProjectID,
+			RequestID:       body.RequestID,
+		},
+	)
+	if err != nil {
+		writeDomainError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, evidence)
 }
 
 func (module Module) handleToken(response http.ResponseWriter, request *http.Request) {

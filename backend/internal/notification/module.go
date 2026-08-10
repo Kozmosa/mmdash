@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -47,22 +48,6 @@ func (module Module) handleInboxCollection(w http.ResponseWriter, r *http.Reques
 		module.handleInbox(w, r)
 		return
 	}
-	if r.Method == http.MethodPost {
-		if r.URL.Query().Get("action") != "mark-all-read" {
-			writeError(w, r, ErrInvalid)
-			return
-		}
-		filter, ok := markAllReadFilter(w, r)
-		if !ok {
-			return
-		}
-		if err := module.Service.MarkAllRead(r.Context(), identity, filter); err != nil {
-			writeError(w, r, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
 	if !httpx.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
@@ -70,7 +55,12 @@ func (module Module) handleInboxCollection(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	result, err := module.Service.ListInbox(r.Context(), identity, filterFromRequest(r), page)
+	filter, err := filterFromRequest(r)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	result, err := module.Service.ListInbox(r.Context(), identity, filter, page)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -88,9 +78,20 @@ func (module Module) handleInbox(w http.ResponseWriter, r *http.Request) {
 		if !httpx.RequireMethod(w, r, http.MethodPost) {
 			return
 		}
-		filter, ok := markAllReadFilter(w, r)
-		if !ok {
+		var body contract.MarkAllInboxReadRequest
+		if !httpx.DecodeJSON(w, r, &body) {
 			return
+		}
+		if err := body.Validate(); err != nil {
+			writeError(w, r, ErrInvalid)
+			return
+		}
+		filter := Filter{}
+		if body.ProjectID != nil {
+			filter.ProjectID = *body.ProjectID
+		}
+		if body.TypeKey != nil {
+			filter.TypeKey = *body.TypeKey
 		}
 		if err := module.Service.MarkAllRead(r.Context(), identity, filter); err != nil {
 			writeError(w, r, err)
@@ -197,7 +198,14 @@ func (module Module) handleChannel(w http.ResponseWriter, r *http.Request, ident
 	switch r.Method {
 	case http.MethodGet:
 		setting, err := module.Settings.Get(r.Context(), identity, settings.ScopeProject, projectID, key)
-		if err != nil {
+		if errors.Is(err, settings.ErrNotFound) {
+			setting = settings.Setting{
+				Scope:   settings.ScopeProject,
+				ScopeID: projectID,
+				TypeKey: key,
+				Values:  map[string]interface{}{},
+			}
+		} else if err != nil {
 			writeError(w, r, err)
 			return
 		}
@@ -266,7 +274,7 @@ func (module Module) handleRule(w http.ResponseWriter, r *http.Request, identity
 		if body.MinimumPriority != nil {
 			minimumPriority = *body.MinimumPriority
 		}
-		rule, err := module.Service.UpsertRule(r.Context(), identity, Rule{ProjectID: projectID, TypeKey: typeKey, InboxEnabled: body.InboxEnabled, ExternalEnabled: body.ExternalEnabled, ChannelKeys: channelKeys, MinimumPriority: minimumPriority, Version: body.Version})
+		rule, err := module.Service.UpsertRule(r.Context(), identity, Rule{ProjectID: projectID, TypeKey: typeKey, ExternalEnabled: body.ExternalEnabled, ChannelKeys: channelKeys, MinimumPriority: minimumPriority, Version: body.Version})
 		if err != nil {
 			writeError(w, r, err)
 			return
@@ -348,25 +356,33 @@ func notificationPage(r *http.Request) (pagination.Request, bool) {
 	}
 	return pagination.Request{Cursor: r.URL.Query().Get("cursor"), Limit: limit}, true
 }
-func filterFromRequest(r *http.Request) Filter {
-	return Filter{ProjectID: r.URL.Query().Get("project_id"), TypeKey: r.URL.Query().Get("type_key"), ReadState: r.URL.Query().Get("read_state"), Archived: r.URL.Query().Get("archived"), Outcome: r.URL.Query().Get("outcome")}
-}
-func markAllReadFilter(w http.ResponseWriter, r *http.Request) (Filter, bool) {
-	if r.Body == nil || r.Body == http.NoBody || r.ContentLength == 0 {
-		return Filter{}, true
+func filterFromRequest(r *http.Request) (Filter, error) {
+	filter := Filter{
+		ProjectID:    r.URL.Query().Get("project_id"),
+		TypeKey:      r.URL.Query().Get("type_key"),
+		ReadState:    r.URL.Query().Get("read_state"),
+		Archived:     r.URL.Query().Get("archived"),
+		Outcome:      r.URL.Query().Get("outcome"),
+		OutcomeGroup: r.URL.Query().Get("outcome_group"),
 	}
-	var body contract.MarkAllInboxReadRequest
-	if !httpx.DecodeJSON(w, r, &body) {
-		return Filter{}, false
+	if value := r.URL.Query().Get("occurred_from"); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return Filter{}, ErrInvalid
+		}
+		filter.OccurredFrom = &parsed
 	}
-	filter := Filter{}
-	if body.ProjectID != nil {
-		filter.ProjectID = *body.ProjectID
+	if value := r.URL.Query().Get("occurred_to"); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return Filter{}, ErrInvalid
+		}
+		filter.OccurredTo = &parsed
 	}
-	if body.TypeKey != nil {
-		filter.TypeKey = *body.TypeKey
+	if !validInboxFilter(filter) {
+		return Filter{}, ErrInvalid
 	}
-	return filter, true
+	return filter, nil
 }
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	if w == nil {
@@ -382,10 +398,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, r, apperror.New(http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required"))
 	case errors.Is(err, ErrNotFound):
 		httpx.WriteError(w, r, apperror.New(http.StatusNotFound, "NOT_FOUND", "Notification not found"))
-	case errors.Is(err, ErrInvalid), errors.Is(err, settings.ErrInvalid):
+	case errors.Is(err, ErrInvalid):
 		httpx.WriteError(w, r, apperror.New(http.StatusBadRequest, "INVALID_REQUEST", "Notification input is invalid"))
-	case errors.Is(err, ErrDeliveryRetryConflict):
-		httpx.WriteError(w, r, apperror.New(http.StatusConflict, "NOTIFICATION_DELIVERY_RETRY_CONFLICT", "Only failed deliveries can be manually retried"))
 	case errors.Is(err, ErrConflict):
 		httpx.WriteError(w, r, apperror.New(http.StatusConflict, "NOTIFICATION_RULE_CONFLICT", "Notification rule was changed by another request"))
 	case errors.Is(err, project.ErrForbidden):

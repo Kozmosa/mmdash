@@ -30,12 +30,25 @@ class CoreJobClient:
         api_token: str,
         *,
         timeout_seconds: float = 15.0,
+        model_export_timeout_seconds: float = 300.0,
+        model_completion_timeout_seconds: float = 300.0,
+        progress_evaluation_timeout_seconds: float = 900.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token.strip()
         self.timeout_seconds = timeout_seconds
+        self.model_export_timeout_seconds = model_export_timeout_seconds
+        self.model_completion_timeout_seconds = model_completion_timeout_seconds
+        self.progress_evaluation_timeout_seconds = progress_evaluation_timeout_seconds
         if not self.base_url or not self.api_token:
             raise ValueError("Core base URL and API token are required")
+        if (
+            self.timeout_seconds <= 0
+            or self.model_export_timeout_seconds <= 0
+            or self.model_completion_timeout_seconds <= 0
+            or self.progress_evaluation_timeout_seconds <= 0
+        ):
+            raise ValueError("Core request timeouts must be positive")
 
     def heartbeat_worker(
         self,
@@ -114,6 +127,7 @@ class CoreJobClient:
             "POST",
             f"/v1/jobs/{job_id}/complete",
             {"worker_id": worker_id, "result": dict(result)},
+            timeout_seconds=self.model_completion_timeout_seconds,
         )
 
     def fail(
@@ -147,6 +161,29 @@ class CoreJobClient:
             "POST",
             f"/v1/internal/artifact-preview-jobs/{job_id}/transfers",
             request,
+        )
+
+    def get_model_notion_export(self, job_id: str) -> dict[str, Any]:
+        """Fetch raw Notion content through a live Job-bound Core capability."""
+
+        return self._request(
+            "GET",
+            f"/v1/internal/model-notion-jobs/{job_id}/export",
+            timeout_seconds=self.model_export_timeout_seconds,
+        )
+
+    def get_progress_evaluation_input(self, job_id: str) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/v1/internal/progress-evaluation-jobs/{job_id}/input",
+            timeout_seconds=self.progress_evaluation_timeout_seconds,
+        )
+
+    def execute_progress_evaluation(self, job_id: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/internal/progress-evaluation-jobs/{job_id}/execute",
+            timeout_seconds=self.progress_evaluation_timeout_seconds,
         )
 
     def download_transfer(
@@ -269,11 +306,14 @@ class CoreJobClient:
         self,
         method: str,
         path: str,
-        body: Mapping[str, Any],
+        body: Mapping[str, Any] | None = None,
         *,
         expect_empty: bool = False,
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
-        encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        encoded = (
+            json.dumps(body, separators=(",", ":")).encode("utf-8") if body is not None else None
+        )
         request = Request(
             self.base_url + path,
             data=encoded,
@@ -286,7 +326,10 @@ class CoreJobClient:
             },
         )
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            with urlopen(
+                request,
+                timeout=self.timeout_seconds if timeout_seconds is None else timeout_seconds,
+            ) as response:
                 payload = response.read()
         except HTTPError as error:
             payload = error.read()

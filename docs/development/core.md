@@ -54,6 +54,10 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 | `PROGRESS_REMINDER_BATCH_SIZE`    | `20`                        | Maximum Reminders claimed per scan                             |
 | `PROGRESS_REMINDER_LEASE`         | `30s`                       | Recoverable due Reminder processing lease                      |
 | `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`                        | Retry delay after a due event transaction failure              |
+| `PROGRESS_TRACKING_POLL_INTERVAL` | `1s`                        | Automatic Progress request/Cron scan interval                   |
+| `PROGRESS_TRACKING_LEASE`         | `2m`                        | Recoverable Progress assembly/Cron claim lease                  |
+| `PROGRESS_TRACKING_RETRY_DELAY`   | `30s`                       | Progress assembly/queue/Cron retry delay                        |
+| `MMDASH_PROGRESS_EVALUATOR_MODE`  | `core_agent`                | `core_agent` or deterministic local `mock`                      |
 | `PROJECT_INVITATION_EXPIRY_POLL_INTERVAL` | `30s`              | Idle scan interval for due Project invitations                 |
 | `PROJECT_INVITATION_EXPIRY_BATCH_SIZE` | `100`                    | Maximum invitations expired in one transaction                 |
 
@@ -112,7 +116,20 @@ adding operator replay support.
 
 `cmd/migrate` takes a PostgreSQL advisory lock, applies sorted `*.up.sql` files
 transactionally, and records each version in `system_schema_migrations`.
-Domain migrations must only change their own table prefix and semantics.
+The catalog requires one six-digit number per migration, a continuous sequence,
+and a matching down file. An immutable legacy-alias ledger reconciles migration
+filenames that reached development databases before final integration: it
+records the canonical filename without executing the SQL again and retains the
+legacy record as upgrade evidence. Domain migrations must only change their own
+table prefix and semantics.
+
+Stage 6 Progress uses the same PostgreSQL Job Queue and Outbox. Core claims
+debounced evaluation requests and Hermes Cron reconciliation with
+`FOR UPDATE SKIP LOCKED`, serializes Project scheduling/application with an
+advisory transaction lock, assembles a stable Data Hub/Progress snapshot, and
+creates `progress.evaluate`. Worker completion returns through Job lifecycle
+hooks so authoritative Progress, Audit, Outbox, and Data Hub mutations remain
+inside one Core transaction. Redis is not part of this path.
 
 ## Auth and collaborative projects
 

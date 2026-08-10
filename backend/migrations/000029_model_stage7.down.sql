@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS model_snapshot_assets;
+ALTER TABLE IF EXISTS model_syncs DROP CONSTRAINT IF EXISTS model_syncs_created_snapshot_fk;
+ALTER TABLE IF EXISTS model_questions DROP CONSTRAINT IF EXISTS model_questions_latest_snapshot_fk;
+DROP TABLE IF EXISTS model_snapshots;
+ALTER TABLE IF EXISTS model_sources DROP CONSTRAINT IF EXISTS model_sources_last_sync_fk;
+ALTER TABLE IF EXISTS model_questions DROP CONSTRAINT IF EXISTS model_questions_last_sync_fk;
+DROP TABLE IF EXISTS model_syncs;
+DROP TABLE IF EXISTS model_questions;
+DROP TABLE IF EXISTS model_source_pages;
+DROP TABLE IF EXISTS model_sources;

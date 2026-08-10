@@ -2,6 +2,7 @@ import type { components } from "./generated/core.js";
 
 export type CoreRequestContext = {
   accessToken?: string;
+  gatewayAccessToken?: string;
   projectId?: string;
   requestId: string;
   userId?: string;
@@ -181,6 +182,18 @@ export class CoreClient {
     context: CoreRequestContext,
   ): Promise<components["schemas"]["Identity"]> {
     return this.request("/v1/auth/me", { method: "GET" }, context);
+  }
+
+  async recordAgentTokenVerification(
+    tokenId: string,
+    input: components["schemas"]["RecordAgentTokenVerificationRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["AgentTokenVerificationEvidence"]> {
+    return this.request(
+      `/v1/auth/agent-tokens/${encodeURIComponent(tokenId)}/verification`,
+      { body: input, method: "POST" },
+      context,
+    );
   }
 
   async listProjects(
@@ -611,6 +624,213 @@ export class CoreClient {
     return this.request(
       `/v1/settings/projects/${encodeURIComponent(projectId)}/${encodeURIComponent(typeKey)}/test`,
       { method: "POST" },
+      context,
+    );
+  }
+
+  async getModels(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelOverview"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getModelSource(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSource"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/source`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async syncModels(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSync"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/source/sync`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async getNotionOAuthConnection(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotionOAuthConnection"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/notion/oauth`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async startNotionOAuth(
+    projectId: string,
+    input: components["schemas"]["StartNotionOAuthRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotionOAuthAuthorization"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/notion/oauth/authorizations`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async completeNotionOAuth(
+    input: components["schemas"]["CompleteNotionOAuthRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["NotionOAuthCallbackResult"]> {
+    return this.request(
+      "/v1/model-notion/oauth/callback",
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async disconnectNotionOAuth(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/notion/oauth/connection`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async listModelQuestions(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestionList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createModelQuestion(
+    projectId: string,
+    input: components["schemas"]["CreateModelQuestionRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestion"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async getModelQuestion(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestionDetail"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateModelQuestion(
+    projectId: string,
+    questionId: string,
+    input: components["schemas"]["UpdateModelQuestionRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelQuestion"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async deleteModelQuestion(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async syncModelQuestion(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSync"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/sync`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async listModelSnapshots(
+    projectId: string,
+    questionId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSnapshotList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/snapshots`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getModelSnapshot(
+    projectId: string,
+    questionId: string,
+    snapshotId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSnapshot"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateModelSnapshot(
+    projectId: string,
+    questionId: string,
+    snapshotId: string,
+    input: components["schemas"]["UpdateModelSnapshotRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelSnapshot"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async diffModelSnapshots(
+    projectId: string,
+    questionId: string,
+    fromSnapshotId: string,
+    toSnapshotId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ModelDiff"]> {
+    const query = new URLSearchParams({
+      from_snapshot_id: fromSnapshotId,
+      to_snapshot_id: toSnapshotId,
+    });
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/models/questions/${encodeURIComponent(questionId)}/diff?${query.toString()}`,
+      { method: "GET" },
       context,
     );
   }
@@ -1336,6 +1556,81 @@ export class CoreClient {
     );
   }
 
+  async recalculateProgress(
+    projectId: string,
+    input: components["schemas"]["RecalculateProgressRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RecalculateProgressResult"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/recalculate`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async listProgressEvaluations(
+    projectId: string,
+    query: { cursor?: string; limit?: number },
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressEvaluationPage"]> {
+    const params = new URLSearchParams();
+    if (query.cursor) params.set("cursor", query.cursor);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/evaluations${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getProgressEvaluation(
+    projectId: string,
+    evaluationId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressEvaluation"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/evaluations/${encodeURIComponent(evaluationId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async retryProgressEvaluation(
+    projectId: string,
+    evaluationId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RecalculateProgressResult"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/evaluations/${encodeURIComponent(evaluationId)}/retry`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async setProgressStageOverride(
+    projectId: string,
+    input: components["schemas"]["SetProgressStageOverrideRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressStageOverride"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/stage-override`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async clearProgressStageOverride(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ProgressStageOverride"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/stage-override`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
   async recordAuditEvent(
     input: components["schemas"]["RecordAuditEventRequest"],
     context: CoreRequestContext,
@@ -1405,6 +1700,12 @@ export class CoreClient {
     headers.set("x-request-id", context.requestId);
     if (context.accessToken) {
       headers.set("authorization", `Bearer ${context.accessToken}`);
+    }
+    if (context.gatewayAccessToken) {
+      headers.set(
+        "x-mmdash-gateway-authorization",
+        `Bearer ${context.gatewayAccessToken}`,
+      );
     }
     if (context.projectId) {
       headers.set("x-mmdash-project-id", context.projectId);

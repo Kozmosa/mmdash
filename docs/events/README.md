@@ -17,3 +17,20 @@ Milestone, Task, Dependency, Reminder, and Proposal lifecycle. Notification
 3.17 adds invitation lifecycle and registration schemas; its consumer persists
 Inbox facts and queues external Delivery records without making the source
 module call a provider.
+
+
+Stage 7 Model adds `model.sync.requested`, `model.source.changed`,
+`model.question.changed`, and `model.snapshot.created`. Their payloads contain
+only stable identifiers and bounded metadata; Notion credentials, temporary
+file URLs, and model document content are excluded.
+
+
+Stage 5 adds Context Proposal schemas and Agent lifecycle schemas for instance,
+Prompt, Session, Run, and Agent Token transitions. Hermes streaming events are
+not domain events: they use the normalized browser SSE contract in Core and
+Web BFF OpenAPI. Agent events contain no message bodies, Tool inputs/results,
+provider errors, URLs, or credential material.
+
+A Token provisioning or rotation failure reports whether an old active Token
+still exists. Initial auto provisioning has no old Token and reports `false`;
+an actual replacement failure must preserve the old Token and report `true`.

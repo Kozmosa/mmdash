@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -14,9 +15,10 @@ import (
 
 // PostgresStore persists authentication state in module-owned tables.
 type PostgresStore struct {
-	DB          *sql.DB
-	Outbox      outbox.Writer
-	Transaction transaction.Manager
+	AgentCredentials AgentCredentialLifecycle
+	DB               *sql.DB
+	Outbox           outbox.Writer
+	Transaction      transaction.Manager
 }
 
 func (store PostgresStore) CreateUser(ctx context.Context, user User, passwordHash string) error {
@@ -411,6 +413,348 @@ func (store PostgresStore) RevokeToken(
 		WHERE token_id = $1 AND user_id = $2 AND revoked_at IS NULL
 	`, tokenID, userID, now)
 	return requireAffected(result, err)
+}
+
+func (store PostgresStore) CreateAgentToken(ctx context.Context, token AgentToken) error {
+	if token.ExpiresAt != nil && !token.ExpiresAt.After(token.CreatedAt) {
+		return ErrConflict
+	}
+	tools, err := json.Marshal(token.AllowedTools)
+	if err != nil {
+		return err
+	}
+	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		// Serialize issuance per Grant. The partial unique index is the final
+		// concurrent-insert guard; the row lock also lets a new issuance retire
+		// an expired pending credential without touching the old active Token.
+		var lockedGrantID string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT grant_id FROM agent_project_grants
+			WHERE grant_id=$1 AND agent_instance_id=$2 AND project_id=$3
+			FOR UPDATE
+		`, token.GrantID, token.AgentInstanceID, token.ProjectID).Scan(&lockedGrantID); err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, agentTokenSelect+`
+			WHERE grant_id=$1 AND status='pending' AND revoked_at IS NULL
+			  AND expires_at IS NOT NULL AND expires_at <= $2
+			FOR UPDATE
+		`, token.GrantID, token.CreatedAt)
+		if err != nil {
+			return err
+		}
+		expired := []AgentToken{}
+		for rows.Next() {
+			item, scanErr := scanAgentToken(rows.Scan)
+			if scanErr != nil {
+				_ = rows.Close()
+				return scanErr
+			}
+			expired = append(expired, item)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, item := range expired {
+			result, err := tx.ExecContext(ctx, `
+				UPDATE auth_agent_tokens
+				SET status='revoked', revoked_at=$2
+				WHERE token_id=$1 AND status='pending' AND revoked_at IS NULL
+			`, item.ID, token.CreatedAt)
+			if err := requireAffected(result, err); err != nil {
+				return err
+			}
+			if store.AgentCredentials != nil {
+				if err := store.AgentCredentials.RevokeAgentCredential(
+					ctx, tx, item, token.CreatedAt,
+				); err != nil {
+					return err
+				}
+			}
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO auth_agent_tokens (
+				token_id, agent_instance_id, grant_id, project_id, issued_by,
+				name, token_hash, allowed_tools, status, expires_at,
+				replaces_token_id, created_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+				NULLIF($11, '')::uuid, $12
+			)
+		`, token.ID, token.AgentInstanceID, token.GrantID, token.ProjectID,
+			token.IssuedBy, token.Name, token.TokenHash, tools, token.Status,
+			token.ExpiresAt, token.ReplacesTokenID, token.CreatedAt)
+		return err
+	})
+	if isUniqueViolation(err) {
+		return ErrConflict
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (store PostgresStore) FindAgentToken(
+	ctx context.Context,
+	tokenHash string,
+	now time.Time,
+) (AgentToken, error) {
+	return scanAgentToken(store.DB.QueryRowContext(ctx, agentTokenSelect+`
+		WHERE token_hash = $1
+		  AND status IN ('pending', 'active')
+		  AND revoked_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > $2)
+	`, tokenHash, now).Scan)
+}
+
+func (store PostgresStore) GetAgentToken(
+	ctx context.Context,
+	tokenID string,
+) (AgentToken, error) {
+	return scanAgentToken(store.DB.QueryRowContext(ctx, agentTokenSelect+`
+		WHERE token_id = $1
+	`, tokenID).Scan)
+}
+
+func (store PostgresStore) ListAgentTokens(
+	ctx context.Context,
+	grantID string,
+) ([]AgentToken, error) {
+	rows, err := store.DB.QueryContext(ctx, agentTokenSelect+`
+		WHERE grant_id = $1
+		ORDER BY created_at DESC, token_id DESC
+	`, grantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentToken{}
+	for rows.Next() {
+		item, scanErr := scanAgentToken(rows.Scan)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (store PostgresStore) TouchAgentToken(
+	ctx context.Context,
+	tokenID string,
+	now time.Time,
+) error {
+	_, err := store.DB.ExecContext(ctx, `
+		UPDATE auth_agent_tokens
+		SET last_used_at = CASE
+			WHEN last_used_at IS NULL OR last_used_at < $2 THEN $2
+			ELSE last_used_at
+		END
+		WHERE token_id = $1 AND revoked_at IS NULL
+	`, tokenID, now)
+	return err
+}
+
+func (store PostgresStore) MarkAgentTokenVerified(
+	ctx context.Context,
+	evidence AgentTokenVerificationEvidence,
+) (AgentTokenVerificationEvidence, error) {
+	var result AgentTokenVerificationEvidence
+	err := store.DB.QueryRowContext(ctx, `
+		UPDATE auth_agent_tokens
+		SET verification_evidence_id = COALESCE(verification_evidence_id, $4),
+			verification_method = COALESCE(verification_method, $5),
+			verification_request_id = COALESCE(verification_request_id, $6),
+			verification_session_id = COALESCE(verification_session_id, $7),
+			verified_by_token_id = COALESCE(verified_by_token_id, $8),
+			verified_at = COALESCE(verified_at, $9)
+		WHERE token_id = $1 AND agent_instance_id = $2 AND project_id = $3
+		  AND status = 'pending' AND revoked_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > $9)
+		RETURNING verification_evidence_id, token_id, agent_instance_id,
+			project_id, verification_method, verification_session_id,
+			verification_request_id, verified_at, verified_by_token_id
+	`, evidence.TokenID, evidence.AgentInstanceID, evidence.ProjectID,
+		evidence.EvidenceID, evidence.MCPMethod, evidence.RequestID,
+		evidence.MCPSessionID, evidence.VerifiedByTokenID,
+		evidence.VerifiedAt).Scan(
+		&result.EvidenceID, &result.TokenID, &result.AgentInstanceID,
+		&result.ProjectID, &result.MCPMethod, &result.MCPSessionID,
+		&result.RequestID, &result.VerifiedAt, &result.VerifiedByTokenID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AgentTokenVerificationEvidence{}, ErrConflict
+	}
+	return result, err
+}
+
+func (store PostgresStore) ActivateAgentToken(
+	ctx context.Context,
+	tokenID string,
+	oldTokenID string,
+	newRemoteAccessID string,
+	now time.Time,
+) (AgentToken, error) {
+	var activated AgentToken
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var grantID string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT grant_id FROM auth_agent_tokens WHERE token_id=$1
+		`, tokenID).Scan(&grantID); err != nil {
+			return err
+		}
+		// Match CreateAgentToken's Grant-first lock order so a verification
+		// activation cannot deadlock with concurrent rotation issuance.
+		if err := tx.QueryRowContext(ctx, `
+			SELECT grant_id FROM agent_project_grants WHERE grant_id=$1 FOR UPDATE
+		`, grantID).Scan(&grantID); err != nil {
+			return err
+		}
+		updated, err := scanAgentToken(tx.QueryRowContext(ctx, agentTokenSelect+`
+			WHERE token_id = $1
+			FOR UPDATE
+		`, tokenID).Scan)
+		if err != nil {
+			return err
+		}
+		if updated.Status != "pending" || updated.Verification == nil ||
+			updated.Verification.VerifiedAt.Before(updated.CreatedAt) ||
+			updated.Verification.MCPMethod != AgentTokenVerificationMethod ||
+			(updated.ExpiresAt != nil && !updated.ExpiresAt.After(now)) {
+			return ErrConflict
+		}
+		if oldTokenID != "" {
+			result, err := tx.ExecContext(ctx, `
+				UPDATE auth_agent_tokens
+				SET status = 'revoked', revoked_at = $3
+				WHERE token_id = $1 AND grant_id = $2
+				  AND status = 'active' AND revoked_at IS NULL
+			`, oldTokenID, updated.GrantID, now)
+			if err != nil {
+				return err
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if affected != 1 {
+				return ErrConflict
+			}
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE auth_agent_tokens
+			SET status = 'active', activated_at = $2
+			WHERE token_id = $1 AND status = 'pending' AND revoked_at IS NULL
+			  AND (expires_at IS NULL OR expires_at > $2)
+		`, tokenID, now)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
+			return ErrConflict
+		}
+		updated.Status = "active"
+		updated.ActivatedAt = &now
+		if store.AgentCredentials != nil {
+			if err := store.AgentCredentials.ActivateAgentCredential(
+				ctx, tx, updated, oldTokenID, newRemoteAccessID, now,
+			); err != nil {
+				return err
+			}
+		}
+		activated = updated
+		return nil
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return AgentToken{}, ErrNotFound
+	}
+	return activated, err
+}
+
+func (store PostgresStore) RevokeAgentToken(
+	ctx context.Context,
+	tokenID string,
+	now time.Time,
+) error {
+	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		token, err := scanAgentToken(tx.QueryRowContext(ctx, agentTokenSelect+`
+			WHERE token_id = $1 FOR UPDATE
+		`, tokenID).Scan)
+		if err != nil {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE auth_agent_tokens
+			SET status = 'revoked', revoked_at = $2
+			WHERE token_id = $1 AND revoked_at IS NULL
+		`, tokenID, now)
+		if err := requireAffected(result, err); err != nil {
+			return err
+		}
+		token.Status = "revoked"
+		token.RevokedAt = &now
+		if store.AgentCredentials != nil {
+			return store.AgentCredentials.RevokeAgentCredential(ctx, tx, token, now)
+		}
+		return nil
+	})
+}
+
+const agentTokenSelect = `
+	SELECT token_id, agent_instance_id, grant_id, project_id, issued_by,
+	       name, token_hash, allowed_tools, status, expires_at, activated_at,
+	       last_used_at, revoked_at, COALESCE(replaces_token_id::text, ''),
+	       COALESCE(verification_evidence_id::text, ''),
+	       COALESCE(verification_method, ''),
+	       COALESCE(verification_request_id, ''),
+	       COALESCE(verification_session_id, ''),
+	       COALESCE(verified_by_token_id::text, ''), verified_at,
+	       created_at
+	FROM auth_agent_tokens
+`
+
+type agentTokenScan func(...interface{}) error
+
+func scanAgentToken(scan agentTokenScan) (AgentToken, error) {
+	var token AgentToken
+	var tools []byte
+	var verification AgentTokenVerificationEvidence
+	var verifiedAt *time.Time
+	err := scan(
+		&token.ID, &token.AgentInstanceID, &token.GrantID, &token.ProjectID,
+		&token.IssuedBy, &token.Name, &token.TokenHash, &tools, &token.Status,
+		&token.ExpiresAt, &token.ActivatedAt, &token.LastUsedAt, &token.RevokedAt,
+		&token.ReplacesTokenID, &verification.EvidenceID,
+		&verification.MCPMethod, &verification.RequestID,
+		&verification.MCPSessionID, &verification.VerifiedByTokenID,
+		&verifiedAt, &token.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AgentToken{}, ErrNotFound
+	}
+	if err != nil {
+		return AgentToken{}, err
+	}
+	if err := json.Unmarshal(tools, &token.AllowedTools); err != nil {
+		return AgentToken{}, fmt.Errorf("decode agent token tools: %w", err)
+	}
+	if verifiedAt != nil {
+		verification.AgentInstanceID = token.AgentInstanceID
+		verification.ProjectID = token.ProjectID
+		verification.TokenID = token.ID
+		verification.VerifiedAt = *verifiedAt
+		token.Verification = &verification
+	}
+	return token, nil
 }
 
 func requireAffected(result sql.Result, err error) error {

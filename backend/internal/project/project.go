@@ -29,31 +29,39 @@ const (
 type Permission string
 
 const (
-	PermissionRead             Permission = "project.read"
-	PermissionUpdate           Permission = "project.update"
-	PermissionArchive          Permission = "project.archive"
-	PermissionMembersManage    Permission = "project.members.manage"
-	PermissionSettingsManage   Permission = "project.settings.manage"
-	PermissionSettingsRead     Permission = "project.settings.read"
-	PermissionTokensManage     Permission = "project.tokens.manage"
-	PermissionJobsCreate       Permission = "project.jobs.create"
-	PermissionJobsRead         Permission = "project.jobs.read"
-	PermissionJobsCancel       Permission = "project.jobs.cancel"
-	PermissionDataRead         Permission = "project.data.read"
-	PermissionContextPropose   Permission = "project.context.propose"
-	PermissionContextReview    Permission = "project.context.review"
-	PermissionAuditRead        Permission = "project.audit.read"
-	PermissionAuditWrite       Permission = "project.audit.write"
-	PermissionRepoRead         Permission = "project.repo.read"
-	PermissionRepoManage       Permission = "project.repo.manage"
-	PermissionRepoWrite        Permission = "project.repo.write"
-	PermissionArtifactRead     Permission = "project.artifact.read"
-	PermissionArtifactUpload   Permission = "project.artifact.upload"
-	PermissionArtifactDownload Permission = "project.artifact.download"
-	PermissionArtifactDelete   Permission = "project.artifact.delete"
-	PermissionProgressRead     Permission = "project.progress.read"
-	PermissionProgressManage   Permission = "project.progress.manage"
-	PermissionProgressPropose  Permission = "project.progress.propose"
+	PermissionRead              Permission = "project.read"
+	PermissionUpdate            Permission = "project.update"
+	PermissionArchive           Permission = "project.archive"
+	PermissionMembersManage     Permission = "project.members.manage"
+	PermissionSettingsManage    Permission = "project.settings.manage"
+	PermissionSettingsRead      Permission = "project.settings.read"
+	PermissionTokensManage      Permission = "project.tokens.manage"
+	PermissionJobsCreate        Permission = "project.jobs.create"
+	PermissionJobsRead          Permission = "project.jobs.read"
+	PermissionJobsCancel        Permission = "project.jobs.cancel"
+	PermissionDataRead          Permission = "project.data.read"
+	PermissionContextPropose    Permission = "project.context.propose"
+	PermissionContextReview     Permission = "project.context.review"
+	PermissionAuditRead         Permission = "project.audit.read"
+	PermissionAuditWrite        Permission = "project.audit.write"
+	PermissionRepoRead          Permission = "project.repo.read"
+	PermissionRepoManage        Permission = "project.repo.manage"
+	PermissionRepoWrite         Permission = "project.repo.write"
+	PermissionArtifactRead      Permission = "project.artifact.read"
+	PermissionArtifactUpload    Permission = "project.artifact.upload"
+	PermissionArtifactDownload  Permission = "project.artifact.download"
+	PermissionArtifactDelete    Permission = "project.artifact.delete"
+	PermissionProgressRead      Permission = "project.progress.read"
+	PermissionProgressManage    Permission = "project.progress.manage"
+	PermissionProgressPropose   Permission = "project.progress.propose"
+	PermissionProgressEvaluate  Permission = "project.progress.evaluate"
+	PermissionModelRead         Permission = "project.model.read"
+	PermissionModelSync         Permission = "project.model.sync"
+	PermissionModelManage       Permission = "project.model.manage"
+	PermissionAgentRead         Permission = "project.agent.read"
+	PermissionAgentUse          Permission = "project.agent.use"
+	PermissionAgentManage       Permission = "project.agent.manage"
+	PermissionAgentTokensManage Permission = "project.agent.tokens.manage"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -83,6 +91,14 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionProgressEvaluate,
+		PermissionModelRead,
+		PermissionModelSync,
+		PermissionModelManage,
+		PermissionAgentRead,
+		PermissionAgentUse,
+		PermissionAgentManage,
+		PermissionAgentTokensManage,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -109,6 +125,14 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionProgressEvaluate,
+		PermissionModelRead,
+		PermissionModelSync,
+		PermissionModelManage,
+		PermissionAgentRead,
+		PermissionAgentUse,
+		PermissionAgentManage,
+		PermissionAgentTokensManage,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -129,6 +153,12 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionProgressRead,
 		PermissionProgressManage,
 		PermissionProgressPropose,
+		PermissionProgressEvaluate,
+		PermissionModelRead,
+		PermissionModelSync,
+		PermissionModelManage,
+		PermissionAgentRead,
+		PermissionAgentUse,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -140,20 +170,20 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactRead,
 		PermissionArtifactDownload,
 		PermissionProgressRead,
+		PermissionProgressEvaluate,
+		PermissionModelRead,
+		PermissionModelSync,
+		PermissionAgentRead,
 	},
 	RoleAgent: {
 		PermissionRead,
-		PermissionSettingsRead,
-		PermissionJobsCreate,
-		PermissionJobsRead,
-		PermissionJobsCancel,
 		PermissionDataRead,
 		PermissionContextPropose,
-		PermissionAuditWrite,
 		PermissionRepoRead,
+		PermissionArtifactRead,
+		PermissionArtifactDownload,
 		PermissionProgressRead,
-		PermissionProgressManage,
-		PermissionProgressPropose,
+		PermissionProgressEvaluate,
 	},
 	RoleBox: {
 		PermissionRead,
@@ -163,6 +193,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionAuditWrite,
 		PermissionRepoRead,
 		PermissionProgressRead,
+		PermissionModelRead,
 	},
 }
 
@@ -270,12 +301,20 @@ type ArtifactReferenceValidator interface {
 
 // Service applies collaboration and RBAC policy.
 type Service struct {
+	AgentGrants    AgentGrantResolver
 	Auth           Authenticator
 	Artifacts      ArtifactReferenceValidator
 	Clock          interface{ Now() time.Time }
 	Store          Store
 	InvitationTTL  time.Duration
 	TrashRetention time.Duration
+}
+
+// AgentGrantResolver is implemented by the Agent module without importing it
+// into Project. It prevents product Agent tokens from inheriting the issuing
+// user's membership and privileges.
+type AgentGrantResolver interface {
+	ResolveAgentRole(context.Context, string, string) (Role, error)
 }
 
 // Authenticate resolves an identity through the Auth module.
@@ -340,8 +379,20 @@ func (service Service) Get(
 	identity auth.Identity,
 	projectID string,
 ) (Project, error) {
+	if err := auth.RequireAgentTool(identity, "project.get"); err != nil {
+		return Project{}, ErrForbidden
+	}
 	if err := service.Authorize(ctx, identity, projectID, PermissionRead); err != nil {
 		return Project{}, err
+	}
+	if identity.Kind == "agent" {
+		store, ok := service.Store.(interface {
+			GetForAgent(context.Context, string) (Project, error)
+		})
+		if !ok {
+			return Project{}, ErrForbidden
+		}
+		return store.GetForAgent(ctx, projectID)
 	}
 	return service.Store.Get(ctx, identity.User.ID, projectID)
 }
@@ -637,6 +688,20 @@ func (service Service) Permissions(
 	identity auth.Identity,
 	projectID string,
 ) (Role, []Permission, error) {
+	if identity.Kind == "agent" {
+		if identity.CredentialStatus != "active" ||
+			identity.AgentInstanceID == "" || identity.ProjectID != projectID ||
+			service.AgentGrants == nil {
+			return "", nil, ErrForbidden
+		}
+		role, err := service.AgentGrants.ResolveAgentRole(
+			ctx, identity.AgentInstanceID, projectID,
+		)
+		if err != nil || role != RoleAgent {
+			return "", nil, ErrForbidden
+		}
+		return role, append([]Permission(nil), permissionsByRole[role]...), nil
+	}
 	role, err := service.Store.FindRole(ctx, identity.User.ID, projectID)
 	if err != nil {
 		return "", nil, ErrForbidden
@@ -655,6 +720,9 @@ func (service Service) Authorize(
 	required Permission,
 ) error {
 	requestctx.SetProject(ctx, projectID)
+	if identity.Kind == "agent" && !agentToolAllowsPermission(identity, required) {
+		return ErrForbidden
+	}
 	role, permissions, err := service.Permissions(ctx, identity, projectID)
 	if err != nil {
 		return err
@@ -666,6 +734,35 @@ func (service Service) Authorize(
 		}
 	}
 	return ErrForbidden
+}
+
+func agentToolAllowsPermission(identity auth.Identity, permission Permission) bool {
+	requiredTools := []string{}
+	switch permission {
+	case PermissionRead:
+		requiredTools = []string{"project.get"}
+	case PermissionDataRead:
+		requiredTools = []string{"data.list", "data.read"}
+	case PermissionContextPropose:
+		requiredTools = []string{"context.promote"}
+	case PermissionRepoRead, PermissionArtifactRead,
+		PermissionArtifactDownload:
+		requiredTools = []string{"data.read"}
+	case PermissionProgressRead:
+		requiredTools = []string{"data.read", "progress.get"}
+	case PermissionProgressEvaluate:
+		requiredTools = []string{"progress.recalculate"}
+	default:
+		return false
+	}
+	for _, allowed := range identity.AllowedTools {
+		for _, required := range requiredTools {
+			if allowed == required {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // AuthorizeTokenManagement lets Auth enforce project scope without owning RBAC data.

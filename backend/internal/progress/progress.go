@@ -53,23 +53,25 @@ type Milestone struct {
 }
 
 type Task struct {
-	ID               string     `json:"task_id"`
-	ProjectID        string     `json:"project_id"`
-	MilestoneID      string     `json:"milestone_id,omitempty"`
-	Title            string     `json:"title"`
-	Description      string     `json:"description"`
-	Status           string     `json:"status"`
-	AssigneeID       string     `json:"assignee_id,omitempty"`
-	StartAt          *time.Time `json:"start_at,omitempty"`
-	DueAt            *time.Time `json:"due_at,omitempty"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
-	Source           string     `json:"source"`
-	SourceRunID      string     `json:"source_run_id,omitempty"`
-	RelatedObjectIDs []string   `json:"related_object_ids"`
-	CreatedBy        string     `json:"created_by"`
-	UpdatedBy        string     `json:"updated_by"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                   string     `json:"task_id"`
+	ProjectID            string     `json:"project_id"`
+	MilestoneID          string     `json:"milestone_id,omitempty"`
+	Title                string     `json:"title"`
+	Description          string     `json:"description"`
+	Status               string     `json:"status"`
+	AssigneeID           string     `json:"assignee_id,omitempty"`
+	StartAt              *time.Time `json:"start_at,omitempty"`
+	DueAt                *time.Time `json:"due_at,omitempty"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	Source               string     `json:"source"`
+	SourceRunID          string     `json:"source_run_id,omitempty"`
+	SourceEvaluationID   string     `json:"source_evaluation_id,omitempty"`
+	ManualOverrideFields []string   `json:"manual_override_fields"`
+	RelatedObjectIDs     []string   `json:"related_object_ids"`
+	CreatedBy            string     `json:"created_by"`
+	UpdatedBy            string     `json:"updated_by"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type Dependency struct {
@@ -105,45 +107,61 @@ type Reminder struct {
 }
 
 type Proposal struct {
-	ID           string                 `json:"proposal_id"`
-	ProjectID    string                 `json:"project_id"`
-	ProposalType string                 `json:"proposal_type"`
-	TargetID     string                 `json:"target_id,omitempty"`
-	Title        string                 `json:"title"`
-	Rationale    string                 `json:"rationale"`
-	Changes      map[string]interface{} `json:"changes"`
-	Source       string                 `json:"source"`
-	SourceRunID  string                 `json:"source_run_id,omitempty"`
-	ProposedBy   string                 `json:"proposed_by"`
-	Status       string                 `json:"status"`
-	ReviewedBy   string                 `json:"reviewed_by,omitempty"`
-	ReviewedAt   *time.Time             `json:"reviewed_at,omitempty"`
-	ReviewNote   string                 `json:"review_note"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
+	ID                 string                 `json:"proposal_id"`
+	ProjectID          string                 `json:"project_id"`
+	ProposalType       string                 `json:"proposal_type"`
+	TargetID           string                 `json:"target_id,omitempty"`
+	Title              string                 `json:"title"`
+	Rationale          string                 `json:"rationale"`
+	Changes            map[string]interface{} `json:"changes"`
+	Source             string                 `json:"source"`
+	SourceRunID        string                 `json:"source_run_id,omitempty"`
+	SourceEvaluationID string                 `json:"source_evaluation_id,omitempty"`
+	SourceKey          string                 `json:"source_key,omitempty"`
+	ProposedBy         string                 `json:"proposed_by"`
+	Status             string                 `json:"status"`
+	ReviewedBy         string                 `json:"reviewed_by,omitempty"`
+	ReviewedAt         *time.Time             `json:"reviewed_at,omitempty"`
+	ReviewNote         string                 `json:"review_note"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
 type Settings struct {
-	ProjectID       string    `json:"project_id"`
-	AutoTaskChanges bool      `json:"auto_task_changes"`
-	UpdatedBy       string    `json:"updated_by"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ProjectID            string     `json:"project_id"`
+	AutoTaskChanges      bool       `json:"auto_task_changes"`
+	AutoTrackingEnabled  bool       `json:"auto_tracking_enabled"`
+	EventTriggersEnabled bool       `json:"event_triggers_enabled"`
+	CronEnabled          bool       `json:"cron_enabled"`
+	CronSchedule         string     `json:"cron_schedule"`
+	DebounceSeconds      int        `json:"debounce_seconds"`
+	MinIntervalSeconds   int        `json:"min_interval_seconds"`
+	AgentInstanceID      string     `json:"agent_instance_id,omitempty"`
+	CronRemoteJobID      string     `json:"cron_remote_job_id,omitempty"`
+	CronSyncStatus       string     `json:"cron_sync_status"`
+	CronErrorCode        string     `json:"cron_error_code,omitempty"`
+	CronSyncedAt         *time.Time `json:"cron_synced_at,omitempty"`
+	EvaluatorMode        string     `json:"evaluator_mode"`
+	UpdatedBy            string     `json:"updated_by"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type Progress struct {
-	ProjectID    string       `json:"project_id"`
-	GeneratedAt  time.Time    `json:"generated_at"`
-	Milestones   []Milestone  `json:"milestones"`
-	Tasks        []Task       `json:"tasks"`
-	Dependencies []Dependency `json:"dependencies"`
-	Reminders    []Reminder   `json:"reminders"`
-	Proposals    []Proposal   `json:"proposals"`
-	Today        []Task       `json:"today"`
-	Overdue      []Task       `json:"overdue"`
-	Blocked      []Task       `json:"blocked"`
-	Board        Board        `json:"board"`
-	Gantt        []GanttItem  `json:"gantt"`
-	Settings     Settings     `json:"settings"`
+	ProjectID        string       `json:"project_id"`
+	GeneratedAt      time.Time    `json:"generated_at"`
+	Milestones       []Milestone  `json:"milestones"`
+	Tasks            []Task       `json:"tasks"`
+	Dependencies     []Dependency `json:"dependencies"`
+	Reminders        []Reminder   `json:"reminders"`
+	Proposals        []Proposal   `json:"proposals"`
+	Today            []Task       `json:"today"`
+	Overdue          []Task       `json:"overdue"`
+	Blocked          []Task       `json:"blocked"`
+	Board            Board        `json:"board"`
+	Gantt            []GanttItem  `json:"gantt"`
+	Settings         Settings     `json:"settings"`
+	Tracking         TrackerState `json:"tracking"`
+	LatestEvaluation *Evaluation  `json:"latest_evaluation,omitempty"`
 }
 
 type Board struct {
@@ -264,11 +282,16 @@ type Store interface {
 }
 
 type Service struct {
-	Access    Access
-	Audit     AuditRecorder
-	Clock     interface{ Now() time.Time }
-	Generator identity.Generator
-	Store     Store
+	Access        Access
+	Audit         AuditRecorder
+	Clock         interface{ Now() time.Time }
+	EvaluatorMode string
+	Generator     identity.Generator
+	Store         Store
+	Tracking      TrackingStore
+	Facts         EvaluationFactsProvider
+	Agent         AgentRuntime
+	Jobs          JobAccess
 }
 
 func (service Service) Authenticate(ctx context.Context, authorization string) (auth.Identity, error) {
@@ -299,12 +322,22 @@ func (service Service) List(ctx context.Context, identity auth.Identity, project
 	if err != nil {
 		return Progress{}, err
 	}
-	settings, err := service.Store.GetSettings(ctx, projectID)
+	settings, err := service.getSettings(ctx, projectID)
 	if err != nil {
 		return Progress{}, err
 	}
 	now := service.now()
 	result := Progress{ProjectID: projectID, GeneratedAt: now, Milestones: nonNilMilestones(milestones), Tasks: nonNilTasks(tasks), Dependencies: dependencies, Reminders: reminders, Proposals: proposals, Settings: settings}
+	if service.Tracking != nil {
+		result.Tracking, err = service.Tracking.GetState(ctx, projectID)
+		if err != nil {
+			return Progress{}, err
+		}
+		result.LatestEvaluation, err = service.Tracking.GetLatestEvaluation(ctx, projectID)
+		if err != nil {
+			return Progress{}, err
+		}
+	}
 	today := now.Truncate(24 * time.Hour)
 	tomorrow := today.Add(24 * time.Hour)
 	for _, task := range result.Tasks {
@@ -334,6 +367,19 @@ func (service Service) List(ctx context.Context, identity auth.Identity, project
 	for _, task := range result.Tasks {
 		result.Gantt = append(result.Gantt, GanttItem{ID: task.ID, Kind: "task", Title: task.Title, StartAt: task.StartAt, TargetAt: task.DueAt, Status: task.Status})
 	}
+	// Empty columns must serialize as [] rather than null so Web/CLI/MCP
+	// consumers can always read .length on every Progress collection.
+	result.Dependencies = nonNilDependencies(result.Dependencies)
+	result.Reminders = nonNilReminders(result.Reminders)
+	result.Proposals = nonNilProposals(result.Proposals)
+	result.Blocked = nonNilTasks(result.Blocked)
+	result.Overdue = nonNilTasks(result.Overdue)
+	result.Today = nonNilTasks(result.Today)
+	result.Board.Todo = nonNilTasks(result.Board.Todo)
+	result.Board.InProgress = nonNilTasks(result.Board.InProgress)
+	result.Board.Blocked = nonNilTasks(result.Board.Blocked)
+	result.Board.Done = nonNilTasks(result.Board.Done)
+	result.Gantt = nonNilGantt(result.Gantt)
 	return result, nil
 }
 
@@ -361,6 +407,16 @@ func (service Service) ProgressHomeItems(ctx context.Context, identity auth.Iden
 		taskItems = append(taskItems, item)
 	}
 	return milestoneItems, taskItems, nil
+}
+
+func (service Service) ProgressHomeTracking(ctx context.Context, identity auth.Identity, projectID string) (interface{}, error) {
+	if err := service.Access.Authorize(ctx, identity, projectID, project.PermissionProgressRead); err != nil {
+		return nil, err
+	}
+	if service.Tracking == nil {
+		return emptyTrackerState(projectID), nil
+	}
+	return service.Tracking.GetState(ctx, projectID)
 }
 
 func (service Service) ListMilestones(ctx context.Context, identity auth.Identity, projectID string) ([]Milestone, error) {
@@ -402,7 +458,7 @@ func (service Service) GetSettings(ctx context.Context, identity auth.Identity, 
 	if err := service.Access.Authorize(ctx, identity, projectID, project.PermissionProgressRead); err != nil {
 		return Settings{}, err
 	}
-	return service.Store.GetSettings(ctx, projectID)
+	return service.getSettings(ctx, projectID)
 }
 
 func (service Service) CreateMilestone(ctx context.Context, identity auth.Identity, projectID string, input CreateMilestoneInput) (Milestone, error) {
@@ -598,8 +654,24 @@ func (service Service) UpdateSettings(ctx context.Context, identity auth.Identit
 		return Settings{}, err
 	}
 	item, err := service.Store.UpdateSettings(ctx, projectID, identity.User.ID, autoTaskChanges)
+	item.EvaluatorMode = service.evaluatorMode()
 	service.record(ctx, identity, "progress.settings.updated", "progress_settings", projectID, projectID, map[string]interface{}{"auto_task_changes": autoTaskChanges}, err)
 	return item, err
+}
+
+func (service Service) getSettings(ctx context.Context, projectID string) (Settings, error) {
+	item, err := service.Store.GetSettings(ctx, projectID)
+	if err == nil {
+		item.EvaluatorMode = service.evaluatorMode()
+	}
+	return item, err
+}
+
+func (service Service) evaluatorMode() string {
+	if service.EvaluatorMode == "mock" {
+		return "mock"
+	}
+	return "core_agent"
 }
 
 func (service Service) ReadMilestone(ctx context.Context, identity auth.Identity, projectID, id string) (Milestone, error) {
@@ -644,6 +716,34 @@ func (service Service) record(ctx context.Context, identity auth.Identity, actio
 func nonNilMilestones(items []Milestone) []Milestone {
 	if items == nil {
 		return []Milestone{}
+	}
+	return items
+}
+
+func nonNilDependencies(items []Dependency) []Dependency {
+	if items == nil {
+		return []Dependency{}
+	}
+	return items
+}
+
+func nonNilReminders(items []Reminder) []Reminder {
+	if items == nil {
+		return []Reminder{}
+	}
+	return items
+}
+
+func nonNilProposals(items []Proposal) []Proposal {
+	if items == nil {
+		return []Proposal{}
+	}
+	return items
+}
+
+func nonNilGantt(items []GanttItem) []GanttItem {
+	if items == nil {
+		return []GanttItem{}
 	}
 	return items
 }

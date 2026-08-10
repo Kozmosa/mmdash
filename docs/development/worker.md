@@ -31,6 +31,7 @@ Optional runtime variables:
 | `MMDASH_WORKER_ID`            | host name plus PID      | Stable process identity   |
 | `MMDASH_WORKER_LEASE_SECONDS` | `60`                    | Lease duration, 10–900    |
 | `MMDASH_WORKER_POLL_SECONDS`  | `2`                     | Delay after an empty poll |
+| `MMDASH_PROGRESS_EVALUATOR_MODE` | `core_agent`          | `core_agent` or deterministic `mock` Progress evaluation |
 
 Register handlers through `HandlerRegistry`. Job type names are stable dotted
 identifiers. A handler receives a `HandlerContext` and JSON-object payload and
@@ -39,3 +40,18 @@ code and retry policy.
 
 Do not import a PostgreSQL driver into the Worker or mutate domain tables from
 a handler. Domain results return through Core Job API operations.
+
+## Progress evaluation handler
+
+`progress.evaluate` is registered through the normal `HandlerRegistry`. In
+`core_agent` mode the handler calls the leased Core execute route; Core owns
+the existing Hermes Session/Run interaction and returns local Agent provenance
+plus the raw JSON output. The Worker parses and validates the exact bounded
+Stage 6 schema before Job completion. It does not call Hermes directly and does
+not invent a second provider contract.
+
+In `mock` mode the handler reads the immutable evaluation input from Core and
+deterministically derives a stage, summary, task lists, and blocked-task risks.
+Use this mode for local/Docker acceptance when no real Hermes is available.
+Both paths return only a JSON-object Job result; Progress applies Tasks,
+Proposals, risks, tracker state, Audit, and Outbox after Core revalidates it.

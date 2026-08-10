@@ -43,6 +43,17 @@ func (store *memoryStore) Upsert(
 	return setting, nil
 }
 
+func (store *memoryStore) RotateSecrets(
+	_ context.Context,
+	actorID string,
+	setting StoredSetting,
+) (StoredSetting, error) {
+	setting.Version++
+	setting.UpdatedBy = actorID
+	store.setting = setting
+	return setting, nil
+}
+
 func (store *memoryStore) Delete(
 	_ context.Context,
 	scope Scope,
@@ -180,6 +191,37 @@ func TestSecretCodecUsesAuthenticatedEncryption(t *testing.T) {
 	encrypted.Ciphertext = encrypted.Ciphertext[:len(encrypted.Ciphertext)-1] + "A"
 	if _, err := codec.Decrypt(encrypted); err == nil {
 		t.Fatal("expected tampered ciphertext to fail authentication")
+	}
+}
+
+func TestRotateSecretsPreservesPublicValues(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.Register(fixtureDefinition(nil)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	codec, err := NewSecretCodec("test-settings-encryption-key-with-32-characters")
+	if err != nil {
+		t.Fatalf("codec: %v", err)
+	}
+	oldSecret, err := codec.Encrypt("old-secret")
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	store := &memoryStore{setting: StoredSetting{
+		EncryptedSecrets: map[string]EncryptedSecret{"token": oldSecret},
+		PublicValues:     map[string]interface{}{"enabled": true, "endpoint": "https://example.test/hook"},
+		Scope:            ScopeProject, ScopeID: "project-1", TypeKey: "fixture.provider", Version: 2,
+	}}
+	service := Service{Codec: codec, Registry: registry, Store: store}
+	if err := service.RotateSecrets(context.Background(), "user-1", ScopeProject, "project-1", "fixture.provider", map[string]string{"token": "new-secret"}); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	resolved, err := service.Resolve(context.Background(), ScopeProject, "project-1", "fixture.provider")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolved.Values["token"] != "new-secret" || resolved.Values["endpoint"] != "https://example.test/hook" {
+		t.Fatalf("unexpected rotated setting: %#v", resolved.Values)
 	}
 }
 

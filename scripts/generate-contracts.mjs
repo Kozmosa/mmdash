@@ -53,6 +53,7 @@ function renderGoHandlerTypes(document) {
   const names = [
     "LoginRequest",
     "CreateTokenRequest",
+    "RecordAgentTokenVerificationRequest",
     "CreateProjectRequest",
     "UpdateProjectRequest",
     "UpdateProjectMemberRequest",
@@ -77,6 +78,20 @@ function renderGoHandlerTypes(document) {
     "CreateProgressProposalRequest",
     "ReviewProgressProposalRequest",
     "UpdateProgressSettingsRequest",
+    "RecalculateProgressRequest",
+    "SetProgressStageOverrideRequest",
+    "CreateAgentInstanceRequest",
+    "UpdateAgentInstanceRequest",
+    "RunAgentChecksRequest",
+    "RotateAgentTokenRequest",
+    "UpdateAgentPromptRequest",
+    "CreateAgentSessionRequest",
+    "UpdateAgentSessionRequest",
+    "EndAgentSessionRequest",
+    "ForkAgentSessionRequest",
+    "StartAgentRunRequest",
+    "ReplayAgentRunRequest",
+    "RespondAgentRunApprovalRequest",
     "UpdateInboxRequest",
     "MarkAllInboxReadRequest",
     "UpdateNotificationChannelRequest",
@@ -94,6 +109,11 @@ function renderGoHandlerTypes(document) {
     "ArtifactUpdateRequest",
     "ArtifactRestoreVersionRequest",
     "ArtifactPreviewJobTransferRequest",
+    "CreateModelQuestionRequest",
+    "UpdateModelQuestionRequest",
+    "UpdateModelSnapshotRequest",
+    "StartNotionOAuthRequest",
+    "CompleteNotionOAuthRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {
@@ -111,6 +131,7 @@ package generated
 import (
 \t"fmt"
 \t"net/mail"
+\t"regexp"
 \t"time"
 )
 
@@ -153,6 +174,33 @@ function renderGoStruct(name, schema, schemas) {
     if (optionalChecks.length > 0) {
       validations.push(
         `\tif ${optionalChecks.join(" && ")} {\n\t\treturn fmt.Errorf("at least one field is required")\n\t}`,
+      );
+    }
+  }
+  for (const [triggerName, dependencyNames] of Object.entries(
+    schema.dependentRequired ?? {},
+  )) {
+    const trigger = fields.find((field) => field.jsonName === triggerName);
+    if (!trigger) {
+      throw new Error(
+        `${name} dependentRequired references unknown field ${triggerName}`,
+      );
+    }
+    for (const dependencyName of dependencyNames) {
+      const dependency = fields.find(
+        (field) => field.jsonName === dependencyName,
+      );
+      if (!dependency) {
+        throw new Error(
+          `${name} dependentRequired references unknown field ${dependencyName}`,
+        );
+      }
+      if (dependency.isRequired) continue;
+      const triggerPresent = trigger.isRequired
+        ? "true"
+        : `request.${trigger.goName} != nil`;
+      validations.push(
+        `\tif ${triggerPresent} && request.${dependency.goName} == nil {\n\t\treturn fmt.Errorf("${dependencyName} is required when ${triggerName} is present")\n\t}`,
       );
     }
   }
@@ -234,6 +282,16 @@ function goValidation(field, schemas) {
   if (schema.type === "string" && schema.format === "email") {
     conditions.push(
       `if parsed, err := mail.ParseAddress(${prefix}); err != nil || parsed.Address != ${prefix} {\n\t\treturn fmt.Errorf("${field.jsonName} must be an email address")\n\t}`,
+    );
+  }
+  if (schema.type === "string" && schema.const !== undefined) {
+    conditions.push(
+      `if ${prefix} != ${JSON.stringify(schema.const)} {\n\t\treturn fmt.Errorf("${field.jsonName} has an unsupported value")\n\t}`,
+    );
+  }
+  if (schema.type === "string" && typeof schema.pattern === "string") {
+    conditions.push(
+      `if matched, err := regexp.MatchString(${JSON.stringify(schema.pattern)}, ${prefix}); err != nil || !matched {\n\t\treturn fmt.Errorf("${field.jsonName} has an invalid format")\n\t}`,
     );
   }
   const enumeration = schema.enum;

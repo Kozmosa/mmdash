@@ -13,6 +13,11 @@ import (
 
 // Registry records bounded-label Core platform metrics.
 type Registry struct {
+	agent                           map[agentKey]uint64
+	agentChecks                     map[agentCheckKey]uint64
+	agentRuns                       map[string]uint64
+	agentStreamsActive              int64
+	agentTokens                     map[agentTokenKey]uint64
 	http                            map[httpKey]*httpMetric
 	mu                              sync.RWMutex
 	repo                            map[repoKey]*httpMetric
@@ -35,6 +40,23 @@ type Registry struct {
 	progressReminderTriggered       uint64
 	progressReminderRetries         uint64
 	progressReminderFailures        uint64
+	progressEvaluations             map[string]uint64
+}
+
+type agentKey struct {
+	Adapter   string
+	Operation string
+	Outcome   string
+}
+
+type agentCheckKey struct {
+	Kind    string
+	Outcome string
+}
+
+type agentTokenKey struct {
+	Action  string
+	Outcome string
 }
 
 type httpKey struct {
@@ -71,14 +93,92 @@ type artifactDurationKey struct {
 
 func New(service, version string) *Registry {
 	return &Registry{
-		http:              map[httpKey]*httpMetric{},
-		repo:              map[repoKey]*httpMetric{},
-		repoDurations:     map[repoDurationKey]*httpMetric{},
-		artifact:          map[artifactKey]*httpMetric{},
-		artifactDurations: map[artifactDurationKey]*httpMetric{},
-		service:           strings.TrimSpace(service),
-		version:           strings.TrimSpace(version),
+		agent:               map[agentKey]uint64{},
+		agentChecks:         map[agentCheckKey]uint64{},
+		agentRuns:           map[string]uint64{},
+		agentTokens:         map[agentTokenKey]uint64{},
+		http:                map[httpKey]*httpMetric{},
+		repo:                map[repoKey]*httpMetric{},
+		repoDurations:       map[repoDurationKey]*httpMetric{},
+		artifact:            map[artifactKey]*httpMetric{},
+		artifactDurations:   map[artifactDurationKey]*httpMetric{},
+		progressEvaluations: map[string]uint64{},
+		service:             strings.TrimSpace(service),
+		version:             strings.TrimSpace(version),
 	}
+}
+
+// ObserveAgentOperation records one adapter request using bounded labels only.
+func (registry *Registry) ObserveAgentOperation(adapter, operation, outcome string) {
+	if registry == nil {
+		return
+	}
+	key := agentKey{
+		Adapter: boundedLabel(adapter, map[string]bool{"hermes": true}, "unknown"),
+		Operation: boundedLabel(operation, map[string]bool{
+			"probe": true, "session": true, "messages": true, "run": true,
+			"stream": true, "stop": true, "project_access": true, "job": true,
+		}, "other"),
+		Outcome: boundedLabel(outcome, map[string]bool{"success": true, "error": true}, "error"),
+	}
+	registry.mu.Lock()
+	registry.agent[key]++
+	registry.mu.Unlock()
+}
+
+func (registry *Registry) ObserveAgentConnectionCheck(kind, outcome string) {
+	if registry == nil {
+		return
+	}
+	key := agentCheckKey{
+		Kind: boundedLabel(kind, map[string]bool{
+			"runtime": true, "management": true, "project_access": true,
+		}, "other"),
+		Outcome: boundedLabel(outcome, map[string]bool{
+			"passed": true, "failed": true, "unsupported": true,
+		}, "failed"),
+	}
+	registry.mu.Lock()
+	registry.agentChecks[key]++
+	registry.mu.Unlock()
+}
+
+func (registry *Registry) ObserveAgentRun(status string) {
+	if registry == nil {
+		return
+	}
+	status = boundedLabel(status, map[string]bool{
+		"queued": true, "running": true, "waiting_for_approval": true,
+		"stopping": true, "completed": true, "failed": true, "stopped": true,
+	}, "other")
+	registry.mu.Lock()
+	registry.agentRuns[status]++
+	registry.mu.Unlock()
+}
+
+func (registry *Registry) AddAgentStream(delta int64) {
+	if registry == nil {
+		return
+	}
+	registry.mu.Lock()
+	registry.agentStreamsActive = nonNegative(registry.agentStreamsActive + delta)
+	registry.mu.Unlock()
+}
+
+func (registry *Registry) ObserveAgentToken(action, outcome string) {
+	if registry == nil {
+		return
+	}
+	key := agentTokenKey{
+		Action: boundedLabel(action, map[string]bool{
+			"issue": true, "activate": true, "rotate": true,
+			"rotation_failed": true, "revoke": true,
+		}, "other"),
+		Outcome: boundedLabel(outcome, map[string]bool{"success": true, "error": true}, "error"),
+	}
+	registry.mu.Lock()
+	registry.agentTokens[key]++
+	registry.mu.Unlock()
 }
 
 // ObserveArtifactOperation records one bounded Artifact control or storage
@@ -213,6 +313,24 @@ func (registry *Registry) ObserveProgressReminder(outcome string) {
 	}
 }
 
+// ObserveProgressEvaluation records one bounded automatic tracking outcome.
+func (registry *Registry) ObserveProgressEvaluation(outcome string) {
+	if registry == nil {
+		return
+	}
+	outcome = boundedLabel(outcome, map[string]bool{
+		"assembly_failed": true,
+		"cron_failed":     true,
+		"cron_synced":     true,
+		"merged":          true,
+		"queue_failed":    true,
+		"queued":          true,
+	}, "other")
+	registry.mu.Lock()
+	registry.progressEvaluations[outcome]++
+	registry.mu.Unlock()
+}
+
 // ObserveRepoOperation records one bounded Repo operation. Callers supply only
 // module constants; unexpected labels collapse to a fixed fallback.
 func (registry *Registry) ObserveRepoOperation(
@@ -308,6 +426,62 @@ func (registry *Registry) snapshot() string {
 		&output, "mmdash_build_info{service=%s,version=%s} 1\n",
 		quote(registry.service), quote(registry.version),
 	)
+	output.WriteString("# HELP mmdash_agent_adapter_requests_total Agent adapter requests.\n")
+	output.WriteString("# TYPE mmdash_agent_adapter_requests_total counter\n")
+	agentKeys := make([]agentKey, 0, len(registry.agent))
+	for key := range registry.agent {
+		agentKeys = append(agentKeys, key)
+	}
+	sort.Slice(agentKeys, func(left, right int) bool {
+		return agentKeys[left].Adapter+agentKeys[left].Operation+agentKeys[left].Outcome <
+			agentKeys[right].Adapter+agentKeys[right].Operation+agentKeys[right].Outcome
+	})
+	for _, key := range agentKeys {
+		fmt.Fprintf(&output,
+			"mmdash_agent_adapter_requests_total{adapter=%s,operation=%s,outcome=%s} %d\n",
+			quote(key.Adapter), quote(key.Operation), quote(key.Outcome), registry.agent[key])
+	}
+	output.WriteString("# HELP mmdash_agent_connection_checks_total Agent connection checks.\n")
+	output.WriteString("# TYPE mmdash_agent_connection_checks_total counter\n")
+	checkKeys := make([]agentCheckKey, 0, len(registry.agentChecks))
+	for key := range registry.agentChecks {
+		checkKeys = append(checkKeys, key)
+	}
+	sort.Slice(checkKeys, func(left, right int) bool {
+		return checkKeys[left].Kind+checkKeys[left].Outcome < checkKeys[right].Kind+checkKeys[right].Outcome
+	})
+	for _, key := range checkKeys {
+		fmt.Fprintf(&output,
+			"mmdash_agent_connection_checks_total{kind=%s,outcome=%s} %d\n",
+			quote(key.Kind), quote(key.Outcome), registry.agentChecks[key])
+	}
+	output.WriteString("# HELP mmdash_agent_runs_total Agent Runs observed by terminal or start status.\n")
+	output.WriteString("# TYPE mmdash_agent_runs_total counter\n")
+	runStatuses := make([]string, 0, len(registry.agentRuns))
+	for status := range registry.agentRuns {
+		runStatuses = append(runStatuses, status)
+	}
+	sort.Strings(runStatuses)
+	for _, status := range runStatuses {
+		fmt.Fprintf(&output, "mmdash_agent_runs_total{status=%s} %d\n", quote(status), registry.agentRuns[status])
+	}
+	output.WriteString("# HELP mmdash_agent_sse_streams_active Active Agent SSE streams.\n")
+	output.WriteString("# TYPE mmdash_agent_sse_streams_active gauge\n")
+	fmt.Fprintf(&output, "mmdash_agent_sse_streams_active %d\n", registry.agentStreamsActive)
+	output.WriteString("# HELP mmdash_agent_token_lifecycle_total Agent token lifecycle actions.\n")
+	output.WriteString("# TYPE mmdash_agent_token_lifecycle_total counter\n")
+	tokenKeys := make([]agentTokenKey, 0, len(registry.agentTokens))
+	for key := range registry.agentTokens {
+		tokenKeys = append(tokenKeys, key)
+	}
+	sort.Slice(tokenKeys, func(left, right int) bool {
+		return tokenKeys[left].Action+tokenKeys[left].Outcome < tokenKeys[right].Action+tokenKeys[right].Outcome
+	})
+	for _, key := range tokenKeys {
+		fmt.Fprintf(&output,
+			"mmdash_agent_token_lifecycle_total{action=%s,outcome=%s} %d\n",
+			quote(key.Action), quote(key.Outcome), registry.agentTokens[key])
+	}
 	output.WriteString("# HELP mmdash_http_requests_total Completed HTTP requests.\n")
 	output.WriteString("# TYPE mmdash_http_requests_total counter\n")
 	output.WriteString("# HELP mmdash_http_request_duration_seconds_sum Total HTTP request duration.\n")
@@ -378,6 +552,16 @@ func (registry *Registry) snapshot() string {
 	output.WriteString("# HELP mmdash_progress_reminder_failures_total Terminal Progress reminder processing failures.\n")
 	output.WriteString("# TYPE mmdash_progress_reminder_failures_total counter\n")
 	fmt.Fprintf(&output, "mmdash_progress_reminder_failures_total %d\n", registry.progressReminderFailures)
+	output.WriteString("# HELP mmdash_progress_evaluations_total Progress automatic tracking outcomes.\n")
+	output.WriteString("# TYPE mmdash_progress_evaluations_total counter\n")
+	progressOutcomes := make([]string, 0, len(registry.progressEvaluations))
+	for outcome := range registry.progressEvaluations {
+		progressOutcomes = append(progressOutcomes, outcome)
+	}
+	sort.Strings(progressOutcomes)
+	for _, outcome := range progressOutcomes {
+		fmt.Fprintf(&output, "mmdash_progress_evaluations_total{outcome=%s} %d\n", quote(outcome), registry.progressEvaluations[outcome])
+	}
 	output.WriteString("# HELP mmdash_repo_operations_total Completed Repo operations.\n")
 	output.WriteString("# TYPE mmdash_repo_operations_total counter\n")
 	output.WriteString(

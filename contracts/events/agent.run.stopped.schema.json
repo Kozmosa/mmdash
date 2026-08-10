@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/agent.run.stopped.schema.json",
+  "title": "agent.run.stopped payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project_id",
+    "resource_id",
+    "session_id",
+    "status",
+    "safe_error_code"
+  ],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "resource_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string", "format": "uuid" },
+    "status": { "const": "stopped" },
+    "safe_error_code": { "type": "string", "maxLength": 100 },
+    "source": { "type": "string", "enum": ["message", "regenerate", "rerun", "progress_evaluation"] },
+    "source_run_id": { "type": "string", "format": "uuid" },
+    "source_evaluation_id": { "type": "string", "format": "uuid" }
+  }
+}

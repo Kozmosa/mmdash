@@ -81,7 +81,13 @@ def test_artifact_transfer_request_uses_worker_token(
         )
 
     monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
-    client = CoreJobClient("http://core:8080", "worker-token", timeout_seconds=4)
+    client = CoreJobClient(
+        "http://core:8080",
+        "worker-token",
+        timeout_seconds=4,
+        model_export_timeout_seconds=123,
+        model_completion_timeout_seconds=234,
+    )
     result = client.request_artifact_transfer(
         "job-1",
         {"direction": "input", "version_id": "version-1"},
@@ -93,4 +99,100 @@ def test_artifact_transfer_request_uses_worker_token(
         "direction": "input",
         "version_id": "version-1",
     }
+    assert captured["timeout"] == 4
     assert result["method"] == "GET"
+
+
+def test_model_completion_uses_media_transfer_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeResponse:
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(b'{"id":"job-1","status":"succeeded"}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+    client = CoreJobClient(
+        "http://core:8080",
+        "worker-token",
+        timeout_seconds=4,
+        model_export_timeout_seconds=123,
+        model_completion_timeout_seconds=234,
+    )
+
+    result = client.complete("job-1", "worker-1", {"media": []})
+
+    request = captured["request"]
+    assert request.full_url.endswith("/v1/jobs/job-1/complete")
+    assert captured["timeout"] == 234
+    assert result["status"] == "succeeded"
+
+
+def test_model_notion_export_uses_bodyless_get(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeResponse:
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(b'{"mode":"discover","pages":[]}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+    client = CoreJobClient(
+        "http://core:8080",
+        "worker-token",
+        timeout_seconds=4,
+        model_export_timeout_seconds=123,
+        model_completion_timeout_seconds=234,
+    )
+
+    result = client.get_model_notion_export("job-1")
+
+    request = captured["request"]
+    assert request.full_url.endswith("/v1/internal/model-notion-jobs/job-1/export")
+    assert request.get_method() == "GET"
+    assert request.data is None
+    assert request.headers["Authorization"] == "Bearer worker-token"
+    assert captured["timeout"] == 123
+    assert result == {"mode": "discover", "pages": []}
+
+
+@pytest.mark.parametrize(
+    ("method_name", "suffix", "http_method"),
+    [
+        ("get_progress_evaluation_input", "/input", "GET"),
+        ("execute_progress_evaluation", "/execute", "POST"),
+    ],
+)
+def test_progress_evaluation_capabilities_use_job_bound_routes(
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+    suffix: str,
+    http_method: str,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: object, timeout: float) -> FakeResponse:
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse(b'{"status":"running"}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+    client = CoreJobClient(
+        "http://core:8080",
+        "worker-token",
+        progress_evaluation_timeout_seconds=456,
+    )
+
+    result = getattr(client, method_name)("job-1")
+
+    request = captured["request"]
+    assert request.full_url.endswith(
+        f"/v1/internal/progress-evaluation-jobs/job-1{suffix}"
+    )
+    assert request.get_method() == http_method
+    assert captured["timeout"] == 456
+    assert result == {"status": "running"}

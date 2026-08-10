@@ -40,6 +40,7 @@ describe("stream proxies", () => {
       "http://core.test/v1/projects/project-1/events?cursor=next",
     );
     const headers = new Headers(options?.headers);
+    expect(headers.get("authorization")).toBe("Bearer test-access-token");
     expect(headers.get("x-mmdash-project-id")).toBe("project-1");
     expect(headers.get("x-mmdash-user-id")).toBe("user-1");
   });
