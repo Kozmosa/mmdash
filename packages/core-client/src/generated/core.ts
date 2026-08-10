@@ -5700,6 +5700,8 @@ export interface components {
       source: components["schemas"]["AgentRunSource"];
       /** Format: uuid */
       source_run_id?: string;
+      /** Format: uuid */
+      source_evaluation_id?: string;
       safe_error_code?: string;
       safe_error_message?: string;
       tool_calls: components["schemas"]["AgentToolCall"][];

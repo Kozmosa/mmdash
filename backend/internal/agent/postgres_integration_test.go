@@ -50,6 +50,8 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 	oldTokenID := generator.MustNew()
 	newTokenID := generator.MustNew()
 	rotationID := generator.MustNew()
+	evaluationRequestID := generator.MustNew()
+	evaluationID := generator.MustNew()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO auth_users(
@@ -111,11 +113,31 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 	`, sessionID, grantID, agentInstanceID, projectID, userID, now); err != nil {
 		t.Fatalf("insert agent session: %v", err)
 	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO progress_evaluation_requests(
+			request_id,project_id,trigger_kind,status,scheduled_for,actor_id,
+			requested_by_kind,force,created_at,updated_at
+		) VALUES($1,$2,'manual','queued',$3,$4,'session',true,$3,$3)
+	`, evaluationRequestID, projectID, now, userID); err != nil {
+		t.Fatalf("insert progress evaluation request: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO progress_evaluations(
+			evaluation_id,request_id,project_id,status,input_version,input_snapshot,
+			trigger_kind,agent_instance_id,evaluator_mode,requested_by,created_at,
+			started_at,updated_at
+		) VALUES($1,$2,$3,'running',$4,'{}'::jsonb,'manual',$5,'core_agent',$6,$7,$7,$7)
+	`, evaluationID, evaluationRequestID, projectID, strings.Repeat("0", 64),
+		agentInstanceID, userID, now); err != nil {
+		t.Fatalf("insert progress evaluation: %v", err)
+	}
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM system_outbox WHERE project_id=$1`, projectID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_tool_calls WHERE run_id IN (SELECT run_id FROM agent_runs WHERE session_id=$1)`, sessionID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_runs WHERE session_id=$1`, sessionID)
+		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM progress_evaluations WHERE evaluation_id=$1`, evaluationID)
+		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM progress_evaluation_requests WHERE request_id=$1`, evaluationRequestID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_sessions WHERE session_id=$1`, sessionID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_token_rotations WHERE rotation_id=$1`, rotationID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM auth_agent_tokens WHERE token_id IN ($1,$2)`, oldTokenID, newTokenID)
@@ -141,6 +163,20 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 		Transaction: transaction.Manager{
 			DB: transaction.SQLBeginner{DB: db},
 		},
+	}
+	progressRunID := generator.MustNew()
+	progressReservation := RunRecord{
+		CreatedAt: now, CreatedBy: userID, ID: progressRunID,
+		RemoteRunID: "pending:" + progressRunID, SessionID: sessionID,
+		Source: "progress_evaluation", SourceEvaluationID: evaluationID,
+		UpdatedAt: now, Version: 1,
+	}
+	if _, err := store.ReserveRun(ctx, progressReservation); err != nil {
+		t.Fatalf("reserve progress evaluation run: %v", err)
+	}
+	storedProgressRun, err := store.GetRun(ctx, sessionID, progressRunID)
+	if err != nil || storedProgressRun.SourceEvaluationID != evaluationID || storedProgressRun.SourceRunID != "" {
+		t.Fatalf("progress evaluation provenance: %#v %v", storedProgressRun, err)
 	}
 
 	replacement := auth.AgentToken{

@@ -1212,6 +1212,9 @@ func runView(item RunRecord) map[string]interface{} {
 	if item.SourceRunID != "" {
 		view["source_run_id"] = item.SourceRunID
 	}
+	if item.SourceEvaluationID != "" {
+		view["source_evaluation_id"] = item.SourceEvaluationID
+	}
 	if item.SafeErrorCode != "" {
 		view["safe_error_code"] = item.SafeErrorCode
 	}

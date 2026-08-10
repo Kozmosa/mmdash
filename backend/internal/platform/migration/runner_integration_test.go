@@ -127,7 +127,7 @@ func TestRunnerAcceptsCanonicalAndLegacyRecordsTogether(t *testing.T) {
 	assertMigrationCount(t, db, len(names)+legacyCount)
 }
 
-func TestRenumberedMigrationsSupportDownAndUp(t *testing.T) {
+func TestRecentMigrationsSupportDownAndUp(t *testing.T) {
 	db := openMigrationRunnerDatabase(t)
 	directory := migrationTestDirectory(t)
 	names, err := migrationNames(directory)
@@ -139,11 +139,13 @@ func TestRenumberedMigrationsSupportDownAndUp(t *testing.T) {
 		"000029_model_stage7.up.sql",
 		"000030_model_notion_oauth.up.sql",
 		"000031_notification_routing_model.up.sql",
+		"000032_agent_progress_evaluation_source.up.sql",
 	} {
 		executeMigrationFile(t, db, directory, name)
 	}
 
 	for _, name := range []string{
+		"000032_agent_progress_evaluation_source.down.sql",
 		"000031_notification_routing_model.down.sql",
 		"000030_model_notion_oauth.down.sql",
 		"000029_model_stage7.down.sql",
@@ -153,17 +155,20 @@ func TestRenumberedMigrationsSupportDownAndUp(t *testing.T) {
 	assertTableExists(t, db, "model_sources", false)
 	assertTableExists(t, db, "model_notion_oauth_authorizations", false)
 	assertColumnExists(t, db, "notification_rules", "inbox_enabled", true)
+	assertColumnExists(t, db, "agent_runs", "source_evaluation_id", false)
 
 	for _, name := range []string{
 		"000029_model_stage7.up.sql",
 		"000030_model_notion_oauth.up.sql",
 		"000031_notification_routing_model.up.sql",
+		"000032_agent_progress_evaluation_source.up.sql",
 	} {
 		executeMigrationFile(t, db, directory, name)
 	}
 	assertTableExists(t, db, "model_sources", true)
 	assertTableExists(t, db, "model_notion_oauth_authorizations", true)
 	assertColumnExists(t, db, "notification_rules", "inbox_enabled", false)
+	assertColumnExists(t, db, "agent_runs", "source_evaluation_id", true)
 }
 
 func openMigrationRunnerDatabase(t *testing.T) *sql.DB {

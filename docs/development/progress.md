@@ -102,8 +102,10 @@ ignored so evaluation output cannot recursively retrigger itself.
 `core_agent` is the production path. The Worker asks Core to execute the
 evaluation; Core uses only the existing Agent/Hermes Session, Run, and Jobs
 contracts, persists a `progress` Session and Run with
-`source=progress_evaluation`, and returns the normalized JSON output. No new or
-guessed Hermes API is introduced. Hermes Cron reconciliation uses the existing
+`source=progress_evaluation` plus a dedicated `source_evaluation_id`, and
+returns the normalized JSON output. The parent-Run `source_run_id` foreign key
+is never overloaded with an evaluation ID. No new or guessed Hermes API is
+introduced. Hermes Cron reconciliation uses the existing
 Jobs API and requires an active selected Agent.
 
 `mock` is an explicit deterministic local/acceptance mode. It derives planning,

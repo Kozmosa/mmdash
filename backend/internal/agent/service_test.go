@@ -1242,6 +1242,29 @@ func trustedAgentServiceTestEvidence(token auth.AgentToken) *auth.AgentTokenVeri
 	}
 }
 
+func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	evaluationID := "00000000-0000-4000-8000-000000000099"
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", evaluationID, map[string]interface{}{"project_id": "project-1"},
+	)
+	if err != nil {
+		t.Fatalf("evaluate progress: %v", err)
+	}
+	run, ok := fixture.store.runs[result.AgentRunID]
+	if !ok {
+		t.Fatalf("progress run %q was not persisted", result.AgentRunID)
+	}
+	if run.Source != "progress_evaluation" || run.SourceEvaluationID != evaluationID || run.SourceRunID != "" {
+		t.Fatalf("progress provenance overloaded parent Run reference: %#v", run)
+	}
+}
+
 func (fixture *agentServiceFixture) trustLastCreatedToken(t *testing.T) auth.AgentToken {
 	t.Helper()
 	tokenID := fixture.authStore.lastCreatedTokenID

@@ -45,7 +45,7 @@ func (service Service) EvaluateProgress(
 	reserved := RunRecord{
 		CreatedAt: now, CreatedBy: instance.CreatedBy, ID: localRunID,
 		RemoteRunID: "pending:" + localRunID, SessionID: session.ID,
-		Source: "progress_evaluation", SourceRunID: evaluationID,
+		Source: "progress_evaluation", SourceEvaluationID: evaluationID,
 		Status: RunRecordQueued, ToolCalls: []ToolCallRecord{}, UpdatedAt: now, Version: 1,
 	}
 	if _, err := service.Store.ReserveRun(ctx, reserved); err != nil {
@@ -69,7 +69,7 @@ func (service Service) EvaluateProgress(
 	if _, err := service.Store.ActivateRun(ctx, instance.CreatedBy, RunRecord{
 		CreatedAt: now, CreatedBy: instance.CreatedBy, ID: localRunID,
 		RemoteRunID: remote.RemoteID, SessionID: session.ID,
-		Source: "progress_evaluation", SourceRunID: evaluationID,
+		Source: "progress_evaluation", SourceEvaluationID: evaluationID,
 		StartedAt: &started, Status: status, ToolCalls: []ToolCallRecord{},
 		UpdatedAt: started, Version: 1,
 	}, started); err != nil {

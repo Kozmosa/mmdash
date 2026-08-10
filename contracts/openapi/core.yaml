@@ -8696,6 +8696,7 @@ components:
         source:
           $ref: "#/components/schemas/AgentRunSource"
         source_run_id: { type: string, format: uuid }
+        source_evaluation_id: { type: string, format: uuid }
         safe_error_code: { type: string, maxLength: 100 }
         safe_error_message: { type: string, maxLength: 1000 }
         tool_calls:

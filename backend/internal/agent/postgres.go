@@ -620,10 +620,12 @@ func (store PostgresStore) ReserveRun(ctx context.Context, item RunRecord) (RunR
 	_, err := store.DB.ExecContext(ctx, `
 		INSERT INTO agent_runs (
 			run_id, session_id, remote_run_id, status, source,
-			source_run_id, created_by, created_at, started_at, updated_at, version
-		) VALUES ($1,$2,$3,'queued',$4,NULLIF($5,'')::uuid,$6,$7,NULL,$7,1)
+			source_run_id, source_evaluation_id, created_by, created_at,
+			started_at, updated_at, version
+		) VALUES ($1,$2,$3,'queued',$4,NULLIF($5,'')::uuid,
+			NULLIF($6,'')::uuid,$7,$8,NULL,$8,1)
 	`, item.ID, item.SessionID, item.RemoteRunID, item.Source,
-		item.SourceRunID, item.CreatedBy, item.CreatedAt)
+		item.SourceRunID, item.SourceEvaluationID, item.CreatedBy, item.CreatedAt)
 	if isUniqueViolation(err) {
 		return RunRecord{}, ErrConflict
 	}
@@ -659,10 +661,17 @@ func (store PostgresStore) ActivateRun(
 		`, item.SessionID, now).Scan(&projectID); err != nil {
 			return err
 		}
+		payload := map[string]interface{}{
+			"session_id": item.SessionID, "source": item.Source,
+		}
+		if item.SourceRunID != "" {
+			payload["source_run_id"] = item.SourceRunID
+		}
+		if item.SourceEvaluationID != "" {
+			payload["source_evaluation_id"] = item.SourceEvaluationID
+		}
 		if err := store.event(ctx, tx, actorID, "session", projectID,
-			"agent.run.started", item.ID, map[string]interface{}{
-				"session_id": item.SessionID, "source": item.Source,
-			}); err != nil {
+			"agent.run.started", item.ID, payload); err != nil {
 			return err
 		}
 		return store.record(ctx, tx, actorID, "session", projectID,
@@ -682,13 +691,16 @@ func (store PostgresStore) FailRunReservation(
 	now time.Time,
 ) error {
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		var sessionID, projectID, source, sourceRunID string
+		var sessionID, projectID, source, sourceRunID, sourceEvaluationID string
 		if err := tx.QueryRowContext(ctx, `
 			UPDATE agent_runs SET status='failed', safe_error_code=$2,
 				completed_at=$3, updated_at=$3, version=version+1
 			WHERE run_id=$1 AND status='queued'
-			RETURNING session_id,source,COALESCE(source_run_id::text,'')
-		`, runID, safeErrorCode, now).Scan(&sessionID, &source, &sourceRunID); err != nil {
+			RETURNING session_id,source,COALESCE(source_run_id::text,''),
+				COALESCE(source_evaluation_id::text,'')
+		`, runID, safeErrorCode, now).Scan(
+			&sessionID, &source, &sourceRunID, &sourceEvaluationID,
+		); err != nil {
 			return mapNotFound(err)
 		}
 		if err := tx.QueryRowContext(ctx,
@@ -702,6 +714,9 @@ func (store PostgresStore) FailRunReservation(
 		}
 		if sourceRunID != "" {
 			payload["source_run_id"] = sourceRunID
+		}
+		if sourceEvaluationID != "" {
+			payload["source_evaluation_id"] = sourceEvaluationID
 		}
 		if err := store.event(ctx, tx, actorID, "session", projectID,
 			"agent.run.failed", runID, payload); err != nil {
@@ -1143,6 +1158,9 @@ func (store PostgresStore) UpdateRun(
 			if item.SourceRunID != "" {
 				payload["source_run_id"] = item.SourceRunID
 			}
+			if item.SourceEvaluationID != "" {
+				payload["source_evaluation_id"] = item.SourceEvaluationID
+			}
 			if err := store.event(ctx, tx, item.CreatedBy, "session", projectID,
 				eventType, runID, payload); err != nil {
 				return err
@@ -1361,7 +1379,8 @@ const sessionSelect = `
 
 const runSelect = `
 	SELECT run_id, session_id, remote_run_id, status, source,
-	       COALESCE(source_run_id::text,''), COALESCE(safe_error_code,''),
+	       COALESCE(source_run_id::text,''),
+	       COALESCE(source_evaluation_id::text,''), COALESCE(safe_error_code,''),
 	       created_by, created_at, started_at, completed_at, updated_at, version
 	FROM agent_runs
 `
@@ -1447,7 +1466,8 @@ func scanSession(scan scanFunc) (SessionRecord, error) {
 func scanRun(scan scanFunc) (RunRecord, error) {
 	var item RunRecord
 	err := scan(&item.ID, &item.SessionID, &item.RemoteRunID, &item.Status,
-		&item.Source, &item.SourceRunID, &item.SafeErrorCode, &item.CreatedBy,
+		&item.Source, &item.SourceRunID, &item.SourceEvaluationID,
+		&item.SafeErrorCode, &item.CreatedBy,
 		&item.CreatedAt, &item.StartedAt, &item.CompletedAt, &item.UpdatedAt,
 		&item.Version)
 	return item, err
