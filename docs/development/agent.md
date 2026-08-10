@@ -198,7 +198,8 @@ review it.
 
 Stage 6 uses the existing `progress` Session type and normal Run/Jobs APIs for
 automatic evaluation. Runs created by this path persist
-`source=progress_evaluation` plus the originating evaluation reference; their
+`source=progress_evaluation` plus the originating `source_evaluation_id`;
+`source_run_id` remains the parent-Run foreign key. Their
 terminal events are excluded from automatic Progress triggers to prevent a
 self-loop. The reviewed Agent Tool scope now also includes `progress.get` and
 `progress.recalculate`; no wildcard or direct Progress-table path is added.
@@ -229,3 +230,24 @@ paired Gateway attestation credential: create a Core admin API token after
 the first start, then restart `core` and `mcp-gateway` with
 `AUTH_AGENT_VERIFICATION_TOKEN_ID` and `MCP_CORE_ACCESS_TOKEN` before running
 `node scripts/agent-smoke.mjs`.
+
+For a real-runtime release check, run the pinned Hermes tag in a separate
+state directory and inject its model-provider credential only into the Hermes
+process environment. Do not copy that credential into mmdash Settings, Compose
+files, scripts, logs, or acceptance evidence. The real runtime and Dashboard
+must be reachable from Core under the configured Agent connector policy, while
+Hermes must be able to reach `AGENT_MCP_GATEWAY_URL`. Exercise both directions
+independently:
+
+1. Core to Hermes: capabilities, Sessions, message history, Runs, SSE, stop,
+   approvals, Jobs, and Tool-progress normalization.
+2. Hermes to mmdash: MCP initialization, `tools/list`, Token activation,
+   authorized `data.list`, automatic Dashboard setup, and Token rotation.
+3. Stage 6: one `core_agent` Progress evaluation through Worker, followed by
+   persisted Agent Session/Run provenance, tracker state, risks, and Proposals.
+
+The 2026-08-10 check used Hermes Agent 0.20.0 at the pinned commit and passed
+all three paths. It also confirmed that the standard `Mcp-Session-Id` header is
+required by the real Dashboard client; Gateway keeps the legacy
+`X-Mmdash-Session-Id` alias for existing mmdash clients and rejects conflicting
+values.

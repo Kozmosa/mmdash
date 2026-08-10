@@ -242,5 +242,14 @@ independently. Metrics use bounded adapter, mode, operation, and outcome labels;
 they never include URLs, Session IDs, Run IDs, Tool arguments, or Tokens.
 
 Automated acceptance uses a mock Hermes HTTP/SSE server pinned to the version
-above. Real Hermes interoperability is a separate environment-dependent check
-and must be reported explicitly when it was not run.
+above. Real Hermes interoperability remains an environment-dependent release
+check and must be reported explicitly when it was not run.
+
+The 2026-08-10 release check ran the pinned upstream tag and commit against the
+production Core, Worker, MCP Gateway, PostgreSQL, and Dashboard management
+paths. It covered capability probing, Sessions, numeric message IDs, Runs, SSE,
+stop, approvals, Jobs, Tool progress, manual and automatic MCP setup, Token
+activation and rotation, and a Stage 6 `core_agent` Progress evaluation. That
+check established two provider-compatibility rules now protected by contract
+tests: Hermes capability metadata may contain non-boolean values beside feature
+flags, and message IDs may be either JSON numbers or opaque strings.

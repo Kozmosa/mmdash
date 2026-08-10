@@ -4,9 +4,87 @@
 - Branch: `codex/stage-7-integration`
 - Base: `origin/main@f1df451`
 - Canonical migrations: continuous `000001` through
-  `000031_notification_routing_model`
-- Delivery state: migration numbering and integrated acceptance complete in
-  the isolated worktree; not yet pushed
+  `000032_agent_progress_evaluation_source`
+- Delivery state: real Hermes integration fixes and acceptance complete in the
+  isolated worktree; logical commits and push pending
+
+## 2026-08-10 real Hermes integration
+
+Hermes Agent 0.20.0 from `NousResearch/hermes-agent` tag `v2026.8.3` at commit
+`3c27eb6234bf91b8ceee9e9071591b31e9b148cb` was started locally with an
+external model-provider credential supplied only to the Hermes process. The
+real Runtime and Dashboard were connected to the production mmdash Core,
+Worker, MCP Gateway, PostgreSQL, and Data Hub paths; the credential and all
+one-time mmdash Tokens were excluded from source, logs, and this handoff.
+
+The live integration exposed and fixed four contract defects:
+
+- Hermes capability `features` contains transport metadata strings beside
+  boolean flags. The Adapter now decodes the object heterogeneously and reads
+  only owned boolean capability keys.
+- Hermes message row IDs are JSON integers in the pinned release. The Adapter
+  now normalizes both integer and opaque-string IDs without exposing private
+  reasoning or Tool results.
+- Hermes Dashboard uses the standard `Mcp-Session-Id` Streamable HTTP header.
+  MCP Gateway now accepts and emits both that header and the existing
+  `X-Mmdash-Session-Id` compatibility alias, and rejects mismatched dual
+  headers with `MCP_SESSION_HEADER_CONFLICT`.
+- Stage 6 had overloaded the parent-Run `agent_runs.source_run_id` foreign key
+  with a Progress evaluation ID. Migration
+  `000032_agent_progress_evaluation_source` adds the dedicated
+  `source_evaluation_id` foreign key; Agent persistence, OpenAPI, events,
+  generated clients, and documentation now keep both provenance types
+  distinct.
+
+### Real-runtime evidence
+
+- Adapter probing passed health, authentication, capability, Session, Run,
+  SSE, stop, approval, Jobs, and Tool-progress checks.
+- A manual Agent instance completed MCP initialization, exact `tools/list`,
+  Token activation, and authorized `data.list`. A real Session and Run returned
+  `MMDASH_HERMES_REAL_OK`; normalized SSE included `message.delta`,
+  `tool.progress`, and `run.completed`, and message history returned numeric
+  IDs successfully.
+- An automatic Agent instance used the authenticated Dashboard management API
+  to install the mmdash MCP entry, record reverse-call evidence, activate the
+  Token, restart/reload the Gateway, and rotate the Token without returning
+  plaintext from ordinary APIs. The old Token was revoked only after the new
+  credential verified.
+- A Stage 6 `core_agent` evaluation completed through the real Worker/Hermes
+  path after migration `000032`, detected implementation stage 7, persisted
+  its Agent Session/Run provenance, updated tracker and risk state, and created
+  four reviewable Proposals. The original failed attempt remains as diagnostic
+  history for the foreign-key regression.
+- Focused Agent, Hermes Adapter, Progress, MCP Gateway, contract, and API checks
+  passed. Real PostgreSQL migration coverage includes the fresh catalog,
+  upgrade, idempotent rerun, and `000029-000032` down/up path. Complete
+  `pnpm check` passed: TypeScript, Go, Python and CLI lint/tests/builds;
+  contract compatibility; 368-operation API coverage; and Caddyfile-only
+  validation.
+- Docker Compose stack smoke passed on the isolated
+  `13000/13001/18080/19002` ports with a one-shot local Worker against the
+  containerized Core. The native CLI login subtest was explicitly skipped
+  because this headless workstation has no unlocked Secret Service; CLI
+  build/unit coverage passed in `pnpm check`. Core, Web, BFF, MCP Gateway,
+  PostgreSQL, MinIO, Hermes Runtime, and Dashboard were healthy, and recent
+  application logs had zero error/credential matches. The provider Token had
+  zero exact matches in Hermes logs.
+- All acceptance Agent, Worker, and Gateway-attestation Tokens were revoked;
+  the pending manual rotation was cancelled; four temporary Dashboard MCP
+  entries were deleted. Compose stopped with `down` and no `-v`; Hermes,
+  Dashboard, forwarding, and mihomo processes stopped; PostgreSQL and MinIO
+  volumes were preserved. The credential-bearing Hermes state under `/tmp`
+  was removed while the pinned upstream source checkout was retained.
+
+### Environment limits
+
+- The primary DeepSeek-backed Runs and Progress evaluation passed. Optional
+  Hermes auxiliary Nous/OpenRouter clients were not configured and emitted
+  non-fatal availability warnings; they are not part of the mmdash Adapter
+  contract exercised here.
+- Automatic management was validated over a direct server-reachable Dashboard
+  connection. Cloudflare Access remains covered by connector and management
+  contract tests rather than this localhost run.
 
 ## 2026-08-10 migration numbering and integrated acceptance
 
@@ -29,7 +107,9 @@ canonical/legacy coexistence, repeated execution, and the `000029-000031`
 down/up round trip. The preserved development database upgraded from
 `000023_agent_sessions` without replaying Agent SQL; its existing user,
 Project, and Agent counts were unchanged during migration. It now records all
-31 canonical migrations plus that retained legacy row.
+31 canonical migrations plus that retained legacy row at the time of the
+numbering integration. The current catalog adds migration `000032` as described
+above.
 
 Integrated acceptance also exposed old `progress.reminder.due` events whose
 test Projects had already been removed from the preserved database. Notification
