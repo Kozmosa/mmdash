@@ -62,6 +62,10 @@ const (
 	PermissionAgentUse          Permission = "project.agent.use"
 	PermissionAgentManage       Permission = "project.agent.manage"
 	PermissionAgentTokensManage Permission = "project.agent.tokens.manage"
+	PermissionExperimentRead    Permission = "project.experiment.read"
+	PermissionExperimentManage  Permission = "project.experiment.manage"
+	PermissionBoxRead           Permission = "project.box.read"
+	PermissionBoxManage         Permission = "project.box.manage"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -99,6 +103,10 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionAgentUse,
 		PermissionAgentManage,
 		PermissionAgentTokensManage,
+		PermissionExperimentRead,
+		PermissionExperimentManage,
+		PermissionBoxRead,
+		PermissionBoxManage,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -133,6 +141,10 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionAgentUse,
 		PermissionAgentManage,
 		PermissionAgentTokensManage,
+		PermissionExperimentRead,
+		PermissionExperimentManage,
+		PermissionBoxRead,
+		PermissionBoxManage,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -159,6 +171,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionModelManage,
 		PermissionAgentRead,
 		PermissionAgentUse,
+		PermissionExperimentRead,
+		PermissionExperimentManage,
+		PermissionBoxRead,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -174,6 +189,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionModelRead,
 		PermissionModelSync,
 		PermissionAgentRead,
+		PermissionExperimentRead,
+		PermissionBoxRead,
 	},
 	RoleAgent: {
 		PermissionRead,
@@ -184,6 +201,9 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionArtifactDownload,
 		PermissionProgressRead,
 		PermissionProgressEvaluate,
+		PermissionExperimentRead,
+		PermissionExperimentManage,
+		PermissionBoxRead,
 	},
 	RoleBox: {
 		PermissionRead,
