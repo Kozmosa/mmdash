@@ -68,13 +68,13 @@ func (adapter *Adapter) StreamRun(ctx context.Context, remoteID string, options 
 	return consumeSSE(ctx, response.Body, remoteID, adapter.runtime.connector.policy.MaxResponseBytes, handler)
 }
 
-func streamHeaders(options agent.StreamOptions) http.Header {
-	headers := http.Header{"Accept": {"text/event-stream"}}
-	lastEventID := strings.TrimSpace(options.LastEventID)
-	if lastEventID != "" && len(lastEventID) <= 1024 && !strings.ContainsAny(lastEventID, "\r\n\x00") {
-		headers.Set("Last-Event-ID", lastEventID)
-	}
-	return headers
+// streamHeaders keeps the Hermes request live-only. Hermes v2026.8.3 does
+// not read Last-Event-ID or emit resumable SSE id fields, so forwarding a
+// normalized cursor would imply replay semantics that the runtime cannot
+// provide. Callers recover a disconnected stream from Run status and message
+// reconciliation instead.
+func streamHeaders(_ agent.StreamOptions) http.Header {
+	return http.Header{"Accept": {"text/event-stream"}}
 }
 
 type sseFrame struct {

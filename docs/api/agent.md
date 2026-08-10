@@ -182,12 +182,17 @@ parent Session and a distinct remote Session.
 
 The chat surface reads normalized Hermes message history and starts a Run for
 each user message. Product chat uses the Hermes Run API and Run SSE stream so a
-Run has a stable remote ID and can be stopped. SSE supports `Last-Event-ID`,
-passes through without proxy buffering, and returns normalized message,
-Tool Call start/progress/completion, approval, subagent, Run status, done,
-heartbeat, and safe error events. `tool.progress` carries only the normalized
-Tool Call summary. Raw Tool arguments, Tool results, reasoning, provider
-errors, and secrets are not part of the browser contract.
+Run has a stable remote ID and can be stopped. The normalized SSE stream passes
+through without proxy buffering and returns message, Tool Call
+start/progress/completion, approval, subagent, Run status, done, heartbeat, and
+safe error events. The Core boundary may accept `Last-Event-ID` for client
+compatibility, but pinned Hermes v2026.8.3 neither reads that header nor emits
+`id:` fields; the adapter therefore does not forward it. Hermes Run events are
+live-only and its queue is consumed once, so disconnect recovery relies on
+polling Run status and reconciling Hermes message history rather than event
+replay. `tool.progress` carries only the normalized Tool Call summary. Raw Tool
+arguments, Tool results, reasoning, provider errors, and secrets are not part
+of the browser contract.
 
 When a Run enters `waiting_for_approval`, the SSE event carries only the
 provider-neutral approval ID and allowed choices. The browser responds through
