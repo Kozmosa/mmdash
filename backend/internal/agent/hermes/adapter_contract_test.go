@@ -349,13 +349,71 @@ func authoritativeCapabilities() map[string]any {
 		},
 		"endpoints": map[string]any{
 			"sessions":            map[string]any{"method": "GET", "path": "/api/sessions"},
+			"session_create":      map[string]any{"method": "POST", "path": "/api/sessions"},
+			"session":             map[string]any{"method": "GET", "path": "/api/sessions/{session_id}"},
+			"session_update":      map[string]any{"method": "PATCH", "path": "/api/sessions/{session_id}"},
+			"session_delete":      map[string]any{"method": "DELETE", "path": "/api/sessions/{session_id}"},
+			"session_messages":    map[string]any{"method": "GET", "path": "/api/sessions/{session_id}/messages"},
+			"session_fork":        map[string]any{"method": "POST", "path": "/api/sessions/{session_id}/fork"},
 			"session_chat":        map[string]any{"method": "POST", "path": "/api/sessions/{session_id}/chat"},
 			"session_chat_stream": map[string]any{"method": "POST", "path": "/api/sessions/{session_id}/chat/stream"},
 			"runs":                map[string]any{"method": "POST", "path": "/v1/runs"},
 			"run_status":          map[string]any{"method": "GET", "path": "/v1/runs/{run_id}"},
 			"run_events":          map[string]any{"method": "GET", "path": "/v1/runs/{run_id}/events"},
+			"run_approval":        map[string]any{"method": "POST", "path": "/v1/runs/{run_id}/approval"},
 			"run_stop":            map[string]any{"method": "POST", "path": "/v1/runs/{run_id}/stop"},
 		},
+	}
+}
+
+func TestValidateCapabilityEndpointsRequiresExactMethodAndPath(t *testing.T) {
+	valid := map[string]capabilityEndpoint{
+		"sessions":            {Method: http.MethodGet, Path: "/api/sessions"},
+		"session_create":      {Method: http.MethodPost, Path: "/api/sessions"},
+		"session":             {Method: http.MethodGet, Path: "/api/sessions/{session_id}"},
+		"session_update":      {Method: http.MethodPatch, Path: "/api/sessions/{session_id}"},
+		"session_delete":      {Method: http.MethodDelete, Path: "/api/sessions/{session_id}"},
+		"session_messages":    {Method: http.MethodGet, Path: "/api/sessions/{session_id}/messages"},
+		"session_fork":        {Method: http.MethodPost, Path: "/api/sessions/{session_id}/fork"},
+		"session_chat":        {Method: http.MethodPost, Path: "/api/sessions/{session_id}/chat"},
+		"session_chat_stream": {Method: http.MethodPost, Path: "/api/sessions/{session_id}/chat/stream"},
+		"runs":                {Method: http.MethodPost, Path: "/v1/runs"},
+		"run_status":          {Method: http.MethodGet, Path: "/v1/runs/{run_id}"},
+		"run_events":          {Method: http.MethodGet, Path: "/v1/runs/{run_id}/events"},
+		"run_approval":        {Method: http.MethodPost, Path: "/v1/runs/{run_id}/approval"},
+		"run_stop":            {Method: http.MethodPost, Path: "/v1/runs/{run_id}/stop"},
+	}
+	if err := validateCapabilityEndpoints(valid); err != nil {
+		t.Fatalf("valid capability endpoints rejected: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(map[string]capabilityEndpoint)
+	}{
+		{name: "missing endpoint", mutate: func(endpoints map[string]capabilityEndpoint) {
+			delete(endpoints, "session_create")
+		}},
+		{name: "wrong method", mutate: func(endpoints map[string]capabilityEndpoint) {
+			endpoints["session_update"] = capabilityEndpoint{Method: http.MethodPut, Path: "/api/sessions/{session_id}"}
+		}},
+		{name: "wrong path", mutate: func(endpoints map[string]capabilityEndpoint) {
+			endpoints["run_approval"] = capabilityEndpoint{Method: http.MethodPost, Path: "/v1/runs/{run_id}/approvals"}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			endpoints := make(map[string]capabilityEndpoint, len(valid))
+			for name, endpoint := range valid {
+				endpoints[name] = endpoint
+			}
+			test.mutate(endpoints)
+			err := validateCapabilityEndpoints(endpoints)
+			var adapterErr *agent.AdapterError
+			if !errors.As(err, &adapterErr) || adapterErr.Code != agent.ErrorUnsupported || adapterErr.Operation != "hermes.capabilities" || adapterErr.Message != "required Hermes endpoint is unavailable" {
+				t.Fatalf("unexpected capability validation error: %#v", err)
+			}
+		})
 	}
 }
 

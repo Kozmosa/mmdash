@@ -21,6 +21,11 @@ type Adapter struct {
 	management *managementClient
 }
 
+type capabilityEndpoint struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+}
+
 var _ agent.Adapter = (*Adapter)(nil)
 
 func New(config Config) (*Adapter, error) {
@@ -85,11 +90,8 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 		// Hermes feature metadata is heterogeneous: boolean capability flags
 		// share this object with values such as session header names. Decode the
 		// object generically and only interpret the boolean flags we own.
-		Features  map[string]any `json:"features"`
-		Endpoints map[string]struct {
-			Method string `json:"method"`
-			Path   string `json:"path"`
-		} `json:"endpoints"`
+		Features  map[string]any                `json:"features"`
+		Endpoints map[string]capabilityEndpoint `json:"endpoints"`
 	}
 	if err := adapter.runtime.doJSON(ctx, "hermes.capabilities", http.MethodGet, "/v1/capabilities", nil, nil, &capabilityResponse, http.StatusOK); err != nil {
 		return result, err
@@ -129,18 +131,25 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 	return result, nil
 }
 
-func validateCapabilityEndpoints(endpoints map[string]struct {
-	Method string `json:"method"`
-	Path   string `json:"path"`
-}) error {
-	required := map[string]string{
-		"sessions": "/api/sessions", "session_chat": "/api/sessions/{session_id}/chat",
-		"session_chat_stream": "/api/sessions/{session_id}/chat/stream",
-		"runs":                "/v1/runs", "run_status": "/v1/runs/{run_id}",
-		"run_events": "/v1/runs/{run_id}/events", "run_stop": "/v1/runs/{run_id}/stop",
+func validateCapabilityEndpoints(endpoints map[string]capabilityEndpoint) error {
+	required := map[string]capabilityEndpoint{
+		"sessions":            {Method: http.MethodGet, Path: "/api/sessions"},
+		"session_create":      {Method: http.MethodPost, Path: "/api/sessions"},
+		"session":             {Method: http.MethodGet, Path: "/api/sessions/{session_id}"},
+		"session_update":      {Method: http.MethodPatch, Path: "/api/sessions/{session_id}"},
+		"session_delete":      {Method: http.MethodDelete, Path: "/api/sessions/{session_id}"},
+		"session_messages":    {Method: http.MethodGet, Path: "/api/sessions/{session_id}/messages"},
+		"session_fork":        {Method: http.MethodPost, Path: "/api/sessions/{session_id}/fork"},
+		"session_chat":        {Method: http.MethodPost, Path: "/api/sessions/{session_id}/chat"},
+		"session_chat_stream": {Method: http.MethodPost, Path: "/api/sessions/{session_id}/chat/stream"},
+		"runs":                {Method: http.MethodPost, Path: "/v1/runs"},
+		"run_status":          {Method: http.MethodGet, Path: "/v1/runs/{run_id}"},
+		"run_events":          {Method: http.MethodGet, Path: "/v1/runs/{run_id}/events"},
+		"run_approval":        {Method: http.MethodPost, Path: "/v1/runs/{run_id}/approval"},
+		"run_stop":            {Method: http.MethodPost, Path: "/v1/runs/{run_id}/stop"},
 	}
-	for name, path := range required {
-		if endpoint, ok := endpoints[name]; !ok || endpoint.Path != path {
+	for name, expected := range required {
+		if endpoint, ok := endpoints[name]; !ok || endpoint != expected {
 			return &agent.AdapterError{Code: agent.ErrorUnsupported, Operation: "hermes.capabilities", Message: "required Hermes endpoint is unavailable"}
 		}
 	}

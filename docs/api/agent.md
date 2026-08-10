@@ -29,9 +29,13 @@ Commit: 3c27eb6234bf91b8ceee9e9071591b31e9b148cb
 ```
 
 The adapter maps Hermes health, authentication, capability, Session, message,
-SSE, Run, and Job APIs into the normalized boundary. Jobs are capability and
-API mappings only in Stage 5; automatic progress evaluation, Cron creation,
-and event-triggered Runs belong to Stage 6.
+SSE, Run, and Job APIs into the normalized boundary. Capability probing
+requires the exact method and path for every Session and Run endpoint that
+mmdash calls. Hermes v2026.8.3 advertises `jobs_admin=false` and omits Jobs
+from its capability endpoint; the adapter therefore does not require Jobs in
+that payload. Job support is confirmed independently by a real `GET
+/api/jobs` probe, and automatic progress evaluation, Cron creation, and
+event-triggered Runs belong to Stage 6.
 
 ## Instance setup and management modes
 
