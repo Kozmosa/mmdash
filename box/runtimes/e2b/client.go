@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/mmdash/mmdash/box/capabilities/sandbox"
 )
 
@@ -228,11 +230,11 @@ func (client *ProviderClient) Run(ctx context.Context, template string, request 
 	exitCode, err := client.runProcess(executionCtx, session, client.user, limitedCommand, request.Spec.Environment, request.Stdout, request.Stderr, func(pid int) {
 		client.setPID(request.ID, session, pid)
 	})
-	if errors.Is(executionCtx.Err(), context.DeadlineExceeded) {
+	if errors.Is(executionCtx.Err(), context.DeadlineExceeded) || err != nil && connect.CodeOf(err) == connect.CodeDeadlineExceeded {
 		client.bestEffortSignal(session, signalKill)
 		return sandbox.RunResult{TimedOut: true, ResourceUsage: durationUsage(startedAt)}, nil
 	}
-	if errors.Is(executionCtx.Err(), context.Canceled) || client.wasCanceled(request.ID, session) {
+	if errors.Is(executionCtx.Err(), context.Canceled) || client.wasCanceled(request.ID, session) || err != nil && connect.CodeOf(err) == connect.CodeCanceled {
 		return sandbox.RunResult{Canceled: true, ResourceUsage: durationUsage(startedAt)}, nil
 	}
 	if err != nil {
