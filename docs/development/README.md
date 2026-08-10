@@ -55,6 +55,11 @@ reads a frozen Experiment from its fixed code commit; set
 prepared Repo project. Do not use `down -v`; the Box, PostgreSQL, MinIO, and
 Repo data volumes are intentionally preserved.
 
+The Box advertises E2B only when `E2B_API_KEY` is injected. Hosted and
+self-hosted endpoint variables, Template capacity, and the separately opt-in
+paid acceptance command are documented in the [Box guide](box.md). The E2B
+dashboard API Key ID/Project ID is not passed to the provider API.
+
 ## Isolated native environment
 
 Run the complete baseline on Windows or Linux without Docker with the
