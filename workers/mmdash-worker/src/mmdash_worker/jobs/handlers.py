@@ -107,6 +107,7 @@ def baseline_registry() -> HandlerRegistry:
 def worker_registry(artifact_client: Any) -> HandlerRegistry:
     """Return the production registry with Artifact and Model handlers."""
 
+    from mmdash_worker.experiment import compare_results, summarize_result
     from mmdash_worker.model_sync import ModelNotionHandler
     from mmdash_worker.preview import ArtifactPreviewHandler, PreviewConfig, PreviewProcessor
     from mmdash_worker.progress_tracking import ProgressEvaluationHandler
@@ -126,4 +127,6 @@ def worker_registry(artifact_client: Any) -> HandlerRegistry:
         "progress.evaluate",
         ProgressEvaluationHandler.from_environment(artifact_client),
     )
+    registry.register("experiment.result.summarize", summarize_result)
+    registry.register("experiment.result.compare", compare_results)
     return registry

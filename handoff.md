@@ -1,3 +1,68 @@
+# mmdash v0.1 Stage 8 Experiment / Box / Sandbox handoff
+
+- Updated: 2026-08-11
+- Branch: `codex/stage-8-experiment-box-sandbox`
+- Worktree: `/data/yile.chen/code/mmdash-stage8`
+- Base: local `2fe2c05` (`fix(repo): stabilize maintenance git identity`)
+- Remote note: `origin/main` is still at `9282b4e`; the base fix is present in
+  this isolated branch but has not been pushed to or changed on the original
+  `main` worktree.
+- Migration: `000033_stage8_box_experiment`
+- Delivery state: Stage 8 implementation complete on this branch; keep the PR
+  Draft and never merge it. The real E2B provider acceptance is not complete
+  without external E2B credentials.
+
+## Stage 8 implementation snapshot
+
+Implemented in this worktree:
+
+- Core Experiment lifecycle, frozen `run_spec`, PostgreSQL task queue,
+  lease/timeout/cancel/recovery paths, Audit, Outbox, and Data Hub projections.
+- Core Box registration, scoped token use, heartbeat/offline state, binding,
+  task lease/status/log/result/artifact boundaries, and permission checks.
+- Artifact-side `artifact.zip` stream staging with manifest, path, symlink,
+  zip-slip, file count, uncompressed size, file hash, and declared-size checks.
+- Independent Go 1.26 Box Gateway, commit-marker workspace pinning, restart
+  state, Local Docker runtime, provider-neutral E2B adapter, and Sandbox
+  artifact packaging.
+- Web/BFF, MCP Gateway, CLI, Worker handlers, contracts, event schemas,
+  endpoint catalog, Stage 8 development guides, optional Compose Box profile,
+  and opt-in Stage 8 smoke flow.
+
+Verification completed:
+
+- `pnpm contracts:generate`, `pnpm contracts:check`, `pnpm api:check`, and the
+  complete `pnpm check` passed.
+- The standard Compose command built all images, but could not bind Core's
+  `8080` because unrelated services already occupy the host port; its created
+  containers were stopped with ordinary `down`.
+- An isolated Compose project passed `up -d --build` and health checks on
+  host ports `13000` (Web), `13001` (BFF), `13002` (MCP), `18080` (Core),
+  `15432` (PostgreSQL), and `19000/19001` (MinIO), preserving its volumes.
+- Isolated baseline smoke passed, and Repo-backed Stage 8 smoke passed with
+  Local Git fixed-commit synchronization and Experiment create/freeze checks.
+  Native CLI MCP smoke was skipped only because this headless workstation has
+  no unlocked Linux Secret Service keyring; the CLI build and tests passed.
+- The repository-requested `.localscripts/dev.ps1` entry point is absent in
+  this checkout and was not claimed as used. Compose acceptance uses
+  `up -d --build` and ordinary `down`, never `down -v`.
+
+## Known limits and acceptance evidence
+
+- E2B has offline runtime conformance through the stable Sandbox interface but
+  no credentialed live E2B API acceptance. Keep the PR Draft and do not claim
+  real E2B completion until that external step passes.
+- The default Box workspace mode consumes a Repo-owned detached checkout and
+  requires a matching `.mmdash-commit` marker. It intentionally does not run
+  Git or accept long-lived Git credentials.
+- The optional Compose Box profile requires a Core-issued registration token,
+  a populated read-only workspace volume, and explicit Docker socket privilege
+  for Local Docker.
+- Real Box terminal execution was not claimed: this acceptance did not have a
+  prepared Repo detached workspace with `.mmdash-commit`, a registered Box,
+  and the configured sandbox image. `MMDASH_SMOKE_STAGE8_RUN=1` therefore
+  remains an operator-gated follow-up.
+
 # mmdash v0.1 Stage 7 integration handoff
 
 - Updated: 2026-08-10

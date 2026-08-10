@@ -40,6 +40,12 @@ import {
   progressGetTool,
   progressRecalculateTool,
 } from "./tools/progress.js";
+import {
+  experimentCreateTool,
+  experimentRunTool,
+  experimentStatusTool,
+  resultGetTool,
+} from "./tools/experiment.js";
 
 export type GatewayFetchHandler = {
   close(): Promise<void>;
@@ -143,12 +149,16 @@ function resolveAuditSink(
 function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(contextPromoteTool);
+  registry.register(experimentCreateTool);
+  registry.register(experimentRunTool);
+  registry.register(experimentStatusTool);
   registry.register(dataListTool);
   registry.register(dataReadTool);
   registry.register(projectGetTool);
   registry.register(projectListTool);
   registry.register(progressGetTool);
   registry.register(progressRecalculateTool);
+  registry.register(resultGetTool);
   registry.register(systemEchoTool);
   registry.register(projectMemberListTool);
   registry.register(projectMemberGetTool);

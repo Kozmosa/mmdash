@@ -295,6 +295,31 @@ services:
     ports:
       - "3002:3002"
 
+  box:
+    profiles: ["box"]
+    build:
+      context: ../..
+      dockerfile: box/Dockerfile
+    environment:
+      MMDASH_CORE_URL: http://core:8080
+      MMDASH_BOX_PROJECT_ID: ${MMDASH_BOX_PROJECT_ID:-}
+      MMDASH_BOX_REGISTRATION_TOKEN: ${MMDASH_BOX_REGISTRATION_TOKEN:-}
+      MMDASH_BOX_WORKSPACE: /workspace
+      MMDASH_BOX_WORKSPACE_COMMIT: ${MMDASH_BOX_WORKSPACE_COMMIT:-}
+      MMDASH_BOX_DATA_ROOT: /var/lib/mmdash-box
+      MMDASH_BOX_LOCAL_IMAGE: ${MMDASH_BOX_LOCAL_IMAGE:-mmdash/sandbox:latest}
+    depends_on:
+      core:
+        condition: service_healthy
+    group_add:
+      - "${DOCKER_GID:-0}"
+    volumes:
+      - box-data:/var/lib/mmdash-box
+      - box-workspace:/workspace:ro
+      # Local Docker runtime needs the host daemon; keep this optional profile
+      # disabled unless the deployment explicitly accepts that capability.
+      - /var/run/docker.sock:/var/run/docker.sock
+
   worker:
     profiles: ["worker"]
     build:
@@ -331,6 +356,8 @@ services:
         condition: service_healthy
 
 volumes:
+  box-data:
+  box-workspace:
   artifact-data:
   postgres-data:
   minio-data:

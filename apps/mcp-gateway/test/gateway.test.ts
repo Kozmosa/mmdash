@@ -100,12 +100,16 @@ describe("MCP Gateway", () => {
       "context.promote",
       "data.list",
       "data.read",
+      "experiment.create",
+      "experiment.run",
+      "experiment.status",
       "progress.get",
       "progress.recalculate",
       "project.get",
       "project.list",
       "project.member.get",
       "project.member.list",
+      "result.get",
       "system.echo",
     ]);
     expect(result.isError).not.toBe(true);
