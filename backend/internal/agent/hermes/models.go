@@ -60,7 +60,7 @@ func (session hermesSession) normalized() agent.Session {
 }
 
 type hermesMessage struct {
-	ID           string          `json:"id"`
+	ID           scalarID        `json:"id"`
 	SessionID    string          `json:"session_id"`
 	Role         string          `json:"role"`
 	Content      json.RawMessage `json:"content"`
@@ -75,7 +75,7 @@ type hermesMessage struct {
 
 func (message hermesMessage) normalized() agent.Message {
 	result := agent.Message{
-		RemoteID: message.ID, SessionRemoteID: message.SessionID,
+		RemoteID: string(message.ID), SessionRemoteID: message.SessionID,
 		Role: message.Role, ToolCallID: message.ToolCallID,
 		ToolName: message.ToolName, TokenCount: message.TokenCount,
 		FinishReason: message.FinishReason,
@@ -88,6 +88,29 @@ func (message hermesMessage) normalized() agent.Message {
 		result.Timestamp = &timestamp
 	}
 	return result
+}
+
+// Hermes stores message row IDs as integers while older fixtures and some
+// deployments expose opaque strings. Preserve both representations without
+// weakening the rest of the response schema.
+type scalarID string
+
+func (id *scalarID) UnmarshalJSON(payload []byte) error {
+	if string(payload) == "null" {
+		*id = ""
+		return nil
+	}
+	var text string
+	if json.Unmarshal(payload, &text) == nil {
+		*id = scalarID(text)
+		return nil
+	}
+	var number json.Number
+	if json.Unmarshal(payload, &number) == nil {
+		*id = scalarID(number.String())
+		return nil
+	}
+	return fmt.Errorf("invalid Hermes message ID")
 }
 
 func safeContent(raw json.RawMessage) string {

@@ -79,9 +79,12 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 	result.Authenticated = true
 
 	var capabilityResponse struct {
-		Platform  string          `json:"platform"`
-		Model     string          `json:"model"`
-		Features  map[string]bool `json:"features"`
+		Platform string `json:"platform"`
+		Model    string `json:"model"`
+		// Hermes feature metadata is heterogeneous: boolean capability flags
+		// share this object with values such as session header names. Decode the
+		// object generically and only interpret the boolean flags we own.
+		Features  map[string]any `json:"features"`
 		Endpoints map[string]struct {
 			Method string `json:"method"`
 			Path   string `json:"path"`
@@ -96,11 +99,11 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 	result.Model = capabilityResponse.Model
 	features := capabilityResponse.Features
 	result.Capabilities = agent.RuntimeCapabilities{
-		Sessions: features["session_resources"], SessionFork: features["session_fork"],
-		SessionChat: features["session_chat"], SessionStreaming: features["session_chat_streaming"],
-		Runs: features["run_submission"] && features["run_status"], RunStreaming: features["run_events_sse"],
-		RunStop: features["run_stop"], RunApproval: features["run_approval_response"],
-		ToolProgress: features["tool_progress_events"], EventReplay: false,
+		Sessions: boolValue(features["session_resources"]), SessionFork: boolValue(features["session_fork"]),
+		SessionChat: boolValue(features["session_chat"]), SessionStreaming: boolValue(features["session_chat_streaming"]),
+		Runs: boolValue(features["run_submission"]) && boolValue(features["run_status"]), RunStreaming: boolValue(features["run_events_sse"]),
+		RunStop: boolValue(features["run_stop"]), RunApproval: boolValue(features["run_approval_response"]),
+		ToolProgress: boolValue(features["tool_progress_events"]), EventReplay: false,
 		ProjectAccess: agent.ProjectAccessCapabilities{Verify: true},
 	}
 	if err := validateCapabilityEndpoints(capabilityResponse.Endpoints); err != nil {

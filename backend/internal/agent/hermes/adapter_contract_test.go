@@ -153,7 +153,7 @@ func TestSessionMessageAndChatMapping(t *testing.T) {
 			writeJSON(t, response, map[string]any{"session": sessionFixture("session-fork")})
 		case "GET /api/sessions/session-main/messages":
 			writeJSON(t, response, map[string]any{"data": []any{
-				map[string]any{"id": "m1", "session_id": "session-main", "role": "assistant", "content": "safe answer", "reasoning": "private chain", "reasoning_content": "private chain 2", "tool_calls": []any{map[string]any{"id": "call-1", "function": map[string]any{"name": "data.read", "arguments": `{"secret":"do-not-leak"}`}}}, "timestamp": 1_754_000_000.5},
+				map[string]any{"id": 3, "session_id": "session-main", "role": "assistant", "content": "safe answer", "reasoning": "private chain", "reasoning_content": "private chain 2", "tool_calls": []any{map[string]any{"id": "call-1", "function": map[string]any{"name": "data.read", "arguments": `{"secret":"do-not-leak"}`}}}, "timestamp": 1_754_000_000.5},
 				map[string]any{"id": "m2", "session_id": "session-main", "role": "tool", "content": "sensitive tool result", "tool_name": "data.read", "tool_call_id": "call-1"},
 			}})
 		case "POST /api/sessions/session-main/chat":
@@ -207,7 +207,7 @@ func TestSessionMessageAndChatMapping(t *testing.T) {
 	if err != nil || len(messages) != 2 {
 		t.Fatalf("messages: %#v %v", messages, err)
 	}
-	if messages[0].Content != "safe answer" || len(messages[0].ToolCalls) != 1 || messages[0].ToolCalls[0].Name != "data.read" {
+	if messages[0].RemoteID != "3" || messages[0].Content != "safe answer" || len(messages[0].ToolCalls) != 1 || messages[0].ToolCalls[0].Name != "data.read" {
 		t.Fatalf("unexpected safe assistant message: %#v", messages[0])
 	}
 	if messages[1].Content != "" {
@@ -343,6 +343,9 @@ func authoritativeCapabilities() map[string]any {
 			"session_chat_streaming": true, "run_submission": true, "run_status": true,
 			"run_events_sse": true, "run_stop": true, "run_approval_response": true,
 			"tool_progress_events": true,
+			// Hermes 0.20.0 publishes transport metadata beside boolean flags.
+			"session_continuity_header": "X-Hermes-Session-Id",
+			"session_key_header":        "X-Hermes-Session-Key",
 		},
 		"endpoints": map[string]any{
 			"sessions":            map[string]any{"method": "GET", "path": "/api/sessions"},
