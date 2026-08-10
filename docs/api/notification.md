@@ -61,7 +61,7 @@ versions, bounded attempt count, and safe response summary metadata. Explicit
 retry creates a new `retry:{id}` delivery key; it never reopens the original
 delivery.
 
-Migration `000024_notification_routing_model` removes the obsolete
+Migration `000031_notification_routing_model` removes the obsolete
 `notification_rules.inbox_enabled` column and backfills controlled Inbox
 render snapshots for existing development rows. The column removal is an
 intentional contract correction to the v0.1 design baseline, not a user-level

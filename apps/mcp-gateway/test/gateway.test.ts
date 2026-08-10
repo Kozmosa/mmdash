@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MemoryAuditSink } from "../src/audit/audit.js";
 import { buildGateway, type GatewayFetchHandler } from "../src/gateway.js";
-import { gatewaySessionHeader } from "../src/sessions/session-registry.js";
+import {
+  gatewaySessionHeader,
+  mcpSessionHeader,
+} from "../src/sessions/session-registry.js";
 import { agentToken, cliToken, testConfig } from "./helpers.js";
 
 const gateways: GatewayFetchHandler[] = [];
@@ -37,6 +40,30 @@ describe("MCP Gateway", () => {
     expect(response.headers.get("www-authenticate")).toContain("Bearer");
     await expect(response.json()).resolves.toMatchObject({
       code: "UNAUTHENTICATED",
+    });
+  });
+
+  it("rejects conflicting standard and application session headers", async () => {
+    const gateway = buildGateway({ config: testConfig });
+    gateways.push(gateway);
+    const response = await gateway.fetch(
+      new Request("http://test.local/mcp", {
+        body: JSON.stringify({ id: 1, jsonrpc: "2.0", method: "ping" }),
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${cliToken}`,
+          "content-type": "application/json",
+          [gatewaySessionHeader]: "application-session",
+          [mcpSessionHeader]: "standard-session",
+        },
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      code: "MCP_SESSION_HEADER_CONFLICT",
+      message: "MCP session headers do not match",
     });
   });
 
@@ -420,7 +447,11 @@ describe("MCP Gateway", () => {
       coreClient: { currentIdentity } as unknown as CoreClient,
     });
     gateways.push(gateway);
-    const sessionFetch = createSessionFetch(gateway, productAgentToken);
+    const sessionFetch = createSessionFetch(
+      gateway,
+      productAgentToken,
+      mcpSessionHeader,
+    );
     const transport = new StreamableHTTPClientTransport(
       new URL("http://test.local/mcp"),
       { fetch: sessionFetch.fetch },
@@ -475,7 +506,11 @@ describe("MCP Gateway", () => {
       } as unknown as CoreClient,
     });
     gateways.push(gateway);
-    const sessionFetch = createSessionFetch(gateway, productAgentToken);
+    const sessionFetch = createSessionFetch(
+      gateway,
+      productAgentToken,
+      mcpSessionHeader,
+    );
     const transport = new StreamableHTTPClientTransport(
       new URL("http://test.local/mcp"),
       { fetch: sessionFetch.fetch },
@@ -1076,6 +1111,7 @@ function mcpRequest(
 function createSessionFetch(
   gateway: GatewayFetchHandler,
   token: string,
+  sessionHeader = gatewaySessionHeader,
 ): {
   fetch: typeof fetch;
   readonly sessionId: string | undefined;
@@ -1087,10 +1123,10 @@ function createSessionFetch(
       const headers = new Headers(original.headers);
       headers.set("authorization", `Bearer ${token}`);
       if (sessionId) {
-        headers.set(gatewaySessionHeader, sessionId);
+        headers.set(sessionHeader, sessionId);
       }
       const response = await gateway.fetch(new Request(original, { headers }));
-      sessionId = response.headers.get(gatewaySessionHeader) ?? undefined;
+      sessionId = response.headers.get(sessionHeader) ?? undefined;
       return response;
     },
     get sessionId() {

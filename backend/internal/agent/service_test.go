@@ -665,6 +665,9 @@ type agentServiceTestAdapter struct {
 	startRunRequests      []StartRunRequest
 	messages              []Message
 	probe                 ProbeResult
+	probeCalls            int
+	checkRuntimeCalls     int
+	checkRuntimeErr       error
 	verifyAccess          ProjectAccessResult
 	getRunResult          Run
 	stopRunResult         Run
@@ -694,7 +697,13 @@ type agentServiceTestAdapter struct {
 }
 
 func (adapter *agentServiceTestAdapter) Probe(context.Context) (ProbeResult, error) {
+	adapter.probeCalls++
 	return adapter.probe, nil
+}
+
+func (adapter *agentServiceTestAdapter) CheckRuntime(context.Context) error {
+	adapter.checkRuntimeCalls++
+	return adapter.checkRuntimeErr
 }
 
 func (*agentServiceTestAdapter) ListSessions(context.Context, SessionFilter) (SessionPage, error) {
@@ -1242,6 +1251,29 @@ func trustedAgentServiceTestEvidence(token auth.AgentToken) *auth.AgentTokenVeri
 	}
 }
 
+func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	evaluationID := "00000000-0000-4000-8000-000000000099"
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", evaluationID, map[string]interface{}{"project_id": "project-1"},
+	)
+	if err != nil {
+		t.Fatalf("evaluate progress: %v", err)
+	}
+	run, ok := fixture.store.runs[result.AgentRunID]
+	if !ok {
+		t.Fatalf("progress run %q was not persisted", result.AgentRunID)
+	}
+	if run.Source != "progress_evaluation" || run.SourceEvaluationID != evaluationID || run.SourceRunID != "" {
+		t.Fatalf("progress provenance overloaded parent Run reference: %#v", run)
+	}
+}
+
 func (fixture *agentServiceFixture) trustLastCreatedToken(t *testing.T) auth.AgentToken {
 	t.Helper()
 	tokenID := fixture.authStore.lastCreatedTokenID
@@ -1706,6 +1738,105 @@ func TestServiceVerifyTokenRequiresTrustedGatewayEvidenceInBothModes(t *testing.
 				t.Fatalf("verified token not activated: instance=%#v activations=%d", updated, fixture.authStore.activations)
 			}
 		})
+	}
+}
+
+func TestServiceCreateInstanceValidatesCanonicalHermesProfile(t *testing.T) {
+	base := CreateInstanceInput{
+		APIKey:         "runtime-secret",
+		AllowedTools:   append([]string(nil), DefaultAllowedTools...),
+		DisplayName:    "New Hermes",
+		ManagementMode: ManagementManual,
+		RuntimeURL:     "https://runtime.example.test",
+	}
+	for _, profile := range []string{" research ", "Research", "research.profile", "research/profile", "hermes", "test", "tmp", "root", "sudo"} {
+		fixture := newAgentServiceFixture(t)
+		input := base
+		input.Profile = profile
+		if _, err := fixture.service.CreateInstance(context.Background(), fixture.caller, "project-1", input); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("CreateInstance accepted profile %q: %v", profile, err)
+		}
+		if len(fixture.store.instances) != 1 || fixture.settingsStore.upsertCalls != 0 {
+			t.Fatalf("invalid profile %q caused a write: instances=%d settings=%d", profile, len(fixture.store.instances), fixture.settingsStore.upsertCalls)
+		}
+	}
+	for _, profile := range []string{"", "default", "research"} {
+		fixture := newAgentServiceFixture(t)
+		input := base
+		input.Profile = profile
+		result, err := fixture.service.CreateInstance(context.Background(), fixture.caller, "project-1", input)
+		if err != nil {
+			t.Fatalf("CreateInstance rejected profile %q: %v", profile, err)
+		}
+		want := profile
+		if want == "" {
+			want = "default"
+		}
+		if result.Instance.Profile != want || fixture.settingsStore.upsertCalls == 0 {
+			t.Fatalf("CreateInstance profile %q normalized to %q or did not persist", profile, result.Instance.Profile)
+		}
+	}
+}
+
+func TestServiceCreateInstanceRequiresRuntimeInteroperabilityCheck(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.checkRuntimeErr = &AdapterError{Code: ErrorUnavailable, Operation: "hermes.runtime_check"}
+	input := CreateInstanceInput{
+		APIKey: "runtime-secret", AllowedTools: append([]string(nil), DefaultAllowedTools...),
+		DisplayName: "New Hermes", ManagementMode: ManagementManual,
+		RuntimeURL: "https://runtime.example.test", Profile: "default",
+	}
+	if _, err := fixture.service.CreateInstance(context.Background(), fixture.caller, "project-1", input); !errors.Is(err, ErrRuntime) {
+		t.Fatalf("runtime check failure was not returned: %v", err)
+	}
+	if fixture.adapter.probeCalls != 1 || fixture.adapter.checkRuntimeCalls != 1 {
+		t.Fatalf("runtime checks not invoked exactly once: probe=%d deep=%d", fixture.adapter.probeCalls, fixture.adapter.checkRuntimeCalls)
+	}
+	if len(fixture.store.instances) != 1 || fixture.settingsStore.upsertCalls != 0 {
+		t.Fatalf("failed runtime check wrote instance state: instances=%d settings=%d", len(fixture.store.instances), fixture.settingsStore.upsertCalls)
+	}
+}
+
+func TestServiceCheckConnectionsDoesNotPassFailedRuntimeInteroperability(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.checkRuntimeErr = &AdapterError{Code: ErrorUnavailable, Operation: "hermes.runtime_check"}
+	item, err := fixture.service.CheckConnections(
+		context.Background(), fixture.caller, "project-1", "agent-1", "runtime",
+	)
+	if err != nil {
+		t.Fatalf("runtime connection check returned an unexpected service error: %v", err)
+	}
+	if fixture.adapter.probeCalls != 1 || fixture.adapter.checkRuntimeCalls != 1 {
+		t.Fatalf("runtime checks not invoked exactly once: probe=%d deep=%d", fixture.adapter.probeCalls, fixture.adapter.checkRuntimeCalls)
+	}
+	if item.RuntimeCheck.Status != "failed" || item.RuntimeCheck.Code != string(ErrorUnavailable) || item.Status != InstanceDegraded {
+		t.Fatalf("failed runtime interoperability was marked passed: %#v", item)
+	}
+}
+
+func TestServiceUpdateInstanceValidatesCanonicalHermesProfileBeforeWrites(t *testing.T) {
+	for _, profile := range []string{"", " research ", "Research", "research.profile", "research/profile", "hermes", "test", "tmp", "root", "sudo"} {
+		fixture := newAgentServiceFixture(t)
+		_, err := fixture.service.UpdateInstance(
+			context.Background(), fixture.caller, "project-1", "agent-1",
+			UpdateInstanceInput{Profile: stringPointer(profile)},
+		)
+		if !errors.Is(err, ErrInvalid) {
+			t.Fatalf("UpdateInstance accepted profile %q: %v", profile, err)
+		}
+		if fixture.settingsStore.upsertCalls != 0 || fixture.store.instanceUpdates != 0 || fixture.store.instances["agent-1"].Profile != "default" {
+			t.Fatalf("invalid profile %q caused a write: settings=%d instances=%d stored=%q", profile, fixture.settingsStore.upsertCalls, fixture.store.instanceUpdates, fixture.store.instances["agent-1"].Profile)
+		}
+	}
+	for _, profile := range []string{"default", "research"} {
+		fixture := newAgentServiceFixture(t)
+		result, err := fixture.service.UpdateInstance(
+			context.Background(), fixture.caller, "project-1", "agent-1",
+			UpdateInstanceInput{Profile: stringPointer(profile)},
+		)
+		if err != nil || result.Instance.Profile != profile || fixture.settingsStore.upsertCalls != 1 || fixture.store.instanceUpdates != 1 {
+			t.Fatalf("UpdateInstance profile %q result=%#v err=%v settings=%d instances=%d", profile, result.Instance, err, fixture.settingsStore.upsertCalls, fixture.store.instanceUpdates)
+		}
 	}
 }
 

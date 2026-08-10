@@ -254,8 +254,5 @@ func pathID(id string) (string, error) {
 }
 
 func validateProfile(profile string) error {
-	if len(profile) > 128 || strings.ContainsAny(profile, "/\\\r\n\x00") {
-		return fmt.Errorf("%w: invalid Hermes profile", agent.ErrInvalidArgument)
-	}
-	return nil
+	return agent.ValidateHermesProfile(profile)
 }

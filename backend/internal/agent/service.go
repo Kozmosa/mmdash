@@ -151,9 +151,11 @@ func (service Service) CreateInstance(
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.RuntimeURL = strings.TrimSpace(input.RuntimeURL)
 	input.DashboardURL = strings.TrimSpace(input.DashboardURL)
-	input.Profile = strings.TrimSpace(input.Profile)
 	if input.Profile == "" {
 		input.Profile = "default"
+	}
+	if err := ValidateHermesProfile(input.Profile); err != nil {
+		return InstanceResult{}, ErrInvalid
 	}
 	if input.DisplayName == "" || input.APIKey == "" ||
 		!validOrigin(input.RuntimeURL) || !validManagementMode(input.ManagementMode) {
@@ -216,6 +218,10 @@ func (service Service) CreateInstance(
 		!probe.Capabilities.RunStreaming || !probe.Capabilities.RunStop {
 		service.observe("probe", err)
 		return InstanceResult{}, mapAdapterErrorOr(err, "runtime_capability_missing")
+	}
+	if err := adapter.CheckRuntime(ctx); err != nil {
+		service.observe("runtime_check", err)
+		return InstanceResult{}, mapAdapterError(err)
 	}
 	instance := Instance{
 		AdapterType:  AdapterHermes,
@@ -287,6 +293,9 @@ func (service Service) UpdateInstance(
 	item, err := service.Store.GetInstance(ctx, projectID, instanceID)
 	if err != nil {
 		return InstanceResult{}, err
+	}
+	if input.Profile != nil && (*input.Profile == "" || ValidateHermesProfile(*input.Profile) != nil) {
+		return InstanceResult{}, ErrInvalid
 	}
 	resolved, err := service.Settings.ResolveResource(ctx, settings.ScopeProject,
 		projectID, SettingTypeAgentHermes, instanceID)
@@ -361,7 +370,7 @@ func (service Service) UpdateInstance(
 	applySecret(settingCFClientID, input.CloudflareClientID)
 	applySecret(settingCFClientSecret, input.CloudflareClientSecret)
 	if input.Profile != nil {
-		item.Profile = strings.TrimSpace(*input.Profile)
+		item.Profile = *input.Profile
 		patch[settingProfile] = item.Profile
 	}
 	if input.RequestTimeoutSeconds != nil {
@@ -535,8 +544,16 @@ func (service Service) CheckConnections(
 		runtimeCheck = CheckSnapshot{CheckedAt: now, Status: "failed"}
 		probe, probeErr := adapter.Probe(ctx)
 		if probeErr == nil && probe.Healthy && probe.Authenticated {
-			runtimeCheck.Status = "passed"
 			capabilities = capabilityMap(probe.Capabilities)
+			if !probe.Capabilities.Sessions || !probe.Capabilities.Runs ||
+				!probe.Capabilities.RunStreaming || !probe.Capabilities.RunStop {
+				probeErr = &AdapterError{Code: ErrorUnsupported, Operation: "runtime.capability_check"}
+			} else {
+				probeErr = adapter.CheckRuntime(ctx)
+			}
+		}
+		if probeErr == nil && probe.Healthy && probe.Authenticated {
+			runtimeCheck.Status = "passed"
 		} else {
 			runtimeCheck.Code = safeAdapterCode(probeErr, "runtime_failed")
 		}

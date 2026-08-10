@@ -189,3 +189,77 @@ func TestPostgresInvitationActionAndOutcomeCancelPendingDelivery(t *testing.T) {
 		t.Fatalf("invitation terminal state: outcome=%s delivery=%s", outcome, deliveryStatus)
 	}
 }
+
+func TestPostgresCreateEventIgnoresDeletedProject(t *testing.T) {
+	databaseURL := os.Getenv("MMDASH_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("MMDASH_TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("ping postgres: %v", err)
+	}
+
+	generator := identity.Generator{}
+	userID := generator.MustNew()
+	projectID := generator.MustNew()
+	sourceEventID := generator.MustNew()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO auth_users(user_id,email,display_name,password_hash,status,created_at,updated_at)
+		VALUES($1,$2,'Deleted Project Notification Test','test','active',$3,$3)
+	`, userID, userID+"@notification-deleted-project.test", now); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO projects(project_id,name,created_by,created_at,updated_at)
+		VALUES($1,'Deleted Project Notification Test',$2,$3,$3)
+	`, projectID, userID, now); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM projects WHERE project_id=$1`, projectID); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DELETE FROM auth_users WHERE user_id=$1`, userID)
+	})
+
+	store := PostgresStore{
+		Clock:       clock.Fixed{Time: now},
+		DB:          db,
+		Generator:   generator,
+		Transaction: transaction.Manager{DB: transaction.SQLBeginner{DB: db}},
+	}
+	if err := store.CreateEvent(ctx, Notification{
+		ID:              generator.MustNew(),
+		TypeKey:         TypeReminderDue,
+		TemplateVersion: 1,
+		SourceEventID:   sourceEventID,
+		ProjectID:       projectID,
+		ResourceType:    "reminder",
+		ResourceID:      generator.MustNew(),
+		Priority:        "normal",
+		Data:            map[string]interface{}{"title": "Deleted project reminder"},
+		OccurredAt:      now,
+		CreatedAt:       now,
+	}, []RecipientInput{{Key: "user:" + userID, UserID: userID}}, true, nil); err != nil {
+		t.Fatalf("ignore deleted project event: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(
+		ctx,
+		`SELECT count(*) FROM notification_notifications WHERE source_event_id=$1`,
+		sourceEventID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count deleted project notifications: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("deleted project notification count = %d, want 0", count)
+	}
+}

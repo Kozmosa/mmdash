@@ -434,6 +434,11 @@ type ProjectAccessFinalizeResult struct {
 // transport context.
 type Adapter interface {
 	Probe(context.Context) (ProbeResult, error)
+	// CheckRuntime performs the bounded, end-to-end runtime interoperability
+	// exercise after Probe has established the advertised capabilities. It is
+	// intentionally separate from Probe so health/capability reads never imply
+	// that Session, message, Run, SSE, status, and stop paths are usable.
+	CheckRuntime(context.Context) error
 
 	ListSessions(context.Context, SessionFilter) (SessionPage, error)
 	CreateSession(context.Context, CreateSessionRequest) (Session, error)

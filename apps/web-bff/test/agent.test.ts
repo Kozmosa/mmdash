@@ -127,7 +127,7 @@ describe("Agent BFF routes", () => {
       display_name: "D".repeat(120),
       hermes_api_key: "k".repeat(16),
       management_mode: "manual",
-      profile: "p".repeat(120),
+      profile: "p".repeat(64),
       request_timeout_seconds: 300,
       runtime_url: "https://hermes.example.test",
     };
@@ -153,9 +153,25 @@ describe("Agent BFF routes", () => {
       },
       {
         method: "POST" as const,
-        payload: { ...validCreate, profile: "p".repeat(121) },
+        payload: { ...validCreate, profile: "p".repeat(65) },
         url: `/api/projects/${projectId}/agent-instances`,
       },
+      ...[
+        "Default",
+        "research profile",
+        "research.profile",
+        "research/profile",
+        "research\\profile",
+        "hermes",
+        "test",
+        "tmp",
+        "root",
+        "sudo",
+      ].map((profile) => ({
+        method: "POST" as const,
+        payload: { ...validCreate, profile },
+        url: `/api/projects/${projectId}/agent-instances`,
+      })),
       {
         method: "POST" as const,
         payload: { ...validCreate, request_timeout_seconds: 301 },
@@ -210,6 +226,38 @@ describe("Agent BFF routes", () => {
       expect(response.statusCode).toBe(400);
     }
     expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Hermes-allowed non-reserved profile names available", async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({ instance: instanceFixture() }, { status: 201 }),
+      );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+    for (const profile of ["chat", "profile", "default"]) {
+      const response = await app.inject({
+        headers: { cookie },
+        method: "POST",
+        payload: {
+          allowed_tools: ["project.get", "data.read", "context.promote"],
+          display_name: "Hermes",
+          hermes_api_key: "hermes-api-key-input",
+          management_mode: "manual",
+          profile,
+          runtime_url: "https://hermes.example.test",
+        },
+        url: `/api/projects/${projectId}/agent-instances`,
+      });
+      expect(response.statusCode).toBe(201);
+    }
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
 
   it("never returns provider secrets and suppresses accidental auto-mode plaintext", async () => {

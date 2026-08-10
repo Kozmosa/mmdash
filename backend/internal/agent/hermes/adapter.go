@@ -3,6 +3,7 @@ package hermes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -21,7 +22,21 @@ type Adapter struct {
 	management *managementClient
 }
 
+type capabilityEndpoint struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+}
+
 var _ agent.Adapter = (*Adapter)(nil)
+
+const (
+	runtimeCheckTimeout   = 15 * time.Second
+	runtimeCleanupTimeout = 5 * time.Second
+	runtimeCheckSource    = "mmdash_runtime_check"
+	runtimeCheckTitle     = "mmdash runtime check"
+	runtimeCheckInput     = "MMDASH_RUNTIME_CHECK"
+	runtimeCheckPrompt    = "Reply exactly MMDASH_RUNTIME_CHECK. Do not use tools."
+)
 
 func New(config Config) (*Adapter, error) {
 	if strings.TrimSpace(config.InstanceID) == "" || strings.TrimSpace(config.RuntimeURL) == "" || strings.TrimSpace(config.APIKey) == "" {
@@ -30,17 +45,18 @@ func New(config Config) (*Adapter, error) {
 	if err := validateProfile(config.Profile); err != nil {
 		return nil, err
 	}
+	profile := config.Profile
 	runtimeConnector, err := newConnector(config.RuntimeURL, config.RuntimePolicy)
 	if err != nil {
 		return nil, err
 	}
 	result := &Adapter{
 		instanceID: strings.TrimSpace(config.InstanceID),
-		profile:    strings.TrimSpace(config.Profile),
+		profile:    profile,
 		runtime: &apiClient{
 			connector:   runtimeConnector,
 			bearerToken: config.APIKey,
-			profile:     strings.TrimSpace(config.Profile),
+			profile:     profile,
 		},
 	}
 	if config.Management != nil && strings.TrimSpace(config.Management.URL) != "" && config.Management.DashboardSessionToken != "" {
@@ -50,7 +66,7 @@ func New(config Config) (*Adapter, error) {
 		}
 		result.management = newManagementClient(
 			managementConnector,
-			strings.TrimSpace(config.Profile),
+			profile,
 			*config.Management,
 			config.ManagementMinimumInterval,
 		)
@@ -79,13 +95,13 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 	result.Authenticated = true
 
 	var capabilityResponse struct {
-		Platform  string          `json:"platform"`
-		Model     string          `json:"model"`
-		Features  map[string]bool `json:"features"`
-		Endpoints map[string]struct {
-			Method string `json:"method"`
-			Path   string `json:"path"`
-		} `json:"endpoints"`
+		Platform string `json:"platform"`
+		Model    string `json:"model"`
+		// Hermes feature metadata is heterogeneous: boolean capability flags
+		// share this object with values such as session header names. Decode the
+		// object generically and only interpret the boolean flags we own.
+		Features  map[string]any                `json:"features"`
+		Endpoints map[string]capabilityEndpoint `json:"endpoints"`
 	}
 	if err := adapter.runtime.doJSON(ctx, "hermes.capabilities", http.MethodGet, "/v1/capabilities", nil, nil, &capabilityResponse, http.StatusOK); err != nil {
 		return result, err
@@ -96,11 +112,11 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 	result.Model = capabilityResponse.Model
 	features := capabilityResponse.Features
 	result.Capabilities = agent.RuntimeCapabilities{
-		Sessions: features["session_resources"], SessionFork: features["session_fork"],
-		SessionChat: features["session_chat"], SessionStreaming: features["session_chat_streaming"],
-		Runs: features["run_submission"] && features["run_status"], RunStreaming: features["run_events_sse"],
-		RunStop: features["run_stop"], RunApproval: features["run_approval_response"],
-		ToolProgress: features["tool_progress_events"], EventReplay: false,
+		Sessions: boolValue(features["session_resources"]), SessionFork: boolValue(features["session_fork"]),
+		SessionChat: boolValue(features["session_chat"]), SessionStreaming: boolValue(features["session_chat_streaming"]),
+		Runs: boolValue(features["run_submission"]) && boolValue(features["run_status"]), RunStreaming: boolValue(features["run_events_sse"]),
+		RunStop: boolValue(features["run_stop"]), RunApproval: boolValue(features["run_approval_response"]),
+		ToolProgress: boolValue(features["tool_progress_events"]), EventReplay: false,
 		ProjectAccess: agent.ProjectAccessCapabilities{Verify: true},
 	}
 	if err := validateCapabilityEndpoints(capabilityResponse.Endpoints); err != nil {
@@ -125,18 +141,143 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 	return result, nil
 }
 
-func validateCapabilityEndpoints(endpoints map[string]struct {
-	Method string `json:"method"`
-	Path   string `json:"path"`
-}) error {
-	required := map[string]string{
-		"sessions": "/api/sessions", "session_chat": "/api/sessions/{session_id}/chat",
-		"session_chat_stream": "/api/sessions/{session_id}/chat/stream",
-		"runs":                "/v1/runs", "run_status": "/v1/runs/{run_id}",
-		"run_events": "/v1/runs/{run_id}/events", "run_stop": "/v1/runs/{run_id}/stop",
+// CheckRuntime exercises the smallest complete Hermes interoperability path.
+// Probe intentionally remains limited to health, authentication, advertised
+// endpoints, a session list, and a real Jobs list. This check is only called
+// while creating an instance or when a user explicitly requests a runtime
+// connection check; it must never run from a background health path.
+func (adapter *Adapter) CheckRuntime(ctx context.Context) (err error) {
+	checkCtx, cancel := context.WithTimeout(ctx, runtimeCheckTimeout)
+	defer cancel()
+
+	remoteID := fmt.Sprintf("mmdash_runtime_check_%d", time.Now().UTC().UnixNano())
+	session, err := adapter.CreateSession(checkCtx, agent.CreateSessionRequest{
+		RemoteID: remoteID,
+		Source:   runtimeCheckSource,
+		Title:    runtimeCheckTitle,
+	})
+	if err != nil {
+		return err
 	}
-	for name, path := range required {
-		if endpoint, ok := endpoints[name]; !ok || endpoint.Path != path {
+
+	// Cleanup creates its fresh bounded context at defer time so the timeout
+	// starts immediately before DELETE, not when the Session is created. A
+	// timeout or cancellation in the interoperability exercise cannot strand
+	// the temporary remote Session.
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), runtimeCleanupTimeout)
+		cleanupErr := adapter.DeleteSession(cleanupCtx, remoteID)
+		cleanupCancel()
+		if cleanupErr == nil {
+			return
+		}
+		if err == nil {
+			err = cleanupErr
+			return
+		}
+		// Preserve the primary interoperability failure while making incomplete
+		// cleanup visible to callers. Both the primary and cleanup errors are
+		// normalized AdapterErrors, so this wrapper cannot expose upstream data.
+		err = fmt.Errorf("%w (temporary session cleanup failed)", err)
+	}()
+	if session.RemoteID != remoteID {
+		return unexpectedObject("hermes.runtime_check.create")
+	}
+
+	gotSession, err := adapter.GetSession(checkCtx, remoteID)
+	if err != nil {
+		return err
+	}
+	if gotSession.RemoteID != remoteID {
+		return unexpectedObject("hermes.runtime_check.get")
+	}
+	_, resolvedSessionID, err := adapter.listMessages(checkCtx, remoteID)
+	if err != nil {
+		return err
+	}
+	if resolvedSessionID != remoteID {
+		return unexpectedObject("hermes.runtime_check.messages")
+	}
+
+	run, err := adapter.StartRun(checkCtx, agent.StartRunRequest{
+		Input: runtimeCheckInput, Instructions: runtimeCheckPrompt,
+		SessionRemoteID: remoteID,
+	})
+	if err != nil {
+		return err
+	}
+	if run.RemoteID == "" {
+		return unexpectedObject("hermes.runtime_check.start")
+	}
+
+	// Hermes keeps the run event queue after StopRun. Stopping first, then
+	// attaching the live SSE consumer, avoids a replay assumption while still
+	// allowing the queue to deliver run.cancelled and its terminal sentinel.
+	stopped, err := adapter.StopRun(checkCtx, run.RemoteID)
+	if err != nil {
+		return err
+	}
+	if stopped.RemoteID != run.RemoteID || stopped.Status != agent.RunStopping {
+		return unexpectedObject("hermes.runtime_check.stop")
+	}
+
+	eventCount := 0
+	sawCancelled := false
+	if err = adapter.StreamRun(checkCtx, run.RemoteID, agent.StreamOptions{}, func(_ context.Context, event agent.Event) error {
+		eventCount++
+		if event.RunRemoteID != "" && event.RunRemoteID != run.RemoteID {
+			return unexpectedObject("hermes.runtime_check.events")
+		}
+		if event.Type == agent.EventRunCancelled && event.RunRemoteID == run.RemoteID {
+			sawCancelled = true
+		}
+		return nil
+	}); err != nil {
+		return normalizeRuntimeCheckError(err)
+	}
+	if eventCount == 0 || !sawCancelled {
+		return unexpectedObject("hermes.runtime_check.events")
+	}
+
+	status, err := adapter.GetRun(checkCtx, run.RemoteID)
+	if err != nil {
+		return err
+	}
+	if status.RemoteID != run.RemoteID || status.Status != agent.RunCancelled {
+		return unexpectedObject("hermes.runtime_check.status")
+	}
+	return nil
+}
+
+func normalizeRuntimeCheckError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return &agent.AdapterError{Code: agent.ErrorTimeout, Operation: "hermes.runtime_check", Message: "runtime interoperability check timed out", Retryable: true}
+	}
+	return err
+}
+
+func validateCapabilityEndpoints(endpoints map[string]capabilityEndpoint) error {
+	required := map[string]capabilityEndpoint{
+		"sessions":            {Method: http.MethodGet, Path: "/api/sessions"},
+		"session_create":      {Method: http.MethodPost, Path: "/api/sessions"},
+		"session":             {Method: http.MethodGet, Path: "/api/sessions/{session_id}"},
+		"session_update":      {Method: http.MethodPatch, Path: "/api/sessions/{session_id}"},
+		"session_delete":      {Method: http.MethodDelete, Path: "/api/sessions/{session_id}"},
+		"session_messages":    {Method: http.MethodGet, Path: "/api/sessions/{session_id}/messages"},
+		"session_fork":        {Method: http.MethodPost, Path: "/api/sessions/{session_id}/fork"},
+		"session_chat":        {Method: http.MethodPost, Path: "/api/sessions/{session_id}/chat"},
+		"session_chat_stream": {Method: http.MethodPost, Path: "/api/sessions/{session_id}/chat/stream"},
+		"runs":                {Method: http.MethodPost, Path: "/v1/runs"},
+		"run_status":          {Method: http.MethodGet, Path: "/v1/runs/{run_id}"},
+		"run_events":          {Method: http.MethodGet, Path: "/v1/runs/{run_id}/events"},
+		"run_approval":        {Method: http.MethodPost, Path: "/v1/runs/{run_id}/approval"},
+		"run_stop":            {Method: http.MethodPost, Path: "/v1/runs/{run_id}/stop"},
+	}
+	for name, expected := range required {
+		if endpoint, ok := endpoints[name]; !ok || endpoint != expected {
 			return &agent.AdapterError{Code: agent.ErrorUnsupported, Operation: "hermes.capabilities", Message: "required Hermes endpoint is unavailable"}
 		}
 	}
@@ -277,21 +418,27 @@ func (adapter *Adapter) ForkSession(ctx context.Context, remoteID string, reques
 }
 
 func (adapter *Adapter) ListMessages(ctx context.Context, remoteID string) ([]agent.Message, error) {
+	messages, _, err := adapter.listMessages(ctx, remoteID)
+	return messages, err
+}
+
+func (adapter *Adapter) listMessages(ctx context.Context, remoteID string) ([]agent.Message, string, error) {
 	id, err := pathID(remoteID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var response struct {
-		Data []hermesMessage `json:"data"`
+		SessionID string          `json:"session_id"`
+		Data      []hermesMessage `json:"data"`
 	}
 	if err := adapter.runtime.doJSON(ctx, "hermes.sessions.messages", http.MethodGet, "/api/sessions/"+id+"/messages", nil, nil, &response, http.StatusOK); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	messages := make([]agent.Message, 0, len(response.Data))
 	for _, message := range response.Data {
 		messages = append(messages, message.normalized())
 	}
-	return messages, nil
+	return messages, response.SessionID, nil
 }
 
 func (adapter *Adapter) Chat(ctx context.Context, remoteID string, request agent.ChatRequest) (agent.ChatResponse, error) {

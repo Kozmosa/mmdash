@@ -49,7 +49,12 @@ const httpUrlSchema = z
     return protocol === "http:" || protocol === "https:";
   }, "Only HTTP and HTTPS URLs are supported");
 const displayNameSchema = z.string().trim().min(1).max(120);
-const profileSchema = z.string().trim().min(1).max(120);
+const profileIdPattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const reservedProfileNames = new Set(["hermes", "test", "tmp", "root", "sudo"]);
+const profileSchema = z
+  .string()
+  .regex(profileIdPattern, "Invalid Hermes profile")
+  .refine((value) => !reservedProfileNames.has(value), "Reserved Hermes profile");
 const hermesApiKeySchema = z.string().min(16).max(4_096);
 const dashboardSessionTokenSchema = z.string().min(16).max(4_096);
 const cloudflareClientIdSchema = z.string().min(1).max(4_096);

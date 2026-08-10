@@ -114,10 +114,13 @@ func NewFactory(options FactoryOptions) agent.Factory {
 			managementPolicy = narrowRequestTimeout(managementPolicy, requested)
 		}
 		config := Config{
-			InstanceID:                strings.TrimSpace(opaque.InstanceID),
-			RuntimeURL:                strings.TrimSpace(values[ConfigRuntimeURL]),
-			APIKey:                    values[ConfigAPIKey],
-			Profile:                   strings.TrimSpace(values[ConfigProfile]),
+			InstanceID: strings.TrimSpace(opaque.InstanceID),
+			RuntimeURL: strings.TrimSpace(values[ConfigRuntimeURL]),
+			APIKey:     values[ConfigAPIKey],
+			// Profile identifiers are canonical and must not be silently
+			// normalized at an adapter ingress. An omitted setting remains the
+			// unscoped/default Hermes profile.
+			Profile:                   values[ConfigProfile],
 			RuntimePolicy:             runtimePolicy,
 			ManagementPolicy:          managementPolicy,
 			ManagementMinimumInterval: options.ManagementMinimumInterval,
