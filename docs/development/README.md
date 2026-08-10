@@ -38,6 +38,23 @@ Audit/request IDs, MCP health, CLI startup, and metrics. Set
 described in the [Repo guide](repo.md). Local ports are Web `3000`, BFF `3001`,
 Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO Console `9001`.
 
+Stage 8 adds an opt-in Box profile. It requires an operator-provided Core
+registration credential and a Repo-owned detached workspace with a matching
+`.mmdash-commit` marker:
+
+```bash
+docker compose -f deploy/compose/compose.yaml --profile box up -d --build
+MMDASH_SMOKE_REPO_MODE=docker MMDASH_SMOKE_STAGE8=1 pnpm smoke
+```
+
+The normal smoke does not start Box or claim an Experiment. The optional
+Stage 8 smoke first creates the managed Local Git fixture and then creates and
+reads a frozen Experiment from its fixed code commit; set
+`MMDASH_SMOKE_STAGE8_RUN=1` only when a registered online Box is available.
+`MMDASH_SMOKE_STAGE8_COMMIT` may override the fixture commit for a separately
+prepared Repo project. Do not use `down -v`; the Box, PostgreSQL, MinIO, and
+Repo data volumes are intentionally preserved.
+
 ## Isolated native environment
 
 Run the complete baseline on Windows or Linux without Docker with the
@@ -105,6 +122,8 @@ layer only when their module documentation explains why.
 - [Stage 4 Progress](progress.md)
 
 - [Stage 7 Model](model.md)
+- [Stage 8 Experiment](experiment.md)
+- [Stage 8 Box Gateway and Sandbox](box.md)
 
 
 - [Stage 5 Agent sessions](agent.md)

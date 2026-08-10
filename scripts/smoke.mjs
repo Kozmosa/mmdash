@@ -250,6 +250,23 @@ assert(
   "MCP Gateway health check failed.",
 );
 
+const repo =
+  process.env.MMDASH_SMOKE_REPO_MODE === "docker"
+    ? await runRepoSmoke({
+        coreUrl,
+        email,
+        password,
+        runId,
+        webUrl,
+      })
+    : null;
+const stage8 = await runStage8Smoke({
+  coreUrl,
+  projectId: repo?.project_id ?? projectId,
+  repository: repo,
+  sessionHeaders,
+});
+
 if (process.env.MMDASH_SMOKE_SKIP_CLI === "1") {
   console.log("skipping native CLI MCP smoke (MMDASH_SMOKE_SKIP_CLI=1)");
 } else {
@@ -264,17 +281,6 @@ if (process.env.MMDASH_SMOKE_SKIP_CLI === "1") {
   });
 }
 
-const repo =
-  process.env.MMDASH_SMOKE_REPO_MODE === "docker"
-    ? await runRepoSmoke({
-        coreUrl,
-        email,
-        password,
-        runId,
-        webUrl,
-      })
-    : null;
-
 console.log(
   JSON.stringify({
     audit_events: audits.items.length,
@@ -282,6 +288,7 @@ console.log(
     job_id: jobId,
     project_id: projectId,
     repo,
+    stage8,
     status: "passed",
   }),
 );
@@ -290,6 +297,54 @@ async function jsonChecked(url, options = {}) {
   const response = await fetchChecked(url, options);
   const body = await response.json();
   return { body, response };
+}
+
+async function runStage8Smoke({
+  coreUrl,
+  projectId,
+  repository,
+  sessionHeaders,
+}) {
+  if (process.env.MMDASH_SMOKE_STAGE8 !== "1") {
+    return { status: "skipped", reason: "set MMDASH_SMOKE_STAGE8=1" };
+  }
+  if (!repository) {
+    return {
+      status: "skipped",
+      reason: "set MMDASH_SMOKE_REPO_MODE=docker for a Repo-owned commit",
+    };
+  }
+  const sourceCommit =
+    repository.code_head ?? process.env.MMDASH_SMOKE_STAGE8_COMMIT;
+  if (!sourceCommit) {
+    return { status: "skipped", reason: "MMDASH_SMOKE_STAGE8_COMMIT is not configured" };
+  }
+  const created = await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments`, {
+    body: {
+      name: `Stage 8 smoke ${runId}`,
+      source_commit: sourceCommit,
+      entrypoint: "python:run.py",
+      parameters: {}, environment: {}, inputs: {}, runtime: "local-docker",
+      limits: { cpu_millis: 500, memory_bytes: 1048576, timeout_seconds: 60, disk_bytes: 1048576, pids: 32, network: "disabled" },
+      idempotency_key: `stage8-${runId}`,
+    },
+    headers: sessionHeaders,
+    method: "POST",
+  });
+  const experimentId = created.body.experiment_id;
+  assert(experimentId, "Stage 8 smoke did not create an Experiment.");
+  const status = await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}`, { headers: sessionHeaders });
+  assert(status.body.status === "created", "Stage 8 smoke did not preserve the frozen created state.");
+  if (process.env.MMDASH_SMOKE_STAGE8_RUN !== "1") {
+    return { experiment_id: experimentId, status: "created" };
+  }
+  await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}/run`, { headers: sessionHeaders, method: "POST" });
+  const terminal = await poll(
+    async () => (await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}`, { headers: sessionHeaders })).body,
+    (item) => ["succeeded", "failed", "canceled", "archived"].includes(item.status),
+    "Stage 8 Experiment did not reach a terminal state.",
+  );
+  return { experiment_id: experimentId, status: terminal.status };
 }
 
 async function fetchChecked(url, options = {}) {
