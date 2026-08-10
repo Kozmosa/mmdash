@@ -219,6 +219,10 @@ func (service Service) CreateInstance(
 		service.observe("probe", err)
 		return InstanceResult{}, mapAdapterErrorOr(err, "runtime_capability_missing")
 	}
+	if err := adapter.CheckRuntime(ctx); err != nil {
+		service.observe("runtime_check", err)
+		return InstanceResult{}, mapAdapterError(err)
+	}
 	instance := Instance{
 		AdapterType:  AdapterHermes,
 		Capabilities: capabilityMap(probe.Capabilities),
@@ -540,8 +544,16 @@ func (service Service) CheckConnections(
 		runtimeCheck = CheckSnapshot{CheckedAt: now, Status: "failed"}
 		probe, probeErr := adapter.Probe(ctx)
 		if probeErr == nil && probe.Healthy && probe.Authenticated {
-			runtimeCheck.Status = "passed"
 			capabilities = capabilityMap(probe.Capabilities)
+			if !probe.Capabilities.Sessions || !probe.Capabilities.Runs ||
+				!probe.Capabilities.RunStreaming || !probe.Capabilities.RunStop {
+				probeErr = &AdapterError{Code: ErrorUnsupported, Operation: "runtime.capability_check"}
+			} else {
+				probeErr = adapter.CheckRuntime(ctx)
+			}
+		}
+		if probeErr == nil && probe.Healthy && probe.Authenticated {
+			runtimeCheck.Status = "passed"
 		} else {
 			runtimeCheck.Code = safeAdapterCode(probeErr, "runtime_failed")
 		}

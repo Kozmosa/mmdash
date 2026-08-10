@@ -29,13 +29,26 @@ Commit: 3c27eb6234bf91b8ceee9e9071591b31e9b148cb
 ```
 
 The adapter maps Hermes health, authentication, capability, Session, message,
-SSE, Run, and Job APIs into the normalized boundary. Capability probing
+SSE, Run, and Job APIs into the normalized boundary. The lightweight `Probe`
 requires the exact method and path for every Session and Run endpoint that
 mmdash calls. Hermes v2026.8.3 advertises `jobs_admin=false` and omits Jobs
 from its capability endpoint; the adapter therefore does not require Jobs in
 that payload. Job support is confirmed independently by a real `GET
 /api/jobs` probe, and automatic progress evaluation, Cron creation, and
 event-triggered Runs belong to Stage 6.
+
+`Probe` is not by itself evidence that the runtime can execute a chat Run.
+During instance creation and an explicit `runtime`/`all` connection check,
+Core follows a successful Probe with the adapter's bounded `CheckRuntime`
+exercise. It creates a temporary Session with a fixed, tool-free prompt,
+reads the Session and its messages, starts one short Run, calls the real
+`POST /v1/runs/{run_id}/stop`, drains the live SSE queue (Hermes does not
+replay it), reads Run status, and best-effort deletes the temporary Session.
+The stop-before-SSE order relies on Hermes v2026.8.3 retaining the queue until
+the stream drains; the exercise has explicit timeouts and never runs from a
+background health endpoint. Cleanup errors are surfaced without replacing a
+primary runtime error, and the persisted `runtime_check` remains an aggregate
+status/category rather than per-operation evidence.
 
 ## Instance setup and management modes
 

@@ -3,6 +3,7 @@ package hermes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -27,6 +28,15 @@ type capabilityEndpoint struct {
 }
 
 var _ agent.Adapter = (*Adapter)(nil)
+
+const (
+	runtimeCheckTimeout   = 15 * time.Second
+	runtimeCleanupTimeout = 5 * time.Second
+	runtimeCheckSource    = "mmdash_runtime_check"
+	runtimeCheckTitle     = "mmdash runtime check"
+	runtimeCheckInput     = "MMDASH_RUNTIME_CHECK"
+	runtimeCheckPrompt    = "Reply exactly MMDASH_RUNTIME_CHECK. Do not use tools."
+)
 
 func New(config Config) (*Adapter, error) {
 	if strings.TrimSpace(config.InstanceID) == "" || strings.TrimSpace(config.RuntimeURL) == "" || strings.TrimSpace(config.APIKey) == "" {
@@ -129,6 +139,124 @@ func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
 		result.Capabilities.ProjectAccess.Rotate = true
 	}
 	return result, nil
+}
+
+// CheckRuntime exercises the smallest complete Hermes interoperability path.
+// Probe intentionally remains limited to health, authentication, advertised
+// endpoints, a session list, and a real Jobs list. This check is only called
+// while creating an instance or when a user explicitly requests a runtime
+// connection check; it must never run from a background health path.
+func (adapter *Adapter) CheckRuntime(ctx context.Context) (err error) {
+	checkCtx, cancel := context.WithTimeout(ctx, runtimeCheckTimeout)
+	defer cancel()
+
+	remoteID := fmt.Sprintf("mmdash_runtime_check_%d", time.Now().UTC().UnixNano())
+	session, err := adapter.CreateSession(checkCtx, agent.CreateSessionRequest{
+		RemoteID: remoteID,
+		Source:   runtimeCheckSource,
+		Title:    runtimeCheckTitle,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Cleanup creates its fresh bounded context at defer time so the timeout
+	// starts immediately before DELETE, not when the Session is created. A
+	// timeout or cancellation in the interoperability exercise cannot strand
+	// the temporary remote Session.
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), runtimeCleanupTimeout)
+		cleanupErr := adapter.DeleteSession(cleanupCtx, remoteID)
+		cleanupCancel()
+		if cleanupErr == nil {
+			return
+		}
+		if err == nil {
+			err = cleanupErr
+			return
+		}
+		// Preserve the primary interoperability failure while making incomplete
+		// cleanup visible to callers. Both the primary and cleanup errors are
+		// normalized AdapterErrors, so this wrapper cannot expose upstream data.
+		err = fmt.Errorf("%w (temporary session cleanup failed)", err)
+	}()
+	if session.RemoteID != remoteID {
+		return unexpectedObject("hermes.runtime_check.create")
+	}
+
+	gotSession, err := adapter.GetSession(checkCtx, remoteID)
+	if err != nil {
+		return err
+	}
+	if gotSession.RemoteID != remoteID {
+		return unexpectedObject("hermes.runtime_check.get")
+	}
+	_, resolvedSessionID, err := adapter.listMessages(checkCtx, remoteID)
+	if err != nil {
+		return err
+	}
+	if resolvedSessionID != remoteID {
+		return unexpectedObject("hermes.runtime_check.messages")
+	}
+
+	run, err := adapter.StartRun(checkCtx, agent.StartRunRequest{
+		Input: runtimeCheckInput, Instructions: runtimeCheckPrompt,
+		SessionRemoteID: remoteID,
+	})
+	if err != nil {
+		return err
+	}
+	if run.RemoteID == "" {
+		return unexpectedObject("hermes.runtime_check.start")
+	}
+
+	// Hermes keeps the run event queue after StopRun. Stopping first, then
+	// attaching the live SSE consumer, avoids a replay assumption while still
+	// allowing the queue to deliver run.cancelled and its terminal sentinel.
+	stopped, err := adapter.StopRun(checkCtx, run.RemoteID)
+	if err != nil {
+		return err
+	}
+	if stopped.RemoteID != run.RemoteID || stopped.Status != agent.RunStopping {
+		return unexpectedObject("hermes.runtime_check.stop")
+	}
+
+	eventCount := 0
+	sawCancelled := false
+	if err = adapter.StreamRun(checkCtx, run.RemoteID, agent.StreamOptions{}, func(_ context.Context, event agent.Event) error {
+		eventCount++
+		if event.RunRemoteID != "" && event.RunRemoteID != run.RemoteID {
+			return unexpectedObject("hermes.runtime_check.events")
+		}
+		if event.Type == agent.EventRunCancelled && event.RunRemoteID == run.RemoteID {
+			sawCancelled = true
+		}
+		return nil
+	}); err != nil {
+		return normalizeRuntimeCheckError(err)
+	}
+	if eventCount == 0 || !sawCancelled {
+		return unexpectedObject("hermes.runtime_check.events")
+	}
+
+	status, err := adapter.GetRun(checkCtx, run.RemoteID)
+	if err != nil {
+		return err
+	}
+	if status.RemoteID != run.RemoteID || status.Status != agent.RunCancelled {
+		return unexpectedObject("hermes.runtime_check.status")
+	}
+	return nil
+}
+
+func normalizeRuntimeCheckError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return &agent.AdapterError{Code: agent.ErrorTimeout, Operation: "hermes.runtime_check", Message: "runtime interoperability check timed out", Retryable: true}
+	}
+	return err
 }
 
 func validateCapabilityEndpoints(endpoints map[string]capabilityEndpoint) error {
@@ -290,21 +418,27 @@ func (adapter *Adapter) ForkSession(ctx context.Context, remoteID string, reques
 }
 
 func (adapter *Adapter) ListMessages(ctx context.Context, remoteID string) ([]agent.Message, error) {
+	messages, _, err := adapter.listMessages(ctx, remoteID)
+	return messages, err
+}
+
+func (adapter *Adapter) listMessages(ctx context.Context, remoteID string) ([]agent.Message, string, error) {
 	id, err := pathID(remoteID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var response struct {
-		Data []hermesMessage `json:"data"`
+		SessionID string          `json:"session_id"`
+		Data      []hermesMessage `json:"data"`
 	}
 	if err := adapter.runtime.doJSON(ctx, "hermes.sessions.messages", http.MethodGet, "/api/sessions/"+id+"/messages", nil, nil, &response, http.StatusOK); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	messages := make([]agent.Message, 0, len(response.Data))
 	for _, message := range response.Data {
 		messages = append(messages, message.normalized())
 	}
-	return messages, nil
+	return messages, response.SessionID, nil
 }
 
 func (adapter *Adapter) Chat(ctx context.Context, remoteID string, request agent.ChatRequest) (agent.ChatResponse, error) {

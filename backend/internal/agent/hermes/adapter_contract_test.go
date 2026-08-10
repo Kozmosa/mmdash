@@ -118,6 +118,372 @@ func TestRuntimeProbeDoesNotDependOnDashboardManagement(t *testing.T) {
 	}
 }
 
+func TestCheckRuntimeExercisesLiveSessionRunSSEStatusStopAndCleanup(t *testing.T) {
+	var calls []string
+	var mu sync.Mutex
+	var sessionID string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assertRuntimeAuth(t, request)
+		mu.Lock()
+		calls = append(calls, request.Method+" "+request.URL.Path)
+		mu.Unlock()
+		switch request.Method + " " + request.URL.Path {
+		case "POST /api/sessions":
+			body := decodeRequestMap(t, request)
+			sessionID = stringValue(body["id"])
+			if !strings.HasPrefix(sessionID, "mmdash_runtime_check_") ||
+				body["source"] != runtimeCheckSource || body["title"] != runtimeCheckTitle {
+				t.Fatalf("unexpected runtime-check session body: %#v", body)
+			}
+			response.WriteHeader(http.StatusCreated)
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": sessionID}})
+		case "GET /api/sessions/" + sessionID:
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": sessionID}})
+		case "GET /api/sessions/" + sessionID + "/messages":
+			writeJSON(t, response, map[string]any{"session_id": sessionID, "data": []any{}})
+		case "POST /v1/runs":
+			body := decodeRequestMap(t, request)
+			if body["input"] != runtimeCheckInput || body["instructions"] != runtimeCheckPrompt ||
+				body["session_id"] != sessionID {
+				t.Fatalf("unexpected runtime-check run body: %#v", body)
+			}
+			response.WriteHeader(http.StatusAccepted)
+			writeJSON(t, response, map[string]any{"run_id": "runtime-check-run", "status": "started"})
+		case "POST /v1/runs/runtime-check-run/stop":
+			body := decodeRequestMap(t, request)
+			if len(body) != 0 {
+				t.Fatalf("stop body was not empty: %#v", body)
+			}
+			writeJSON(t, response, map[string]any{"run_id": "runtime-check-run", "status": "stopping"})
+		case "GET /v1/runs/runtime-check-run/events":
+			response.Header().Set("Content-Type", "text/event-stream")
+			_, _ = response.Write([]byte("event: run.cancelled\ndata: {\"event\":\"run.cancelled\",\"run_id\":\"runtime-check-run\"}\n\n: stream closed\n\n"))
+		case "GET /v1/runs/runtime-check-run":
+			writeJSON(t, response, map[string]any{"run_id": "runtime-check-run", "status": "cancelled"})
+		case "DELETE /api/sessions/" + sessionID:
+			writeJSON(t, response, map[string]any{"deleted": true})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	adapter := runtimeAdapterForServer(t, server.URL, "")
+	if err := adapter.CheckRuntime(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	wantCalls := []string{
+		"POST /api/sessions",
+		"GET /api/sessions/" + sessionID,
+		"GET /api/sessions/" + sessionID + "/messages",
+		"POST /v1/runs",
+		"POST /v1/runs/runtime-check-run/stop",
+		"GET /v1/runs/runtime-check-run/events",
+		"GET /v1/runs/runtime-check-run",
+		"DELETE /api/sessions/" + sessionID,
+	}
+	mu.Lock()
+	gotCalls := append([]string(nil), calls...)
+	mu.Unlock()
+	if !reflect.DeepEqual(gotCalls, wantCalls) {
+		t.Fatalf("unexpected runtime check call sequence: got=%#v want=%#v", gotCalls, wantCalls)
+	}
+}
+
+func TestCheckRuntimeCleansUpAfterFailureWithoutLeakingUpstreamBody(t *testing.T) {
+	const secret = "runtime-check-upstream-secret"
+	var deleted bool
+	var sessionID string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assertRuntimeAuth(t, request)
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/api/sessions":
+			body := decodeRequestMap(t, request)
+			sessionID = stringValue(body["id"])
+			response.WriteHeader(http.StatusCreated)
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": sessionID}})
+		case request.Method == http.MethodGet && request.URL.Path == "/api/sessions/"+sessionID:
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": sessionID}})
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/messages"):
+			response.Header().Set("Content-Type", "application/json")
+			response.WriteHeader(http.StatusBadRequest)
+			writeJSON(t, response, map[string]any{"error": map[string]any{"message": secret}})
+		case request.Method == http.MethodDelete:
+			deleted = true
+			writeJSON(t, response, map[string]any{"deleted": true})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	adapter := runtimeAdapterForServer(t, server.URL, "")
+	err := adapter.CheckRuntime(context.Background())
+	if err == nil || !deleted || strings.Contains(err.Error(), secret) {
+		t.Fatalf("runtime failure/cleanup handling: err=%v deleted=%v", err, deleted)
+	}
+	var adapterErr *agent.AdapterError
+	if !errors.As(err, &adapterErr) || adapterErr.Operation != "hermes.sessions.messages" {
+		t.Fatalf("primary runtime error was not preserved: %#v", err)
+	}
+}
+
+func TestCheckRuntimeReportsCleanupFailureWithoutMaskingPrimaryError(t *testing.T) {
+	const secret = "cleanup-upstream-secret"
+	var sessionID string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assertRuntimeAuth(t, request)
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/api/sessions":
+			body := decodeRequestMap(t, request)
+			sessionID = stringValue(body["id"])
+			response.WriteHeader(http.StatusCreated)
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": sessionID}})
+		case request.Method == http.MethodGet && request.URL.Path == "/api/sessions/"+sessionID:
+			response.WriteHeader(http.StatusBadRequest)
+			writeJSON(t, response, map[string]any{"error": map[string]any{"message": secret}})
+		case request.Method == http.MethodDelete:
+			response.WriteHeader(http.StatusBadGateway)
+			writeJSON(t, response, map[string]any{"error": map[string]any{"message": secret}})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	adapter := runtimeAdapterForServer(t, server.URL, "")
+	err := adapter.CheckRuntime(context.Background())
+	if err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "temporary session cleanup failed") {
+		t.Fatalf("cleanup failure was not safely observable: %v", err)
+	}
+	var adapterErr *agent.AdapterError
+	if !errors.As(err, &adapterErr) || adapterErr.Operation != "hermes.sessions.get" {
+		t.Fatalf("primary error was masked by cleanup failure: %#v", err)
+	}
+}
+
+func TestCheckRuntimeCleanupRunsAfterParentCancellation(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var sessionID string
+	var deleted bool
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assertRuntimeAuth(t, request)
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/api/sessions":
+			body := decodeRequestMap(t, request)
+			sessionID = stringValue(body["id"])
+			response.WriteHeader(http.StatusCreated)
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": sessionID}})
+		case request.Method == http.MethodGet && request.URL.Path == "/api/sessions/"+sessionID:
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": sessionID}})
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/messages"):
+			writeJSON(t, response, map[string]any{"session_id": sessionID, "data": []any{}})
+			if flusher, ok := response.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			cancel()
+		case request.Method == http.MethodDelete:
+			deleted = true
+			writeJSON(t, response, map[string]any{"deleted": true})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	adapter := runtimeAdapterForServer(t, server.URL, "")
+	if err := adapter.CheckRuntime(parent); err == nil {
+		t.Fatal("runtime check unexpectedly passed after parent cancellation")
+	}
+	if !deleted {
+		t.Fatal("temporary session cleanup did not run after parent/deep context cancellation")
+	}
+}
+
+type runtimeCheckHarnessConfig struct {
+	emptyCreate       bool
+	wrongCreateID     string
+	emptyGet          bool
+	wrongGetID        string
+	emptyMessages     bool
+	messagesSessionID string
+	stopStatus        string
+	sseBody           string
+	sseBodySet        bool
+	status            string
+	statusSet         bool
+	statusID          string
+	statusIDSet       bool
+}
+
+type runtimeCheckHarnessState struct {
+	mu        sync.Mutex
+	requested string
+	deleted   bool
+	calls     []string
+}
+
+func runtimeCheckHarness(t *testing.T, config runtimeCheckHarnessConfig) (*httptest.Server, *runtimeCheckHarnessState) {
+	t.Helper()
+	state := &runtimeCheckHarnessState{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assertRuntimeAuth(t, request)
+		state.mu.Lock()
+		state.calls = append(state.calls, request.Method+" "+request.URL.Path)
+		state.mu.Unlock()
+
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/api/sessions":
+			body := decodeRequestMap(t, request)
+			state.mu.Lock()
+			state.requested = stringValue(body["id"])
+			requested := state.requested
+			state.mu.Unlock()
+			id := requested
+			if config.emptyCreate {
+				id = ""
+			} else if config.wrongCreateID != "" {
+				id = config.wrongCreateID
+			}
+			response.WriteHeader(http.StatusCreated)
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": id}})
+		case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/api/sessions/") && !strings.HasSuffix(request.URL.Path, "/messages"):
+			state.mu.Lock()
+			requested := state.requested
+			state.mu.Unlock()
+			id := requested
+			if config.emptyGet {
+				id = ""
+			} else if config.wrongGetID != "" {
+				id = config.wrongGetID
+			}
+			writeJSON(t, response, map[string]any{"session": map[string]any{"id": id}})
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/messages"):
+			state.mu.Lock()
+			requested := state.requested
+			state.mu.Unlock()
+			sessionID := requested
+			if config.emptyMessages {
+				sessionID = ""
+			} else if config.messagesSessionID != "" {
+				sessionID = config.messagesSessionID
+			}
+			writeJSON(t, response, map[string]any{"session_id": sessionID, "data": []any{}})
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/runs":
+			response.WriteHeader(http.StatusAccepted)
+			writeJSON(t, response, map[string]any{"run_id": "runtime-check-run", "status": "started"})
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/runs/runtime-check-run/stop":
+			status := config.stopStatus
+			if status == "" {
+				status = "stopping"
+			}
+			writeJSON(t, response, map[string]any{"run_id": "runtime-check-run", "status": status})
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/runs/runtime-check-run/events":
+			response.Header().Set("Content-Type", "text/event-stream")
+			body := config.sseBody
+			if !config.sseBodySet {
+				body = "event: run.cancelled\ndata: {\"event\":\"run.cancelled\",\"run_id\":\"runtime-check-run\"}\n\n"
+			}
+			_, _ = response.Write([]byte(body))
+		case request.Method == http.MethodGet && request.URL.Path == "/v1/runs/runtime-check-run":
+			status := config.status
+			if !config.statusSet {
+				status = "cancelled"
+			}
+			runID := "runtime-check-run"
+			if config.statusIDSet {
+				runID = config.statusID
+			}
+			writeJSON(t, response, map[string]any{"run_id": runID, "status": status})
+		case request.Method == http.MethodDelete:
+			state.mu.Lock()
+			state.deleted = true
+			state.mu.Unlock()
+			writeJSON(t, response, map[string]any{"deleted": true})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	return server, state
+}
+
+func runtimeCheckHarnessResult(t *testing.T, config runtimeCheckHarnessConfig, operation string) {
+	t.Helper()
+	server, state := runtimeCheckHarness(t, config)
+	defer server.Close()
+	adapter := runtimeAdapterForServer(t, server.URL, "")
+	err := adapter.CheckRuntime(context.Background())
+	if err == nil {
+		t.Fatalf("runtime check unexpectedly passed for %s", operation)
+	}
+	var adapterErr *agent.AdapterError
+	if !errors.As(err, &adapterErr) || adapterErr.Operation != operation {
+		t.Fatalf("unexpected %s failure: %#v", operation, err)
+	}
+	state.mu.Lock()
+	deleted := state.deleted
+	state.mu.Unlock()
+	if !deleted {
+		t.Fatalf("runtime-check temporary session was not cleaned after %s failure", operation)
+	}
+}
+
+func TestCheckRuntimeRejectsSessionIdentityMismatchesAndCleansUp(t *testing.T) {
+	tests := []struct {
+		name      string
+		config    runtimeCheckHarnessConfig
+		operation string
+	}{
+		{name: "empty create id", config: runtimeCheckHarnessConfig{emptyCreate: true}, operation: "hermes.runtime_check.create"},
+		{name: "wrong create id", config: runtimeCheckHarnessConfig{wrongCreateID: "other-session"}, operation: "hermes.runtime_check.create"},
+		{name: "empty get id", config: runtimeCheckHarnessConfig{emptyGet: true}, operation: "hermes.runtime_check.get"},
+		{name: "wrong get id", config: runtimeCheckHarnessConfig{wrongGetID: "other-session"}, operation: "hermes.runtime_check.get"},
+		{name: "empty messages session id", config: runtimeCheckHarnessConfig{emptyMessages: true}, operation: "hermes.runtime_check.messages"},
+		{name: "wrong messages session id", config: runtimeCheckHarnessConfig{messagesSessionID: "other-session"}, operation: "hermes.runtime_check.messages"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runtimeCheckHarnessResult(t, test.config, test.operation)
+		})
+	}
+}
+
+func TestCheckRuntimeRejectsStopStatusAndCleansUp(t *testing.T) {
+	runtimeCheckHarnessResult(t, runtimeCheckHarnessConfig{stopStatus: "completed"}, "hermes.runtime_check.stop")
+}
+
+func TestCheckRuntimeRequiresCancelledSSEAndCleansUp(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "empty", body: ""},
+		{name: "started only", body: "event: run.started\ndata: {\"event\":\"run.started\",\"run_id\":\"runtime-check-run\"}\n\n"},
+		{name: "wrong cancelled run", body: "event: run.cancelled\ndata: {\"event\":\"run.cancelled\",\"run_id\":\"other-run\"}\n\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runtimeCheckHarnessResult(t, runtimeCheckHarnessConfig{sseBody: test.body, sseBodySet: true}, "hermes.runtime_check.events")
+		})
+	}
+}
+
+func TestCheckRuntimeRequiresCancelledFinalStatusAndCleansUp(t *testing.T) {
+	tests := []struct {
+		name   string
+		config runtimeCheckHarnessConfig
+	}{
+		{name: "non-cancelled", config: runtimeCheckHarnessConfig{status: "completed", statusSet: true}},
+		{name: "wrong run id", config: runtimeCheckHarnessConfig{statusID: "other-run", statusIDSet: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runtimeCheckHarnessResult(t, test.config, "hermes.runtime_check.status")
+		})
+	}
+}
+
 func TestSessionMessageAndChatMapping(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		assertRuntimeAuth(t, request)
@@ -152,7 +518,7 @@ func TestSessionMessageAndChatMapping(t *testing.T) {
 			response.WriteHeader(http.StatusCreated)
 			writeJSON(t, response, map[string]any{"session": sessionFixture("session-fork")})
 		case "GET /api/sessions/session-main/messages":
-			writeJSON(t, response, map[string]any{"data": []any{
+			writeJSON(t, response, map[string]any{"session_id": "session-resolved", "data": []any{
 				map[string]any{"id": 3, "session_id": "session-main", "role": "assistant", "content": "safe answer", "reasoning": "private chain", "reasoning_content": "private chain 2", "tool_calls": []any{map[string]any{"id": "call-1", "function": map[string]any{"name": "data.read", "arguments": `{"secret":"do-not-leak"}`}}}, "timestamp": 1_754_000_000.5},
 				map[string]any{"id": "m2", "session_id": "session-main", "role": "tool", "content": "sensitive tool result", "tool_name": "data.read", "tool_call_id": "call-1"},
 			}})
@@ -203,6 +569,9 @@ func TestSessionMessageAndChatMapping(t *testing.T) {
 	// part of this call. The adapter returns only the child; the Agent domain
 	// synchronizes the local parent index in the same product operation.
 
+	// Hermes may resolve a parent request to the active descendant while
+	// returning the descendant session_id; the public adapter preserves the
+	// normalized messages without rejecting that valid resolution.
 	messages, err := adapter.ListMessages(ctx, "session-main")
 	if err != nil || len(messages) != 2 {
 		t.Fatalf("messages: %#v %v", messages, err)

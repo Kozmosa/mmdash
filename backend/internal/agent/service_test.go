@@ -665,6 +665,9 @@ type agentServiceTestAdapter struct {
 	startRunRequests      []StartRunRequest
 	messages              []Message
 	probe                 ProbeResult
+	probeCalls            int
+	checkRuntimeCalls     int
+	checkRuntimeErr       error
 	verifyAccess          ProjectAccessResult
 	getRunResult          Run
 	stopRunResult         Run
@@ -694,7 +697,13 @@ type agentServiceTestAdapter struct {
 }
 
 func (adapter *agentServiceTestAdapter) Probe(context.Context) (ProbeResult, error) {
+	adapter.probeCalls++
 	return adapter.probe, nil
+}
+
+func (adapter *agentServiceTestAdapter) CheckRuntime(context.Context) error {
+	adapter.checkRuntimeCalls++
+	return adapter.checkRuntimeErr
 }
 
 func (*agentServiceTestAdapter) ListSessions(context.Context, SessionFilter) (SessionPage, error) {
@@ -1766,6 +1775,42 @@ func TestServiceCreateInstanceValidatesCanonicalHermesProfile(t *testing.T) {
 		if result.Instance.Profile != want || fixture.settingsStore.upsertCalls == 0 {
 			t.Fatalf("CreateInstance profile %q normalized to %q or did not persist", profile, result.Instance.Profile)
 		}
+	}
+}
+
+func TestServiceCreateInstanceRequiresRuntimeInteroperabilityCheck(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.checkRuntimeErr = &AdapterError{Code: ErrorUnavailable, Operation: "hermes.runtime_check"}
+	input := CreateInstanceInput{
+		APIKey: "runtime-secret", AllowedTools: append([]string(nil), DefaultAllowedTools...),
+		DisplayName: "New Hermes", ManagementMode: ManagementManual,
+		RuntimeURL: "https://runtime.example.test", Profile: "default",
+	}
+	if _, err := fixture.service.CreateInstance(context.Background(), fixture.caller, "project-1", input); !errors.Is(err, ErrRuntime) {
+		t.Fatalf("runtime check failure was not returned: %v", err)
+	}
+	if fixture.adapter.probeCalls != 1 || fixture.adapter.checkRuntimeCalls != 1 {
+		t.Fatalf("runtime checks not invoked exactly once: probe=%d deep=%d", fixture.adapter.probeCalls, fixture.adapter.checkRuntimeCalls)
+	}
+	if len(fixture.store.instances) != 1 || fixture.settingsStore.upsertCalls != 0 {
+		t.Fatalf("failed runtime check wrote instance state: instances=%d settings=%d", len(fixture.store.instances), fixture.settingsStore.upsertCalls)
+	}
+}
+
+func TestServiceCheckConnectionsDoesNotPassFailedRuntimeInteroperability(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.checkRuntimeErr = &AdapterError{Code: ErrorUnavailable, Operation: "hermes.runtime_check"}
+	item, err := fixture.service.CheckConnections(
+		context.Background(), fixture.caller, "project-1", "agent-1", "runtime",
+	)
+	if err != nil {
+		t.Fatalf("runtime connection check returned an unexpected service error: %v", err)
+	}
+	if fixture.adapter.probeCalls != 1 || fixture.adapter.checkRuntimeCalls != 1 {
+		t.Fatalf("runtime checks not invoked exactly once: probe=%d deep=%d", fixture.adapter.probeCalls, fixture.adapter.checkRuntimeCalls)
+	}
+	if item.RuntimeCheck.Status != "failed" || item.RuntimeCheck.Code != string(ErrorUnavailable) || item.Status != InstanceDegraded {
+		t.Fatalf("failed runtime interoperability was marked passed: %#v", item)
 	}
 }
 
