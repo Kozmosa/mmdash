@@ -1,10 +1,80 @@
-# mmdash v0.1 Stage 6 automatic Progress tracking handoff
+# mmdash v0.1 Stage 7 integration handoff
+
+- Updated: 2026-08-10
+- Branch: `codex/stage-7-integration`
+- Base: `origin/main@f1df451`
+- Canonical migrations: continuous `000001` through
+  `000031_notification_routing_model`
+- Delivery state: migration numbering and integrated acceptance complete in
+  the isolated worktree; not yet pushed
+
+## 2026-08-10 migration numbering and integrated acceptance
+
+The merged Stage 7 branch introduced numeric collisions at `000022-000024`.
+Model now owns canonical migrations `000029_model_stage7` and
+`000030_model_notion_oauth`; the Notification routing correction is
+`000031_notification_routing_model`. The migration runner rejects malformed,
+duplicate, gapped, or unpaired catalogs before applying SQL.
+
+An immutable compatibility ledger preserves databases that already recorded
+the former Model/Notification names, the pre-merge
+`000023_notification_routing_model`, or the pre-integration
+`000023_agent_sessions` development name. Under the existing PostgreSQL
+advisory lock, the runner records the canonical name transactionally and does
+not execute that migration again. Legacy rows remain as upgrade evidence.
+
+Real PostgreSQL coverage passed for a fresh canonical database, a complete
+legacy database, mixed/partial state, both historical Notification names,
+canonical/legacy coexistence, repeated execution, and the `000029-000031`
+down/up round trip. The preserved development database upgraded from
+`000023_agent_sessions` without replaying Agent SQL; its existing user,
+Project, and Agent counts were unchanged during migration. It now records all
+31 canonical migrations plus that retained legacy row.
+
+Integrated acceptance also exposed old `progress.reminder.due` events whose
+test Projects had already been removed from the preserved database. Notification
+event persistence now takes a Project key-share lock and treats an event for an
+already deleted Project as an idempotent no-op. A real replay of one formerly
+failed event completed successfully after the fix. Historical failed-delivery
+records were retained rather than deleted.
+
+### Integration verification
+
+- Stage 7 focused Go, Worker, Web, BFF, CLI, Data Hub, Artifact, Project,
+  Notification, and migration tests passed with real PostgreSQL where
+  applicable. Contract generation/check and the API catalog covering 368
+  operations passed without contract changes.
+- Complete `pnpm check` passed after the integration fixes: TypeScript, Go,
+  Python, and CLI lint/tests/builds; contract compatibility; API coverage; and
+  Caddyfile-only validation.
+- Docker Compose images built from this worktree. Because unrelated native
+  services already occupied `3000/3001/8080`, acceptance used loopback-only
+  `13000/13001/13002/18080` host ports while keeping normal container ports and
+  the preserved PostgreSQL/MinIO volumes.
+- Repository smoke passed with its native CLI login subtest skipped because
+  this headless workstation has no unlocked Secret Service. CLI build/unit
+  coverage passed separately. A one-off Docker Worker completed a real
+  `system.test` Job and its temporary Token was revoked.
+- The Model page returned HTTP 200, the BFF reported the expected OAuth
+  unavailable/disconnected state without local Notion credentials, and the
+  live MCP Gateway completed `data.list(type=model_source)` through Core/Data
+  Hub. The real Notion OAuth, recursive discovery, Snapshot, unchanged/changed
+  Hash, media, Diff, refresh rotation, and disconnect evidence from 2026-08-09
+  remains authoritative because this integration changed no Model runtime or
+  provider contract.
+- Core, Web BFF, Web, MCP Gateway, PostgreSQL, and MinIO were healthy. Current
+  application logs contained no panic/fatal/error or credential match; the
+  only expected persistent Worker-service message was the missing boot Token,
+  while the separately tokenized one-off Docker Worker succeeded. Compose was
+  stopped with `down`, never `down -v`.
+
+## Previous Stage 6 automatic Progress tracking handoff
 
 - Updated: 2026-08-10
 - Branch: `codex/stage-6-auto-progress`
 - Base: `origin/main@52e398f`
 - Migration: `000028_progress_auto_tracking`
-- Delivery state: Stage 6 complete in Ready PR #33; CI passed; not merged
+- Delivery state: merged through Ready PR #33
 
 ## 2026-08-10 Stage 6 automatic Progress tracking
 
@@ -90,7 +160,7 @@ implementation against the v0.1 baseline without changing the source module
 contract. The Type Registry now exclusively owns Inbox policy and Project
 Notification Rules exclusively own optional external delivery. The obsolete
 `inbox_enabled` API/database field is removed by migration
-`000024_notification_routing_model`; invitation remains required Inbox-only,
+`000031_notification_routing_model`; invitation remains required Inbox-only,
 while Progress reminders remain default-on in Inbox and optionally external.
 
 The Web now has one global Inbox icon/unread badge on `/projects` and project
@@ -146,7 +216,7 @@ are removed atomically after a successful OAuth callback.
 
 ## OAuth and credentials
 
-Migration `000023_model_notion_oauth` stores only hashed, expiring, one-use
+Migration `000030_model_notion_oauth` stores only hashed, expiring, one-use
 authorization state. Core validates state, caller, Project permission, selected
 root access, and callback ownership before Settings encrypts provider tokens.
 Notion API, token exchange, refresh, and revocation endpoints are fixed in the

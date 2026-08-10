@@ -70,9 +70,9 @@ callback atomically writes OAuth credentials and deletes the legacy token.
 
 ## Synchronization and scheduling
 
-Migration `000022_model_stage7` owns `model_sources`, `model_source_pages`,
+Migration `000029_model_stage7` owns `model_sources`, `model_source_pages`,
 `model_questions`, `model_syncs`, `model_snapshots`, and
-`model_snapshot_assets`. Migration `000023_model_notion_oauth` owns only the
+`model_snapshot_assets`. Migration `000030_model_notion_oauth` owns only the
 short-lived, hashed, one-use OAuth authorization state; it never stores a
 provider token. The unique Project key on `model_sources` enforces a
 single Source. Question code and bound-page uniqueness apply to active

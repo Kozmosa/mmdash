@@ -55,8 +55,12 @@ but do not receive Rule or Delivery diagnostics.
   Delivery.
 - Rules use optimistic versions; Delivery stores Rule/Settings snapshots.
 - PostgreSQL leases and `FOR UPDATE SKIP LOCKED` remain the queue mechanism.
-- Migration `000024_notification_routing_model` removes the stale Project Rule
+- Migration `000031_notification_routing_model` removes the stale Project Rule
   Inbox switch and backfills controlled render snapshots.
+- Event delivery takes a PostgreSQL key-share lock on the target Project.
+  Replayed events for an already deleted Project complete as an idempotent
+  no-op instead of retrying a Notification row that cannot satisfy its Project
+  foreign key.
 
 ## Focused verification
 
