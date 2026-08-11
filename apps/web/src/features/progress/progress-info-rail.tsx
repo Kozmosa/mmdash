@@ -34,6 +34,7 @@ export function ProgressInfoRail({
   canEvaluate,
   canManage,
   evaluationBusy,
+  evaluationRequestPending,
   evaluationStatus,
   layout,
   onAgentChange,
@@ -47,6 +48,7 @@ export function ProgressInfoRail({
   canEvaluate: boolean;
   canManage: boolean;
   evaluationBusy: boolean;
+  evaluationRequestPending: boolean;
   evaluationStatus: "failed" | "queued" | "running" | "succeeded" | undefined;
   layout: "horizontal" | "vertical";
   onAgentChange: (id: string) => void;
@@ -58,6 +60,9 @@ export function ProgressInfoRail({
 }>) {
   const [now, setNow] = useState(() => Date.now());
   const [sessionOpen, setSessionOpen] = useState(false);
+  useEffect(() => {
+    if (evaluationRequestPending) setSessionOpen(false);
+  }, [evaluationRequestPending]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
@@ -109,7 +114,8 @@ export function ProgressInfoRail({
           </CardHeader>
           <CardContent className="space-y-4">
             <EvaluationStages
-              status={progress.latest_evaluation?.status}
+              layout={layout}
+              status={evaluationStatus}
               waitingReview={pending.length > 0}
             />
             <div
@@ -160,7 +166,12 @@ export function ProgressInfoRail({
                   </select>
                 </label>
               ) : null}
-              {progress.latest_evaluation ? (
+              {evaluationRequestPending ? (
+                <Button disabled size="sm" variant="outline">
+                  <Eye aria-hidden="true" className="size-3.5" />
+                  Session 准备中
+                </Button>
+              ) : progress.latest_evaluation ? (
                 <Button
                   onClick={() => setSessionOpen(true)}
                   size="sm"
@@ -261,7 +272,7 @@ export function ProgressInfoRail({
           </Card>
         </div>
       </aside>
-      {progress.latest_evaluation ? (
+      {!evaluationRequestPending && progress.latest_evaluation ? (
         <AgentSessionDialog
           agentInstanceId={progress.latest_evaluation.agent_instance_id}
           evaluationId={progress.latest_evaluation.evaluation_id}
@@ -278,9 +289,14 @@ export function ProgressInfoRail({
 }
 
 function EvaluationStages({
+  layout,
   status,
   waitingReview,
-}: Readonly<{ status?: string; waitingReview: boolean }>) {
+}: Readonly<{
+  layout: "horizontal" | "vertical";
+  status?: string;
+  waitingReview: boolean;
+}>) {
   const stages = [
     "等待触发",
     "汇总上下文",
@@ -305,7 +321,10 @@ function EvaluationStages({
   return (
     <div
       aria-label="评估进度"
-      className="grid grid-cols-3 gap-1.5 sm:grid-cols-7"
+      className={cn(
+        "grid gap-1.5",
+        layout === "vertical" ? "grid-cols-3" : "grid-cols-3 sm:grid-cols-7",
+      )}
     >
       {stages.map((stage, index) => (
         <span

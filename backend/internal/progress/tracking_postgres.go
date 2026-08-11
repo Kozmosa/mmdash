@@ -288,6 +288,9 @@ func (store PostgresStore) ScheduleRequest(ctx context.Context, projectID, actor
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, projectID); err != nil {
 			return err
 		}
+		if err := store.reconcileTerminalEvaluationJobs(ctx, tx, projectID, store.now()); err != nil {
+			return err
+		}
 		if triggerKind == "manual" {
 			var requestID string
 			var createdAt time.Time
@@ -560,6 +563,9 @@ func (store PostgresStore) FinalizeRequest(ctx context.Context, claim RequestCla
 		if status != "assembling" || leaseOwner != claim.LeaseOwner {
 			return ErrConflict
 		}
+		if err := store.reconcileTerminalEvaluationJobs(ctx, tx, claim.ProjectID, store.now()); err != nil {
+			return err
+		}
 		var existingID string
 		err := tx.QueryRowContext(ctx, `SELECT evaluation_id FROM progress_evaluations WHERE project_id=$1 AND input_version=$2 AND (status IN ('queued','running') OR (status='succeeded' AND NOT $3)) ORDER BY created_at DESC LIMIT 1`, claim.ProjectID, inputVersion, claim.Force).Scan(&existingID)
 		if err == nil {
@@ -624,6 +630,34 @@ func (store PostgresStore) FinalizeRequest(ctx context.Context, claim RequestCla
 		return nil
 	})
 	return result, err
+}
+
+func (store PostgresStore) reconcileTerminalEvaluationJobs(
+	ctx context.Context,
+	tx transaction.Tx,
+	projectID string,
+	now time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE progress_evaluations AS evaluation
+		SET status='failed',
+		    attempts=job.attempts,
+		    error_code=CASE job.status
+		      WHEN 'timed_out' THEN 'PROGRESS_EVALUATION_JOB_TIMED_OUT'
+		      WHEN 'cancelled' THEN 'PROGRESS_EVALUATION_JOB_CANCELLED'
+		      WHEN 'failed' THEN 'PROGRESS_EVALUATION_JOB_FAILED'
+		      ELSE 'PROGRESS_EVALUATION_JOB_STATE_INCONSISTENT'
+		    END,
+		    error_message='Evaluation Job reached a terminal state before Progress finalized it',
+		    completed_at=COALESCE(job.finished_at,$2),
+		    updated_at=$2
+		FROM jobs AS job
+		WHERE evaluation.job_id=job.job_id
+		  AND evaluation.project_id=$1
+		  AND evaluation.status IN ('queued','running')
+		  AND job.status IN ('succeeded','failed','cancelled','timed_out')
+	`, projectID, now)
+	return err
 }
 
 func (store PostgresStore) ClaimCron(ctx context.Context, owner string, lease time.Duration) (*CronClaim, error) {

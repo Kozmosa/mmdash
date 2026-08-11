@@ -2,14 +2,46 @@
 
 - Updated: 2026-08-11
 - Branch: `main`
-- Base: `origin/main@9282b4e`
+- Current delivery commit: `c88a4a0 feat(progress): harden automatic evaluation workflow`
 - Canonical migrations: continuous `000001` through
-  `000037_progress_human_workbench`
+  `000040_progress_reasoning_effort`
 - Delivery state: Agent single-token authentication, private-Core boundary,
   recoverable instance removal, full-screen workbench, and Agent Artifact
   upload are integrated with the Progress human scheduling workbench and review
   policy; the merged repository gate and Docker Compose smoke acceptance pass;
   Project and per-Run instructions explicitly advertise Markdown/KaTeX support
+
+## 2026-08-11 Progress automatic evaluation hardening
+
+- Periodic Progress evaluation is now scheduled by Core/PostgreSQL rather than
+  Hermes Jobs. PostgreSQL owns due-time calculation, leases, retries, request
+  deduplication, and manual/automatic concurrency; Hermes only executes the
+  resulting Progress Session Run.
+- Manual evaluation is blocked while a real evaluation is queued or running.
+  A stale Progress evaluation whose backing Job has already reached
+  `succeeded`, `failed`, `cancelled`, or `timed_out` is reconciled to `failed`
+  before deduplication, so an orphan `running` row cannot block future manual
+  evaluation. This fixes the observed `nanako` record whose evaluation remained
+  `running` after its Job became `timed_out`.
+- A newly accepted manual request immediately renders the queue stage, polls
+  Progress each second until its Evaluation row appears, and shows
+  `Session 准备中` instead of reopening the previous completed Session. A
+  genuinely merged request explicitly says that no new evaluation was created.
+- The latest automatic evaluation exposes a lightweight read-only Session
+  dialog. Sent evaluation input is collapsed by default, SSE updates are
+  batched, Tool Calls and safe reasoning availability render inline, and the UI
+  explains that absence of `reasoning.available` does not prove the model did
+  not reason; hidden reasoning text remains unavailable.
+- Project Settings now persist `reasoning_effort` and pass it to Hermes through
+  `model_options.reasoning_effort`. The evaluator Prompt may consult current
+  project state through granted mmdash MCP read tools and must not create or
+  modify schedules without an explicit time; missing time becomes a pending
+  question instead of an invented arrangement.
+- Verification completed with Web TypeScript checks, focused Progress/Session
+  tests, Core Agent/Progress Go tests, generated-contract checks, and manual
+  browser confirmation that repeated manual evaluation now queues and displays
+  correctly. Core Go changes require restarting the local development launcher;
+  PostgreSQL and MinIO volumes remain preserved.
 
 ## 2026-08-11 Progress human workbench integration
 
