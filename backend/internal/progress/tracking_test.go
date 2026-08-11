@@ -49,6 +49,7 @@ func TestDecodeEvaluationResultRejectsDuplicateSuggestionKeys(t *testing.T) {
 		"stage": "execution", "summary": "summary", "changes_since_last": []string{},
 		"completed_items": []string{}, "in_progress_items": []string{}, "blockers": []string{},
 		"risks": []interface{}{}, "pending_questions": []string{},
+		"work_state_updates": []interface{}{},
 		"suggestions": []interface{}{
 			map[string]interface{}{"key": "same", "proposal_type": "task.create", "title": "one", "rationale": "", "changes": map[string]interface{}{"title": "one"}},
 			map[string]interface{}{"key": "same", "proposal_type": "task.create", "title": "two", "rationale": "", "changes": map[string]interface{}{"title": "two"}},
@@ -56,5 +57,32 @@ func TestDecodeEvaluationResultRejectsDuplicateSuggestionKeys(t *testing.T) {
 	}})
 	if err != ErrInvalidEvaluationOutput {
 		t.Fatalf("duplicate suggestion keys returned %v", err)
+	}
+}
+
+func TestDecodeEvaluationResultKeepsWorkStateSeparateFromCompletionReview(t *testing.T) {
+	taskID := "00000000-0000-4000-8000-000000000010"
+	output, err := decodeEvaluationResult(map[string]interface{}{"output": map[string]interface{}{
+		"stage": "execution", "summary": "summary", "changes_since_last": []string{},
+		"completed_items": []string{"Task"}, "in_progress_items": []string{}, "blockers": []string{},
+		"risks": []interface{}{}, "pending_questions": []string{},
+		"work_state_updates": []interface{}{map[string]interface{}{"task_id": taskID, "state": "blocked"}},
+		"suggestions":        []interface{}{map[string]interface{}{"key": "complete", "proposal_type": "task.complete", "target_id": taskID, "title": "Task complete", "rationale": "evidence", "changes": map[string]interface{}{}}},
+	}})
+	if err != nil || len(output.WorkStateUpdates) != 1 || output.WorkStateUpdates[0].State != "blocked" || len(output.Suggestions) != 1 || output.Suggestions[0].ProposalType != "task.complete" {
+		t.Fatalf("work state and completion suggestion were not separated: output=%#v err=%v", output, err)
+	}
+}
+
+func TestDecodeEvaluationResultRequiresBoundedUniqueWorkStates(t *testing.T) {
+	taskID := "00000000-0000-4000-8000-000000000010"
+	_, err := decodeEvaluationResult(map[string]interface{}{"output": map[string]interface{}{
+		"stage": "execution", "summary": "summary", "changes_since_last": []string{},
+		"completed_items": []string{}, "in_progress_items": []string{}, "blockers": []string{},
+		"risks": []interface{}{}, "pending_questions": []string{}, "suggestions": []interface{}{},
+		"work_state_updates": []interface{}{map[string]interface{}{"task_id": taskID, "state": "todo"}, map[string]interface{}{"task_id": taskID, "state": "blocked"}},
+	}})
+	if err != ErrInvalidEvaluationOutput {
+		t.Fatalf("duplicate work-state target returned %v", err)
 	}
 }

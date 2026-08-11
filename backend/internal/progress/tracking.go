@@ -143,6 +143,11 @@ type EvaluationSuggestion struct {
 	Changes      map[string]interface{} `json:"changes"`
 }
 
+type EvaluationWorkStateUpdate struct {
+	TaskID string `json:"task_id"`
+	State  string `json:"state"`
+}
+
 type EvaluationRisk struct {
 	Key      string `json:"key"`
 	Title    string `json:"title"`
@@ -151,15 +156,16 @@ type EvaluationRisk struct {
 }
 
 type EvaluationOutput struct {
-	Stage            string                 `json:"stage"`
-	Summary          string                 `json:"summary"`
-	ChangesSinceLast []string               `json:"changes_since_last"`
-	CompletedItems   []string               `json:"completed_items"`
-	InProgressItems  []string               `json:"in_progress_items"`
-	Blockers         []string               `json:"blockers"`
-	Risks            []EvaluationRisk       `json:"risks"`
-	Suggestions      []EvaluationSuggestion `json:"suggestions"`
-	PendingQuestions []string               `json:"pending_questions"`
+	Stage            string                      `json:"stage"`
+	Summary          string                      `json:"summary"`
+	ChangesSinceLast []string                    `json:"changes_since_last"`
+	CompletedItems   []string                    `json:"completed_items"`
+	InProgressItems  []string                    `json:"in_progress_items"`
+	Blockers         []string                    `json:"blockers"`
+	Risks            []EvaluationRisk            `json:"risks"`
+	WorkStateUpdates []EvaluationWorkStateUpdate `json:"work_state_updates"`
+	Suggestions      []EvaluationSuggestion      `json:"suggestions"`
+	PendingQuestions []string                    `json:"pending_questions"`
 }
 
 type EvaluationPage struct {
@@ -479,11 +485,14 @@ func decodeEvaluationResult(result map[string]interface{}) (EvaluationOutput, er
 	if err := json.Unmarshal(encoded, &output); err != nil {
 		return EvaluationOutput{}, ErrInvalidEvaluationOutput
 	}
+	if output.WorkStateUpdates == nil {
+		return EvaluationOutput{}, ErrInvalidEvaluationOutput
+	}
 	output.Stage = strings.TrimSpace(output.Stage)
 	output.Summary = strings.TrimSpace(output.Summary)
 	if output.Stage == "" || len(output.Stage) > 100 || output.Summary == "" || len(output.Summary) > 10000 ||
 		len(output.ChangesSinceLast) > 200 || len(output.CompletedItems) > 200 || len(output.InProgressItems) > 200 ||
-		len(output.Blockers) > 200 || len(output.PendingQuestions) > 200 || len(output.Risks) > 100 || len(output.Suggestions) > 100 {
+		len(output.Blockers) > 200 || len(output.PendingQuestions) > 200 || len(output.Risks) > 100 || len(output.WorkStateUpdates) > 200 || len(output.Suggestions) > 100 {
 		return EvaluationOutput{}, ErrInvalidEvaluationOutput
 	}
 	for index := range output.Risks {
@@ -492,6 +501,15 @@ func decodeEvaluationResult(result map[string]interface{}) (EvaluationOutput, er
 		if risk.Key == "" || risk.Title == "" || !validRiskSeverity(risk.Severity) {
 			return EvaluationOutput{}, ErrInvalidEvaluationOutput
 		}
+	}
+	seenTasks := map[string]bool{}
+	for index := range output.WorkStateUpdates {
+		update := &output.WorkStateUpdates[index]
+		update.TaskID, update.State = strings.TrimSpace(update.TaskID), strings.TrimSpace(update.State)
+		if update.TaskID == "" || seenTasks[update.TaskID] || !validAutomaticWorkState(update.State) {
+			return EvaluationOutput{}, ErrInvalidEvaluationOutput
+		}
+		seenTasks[update.TaskID] = true
 	}
 	seen := map[string]bool{}
 	for index := range output.Suggestions {
@@ -510,10 +528,17 @@ func decodeEvaluationResult(result map[string]interface{}) (EvaluationOutput, er
 	if output.Risks == nil {
 		output.Risks = []EvaluationRisk{}
 	}
+	if output.WorkStateUpdates == nil {
+		output.WorkStateUpdates = []EvaluationWorkStateUpdate{}
+	}
 	if output.Suggestions == nil {
 		output.Suggestions = []EvaluationSuggestion{}
 	}
 	return output, nil
+}
+
+func validAutomaticWorkState(value string) bool {
+	return value == string(TaskTodo) || value == string(TaskInProgress) || value == string(TaskBlocked)
 }
 
 func canonicalInputVersion(input map[string]interface{}) (string, error) {

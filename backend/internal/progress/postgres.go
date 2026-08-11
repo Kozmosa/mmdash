@@ -68,9 +68,9 @@ func (store PostgresStore) CreateMilestone(ctx context.Context, projectID, actor
 		return Milestone{}, err
 	}
 	now := store.now()
-	item := Milestone{ID: id, ProjectID: projectID, Title: input.Title, Description: input.Description, Status: StatusPlanned, Critical: input.Critical, StartAt: input.StartAt, TargetAt: input.TargetAt, Source: "human", CreatedBy: actorID, UpdatedBy: actorID, CreatedAt: now, UpdatedAt: now}
+	item := Milestone{ID: id, ProjectID: projectID, Title: input.Title, Description: input.Description, Status: StatusPlanned, Critical: input.Critical, StartAt: input.StartAt, TargetAt: input.TargetAt, TargetHasTime: input.TargetHasTime, Source: "human", CreatedBy: actorID, UpdatedBy: actorID, CreatedAt: now, UpdatedAt: now}
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_milestones(milestone_id,project_id,title,description,status,critical,start_at,target_at,source,created_by,updated_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11,$11)`, item.ID, item.ProjectID, item.Title, item.Description, item.Status, item.Critical, item.StartAt, item.TargetAt, item.Source, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_milestones(milestone_id,project_id,title,description,status,critical,start_at,target_at,target_has_time,source,created_by,updated_by,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$12)`, item.ID, item.ProjectID, item.Title, item.Description, item.Status, item.Critical, item.StartAt, item.TargetAt, item.TargetHasTime, item.Source, actorID, now); err != nil {
 			return err
 		}
 		return store.progressEvent(ctx, tx, "progress.milestone.created", projectID, actorID, item.ID, "milestone", item.Title, item.Status, map[string]interface{}{"critical": item.Critical, "source": item.Source})
@@ -103,6 +103,12 @@ func (store PostgresStore) UpdateMilestone(ctx context.Context, projectID, id, a
 		if input.TargetAt != nil {
 			current.TargetAt = *input.TargetAt
 		}
+		if input.TargetHasTime != nil {
+			current.TargetHasTime = *input.TargetHasTime
+		}
+		if current.TargetAt == nil {
+			current.TargetHasTime = false
+		}
 		if !validMilestoneStatus(current.Status) || current.Title == "" || current.TargetAt != nil && current.StartAt != nil && current.TargetAt.Before(*current.StartAt) {
 			return ErrInvalid
 		}
@@ -113,7 +119,7 @@ func (store PostgresStore) UpdateMilestone(ctx context.Context, projectID, id, a
 			current.CompletedAt = nil
 		}
 		current.UpdatedBy, current.UpdatedAt, current.Source = actorID, now, "human"
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_milestones SET title=$3,description=$4,status=$5,critical=$6,start_at=$7,target_at=$8,completed_at=$9,source=$10,updated_by=$11,updated_at=$12 WHERE project_id=$1 AND milestone_id=$2`, projectID, id, current.Title, current.Description, current.Status, current.Critical, current.StartAt, current.TargetAt, current.CompletedAt, current.Source, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_milestones SET title=$3,description=$4,status=$5,critical=$6,start_at=$7,target_at=$8,target_has_time=$9,completed_at=$10,source=$11,updated_by=$12,updated_at=$13 WHERE project_id=$1 AND milestone_id=$2`, projectID, id, current.Title, current.Description, current.Status, current.Critical, current.StartAt, current.TargetAt, current.TargetHasTime, current.CompletedAt, current.Source, actorID, now); err != nil {
 			return err
 		}
 		if err := store.progressEvent(ctx, tx, "progress.milestone.updated", projectID, actorID, id, "milestone", current.Title, current.Status, map[string]interface{}{"critical": current.Critical, "source": current.Source}); err != nil {
@@ -172,7 +178,11 @@ func (store PostgresStore) CreateTask(ctx context.Context, projectID, actorID st
 	if !validTaskStatus(input.Status) || input.DueAt != nil && input.StartAt != nil && input.DueAt.Before(*input.StartAt) {
 		return Task{}, ErrInvalid
 	}
-	item := Task{ID: id, ProjectID: projectID, MilestoneID: input.MilestoneID, Title: input.Title, Description: input.Description, Status: input.Status, AssigneeID: input.AssigneeID, StartAt: input.StartAt, DueAt: input.DueAt, Source: source, SourceRunID: input.SourceRunID, RelatedObjectIDs: nonNilStrings(input.RelatedObjectIDs), CreatedBy: actorID, UpdatedBy: actorID, CreatedAt: now, UpdatedAt: now}
+	workState := input.Status
+	if workState == TaskDone {
+		workState = TaskTodo
+	}
+	item := Task{ID: id, ProjectID: projectID, MilestoneID: input.MilestoneID, Title: input.Title, Description: input.Description, Status: input.Status, WorkState: workState, AssigneeID: input.AssigneeID, StartAt: input.StartAt, DueAt: input.DueAt, Source: source, SourceRunID: input.SourceRunID, RelatedObjectIDs: nonNilStrings(input.RelatedObjectIDs), CreatedBy: actorID, UpdatedBy: actorID, CreatedAt: now, UpdatedAt: now}
 	if item.Status == TaskDone {
 		item.CompletedAt = &now
 	}
@@ -181,7 +191,7 @@ func (store PostgresStore) CreateTask(ctx context.Context, projectID, actorID st
 		if err := store.validateTaskReferences(ctx, tx, projectID, item.MilestoneID, item.AssigneeID, item.RelatedObjectIDs, true, true, true); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_tasks(task_id,project_id,milestone_id,title,description,status,assignee_id,start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,$12,$13,$14,$14,$15,$15)`, item.ID, projectID, item.MilestoneID, item.Title, item.Description, item.Status, item.AssigneeID, item.StartAt, item.DueAt, item.CompletedAt, item.Source, item.SourceRunID, metadata, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_tasks(task_id,project_id,milestone_id,title,description,status,work_state,assignee_id,start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,NULLIF($8,'')::uuid,$9,$10,$11,$12,$13,$14,$15,$15,$16,$16)`, item.ID, projectID, item.MilestoneID, item.Title, item.Description, item.Status, item.WorkState, item.AssigneeID, item.StartAt, item.DueAt, item.CompletedAt, item.Source, item.SourceRunID, metadata, actorID, now); err != nil {
 			return mapPostgresMutationError(err)
 		}
 		return store.progressEvent(ctx, tx, "progress.task.created", projectID, actorID, item.ID, "task", item.Title, item.Status, map[string]interface{}{"source": item.Source, "source_run_id": item.SourceRunID})
@@ -234,6 +244,9 @@ func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorI
 		}
 		if input.Status != nil {
 			current.Status = *input.Status
+			if current.Status != TaskDone {
+				current.WorkState = current.Status
+			}
 		}
 		if input.AssigneeID != nil {
 			current.AssigneeID = *input.AssigneeID
@@ -265,7 +278,7 @@ func (store PostgresStore) UpdateTask(ctx context.Context, projectID, id, actorI
 		current.Source, current.UpdatedBy, current.UpdatedAt = source, actorID, now
 		metadata, _ := json.Marshal(nonNilStrings(current.RelatedObjectIDs))
 		overrides, _ := json.Marshal(nonNilStrings(current.ManualOverrideFields))
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,assignee_id=NULLIF($7,'')::uuid,start_at=$8,due_at=$9,completed_at=$10,source=$11,source_run_id=$12,source_evaluation_id=NULL,related_object_ids=$13,manual_override_fields=$14,updated_by=$15,updated_at=$16 WHERE project_id=$1 AND task_id=$2`, projectID, id, current.MilestoneID, current.Title, current.Description, current.Status, current.AssigneeID, current.StartAt, current.DueAt, current.CompletedAt, current.Source, current.SourceRunID, metadata, overrides, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,work_state=$7,assignee_id=NULLIF($8,'')::uuid,start_at=$9,due_at=$10,completed_at=$11,source=$12,source_run_id=$13,source_evaluation_id=NULL,related_object_ids=$14,manual_override_fields=$15,updated_by=$16,updated_at=$17 WHERE project_id=$1 AND task_id=$2`, projectID, id, current.MilestoneID, current.Title, current.Description, current.Status, current.WorkState, current.AssigneeID, current.StartAt, current.DueAt, current.CompletedAt, current.Source, current.SourceRunID, metadata, overrides, actorID, now); err != nil {
 			return mapPostgresMutationError(err)
 		}
 		if err := store.progressEvent(ctx, tx, "progress.task.updated", projectID, actorID, id, "task", current.Title, current.Status, map[string]interface{}{"source": current.Source, "source_run_id": current.SourceRunID}); err != nil {
@@ -636,39 +649,62 @@ func (store PostgresStore) CreateProposal(ctx context.Context, projectID, actorI
 func (store PostgresStore) ReviewProposal(ctx context.Context, projectID, id, reviewerID string, input ReviewProposalInput) (Proposal, error) {
 	var result Proposal
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		proposal, err := scanProposal(tx.QueryRowContext(ctx, proposalSelect+` WHERE project_id=$1 AND proposal_id=$2 FOR UPDATE`, projectID, id).Scan)
-		if err != nil {
-			return mapNotFound(err)
-		}
-		if proposal.Status != "pending" {
-			return ErrConflict
-		}
-		now := store.now()
-		if input.Decision == "accepted" {
-			targetID, changes, validateErr := store.validateProposalReferences(ctx, tx, projectID, proposal.ProposalType, proposal.TargetID, proposal.Changes)
-			if validateErr != nil {
-				return validateErr
-			}
-			proposal.TargetID, proposal.Changes = targetID, changes
-			if err := store.applyProposal(ctx, tx, proposal, reviewerID, now); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_proposals SET status=$3,reviewed_by=$4,reviewed_at=$5,review_note=$6,updated_at=$5 WHERE project_id=$1 AND proposal_id=$2`, projectID, id, input.Decision, reviewerID, now, input.Note); err != nil {
-			return err
-		}
-		proposal.Status, proposal.ReviewedBy, proposal.ReviewedAt, proposal.ReviewNote, proposal.UpdatedAt = input.Decision, reviewerID, &now, input.Note, now
-		result = proposal
-		return store.progressEvent(ctx, tx, "progress.proposal.reviewed", projectID, reviewerID, id, "progress_proposal", proposal.Title, proposal.Status, map[string]interface{}{"proposal_type": proposal.ProposalType, "decision": input.Decision})
+		var err error
+		result, err = store.reviewProposalInTx(ctx, tx, projectID, id, reviewerID, input, store.now())
+		return err
 	})
 	return result, mapPostgresMutationError(err)
+}
+
+func (store PostgresStore) ReviewProposals(ctx context.Context, projectID, reviewerID string, input BatchReviewProposalInput) ([]Proposal, error) {
+	items := make([]Proposal, 0, len(input.ProposalIDs))
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		now := store.now()
+		for _, id := range input.ProposalIDs {
+			item, err := store.reviewProposalInTx(ctx, tx, projectID, id, reviewerID, ReviewProposalInput{Decision: input.Decision, Note: input.Note}, now)
+			if err != nil {
+				return err
+			}
+			items = append(items, item)
+		}
+		return nil
+	})
+	return items, mapPostgresMutationError(err)
+}
+
+func (store PostgresStore) reviewProposalInTx(ctx context.Context, tx transaction.Tx, projectID, id, reviewerID string, input ReviewProposalInput, now time.Time) (Proposal, error) {
+	proposal, err := scanProposal(tx.QueryRowContext(ctx, proposalSelect+` WHERE project_id=$1 AND proposal_id=$2 FOR UPDATE`, projectID, id).Scan)
+	if err != nil {
+		return Proposal{}, mapNotFound(err)
+	}
+	if proposal.Status != "pending" {
+		return Proposal{}, ErrConflict
+	}
+	if input.Decision == "accepted" {
+		targetID, changes, validateErr := store.validateProposalReferences(ctx, tx, projectID, proposal.ProposalType, proposal.TargetID, proposal.Changes)
+		if validateErr != nil {
+			return Proposal{}, validateErr
+		}
+		proposal.TargetID, proposal.Changes = targetID, changes
+		if err := store.applyProposal(ctx, tx, proposal, reviewerID, now); err != nil {
+			return Proposal{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE progress_proposals SET status=$3,reviewed_by=$4,reviewed_at=$5,review_note=$6,updated_at=$5 WHERE project_id=$1 AND proposal_id=$2`, projectID, id, input.Decision, reviewerID, now, input.Note); err != nil {
+		return Proposal{}, err
+	}
+	proposal.Status, proposal.ReviewedBy, proposal.ReviewedAt, proposal.ReviewNote, proposal.UpdatedAt = input.Decision, reviewerID, &now, input.Note, now
+	if err := store.progressEvent(ctx, tx, "progress.proposal.reviewed", projectID, reviewerID, id, "progress_proposal", proposal.Title, proposal.Status, map[string]interface{}{"proposal_type": proposal.ProposalType, "decision": input.Decision}); err != nil {
+		return Proposal{}, err
+	}
+	return proposal, nil
 }
 
 func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx, proposal Proposal, actorID string, now time.Time) error {
 	changes := proposal.Changes
 	switch proposal.ProposalType {
 	case "milestone.create":
-		input := CreateMilestoneInput{Title: stringChange(changes, "title"), Description: stringChange(changes, "description"), Critical: boolChange(changes, "critical"), StartAt: timeChange(changes, "start_at"), TargetAt: timeChange(changes, "target_at")}
+		input := CreateMilestoneInput{Title: stringChange(changes, "title"), Description: stringChange(changes, "description"), Critical: boolChange(changes, "critical"), StartAt: timeChange(changes, "start_at"), TargetAt: timeChange(changes, "target_at"), TargetHasTime: boolChange(changes, "target_has_time")}
 		if input.Title == "" {
 			return ErrInvalid
 		}
@@ -676,7 +712,7 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_milestones(milestone_id,project_id,title,description,status,critical,start_at,target_at,source,source_run_id,created_by,updated_by,created_at,updated_at) VALUES($1,$2,$3,$4,'planned',$5,$6,$7,'proposal',$8,$9,$9,$10,$10)`, id, proposal.ProjectID, input.Title, input.Description, input.Critical, input.StartAt, input.TargetAt, proposal.SourceRunID, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_milestones(milestone_id,project_id,title,description,status,critical,start_at,target_at,target_has_time,source,source_run_id,created_by,updated_by,created_at,updated_at) VALUES($1,$2,$3,$4,'planned',$5,$6,$7,$8,'proposal',$9,$10,$10,$11,$11)`, id, proposal.ProjectID, input.Title, input.Description, input.Critical, input.StartAt, input.TargetAt, input.TargetHasTime, proposal.SourceRunID, actorID, now); err != nil {
 			return err
 		}
 		return store.progressEvent(ctx, tx, "progress.milestone.created", proposal.ProjectID, actorID, id, "milestone", input.Title, StatusPlanned, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID})
@@ -706,6 +742,12 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 		if value := timeChange(changes, "target_at"); value != nil {
 			current.TargetAt = value
 		}
+		if value, ok := changes["target_has_time"].(bool); ok {
+			current.TargetHasTime = value
+		}
+		if current.TargetAt == nil {
+			current.TargetHasTime = false
+		}
 		if !validMilestoneStatus(current.Status) || current.Title == "" {
 			return ErrInvalid
 		}
@@ -713,10 +755,22 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 		if current.Status == StatusCompleted {
 			completed = now
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_milestones SET title=$3,description=$4,status=$5,critical=$6,start_at=$7,target_at=$8,completed_at=$9,source='proposal',source_run_id=$10,updated_by=$11,updated_at=$12 WHERE project_id=$1 AND milestone_id=$2`, proposal.ProjectID, proposal.TargetID, current.Title, current.Description, current.Status, current.Critical, current.StartAt, current.TargetAt, completed, proposal.SourceRunID, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_milestones SET title=$3,description=$4,status=$5,critical=$6,start_at=$7,target_at=$8,target_has_time=$9,completed_at=$10,source='proposal',source_run_id=$11,updated_by=$12,updated_at=$13 WHERE project_id=$1 AND milestone_id=$2`, proposal.ProjectID, proposal.TargetID, current.Title, current.Description, current.Status, current.Critical, current.StartAt, current.TargetAt, current.TargetHasTime, completed, proposal.SourceRunID, actorID, now); err != nil {
 			return err
 		}
 		return store.progressEvent(ctx, tx, "progress.milestone.updated", proposal.ProjectID, actorID, proposal.TargetID, "milestone", current.Title, current.Status, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID})
+	case "milestone.complete":
+		if proposal.TargetID == "" {
+			return ErrInvalid
+		}
+		current, err := scanMilestone(tx.QueryRowContext(ctx, milestoneSelect+` WHERE project_id=$1 AND milestone_id=$2 FOR UPDATE`, proposal.ProjectID, proposal.TargetID).Scan)
+		if err != nil {
+			return mapNotFound(err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_milestones SET status='completed',completed_at=$3,source='proposal',source_run_id=$4,updated_by=$5,updated_at=$3 WHERE project_id=$1 AND milestone_id=$2`, proposal.ProjectID, proposal.TargetID, now, proposal.SourceRunID, actorID); err != nil {
+			return err
+		}
+		return store.progressEvent(ctx, tx, "progress.milestone.updated", proposal.ProjectID, actorID, proposal.TargetID, "milestone", current.Title, StatusCompleted, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID, "completion_confirmed": true})
 	case "task.create":
 		relatedObjectIDs, _, err := relatedObjectIDsChange(changes)
 		if err != nil {
@@ -741,7 +795,11 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 		if input.Status == TaskDone {
 			completed = now
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_tasks(task_id,project_id,milestone_id,title,description,status,assignee_id,start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,'proposal',$11,$12,$13,$13,$14,$14)`, id, proposal.ProjectID, input.MilestoneID, input.Title, input.Description, input.Status, input.AssigneeID, input.StartAt, input.DueAt, completed, proposal.SourceRunID, metadata, actorID, now); err != nil {
+		workState := input.Status
+		if workState == TaskDone {
+			workState = TaskTodo
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO progress_tasks(task_id,project_id,milestone_id,title,description,status,work_state,assignee_id,start_at,due_at,completed_at,source,source_run_id,related_object_ids,created_by,updated_by,created_at,updated_at) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,NULLIF($8,'')::uuid,$9,$10,$11,'proposal',$12,$13,$14,$14,$15,$15)`, id, proposal.ProjectID, input.MilestoneID, input.Title, input.Description, input.Status, workState, input.AssigneeID, input.StartAt, input.DueAt, completed, proposal.SourceRunID, metadata, actorID, now); err != nil {
 			return err
 		}
 		return store.progressEvent(ctx, tx, "progress.task.created", proposal.ProjectID, actorID, id, "task", input.Title, input.Status, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID})
@@ -761,6 +819,9 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 		}
 		if value, ok := changes["status"].(string); ok {
 			current.Status = value
+			if current.Status != TaskDone {
+				current.WorkState = current.Status
+			}
 		}
 		if value, ok := changes["assignee_id"].(string); ok {
 			current.AssigneeID = value
@@ -787,10 +848,22 @@ func (store PostgresStore) applyProposal(ctx context.Context, tx transaction.Tx,
 			completed = now
 		}
 		metadata, _ := json.Marshal(nonNilStrings(current.RelatedObjectIDs))
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,assignee_id=NULLIF($7,'')::uuid,start_at=$8,due_at=$9,completed_at=$10,source='proposal',source_run_id=$11,related_object_ids=$12,updated_by=$13,updated_at=$14 WHERE project_id=$1 AND task_id=$2`, proposal.ProjectID, proposal.TargetID, current.MilestoneID, current.Title, current.Description, current.Status, current.AssigneeID, current.StartAt, current.DueAt, completed, proposal.SourceRunID, metadata, actorID, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET milestone_id=NULLIF($3,'')::uuid,title=$4,description=$5,status=$6,work_state=$7,assignee_id=NULLIF($8,'')::uuid,start_at=$9,due_at=$10,completed_at=$11,source='proposal',source_run_id=$12,related_object_ids=$13,updated_by=$14,updated_at=$15 WHERE project_id=$1 AND task_id=$2`, proposal.ProjectID, proposal.TargetID, current.MilestoneID, current.Title, current.Description, current.Status, current.WorkState, current.AssigneeID, current.StartAt, current.DueAt, completed, proposal.SourceRunID, metadata, actorID, now); err != nil {
 			return err
 		}
 		return store.progressEvent(ctx, tx, "progress.task.updated", proposal.ProjectID, actorID, proposal.TargetID, "task", current.Title, current.Status, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID})
+	case "task.complete":
+		if proposal.TargetID == "" {
+			return ErrInvalid
+		}
+		current, err := scanTask(tx.QueryRowContext(ctx, taskSelect+` WHERE project_id=$1 AND task_id=$2 FOR UPDATE`, proposal.ProjectID, proposal.TargetID).Scan)
+		if err != nil {
+			return mapNotFound(err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET status='done',completed_at=$3,source='proposal',source_run_id=$4,source_evaluation_id=NULLIF($5,'')::uuid,updated_by=$6,updated_at=$3 WHERE project_id=$1 AND task_id=$2`, proposal.ProjectID, proposal.TargetID, now, proposal.SourceRunID, proposal.SourceEvaluationID, actorID); err != nil {
+			return err
+		}
+		return store.progressEvent(ctx, tx, "progress.task.updated", proposal.ProjectID, actorID, proposal.TargetID, "task", current.Title, TaskDone, map[string]interface{}{"source": "proposal", "proposal_id": proposal.ID, "completion_confirmed": true})
 	default:
 		return ErrInvalid
 	}
@@ -838,8 +911,8 @@ func (store PostgresStore) now() time.Time {
 	return store.Clock.Now().UTC()
 }
 
-const milestoneSelect = `SELECT milestone_id,project_id,title,description,status,critical,start_at,target_at,completed_at,source,source_run_id,created_by,updated_by,created_at,updated_at FROM progress_milestones`
-const taskSelect = `SELECT task_id,project_id,COALESCE(milestone_id::text,''),title,description,status,COALESCE(assignee_id::text,''),start_at,due_at,completed_at,source,source_run_id,COALESCE(source_evaluation_id::text,''),manual_override_fields,related_object_ids,created_by,updated_by,created_at,updated_at FROM progress_tasks`
+const milestoneSelect = `SELECT milestone_id,project_id,title,description,status,critical,start_at,target_at,target_has_time,completed_at,source,source_run_id,created_by,updated_by,created_at,updated_at FROM progress_milestones`
+const taskSelect = `SELECT task_id,project_id,COALESCE(milestone_id::text,''),title,description,status,work_state,COALESCE(assignee_id::text,''),start_at,due_at,completed_at,source,source_run_id,COALESCE(source_evaluation_id::text,''),manual_override_fields,related_object_ids,created_by,updated_by,created_at,updated_at FROM progress_tasks`
 const reminderColumns = `reminder_id,project_id,COALESCE(task_id::text,''),COALESCE(milestone_id::text,''),remind_at,status,note,source,triggered_at,created_by,created_at,updated_at,available_at,attempts,max_attempts,COALESCE(locked_by,''),lease_expires_at,last_error_code,last_error_message`
 const claimedReminderColumns = `reminder.reminder_id,reminder.project_id,COALESCE(reminder.task_id::text,''),COALESCE(reminder.milestone_id::text,''),reminder.remind_at,reminder.status,reminder.note,reminder.source,reminder.triggered_at,reminder.created_by,reminder.created_at,reminder.updated_at,reminder.available_at,reminder.attempts,reminder.max_attempts,COALESCE(reminder.locked_by,''),reminder.lease_expires_at,reminder.last_error_code,reminder.last_error_message`
 const reminderSelect = `SELECT ` + reminderColumns + ` FROM progress_reminders`
@@ -849,7 +922,7 @@ type scanFunc func(...interface{}) error
 
 func scanMilestone(scan scanFunc) (Milestone, error) {
 	var item Milestone
-	if err := scan(&item.ID, &item.ProjectID, &item.Title, &item.Description, &item.Status, &item.Critical, &item.StartAt, &item.TargetAt, &item.CompletedAt, &item.Source, &item.SourceRunID, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := scan(&item.ID, &item.ProjectID, &item.Title, &item.Description, &item.Status, &item.Critical, &item.StartAt, &item.TargetAt, &item.TargetHasTime, &item.CompletedAt, &item.Source, &item.SourceRunID, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return Milestone{}, err
 	}
 	return item, nil
@@ -857,7 +930,7 @@ func scanMilestone(scan scanFunc) (Milestone, error) {
 func scanTask(scan scanFunc) (Task, error) {
 	var item Task
 	var overrides, related []byte
-	if err := scan(&item.ID, &item.ProjectID, &item.MilestoneID, &item.Title, &item.Description, &item.Status, &item.AssigneeID, &item.StartAt, &item.DueAt, &item.CompletedAt, &item.Source, &item.SourceRunID, &item.SourceEvaluationID, &overrides, &related, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := scan(&item.ID, &item.ProjectID, &item.MilestoneID, &item.Title, &item.Description, &item.Status, &item.WorkState, &item.AssigneeID, &item.StartAt, &item.DueAt, &item.CompletedAt, &item.Source, &item.SourceRunID, &item.SourceEvaluationID, &overrides, &related, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return Task{}, err
 	}
 	if err := json.Unmarshal(overrides, &item.ManualOverrideFields); err != nil {
@@ -967,7 +1040,7 @@ func filterTaskInput(input UpdateTaskInput, overrideFields []string) UpdateTaskI
 
 func validProposalType(value string) bool {
 	switch value {
-	case "milestone.create", "milestone.update", "task.create", "task.update":
+	case "milestone.create", "milestone.update", "milestone.complete", "task.create", "task.update", "task.complete":
 		return true
 	default:
 		return false
@@ -1117,19 +1190,32 @@ func (store PostgresStore) validateProposalReferences(
 	if err != nil {
 		return "", nil, err
 	}
+	if proposalType == "task.complete" || proposalType == "milestone.complete" {
+		if len(normalizedChanges) != 0 {
+			return "", nil, ErrInvalid
+		}
+	}
+	if status, ok := normalizedChanges["status"].(string); ok {
+		if (proposalType == "task.create" || proposalType == "task.update") && status == string(TaskDone) {
+			return "", nil, ErrInvalid
+		}
+		if (proposalType == "milestone.create" || proposalType == "milestone.update") && status == StatusCompleted {
+			return "", nil, ErrInvalid
+		}
+	}
 	switch proposalType {
 	case "milestone.create", "task.create":
 		if normalizedTarget != "" {
 			return "", nil, ErrReferenceInvalid
 		}
-	case "milestone.update":
+	case "milestone.update", "milestone.complete":
 		if normalizedTarget == "" {
 			return "", nil, ErrReferenceInvalid
 		}
 		if err := validateMilestoneReference(ctx, tx, projectID, normalizedTarget); err != nil {
 			return "", nil, err
 		}
-	case "task.update":
+	case "task.update", "task.complete":
 		if normalizedTarget == "" {
 			return "", nil, ErrReferenceInvalid
 		}
@@ -1208,10 +1294,10 @@ func relatedObjectIDsChange(changes map[string]interface{}) ([]string, bool, err
 	return normalized, true, err
 }
 func validMilestoneStatus(value string) bool {
-	return value == StatusPlanned || value == StatusInProgress || value == StatusCompleted || value == StatusCancelled
+	return value == StatusPlanned || value == StatusInProgress || value == StatusCompleted
 }
 func validTaskStatus(value string) bool {
-	return value == TaskTodo || value == TaskInProgress || value == TaskBlocked || value == TaskDone || value == TaskCancelled
+	return value == TaskTodo || value == TaskInProgress || value == TaskBlocked || value == TaskDone
 }
 func nonNilStrings(value []string) []string {
 	if value == nil {

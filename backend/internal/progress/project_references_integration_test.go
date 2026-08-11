@@ -121,7 +121,6 @@ func TestPostgresProgressAggregateExcludesTerminalTasksFromTodayAndOverdue(t *te
 	create("blocked-overdue", TaskBlocked, fixture.now.Add(-4*time.Hour))
 	create("day-start", TaskTodo, time.Date(2026, time.August, 6, 0, 0, 0, 0, time.UTC))
 	create("todo-overdue", TaskTodo, fixture.now.Add(-2*time.Hour))
-	create("cancelled", TaskCancelled, fixture.now.Add(-30*time.Minute))
 	create("blocked-now", TaskBlocked, fixture.now)
 	create("in-progress", TaskInProgress, fixture.now.Add(time.Hour))
 	create("tomorrow", TaskTodo, fixture.now.Add(21*time.Hour))
@@ -138,7 +137,7 @@ func TestPostgresProgressAggregateExcludesTerminalTasksFromTodayAndOverdue(t *te
 		}
 		return values
 	}
-	if got, want := titles(result.Tasks), []string{"done", "blocked-overdue", "day-start", "todo-overdue", "cancelled", "blocked-now", "in-progress", "tomorrow"}; !reflect.DeepEqual(got, want) {
+	if got, want := titles(result.Tasks), []string{"done", "blocked-overdue", "day-start", "todo-overdue", "blocked-now", "in-progress", "tomorrow"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("task ordering changed: got=%v want=%v", got, want)
 	}
 	if got, want := titles(result.Today), []string{"day-start", "todo-overdue", "blocked-now", "in-progress"}; !reflect.DeepEqual(got, want) {

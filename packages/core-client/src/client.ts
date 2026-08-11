@@ -1368,6 +1368,18 @@ export class CoreClient {
     );
   }
 
+  async batchReviewProgressProposals(
+    projectId: string,
+    input: components["schemas"]["BatchReviewProgressProposalsRequest"],
+    context: CoreRequestContext,
+  ) {
+    return this.request<components["schemas"]["ProgressProposalList"]>(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/proposals/batch-review`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
   async getProgressSettings(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["ProgressSettings"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/settings`,

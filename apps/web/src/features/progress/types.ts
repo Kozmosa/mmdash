@@ -1,9 +1,13 @@
 export type ProgressTask = {
   task_id: string;
+  project_id: string;
   title: string;
   description: string;
-  status: string;
+  status: "todo" | "in_progress" | "blocked" | "done";
+  work_state: "todo" | "in_progress" | "blocked";
+  start_at?: string;
   due_at?: string;
+  completed_at?: string;
   source: string;
   source_run_id?: string;
   source_evaluation_id?: string;
@@ -12,16 +16,22 @@ export type ProgressTask = {
 
 export type ProgressMilestone = {
   milestone_id: string;
+  project_id: string;
   title: string;
   description: string;
-  status: string;
+  status: "planned" | "in_progress" | "completed";
   critical: boolean;
+  start_at?: string;
   target_at?: string;
+  target_has_time: boolean;
+  completed_at?: string;
+  source: string;
 };
 
 export type ProgressProposal = {
   proposal_id: string;
   proposal_type: string;
+  target_id?: string;
   title: string;
   rationale: string;
   changes: Record<string, unknown>;
@@ -29,6 +39,7 @@ export type ProgressProposal = {
   source: string;
   source_run_id?: string;
   source_evaluation_id?: string;
+  reviewed_at?: string;
   created_at: string;
 };
 

@@ -1,12 +1,73 @@
-# mmdash v0.1 Stage 7 integration handoff
+# mmdash v0.1 Progress workbench refactor handoff
 
-- Updated: 2026-08-10
-- Branch: `codex/stage-7-integration`
-- Base: `origin/main@f1df451`
+- Updated: 2026-08-11
+- Branch: `codex/progress-refactor`
+- Base: `main@9282b4e`
 - Canonical migrations: continuous `000001` through
-  `000032_agent_progress_evaluation_source`
-- Delivery state: official Hermes API-alignment hardening and real-runtime
-  acceptance complete in the isolated worktree; branch ready for a Ready PR
+  `000033_progress_human_workbench` on this branch
+- Delivery state: Progress human scheduling workbench, review policy, and real
+  `progress` Session evaluation accepted in an isolated worktree; branch is
+  committed separately and must not be merged until the user requests it
+
+## 2026-08-11 Progress human workbench refactor
+
+Progress now exposes only Calendar and TODO views. Calendar provides a day
+button plus a cycling two/three/four-day button, fixed two-axis scrolling,
+centered current-time positioning, a Milestone strip, optional timed Milestone
+duplication in the time grid, 15-minute creation/move/resize snapping,
+overlap lanes, translucent drag ghosts, live resize geometry, and one detail
+drawer. TODO is one waterfall whose day-versus-period setting changes heading
+depth only and never rewrites exact stored time.
+
+Human completion is independent from the automatic `todo`, `in_progress`, and
+`blocked` work assessment. Human completion renders a filled/faded card;
+automatic completion remains an amber `task.complete` or
+`milestone.complete` Proposal with explicit accept/reject controls. Agent
+creation and scheduling changes likewise remain reviewable, including atomic
+approve-all/reject-all. Work assessments apply directly without review. The
+cancelled Task and Milestone states have been removed. Completion, review,
+drag, and resize interactions update optimistically and roll back on failure.
+
+Automatic evaluation creates a dedicated Agent Session with
+`session_type=progress`. Against the bound nanako Hermes instance, evaluation
+`7904c7dc-0ce2-47b0-94dd-2fc67b985d9e` succeeded through progress Session
+`8c10d986-5520-4bdc-b5b5-bf2aca71bac2` and Run
+`542c284b-e24c-49fe-abca-2b4bf82a4ca9`; its three creation/scheduling
+suggestions remained pending until the browser batch-rejected them. A
+controlled completion Proposal was also accepted through the card and became
+human completion.
+
+Acceptance evidence:
+
+- Real browser checks used the provided account and the isolated nanako copy.
+  A timed Milestone showed completion controls in both locations; completion
+  and reopen rendered in 46 ms and 43 ms respectively. Drag produced a
+  pointer-following ghost and faded source. Moving the resize edge by 18 px
+  changed the card from 126 px to 144 px and `12:15–14:00` to
+  `12:15–14:15` before release.
+- Web tests pass with 108 tests, including live resize, drag ghost, timed
+  Milestone completion, optimistic completion, view switching, AI review, and
+  Progress Agent selection. Web production build and TypeScript checking pass.
+- BFF passes 52 tests; Worker passes 36 tests and Ruff; focused and full Go
+  suites pass. A PostgreSQL migration integration test exercises
+  `000033` up/down/up and verifies completion Proposals retain equivalent
+  `*.update + status` meaning during rollback.
+- Every code/test/build/contract/API stage of `pnpm check` passed. The command's
+  final Caddy child process was blocked by the workspace sandbox with `EPERM`;
+  the same repository `pnpm caddy:check` passed outside the sandbox with
+  `Valid configuration`.
+
+Integration notes:
+
+- The main worktree's pre-existing Agent/Auth/Artifact work remains untouched.
+  Its uncommitted migrations overlap numbers `000033`–`000035`, so this
+  branch's `000033` must be renumbered deliberately when the user later asks
+  to rebase/merge; do not silently overwrite either migration line.
+- The isolated database is an online copy used only for acceptance. During
+  initial setup, the additive workbench migration was also applied to the
+  shared development database; it added compatible columns/constraints and
+  migrated cancelled rows without deleting records. It remains applied
+  because rolling it back would be destructive and was not authorized.
 
 ## 2026-08-10 official Hermes API-alignment hardening
 

@@ -2285,7 +2285,7 @@ export interface paths {
     put?: never;
     /**
      * Create a task
-     * @description Agent task changes are tagged with their source and obey the project automatic-change setting.
+     * @description Human sessions create tasks directly. Agents and automatic evaluations submit a Progress Proposal.
      */
     post: operations["progress.tasks.create"];
     delete?: never;
@@ -2441,6 +2441,28 @@ export interface paths {
      * @description Requires a human browser session; accepted changes are applied by the Progress service transaction.
      */
     post: operations["progress.proposals.review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/progress/proposals/batch-review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Review a set of Progress Proposals atomically
+     * @description Human session only. Every proposal must still be pending and belong to the route Project; otherwise none are reviewed.
+     */
+    post: operations["progress.proposals.batch_review"];
     delete?: never;
     options?: never;
     head?: never;
@@ -4658,8 +4680,9 @@ export interface components {
       title: string;
       description: string;
       /** @enum {string} */
-      status: "planned" | "in_progress" | "completed" | "cancelled";
+      status: "planned" | "in_progress" | "completed";
       critical: boolean;
+      target_has_time: boolean;
       /** Format: date-time */
       start_at?: string;
       /** Format: date-time */
@@ -4689,17 +4712,19 @@ export interface components {
       start_at?: string;
       /** Format: date-time */
       target_at?: string;
+      target_has_time?: boolean;
     };
     UpdateMilestoneRequest: {
       title?: string;
       description?: string;
       /** @enum {string} */
-      status?: "planned" | "in_progress" | "completed" | "cancelled";
+      status?: "planned" | "in_progress" | "completed";
       critical?: boolean;
       /** Format: date-time */
       start_at?: string;
       /** Format: date-time */
       target_at?: string;
+      target_has_time?: boolean;
     };
     Task: {
       /** Format: uuid */
@@ -4711,7 +4736,9 @@ export interface components {
       title: string;
       description: string;
       /** @enum {string} */
-      status: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      status: "todo" | "in_progress" | "blocked" | "done";
+      /** @enum {string} */
+      work_state?: "todo" | "in_progress" | "blocked";
       /** Format: uuid */
       assignee_id?: string;
       /** Format: date-time */
@@ -4754,7 +4781,7 @@ export interface components {
       title: string;
       description?: string;
       /** @enum {string} */
-      status?: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      status?: "todo" | "in_progress" | "blocked" | "done";
       /** Format: uuid */
       assignee_id?: string;
       /** Format: date-time */
@@ -4773,7 +4800,7 @@ export interface components {
       title?: string;
       description?: string;
       /** @enum {string} */
-      status?: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      status?: "todo" | "in_progress" | "blocked" | "done";
       /** Format: uuid */
       assignee_id?: string;
       /** Format: date-time */
@@ -4854,7 +4881,12 @@ export interface components {
       project_id: string;
       /** @enum {string} */
       proposal_type:
-        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+        | "milestone.create"
+        | "milestone.update"
+        | "milestone.complete"
+        | "task.create"
+        | "task.update"
+        | "task.complete";
       /** Format: uuid */
       target_id?: string;
       title: string;
@@ -4885,7 +4917,12 @@ export interface components {
     CreateProgressProposalRequest: {
       /** @enum {string} */
       proposal_type:
-        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+        | "milestone.create"
+        | "milestone.update"
+        | "milestone.complete"
+        | "task.create"
+        | "task.update"
+        | "task.complete";
       /** Format: uuid */
       target_id?: string;
       title: string;
@@ -4896,6 +4933,12 @@ export interface components {
       source_run_id?: string;
     };
     ReviewProgressProposalRequest: {
+      /** @enum {string} */
+      decision: "accepted" | "rejected";
+      note?: string;
+    };
+    BatchReviewProgressProposalsRequest: {
+      proposal_ids: string[];
       /** @enum {string} */
       decision: "accepted" | "rejected";
       note?: string;
@@ -4998,7 +5041,12 @@ export interface components {
       key: string;
       /** @enum {string} */
       proposal_type:
-        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+        | "milestone.create"
+        | "milestone.update"
+        | "milestone.complete"
+        | "task.create"
+        | "task.update"
+        | "task.complete";
       /** Format: uuid */
       target_id?: string;
       title: string;
@@ -5006,6 +5054,12 @@ export interface components {
       changes: {
         [key: string]: unknown;
       };
+    };
+    ProgressEvaluationWorkStateUpdate: {
+      /** Format: uuid */
+      task_id: string;
+      /** @enum {string} */
+      state: "todo" | "in_progress" | "blocked";
     };
     ProgressEvaluationOutput: {
       stage: string;
@@ -5015,6 +5069,7 @@ export interface components {
       in_progress_items: string[];
       blockers: string[];
       risks: components["schemas"]["ProgressEvaluationRiskInput"][];
+      work_state_updates: components["schemas"]["ProgressEvaluationWorkStateUpdate"][];
       suggestions: components["schemas"]["ProgressEvaluationSuggestion"][];
       pending_questions: string[];
     };
@@ -9727,6 +9782,32 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProgressProposal"];
+        };
+      };
+    };
+  };
+  "progress.proposals.batch_review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BatchReviewProgressProposalsRequest"];
+      };
+    };
+    responses: {
+      /** @description Reviewed proposals in request order. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressProposalList"];
         };
       };
     };

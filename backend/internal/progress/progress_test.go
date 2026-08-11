@@ -110,6 +110,13 @@ func (stub *progressStoreTestStub) ReviewProposal(_ context.Context, projectID, 
 	stub.reviewed = Proposal{ID: proposalID, ProjectID: projectID, Status: input.Decision, ReviewedBy: reviewerID}
 	return stub.reviewed, nil
 }
+func (stub *progressStoreTestStub) ReviewProposals(_ context.Context, projectID, reviewerID string, input BatchReviewProposalInput) ([]Proposal, error) {
+	items := make([]Proposal, 0, len(input.ProposalIDs))
+	for _, proposalID := range input.ProposalIDs {
+		items = append(items, Proposal{ID: proposalID, ProjectID: projectID, Status: input.Decision, ReviewedBy: reviewerID})
+	}
+	return items, nil
+}
 func (stub *progressStoreTestStub) GetSettings(context.Context, string) (Settings, error) {
 	return stub.settings, nil
 }
@@ -143,7 +150,7 @@ func TestCreateMilestoneRequiresHumanSessionAndRecordsAudit(t *testing.T) {
 	}
 }
 
-func TestAgentTaskChangesObeySettingAndRequireRunSource(t *testing.T) {
+func TestAgentTaskChangesAlwaysRequireProposal(t *testing.T) {
 	access := &progressAccessTestStub{}
 	store := &progressStoreTestStub{settings: Settings{AutoTaskChanges: false}}
 	service := Service{Access: access, Store: store}
@@ -154,14 +161,8 @@ func TestAgentTaskChangesObeySettingAndRequireRunSource(t *testing.T) {
 	}
 
 	store.settings.AutoTaskChanges = true
-	input.SourceRunID = ""
-	if _, err := service.CreateTask(context.Background(), agent, "project-1", input); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("missing run source returned %v", err)
-	}
-	input.SourceRunID = "run-1"
-	item, err := service.CreateTask(context.Background(), agent, "project-1", input)
-	if err != nil || item.Source != "agent" || item.SourceRunID != "run-1" {
-		t.Fatalf("automatic task change failed: item=%#v err=%v", item, err)
+	if _, err := service.CreateTask(context.Background(), agent, "project-1", input); !errors.Is(err, ErrProposalRequired) {
+		t.Fatalf("legacy auto-task setting bypassed proposal review: %v", err)
 	}
 }
 
@@ -204,7 +205,6 @@ func TestProgressHomeItemsContainOpenTasksOnly(t *testing.T) {
 	store := &progressStoreTestStub{tasks: []Task{
 		{ID: "open", Status: TaskTodo},
 		{ID: "done", Status: TaskDone},
-		{ID: "cancelled", Status: TaskCancelled},
 	}, milestones: []Milestone{{ID: "milestone-1"}}}
 	service := Service{Access: &progressAccessTestStub{}, Store: store}
 	milestones, todos, err := service.ProgressHomeItems(context.Background(), auth.Identity{}, "project-1")
@@ -222,7 +222,6 @@ func TestProgressAggregateTodayAndOverdueContainOpenTasksAtUTCBoundaries(t *test
 	due := func(value time.Time) *time.Time { return &value }
 	store := &progressStoreTestStub{tasks: []Task{
 		{ID: "done", Status: TaskDone, DueAt: due(time.Date(2026, time.August, 5, 23, 0, 0, 0, china))},
-		{ID: "cancelled", Status: TaskCancelled, DueAt: due(time.Date(2026, time.August, 6, 12, 0, 0, 0, china))},
 		{ID: "todo-overdue", Status: TaskTodo, DueAt: due(now.Add(-time.Hour))},
 		{ID: "in-progress-today", Status: TaskInProgress, DueAt: due(time.Date(2026, time.August, 6, 12, 0, 0, 0, china))},
 		{ID: "blocked-overdue", Status: TaskBlocked, DueAt: due(now.Add(-time.Hour))},
@@ -255,7 +254,7 @@ func TestProgressAggregateTodayAndOverdueContainOpenTasksAtUTCBoundaries(t *test
 	if got, want := taskIDs(result.Board.Done), []string{"done"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("done board tasks=%v, want %v", got, want)
 	}
-	if len(result.Tasks) != 8 || len(result.Gantt) != 8 {
+	if len(result.Tasks) != 7 || len(result.Gantt) != 7 {
 		t.Fatalf("aggregate task views changed unexpectedly: tasks=%d gantt=%d", len(result.Tasks), len(result.Gantt))
 	}
 }
@@ -284,6 +283,24 @@ func TestHumanReviewDelegatesToProgressStoreAndAudits(t *testing.T) {
 	}
 	if len(auditRecorder.events) != 1 || auditRecorder.events[0].Action != "progress.proposal.reviewed" {
 		t.Fatalf("proposal review audit missing: %#v", auditRecorder.events)
+	}
+}
+
+func TestHumanBatchReviewIsValidatedAndAuditedAsOneAction(t *testing.T) {
+	auditRecorder := &progressAuditTestStub{}
+	service := Service{Access: &progressAccessTestStub{}, Audit: auditRecorder, Store: &progressStoreTestStub{}}
+	human := auth.Identity{Kind: "session", User: auth.User{ID: "human-user"}}
+	input := BatchReviewProposalInput{ProposalIDs: []string{"proposal-1", "proposal-2"}, Decision: "accepted"}
+	items, err := service.ReviewProposals(context.Background(), human, "project-1", input)
+	if err != nil || len(items) != 2 || items[0].Status != "accepted" || items[1].Status != "accepted" {
+		t.Fatalf("batch proposal review failed: items=%#v err=%v", items, err)
+	}
+	if len(auditRecorder.events) != 1 || auditRecorder.events[0].Action != "progress.proposals.reviewed" {
+		t.Fatalf("batch proposal review audit missing: %#v", auditRecorder.events)
+	}
+	input.ProposalIDs = []string{"proposal-1", "proposal-1"}
+	if _, err := service.ReviewProposals(context.Background(), human, "project-1", input); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("duplicate proposal batch returned %v", err)
 	}
 }
 
