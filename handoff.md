@@ -39,9 +39,14 @@
   question instead of an invented arrangement.
 - Verification completed with Web TypeScript checks, focused Progress/Session
   tests, Core Agent/Progress Go tests, generated-contract checks, and manual
-  browser confirmation that repeated manual evaluation now queues and displays
-  correctly. Core Go changes require restarting the local development launcher;
-  PostgreSQL and MinIO volumes remain preserved.
+  browser confirmation of the queue and Session state transitions. A remaining
+  live issue exists: after clicking `立即评估`, the newly queued Progress
+  evaluation can still transition to `failed`. The queue-state/orphan-Job fixes
+  must not be treated as resolving this downstream evaluator failure; the next
+  investigation should capture the failed Evaluation error code, backing Job
+  status/result, Agent Run status, and Core/Worker logs for the same IDs before
+  changing retry behavior. Core Go changes require restarting the local
+  development launcher; PostgreSQL and MinIO volumes remain preserved.
 
 ## 2026-08-11 Progress human workbench integration
 
