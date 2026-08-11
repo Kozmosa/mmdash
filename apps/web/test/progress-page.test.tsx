@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProgressPage from "@/app/projects/[projectId]/progress/page";
 import { localDayKey } from "@/features/progress/calendar-time";
+import type { ProgressAggregate } from "@/features/progress/types";
 
 const mocks = vi.hoisted(() => ({
   project: { id: "project-1", name: "Nanako", role: "owner" as const },
@@ -50,7 +51,7 @@ const completeProposal = {
   title: "确认整理参数已完成",
 };
 
-const progress = {
+const progress: ProgressAggregate = {
   blocked: [],
   board: { blocked: [], done: [], in_progress: [], todo: [] },
   gantt: [],
@@ -154,7 +155,15 @@ function renderPage() {
   });
 }
 
-function useRequests(response = progress) {
+function useRequests(
+  response: ProgressAggregate = progress,
+  recalculateResult = {
+    merged: false,
+    request_id: "00000000-0000-4000-8000-000000000071",
+    scheduled_for: isoToday(8),
+    status: "pending",
+  },
+) {
   mocks.request.mockImplementation(
     (path: string, options?: { method?: string }) => {
       if (path === "/projects/project-1/progress" && !options?.method)
@@ -170,6 +179,11 @@ function useRequests(response = progress) {
             },
           ],
         });
+      if (
+        path === "/projects/project-1/progress/recalculate" &&
+        options?.method === "POST"
+      )
+        return Promise.resolve(recalculateResult);
       if (options?.method) return Promise.resolve({ status: "ok" });
       return Promise.reject(new Error(`Unexpected request: ${path}`));
     },
@@ -430,7 +444,7 @@ describe("Progress human workbench", () => {
     useRequests({
       ...progress,
       latest_evaluation: {
-        ...progress.latest_evaluation,
+        ...progress.latest_evaluation!,
         status: "running",
       },
       proposals: [],
@@ -468,6 +482,44 @@ describe("Progress human workbench", () => {
       ),
     );
     expect(screen.getByRole("button", { name: "评估排队中" })).toBeDisabled();
+    expect(
+      within(screen.getByLabelText("评估进度")).getByText("已排队"),
+    ).toHaveClass("bg-primary/10");
+    expect(
+      screen.getByRole("button", { name: "Session 准备中" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("已成功创建评估请求，正在等待入队。"),
+    ).toBeInTheDocument();
+  });
+
+  it("clearly reports when no new evaluation was created", async () => {
+    useRequests(
+      {
+        ...progress,
+        proposals: [],
+        settings: {
+          ...progress.settings,
+          agent_instance_id: "00000000-0000-4000-8000-000000000061",
+        },
+      },
+      {
+        merged: true,
+        request_id: progress.latest_evaluation!.request_id,
+        scheduled_for: isoToday(7),
+        status: "pending",
+      },
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "立即评估" }));
+    expect(
+      await screen.findByText(
+        "未创建新的评估：已有评估正在排队或执行。完成后可再次点击立即评估。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "立即评估" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "查看 Session" })).toBeEnabled();
   });
 
   it("opens the latest automatic evaluation Session as a read-only dialog", async () => {

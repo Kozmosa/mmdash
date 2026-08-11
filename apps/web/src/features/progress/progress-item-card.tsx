@@ -29,7 +29,7 @@ export function ProgressItemCard({ canManage, className, compact = false, item, 
   return (
     <article
       className={cn(
-        "group relative overflow-hidden rounded-lg border border-sky-300/70 bg-sky-100/90 text-sky-950 shadow-sm transition hover:shadow-md dark:border-sky-800 dark:bg-sky-950/70 dark:text-sky-100",
+        "group relative select-text overflow-hidden rounded-lg border border-sky-300/70 bg-sky-100/90 text-sky-950 shadow-sm transition hover:shadow-md dark:border-sky-800 dark:bg-sky-950/70 dark:text-sky-100",
         pendingCompletion && "border-amber-400 bg-amber-100 text-amber-950 dark:border-amber-700 dark:bg-amber-950/70 dark:text-amber-100",
         completed && "opacity-50 saturate-50",
         compact ? "px-2 py-1" : "p-3",

@@ -75,6 +75,16 @@ export function ProgressWorkbench({
     manualEvaluationPending,
   ]);
 
+  useEffect(() => {
+    if (!manualEvaluationPending) return;
+    const timer = window.setInterval(() => {
+      void queryClient.invalidateQueries({
+        queryKey: ["progress", projectId],
+      });
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [manualEvaluationPending, projectId, queryClient]);
+
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["progress", projectId] }),
@@ -282,10 +292,11 @@ export function ProgressWorkbench({
       setManualEvaluationPending(true);
     },
     onSuccess: async (result) => {
+      if (result.merged) setManualEvaluationPending(false);
       setFeedback(
         result.merged
-          ? "已有评估正在排队或执行，本次操作已复用现有评估。"
-          : "进度评估已进入队列。",
+          ? "未创建新的评估：已有评估正在排队或执行。完成后可再次点击立即评估。"
+          : "已成功创建评估请求，正在等待入队。",
       );
       await refresh();
     },
@@ -302,6 +313,7 @@ export function ProgressWorkbench({
           debounce_seconds: progress.settings.debounce_seconds,
           event_triggers_enabled: progress.settings.event_triggers_enabled,
           min_interval_seconds: progress.settings.min_interval_seconds,
+          reasoning_effort: progress.settings.reasoning_effort,
         },
         method: "PATCH",
       }),
@@ -470,7 +482,14 @@ export function ProgressWorkbench({
               manualEvaluationPending ||
               recalculate.isPending
             }
-            evaluationStatus={latestEvaluation?.status}
+            evaluationRequestPending={
+              manualEvaluationPending || recalculate.isPending
+            }
+            evaluationStatus={
+              manualEvaluationPending || recalculate.isPending
+                ? "queued"
+                : latestEvaluation?.status
+            }
             onAgentChange={(id) => updateAgent.mutate(id)}
             onBatchReview={(ids, decision) =>
               batchReview.mutate({ decision, ids })
@@ -511,7 +530,14 @@ export function ProgressWorkbench({
               manualEvaluationPending ||
               recalculate.isPending
             }
-            evaluationStatus={latestEvaluation?.status}
+            evaluationRequestPending={
+              manualEvaluationPending || recalculate.isPending
+            }
+            evaluationStatus={
+              manualEvaluationPending || recalculate.isPending
+                ? "queued"
+                : latestEvaluation?.status
+            }
             onAgentChange={(id) => updateAgent.mutate(id)}
             onBatchReview={(ids, decision) =>
               batchReview.mutate({ decision, ids })

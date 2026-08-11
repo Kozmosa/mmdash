@@ -107,6 +107,17 @@ func TestPostgresProgressTrackingDebounceDedupAndLeaseRecovery(t *testing.T) {
 	if err != nil || forcedEvaluation == nil || forcedEvaluation.ID == evaluation.ID {
 		t.Fatalf("force identical input into a new evaluation: evaluation=%#v err=%v", forcedEvaluation, err)
 	}
+	if _, err := fixture.db.ExecContext(fixture.ctx, `UPDATE jobs SET status='timed_out',finished_at=$2,updated_at=$2 WHERE job_id=$1`, forcedEvaluation.JobID, fixture.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	afterTimeout, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "session", "manual", true, EvaluationTrigger{TriggerType: "manual", OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{}})
+	if err != nil || afterTimeout.Merged {
+		t.Fatalf("terminal Job must not block a new manual evaluation: result=%#v err=%v", afterTimeout, err)
+	}
+	var reconciledStatus, reconciledCode string
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT status,error_code FROM progress_evaluations WHERE evaluation_id=$1`, forcedEvaluation.ID).Scan(&reconciledStatus, &reconciledCode); err != nil || reconciledStatus != "failed" || reconciledCode != "PROGRESS_EVALUATION_JOB_TIMED_OUT" {
+		t.Fatalf("terminal Job reconciliation: status=%q code=%q err=%v", reconciledStatus, reconciledCode, err)
+	}
 }
 
 func TestPostgresProgressLocalCronSchedulesEvaluationRequest(t *testing.T) {
