@@ -166,6 +166,7 @@ type ForkSessionRequest struct {
 }
 
 type Message struct {
+	Attachments     []ChatAttachment
 	RemoteID        string
 	SessionRemoteID string
 	Role            string
@@ -223,6 +224,7 @@ type StartRunRequest struct {
 	ConversationHistory []ConversationMessage
 	Model               string
 	Provider            string
+	ReasoningEffort     string
 }
 
 type RunStatus string
@@ -288,24 +290,25 @@ type StreamOptions struct {
 type EventType string
 
 const (
-	EventRunStarted        EventType = "run.started"
-	EventRunCompleted      EventType = "run.completed"
-	EventRunFailed         EventType = "run.failed"
-	EventRunCancelled      EventType = "run.stopped"
-	EventMessageStarted    EventType = "message.started"
-	EventMessageDelta      EventType = "message.delta"
-	EventMessageCompleted  EventType = "message.completed"
-	EventToolProgress      EventType = "tool.progress"
-	EventToolStarted       EventType = "tool.started"
-	EventToolCompleted     EventType = "tool.completed"
-	EventToolFailed        EventType = "tool.failed"
-	EventApprovalRequested EventType = "approval.required"
-	EventApprovalResponded EventType = "approval.responded"
-	EventSubagentStarted   EventType = "subagent.started"
-	EventSubagentCompleted EventType = "subagent.completed"
-	EventHeartbeat         EventType = "heartbeat"
-	EventDone              EventType = "done"
-	EventError             EventType = "error"
+	EventRunStarted         EventType = "run.started"
+	EventRunCompleted       EventType = "run.completed"
+	EventRunFailed          EventType = "run.failed"
+	EventRunCancelled       EventType = "run.stopped"
+	EventMessageStarted     EventType = "message.started"
+	EventMessageDelta       EventType = "message.delta"
+	EventMessageCompleted   EventType = "message.completed"
+	EventReasoningAvailable EventType = "reasoning.available"
+	EventToolProgress       EventType = "tool.progress"
+	EventToolStarted        EventType = "tool.started"
+	EventToolCompleted      EventType = "tool.completed"
+	EventToolFailed         EventType = "tool.failed"
+	EventApprovalRequested  EventType = "approval.required"
+	EventApprovalResponded  EventType = "approval.responded"
+	EventSubagentStarted    EventType = "subagent.started"
+	EventSubagentCompleted  EventType = "subagent.completed"
+	EventHeartbeat          EventType = "heartbeat"
+	EventDone               EventType = "done"
+	EventError              EventType = "error"
 )
 
 // Event contains only fields required to render a safe lifecycle view. Text is

@@ -62,6 +62,10 @@ func TestNormalizeArtifactInputRejectsPublicForgeryAndUnsafeMetadata(t *testing.
 	if _, err := service.normalizeInitialize(&base); !errors.Is(err, ErrKindInvalid) {
 		t.Fatalf("expected internal kind rejection, got %v", err)
 	}
+	base.Kind = KindAgent
+	if _, err := service.normalizeInitialize(&base); err != nil {
+		t.Fatalf("expected Agent Artifact kind to normalize, got %v", err)
+	}
 	base.Kind = KindAttachment
 	base.Filename = "../input.bin"
 	if _, err := service.normalizeInitialize(&base); !errors.Is(err, ErrInvalid) {
@@ -102,6 +106,64 @@ func TestTransferSignerRejectsTamperingAndExpiry(t *testing.T) {
 		err, ErrTransferExpired,
 	) {
 		t.Fatalf("expected expired token, got %v", err)
+	}
+}
+
+func TestAgentUploadOwnershipIsInstanceScoped(t *testing.T) {
+	service := Service{}
+	upload := UploadSession{AgentInstanceID: "agent-1", CreatedBy: "user-1"}
+	if !service.uploadOwnedBy(auth.Identity{
+		AgentInstanceID: "agent-1", Kind: "agent",
+	}, upload) {
+		t.Fatal("owning Agent instance cannot continue its upload")
+	}
+	if service.uploadOwnedBy(auth.Identity{
+		AgentInstanceID: "agent-2", Kind: "agent",
+	}, upload) {
+		t.Fatal("another Agent instance can continue the upload")
+	}
+	if !service.uploadOwnedBy(auth.Identity{
+		Kind: "session", User: auth.User{ID: "maintainer-1"},
+	}, upload) {
+		t.Fatal("authorized human operators must retain upload recovery access")
+	}
+}
+
+type recordingAgentRunValidator struct {
+	agentInstanceID string
+	projectID       string
+	sessionID       string
+	runID           string
+}
+
+func (validator *recordingAgentRunValidator) ValidateProvenance(
+	_ context.Context,
+	agentInstanceID string,
+	projectID string,
+	sessionID string,
+	runID string,
+) error {
+	validator.agentInstanceID = agentInstanceID
+	validator.projectID = projectID
+	validator.sessionID = sessionID
+	validator.runID = runID
+	return nil
+}
+
+func TestAgentRunProvenanceUsesAgentThenProjectArgumentOrder(t *testing.T) {
+	validator := &recordingAgentRunValidator{}
+	service := Service{AgentRuns: validator}
+	err := service.validateAgentRunProvenance(
+		context.Background(),
+		auth.Identity{AgentInstanceID: "agent-1", Kind: "agent"},
+		"project-1", "session-1", "run-1",
+	)
+	if err != nil {
+		t.Fatalf("validate provenance: %v", err)
+	}
+	if validator.agentInstanceID != "agent-1" || validator.projectID != "project-1" ||
+		validator.sessionID != "session-1" || validator.runID != "run-1" {
+		t.Fatalf("provenance arguments were reordered: %#v", validator)
 	}
 }
 

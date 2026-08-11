@@ -510,7 +510,7 @@ func TestArtifactPermissionsMatchCollaborationRoles(t *testing.T) {
 		{RoleMaintainer, true, true, true, true},
 		{RoleEditor, true, true, true, false},
 		{RoleViewer, true, false, true, false},
-		{RoleAgent, true, false, true, false},
+		{RoleAgent, true, true, true, false},
 		{RoleBox, false, false, false, false},
 	}
 	for _, testCase := range cases {
@@ -546,14 +546,16 @@ func TestModelSyncPermissionIsAvailableToEveryHumanProjectMember(t *testing.T) {
 	}
 }
 
-func TestAgentRoleIsReadOnlyOutsideExplicitContextPromotion(t *testing.T) {
+func TestAgentRoleAllowsOnlyReviewedToolMutations(t *testing.T) {
 	permissions := permissionsByRole[RoleAgent]
 	for _, permission := range []Permission{
 		PermissionRead,
 		PermissionDataRead,
+		PermissionModelRead,
 		PermissionContextPropose,
 		PermissionRepoRead,
 		PermissionArtifactRead,
+		PermissionArtifactUpload,
 		PermissionArtifactDownload,
 		PermissionProgressRead,
 		PermissionProgressEvaluate,
@@ -569,7 +571,6 @@ func TestAgentRoleIsReadOnlyOutsideExplicitContextPromotion(t *testing.T) {
 		PermissionJobsCancel,
 		PermissionRepoManage,
 		PermissionRepoWrite,
-		PermissionArtifactUpload,
 		PermissionArtifactDelete,
 		PermissionProgressManage,
 		PermissionProgressPropose,
@@ -597,9 +598,13 @@ func TestAgentAuthorizationRequiresMatchingProductToolGrant(t *testing.T) {
 	}{
 		{name: "project read", tools: []string{"project.get"}, permission: PermissionRead, allowed: true},
 		{name: "artifact through data read", tools: []string{"data.read"}, permission: PermissionArtifactRead, allowed: true},
+		{name: "artifact through artifact read", tools: []string{"artifact.read"}, permission: PermissionArtifactDownload, allowed: true},
 		{name: "repo through data read", tools: []string{"data.read"}, permission: PermissionRepoRead, allowed: true},
 		{name: "data list", tools: []string{"data.list"}, permission: PermissionDataRead, allowed: true},
+		{name: "model through data read", tools: []string{"data.read"}, permission: PermissionModelRead, allowed: true},
 		{name: "context proposal", tools: []string{"context.promote"}, permission: PermissionContextPropose, allowed: true},
+		{name: "Agent Artifact upload", tools: []string{"artifact.upload"}, permission: PermissionArtifactUpload, allowed: true},
+		{name: "data read cannot upload", tools: []string{"data.read"}, permission: PermissionArtifactUpload},
 		{name: "progress read", tools: []string{"progress.get"}, permission: PermissionProgressRead, allowed: true},
 		{name: "progress evaluate", tools: []string{"progress.recalculate"}, permission: PermissionProgressEvaluate, allowed: true},
 		{name: "list cannot download", tools: []string{"data.list"}, permission: PermissionArtifactDownload},

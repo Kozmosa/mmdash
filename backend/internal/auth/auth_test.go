@@ -151,7 +151,12 @@ func (store *memoryStore) MarkAgentTokenVerified(
 	if token.Verification != nil {
 		return *token.Verification, nil
 	}
+	if token.VerificationChallengeHash == "" ||
+		token.VerificationChallengeHash != evidence.ChallengeHash {
+		return AgentTokenVerificationEvidence{}, ErrForbidden
+	}
 	token.Verification = &evidence
+	token.VerificationChallengeHash = ""
 	store.agentTokens[evidence.TokenID] = token
 	return evidence, nil
 }
@@ -569,15 +574,18 @@ func TestIssuedAgentTokenIsHashedAndProjectScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
-	if issued.Secret == "" || issued.Token.TokenHash == issued.Secret {
-		t.Fatal("token secret must be returned once and stored as a hash")
+	if issued.Secret == "" || issued.Challenge == "" ||
+		issued.Token.TokenHash == issued.Secret ||
+		issued.Token.VerificationChallengeHash == issued.Challenge {
+		t.Fatal("token and challenge must be returned once and stored only as hashes")
 	}
 	authenticated, err := service.Authenticate(context.Background(), "Bearer "+issued.Secret)
 	if err != nil {
 		t.Fatalf("authenticate token: %v", err)
 	}
 	if authenticated.Kind != "agent" || authenticated.ProjectID != "project-1" ||
-		authenticated.AgentInstanceID != "agent-1" || authenticated.CredentialStatus != "pending" {
+		authenticated.AgentInstanceID != "agent-1" || authenticated.CredentialStatus != "pending" ||
+		authenticated.User.ID != "user-1" {
 		t.Fatalf("unexpected token identity: %#v", authenticated)
 	}
 	stored := store.agentTokens[issued.Token.ID]
@@ -601,8 +609,9 @@ func TestGenericTokenIssueRejectsCompatibilityAgentKind(t *testing.T) {
 	}
 }
 
-func TestTrustedGatewayVerificationIsRequiredBeforeAgentTokenActivation(t *testing.T) {
+func TestPendingAgentChallengeVerificationIsRequiredBeforeActivation(t *testing.T) {
 	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	const challenge = "mmdash_challenge_pending-token"
 	store := newMemoryStore()
 	store.agentTokens["old-token"] = AgentToken{
 		AgentInstanceID: "agent-1", CreatedAt: now.Add(-time.Hour), GrantID: "grant-1",
@@ -611,58 +620,49 @@ func TestTrustedGatewayVerificationIsRequiredBeforeAgentTokenActivation(t *testi
 	store.agentTokens["pending-token"] = AgentToken{
 		AgentInstanceID: "agent-1", CreatedAt: now.Add(-time.Minute), GrantID: "grant-1",
 		ID: "pending-token", ProjectID: "project-1", Status: "pending",
+		VerificationChallengeHash: hashToken(challenge),
 	}
 	service := Service{
-		AgentVerificationTokenID: "gateway-token",
-		Clock:                    clock.Fixed{Time: now},
-		Generator:                identity.Generator{Reader: bytes.NewReader(make([]byte, 16))},
-		ProjectTokens:            projectAuthorizerStub{},
-		Store:                    store,
+		Clock:         clock.Fixed{Time: now},
+		Generator:     identity.Generator{Reader: bytes.NewReader(make([]byte, 16))},
+		ProjectTokens: projectAuthorizerStub{},
+		Store:         store,
 	}
-	trustedGateway := Identity{
-		Kind: "api", ProjectID: "project-1", TokenID: "gateway-token",
-		User: User{ID: "gateway-user", SystemRole: "admin"},
+	operator := Identity{Kind: "session", User: User{ID: "user-1", SystemRole: "admin"}}
+	pendingAgent := Identity{
+		AgentInstanceID: "agent-1", CredentialStatus: "pending", Kind: "agent",
+		ProjectID: "project-1", TokenID: "pending-token",
 	}
 
 	if _, err := service.ActivateAgentToken(
-		context.Background(), trustedGateway, "project-1", "pending-token", "old-token", "",
+		context.Background(), operator, "project-1", "pending-token", "old-token", "",
 	); !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrConflict) {
-		t.Fatalf("activation without trusted evidence: %v", err)
+		t.Fatalf("activation without challenge evidence: %v", err)
 	}
 	if store.agentTokens["old-token"].Status != "active" {
-		t.Fatal("old token was revoked before trusted verification")
+		t.Fatal("old token was revoked before challenge verification")
 	}
 
 	evidence, err := service.RecordAgentTokenVerification(
-		context.Background(), trustedGateway, "pending-token",
+		context.Background(), pendingAgent, "pending-token",
 		RecordAgentTokenVerificationInput{
-			AgentInstanceID: "agent-1", MCPMethod: AgentTokenVerificationMethod,
+			AgentInstanceID: "agent-1", Challenge: challenge, MCPMethod: AgentTokenVerificationMethod,
 			MCPSessionID: "mcp-session-1", ProjectID: "project-1", RequestID: "request-1",
 		},
 	)
 	if err != nil {
-		t.Fatalf("record trusted verification: %v", err)
+		t.Fatalf("record challenge verification: %v", err)
 	}
-	if evidence.MCPMethod != "tools/list" || evidence.VerifiedByTokenID != "gateway-token" ||
-		evidence.EvidenceID == "" || !evidence.VerifiedAt.Equal(now) {
+	if evidence.MCPMethod != "tools/list" || evidence.EvidenceID == "" ||
+		!evidence.VerifiedAt.Equal(now) {
 		t.Fatalf("unexpected verification evidence: %#v", evidence)
 	}
-	pending := store.agentTokens["pending-token"]
-	pending.Verification.VerifiedByTokenID = "ordinary-admin-token"
-	store.agentTokens["pending-token"] = pending
-	if _, err := service.ActivateAgentToken(
-		context.Background(), trustedGateway, "project-1", "pending-token", "old-token", "",
-	); !errors.Is(err, ErrConflict) {
-		t.Fatalf("activation with untrusted verifier evidence: %v", err)
+	if store.agentTokens["pending-token"].VerificationChallengeHash != "" {
+		t.Fatal("one-time challenge was not consumed")
 	}
-	if store.agentTokens["old-token"].Status != "active" {
-		t.Fatal("untrusted verifier evidence revoked the old token")
-	}
-	pending.Verification.VerifiedByTokenID = "gateway-token"
-	store.agentTokens["pending-token"] = pending
 	const remoteAccessID = " remote/access::v2 "
 	activated, err := service.ActivateAgentToken(
-		context.Background(), trustedGateway, "project-1", "pending-token", "old-token", remoteAccessID,
+		context.Background(), operator, "project-1", "pending-token", "old-token", remoteAccessID,
 	)
 	if err != nil {
 		t.Fatalf("activate verified token: %v", err)
@@ -676,21 +676,22 @@ func TestTrustedGatewayVerificationIsRequiredBeforeAgentTokenActivation(t *testi
 	}
 }
 
-func TestAgentTokenVerificationRejectsUntrustedOrMismatchedEvidence(t *testing.T) {
+func TestAgentTokenVerificationRejectsWrongIdentityChallengeOrMethod(t *testing.T) {
 	now := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	const challenge = "mmdash_challenge_expected"
 	store := newMemoryStore()
 	store.agentTokens["pending-token"] = AgentToken{
 		AgentInstanceID: "agent-1", CreatedAt: now, GrantID: "grant-1",
 		ID: "pending-token", ProjectID: "project-1", Status: "pending",
+		VerificationChallengeHash: hashToken(challenge),
 	}
 	service := Service{
-		AgentVerificationTokenID: "gateway-token",
-		Clock:                    clock.Fixed{Time: now},
-		Generator:                identity.Generator{Reader: bytes.NewReader(make([]byte, 48))},
-		Store:                    store,
+		Clock:     clock.Fixed{Time: now},
+		Generator: identity.Generator{Reader: bytes.NewReader(make([]byte, 48))},
+		Store:     store,
 	}
 	input := RecordAgentTokenVerificationInput{
-		AgentInstanceID: "agent-1", MCPMethod: AgentTokenVerificationMethod,
+		AgentInstanceID: "agent-1", Challenge: challenge, MCPMethod: AgentTokenVerificationMethod,
 		MCPSessionID: "mcp-session-1", ProjectID: "project-1", RequestID: "request-1",
 	}
 	if _, err := service.RecordAgentTokenVerification(
@@ -699,31 +700,23 @@ func TestAgentTokenVerificationRejectsUntrustedOrMismatchedEvidence(t *testing.T
 	); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("browser session recorded evidence: %v", err)
 	}
-	untrustedAPI := Identity{
-		Kind: "api", ProjectID: "project-2", TokenID: "api-token",
-		User: User{SystemRole: "admin"},
-	}
+	wrongAgent := Identity{AgentInstanceID: "agent-2", CredentialStatus: "pending", Kind: "agent", ProjectID: "project-1", TokenID: "pending-token"}
 	if _, err := service.RecordAgentTokenVerification(
-		context.Background(), untrustedAPI, "pending-token", input,
+		context.Background(), wrongAgent, "pending-token", input,
 	); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("cross-project API token recorded evidence: %v", err)
+		t.Fatalf("wrong Agent recorded evidence: %v", err)
 	}
-	ordinaryAdminAPI := Identity{
-		Kind: "api", ProjectID: "project-1", TokenID: "ordinary-admin-token",
-		User: User{SystemRole: "admin"},
-	}
+	pendingAgent := Identity{AgentInstanceID: "agent-1", CredentialStatus: "pending", Kind: "agent", ProjectID: "project-1", TokenID: "pending-token"}
+	input.Challenge = "mmdash_challenge_wrong"
 	if _, err := service.RecordAgentTokenVerification(
-		context.Background(), ordinaryAdminAPI, "pending-token", input,
+		context.Background(), pendingAgent, "pending-token", input,
 	); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("ordinary admin API token recorded Gateway evidence: %v", err)
+		t.Fatalf("wrong challenge recorded evidence: %v", err)
 	}
-	trustedGateway := Identity{
-		Kind: "api", ProjectID: "project-1", TokenID: "gateway-token",
-		User: User{SystemRole: "admin"},
-	}
+	input.Challenge = challenge
 	input.MCPMethod = "initialize"
 	if _, err := service.RecordAgentTokenVerification(
-		context.Background(), trustedGateway, "pending-token", input,
+		context.Background(), pendingAgent, "pending-token", input,
 	); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("initialize created evidence: %v", err)
 	}
@@ -741,24 +734,22 @@ func TestExpiredOrCrossProjectPendingAgentTokenCannotVerifyOrActivate(t *testing
 		AgentInstanceID: "agent-1", CreatedAt: now.Add(-time.Minute),
 		ExpiresAt: &expiresAt, GrantID: "grant-1", ID: "expired-token",
 		ProjectID: "project-1", Status: "pending",
+		VerificationChallengeHash: hashToken("mmdash_challenge_expired"),
 	}
 	service := Service{
-		AgentVerificationTokenID: "gateway-token",
-		Clock:                    clock.Fixed{Time: now},
-		Generator:                identity.Generator{Reader: bytes.NewReader(make([]byte, 16))},
-		ProjectTokens:            projectAuthorizerStub{},
-		Store:                    store,
+		Clock:         clock.Fixed{Time: now},
+		Generator:     identity.Generator{Reader: bytes.NewReader(make([]byte, 16))},
+		ProjectTokens: projectAuthorizerStub{},
+		Store:         store,
 	}
-	trustedGateway := Identity{
-		Kind: "api", ProjectID: "project-1", TokenID: "gateway-token",
-		User: User{ID: "gateway-user", SystemRole: "admin"},
-	}
+	operator := Identity{Kind: "session", User: User{ID: "user-1", SystemRole: "admin"}}
+	pendingAgent := Identity{AgentInstanceID: "agent-1", CredentialStatus: "pending", Kind: "agent", ProjectID: "project-1", TokenID: "expired-token"}
 	input := RecordAgentTokenVerificationInput{
-		AgentInstanceID: "agent-1", MCPMethod: AgentTokenVerificationMethod,
+		AgentInstanceID: "agent-1", Challenge: "mmdash_challenge_expired", MCPMethod: AgentTokenVerificationMethod,
 		MCPSessionID: "mcp-session-1", ProjectID: "project-1", RequestID: "request-1",
 	}
 	if _, err := service.RecordAgentTokenVerification(
-		context.Background(), trustedGateway, "expired-token", input,
+		context.Background(), pendingAgent, "expired-token", input,
 	); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expired token verification: got %v", err)
 	}
@@ -767,11 +758,11 @@ func TestExpiredOrCrossProjectPendingAgentTokenCannotVerifyOrActivate(t *testing
 		AgentInstanceID: "agent-1", EvidenceID: "evidence-1",
 		MCPMethod: AgentTokenVerificationMethod, MCPSessionID: "mcp-session-1",
 		ProjectID: "project-1", RequestID: "request-1", TokenID: "expired-token",
-		VerifiedAt: now.Add(-2 * time.Second), VerifiedByTokenID: "gateway-token",
+		VerifiedAt: now.Add(-2 * time.Second),
 	}
 	store.agentTokens["expired-token"] = expired
 	if _, err := service.ActivateAgentToken(
-		context.Background(), trustedGateway, "project-1", "expired-token", "old-token", "",
+		context.Background(), operator, "project-1", "expired-token", "old-token", "",
 	); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expired token activation: got %v", err)
 	}
@@ -779,12 +770,12 @@ func TestExpiredOrCrossProjectPendingAgentTokenCannotVerifyOrActivate(t *testing
 		t.Fatal("expired replacement revoked the old token")
 	}
 	if _, err := service.ActivateAgentToken(
-		context.Background(), trustedGateway, "project-2", "expired-token", "old-token", "",
+		context.Background(), operator, "project-2", "expired-token", "old-token", "",
 	); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-project token activation: got %v", err)
 	}
 	if err := service.RevokeAgentToken(
-		context.Background(), trustedGateway, "project-2", "expired-token",
+		context.Background(), operator, "project-2", "expired-token",
 	); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-project token revoke: got %v", err)
 	}

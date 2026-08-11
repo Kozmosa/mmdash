@@ -1,15 +1,8 @@
 export type AgentManagementMode = "manual" | "auto";
 export type AgentInstanceStatus =
-  | "setup_pending"
-  | "configuring"
-  | "active"
-  | "degraded"
-  | "disabled";
+  "setup_pending" | "configuring" | "active" | "degraded" | "disabled";
 export type AgentManagementPath =
-  | "direct"
-  | "cloudflare_access"
-  | "unreachable"
-  | "unsupported_auth";
+  "direct" | "cloudflare_access" | "unreachable" | "unsupported_auth";
 export type AgentSessionType = "main" | "progress" | "experiment";
 export type AgentSessionStatus = "active" | "ended";
 export type AgentRunStatus =
@@ -84,11 +77,7 @@ export type AgentProjectGrant = {
   grant_id: string;
   last_access_at?: string;
   project_access_status?:
-    | "pending"
-    | "verified"
-    | "failed"
-    | "rotation_failed"
-    | "revoked";
+    "pending" | "verified" | "failed" | "rotation_failed" | "revoked";
   project_id: string;
   revoked_at?: string;
   status: "active" | "revoked";
@@ -198,6 +187,16 @@ export type AgentSession = {
   version: number;
 };
 
+export type AgentReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max"
+  | "ultra";
+
 export type AgentToolCall = {
   completed_at?: string;
   input_summary?: string;
@@ -210,12 +209,26 @@ export type AgentToolCall = {
 };
 
 export type AgentMessage = {
+  attachments?: AgentChatAttachment[];
   content: string;
   created_at?: string;
   message_id: string;
   role: "user" | "assistant" | "tool" | "system";
   tool_call_id?: string;
   tool_calls?: AgentToolCall[];
+};
+
+export type AgentChatAttachment = {
+  artifact_id: string;
+  version_id: string;
+  run_id: string;
+  direction: "input" | "output";
+  name: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+  local_url?: string;
 };
 
 export type AgentRun = {
@@ -256,6 +269,7 @@ export type AgentStreamEventType =
   | "message.started"
   | "message.delta"
   | "message.completed"
+  | "reasoning.available"
   | "tool.progress"
   | "tool.started"
   | "tool.completed"

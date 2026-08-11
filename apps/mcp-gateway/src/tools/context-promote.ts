@@ -81,7 +81,6 @@ async function executePromote(
       proposalInput,
       {
         accessToken: context.coreAccessToken,
-        gatewayAccessToken: context.coreGatewayAccessToken,
         projectId: input.project_id,
         requestId: context.requestId,
       },

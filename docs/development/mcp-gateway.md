@@ -59,40 +59,43 @@ calls Hermes or PostgreSQL and never reviews Proposals or changes human
 overrides. Both Tools enforce Gateway Project/Tool scope, Core RBAC, safe error
 mapping, and the normal MCP/Core Audit path.
 
+The Agent Artifact iteration adds exact Tools `artifact.read` and
+`artifact.upload`. `artifact.read` delegates one authorized Artifact/Version
+to Core's short-lived download grant and never emits a permanent URL.
+Upload's four actions initialize, sign bounded part batches, confirm, or abort through the
+generated Core Client with the original inbound Agent Token. The Gateway never
+accepts file bytes/base64 and never proxies a multipart PUT. It returns only
+direct MinIO/S3-compatible grants; Local/Core-proxy mode fails closed with
+`ARTIFACT_DIRECT_TRANSFER_REQUIRED`. Core fixes the classification to
+`kind/source=agent` and binds upload state to the exact Agent instance.
+For an mmdash-started Run, upload provenance is a required pair when present;
+Core validates it before relating the available output to the Run.
+
 A pending product Agent Token can authenticate only for its verification
 handshake. `auth.me`, current-protocol `server/discover`, and legacy
 `initialize` do not mark it verified. Once the client has negotiated an mmdash
-MCP Session, the first successful `tools/list` causes Gateway to record evidence through Core
-`auth.agent_tokens.verification.record`. The evidence callback uses
-`MCP_CORE_ACCESS_TOKEN`; Core must be configured with that API credential's
-non-secret Token ID in `AUTH_AGENT_VERIFICATION_TOKEN_ID`. The credential must
-belong to an active admin account, and a Project-scoped credential can record
-evidence only for that same Project. Ordinary admin API Tokens are rejected.
+MCP Session, the first successful `tools/list` causes Gateway to record evidence
+through Core `auth.agent_tokens.verification.record`. The one-time endpoint
+carries the Token-specific challenge, and Gateway authenticates the callback
+with the same pending Agent Token. Core matches the Token, Agent, Project, and
+challenge hash, then consumes the challenge atomically.
 
 If evidence cannot be recorded, Gateway fails the pending `tools/list` with
 `AGENT_VERIFICATION_UNAVAILABLE` and does not treat the Token as verified.
 After activation, normal exact-allowlist authorization applies. Gateway sends
-the product Agent Token as Core's primary identity and the dedicated access
-credential separately as `X-Mmdash-Gateway-Authorization`. Core permits direct
-Agent use only for `GET /v1/auth/me`; every Agent business route requires the
-exact configured Gateway Token ID, admin role, and compatible Project scope.
-The attestation never contains a Tool name and does not replace Core RBAC.
-Request logs, errors, and MCP results must not contain either credential.
+the original product Agent Token as Core's only credential. Core authenticates
+the same Agent identity and re-applies Project/domain RBAC. Request logs,
+errors, and MCP results must not contain the credential or challenge.
 
 The gateway also validates Host and Origin using `MCP_ALLOWED_HOSTS` and
 `MCP_ALLOWED_ORIGINS` to prevent DNS rebinding.
 
-Set `MCP_CORE_ACCESS_TOKEN` to the dedicated Core-issued admin API token used
-for the Agent-verification callback and active Agent request attestation. Its
-non-secret ID must equal `AUTH_AGENT_VERIFICATION_TOKEN_ID`; a Project-scoped
-token may attest only that Project. CLI reads continue to delegate the user's
-own Core credential.
-Set
+CLI reads and product Agent calls both delegate the original inbound identity;
+they never substitute a Gateway service credential. Set
 `MCP_CORE_AUDIT_TOKEN` to a Core-issued API token to persist tool audit events
-in Core's queryable Audit ledger. If the access token is omitted, the audit
-token is used for Core reads as a compatibility fallback. Without an audit
-token, JSON audit logging remains enabled. Neither token is written to logs or
-tool output.
+in Core's queryable Audit ledger. Without an audit token, JSON audit logging
+remains enabled. The audit token is never used for Tool authorization and is
+not written to logs or Tool output.
 
 ## Register a tool
 

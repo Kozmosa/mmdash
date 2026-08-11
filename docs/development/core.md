@@ -80,8 +80,8 @@ signature to a second URL.
 - `/openapi.yaml` serves the same contract used to generate Core clients.
 - `/metrics` serves bounded-label Prometheus metrics and build version.
 - Every response carries `X-Request-ID`; valid inbound IDs are preserved.
-- `X-Mmdash-User-ID` and `X-Mmdash-Project-ID` are normalized into request
-  context for trusted gateways.
+- `X-Mmdash-User-ID` and `X-Mmdash-Project-ID` are normalized only as bounded
+  request context; authentication and RBAC never trust them as authority.
 - Errors use stable `code`, safe `message`, optional `details`, and
   `request_id`. Internal causes are never serialized.
 - Access logs are JSON and preserve SSE flushing, WebSocket hijacking, and

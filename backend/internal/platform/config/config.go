@@ -78,15 +78,14 @@ type ArtifactConfig struct {
 
 // AuthConfig configures bootstrap login and session signing.
 type AuthConfig struct {
-	AccessTokenTTL           time.Duration
-	AgentVerificationTokenID string
-	BootstrapDisplayName     string
-	BootstrapEmail           string
-	BootstrapPassword        string
-	DeviceAuthorizationTTL   time.Duration
-	DevicePollInterval       time.Duration
-	JWTSecret                string
-	SessionTTL               time.Duration
+	AccessTokenTTL         time.Duration
+	BootstrapDisplayName   string
+	BootstrapEmail         string
+	BootstrapPassword      string
+	DeviceAuthorizationTTL time.Duration
+	DevicePollInterval     time.Duration
+	JWTSecret              string
+	SessionTTL             time.Duration
 }
 
 // DatabaseConfig configures the PostgreSQL connection pool.
@@ -231,15 +230,14 @@ func Load(lookup LookupEnv) (Config, error) {
 			),
 		},
 		Auth: AuthConfig{
-			AccessTokenTTL:           durationOrDefault(lookup, "AUTH_ACCESS_TOKEN_TTL", 24*time.Hour),
-			AgentVerificationTokenID: strings.TrimSpace(envOrDefault(lookup, "AUTH_AGENT_VERIFICATION_TOKEN_ID", "")),
-			BootstrapDisplayName:     envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
-			BootstrapEmail:           envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
-			BootstrapPassword:        envOrDefault(lookup, "AUTH_BOOTSTRAP_PASSWORD", "mmdash-local-admin"),
-			JWTSecret:                envOrDefault(lookup, "AUTH_JWT_SECRET", "development-auth-jwt-secret-change-me"),
-			DeviceAuthorizationTTL:   durationOrDefault(lookup, "AUTH_DEVICE_AUTHORIZATION_TTL", 10*time.Minute),
-			DevicePollInterval:       durationOrDefault(lookup, "AUTH_DEVICE_POLL_INTERVAL", 5*time.Second),
-			SessionTTL:               durationOrDefault(lookup, "AUTH_SESSION_TTL", 30*24*time.Hour),
+			AccessTokenTTL:         durationOrDefault(lookup, "AUTH_ACCESS_TOKEN_TTL", 24*time.Hour),
+			BootstrapDisplayName:   envOrDefault(lookup, "AUTH_BOOTSTRAP_DISPLAY_NAME", "mmdash Admin"),
+			BootstrapEmail:         envOrDefault(lookup, "AUTH_BOOTSTRAP_EMAIL", "admin@mmdash.local"),
+			BootstrapPassword:      envOrDefault(lookup, "AUTH_BOOTSTRAP_PASSWORD", "mmdash-local-admin"),
+			JWTSecret:              envOrDefault(lookup, "AUTH_JWT_SECRET", "development-auth-jwt-secret-change-me"),
+			DeviceAuthorizationTTL: durationOrDefault(lookup, "AUTH_DEVICE_AUTHORIZATION_TTL", 10*time.Minute),
+			DevicePollInterval:     durationOrDefault(lookup, "AUTH_DEVICE_POLL_INTERVAL", 5*time.Second),
+			SessionTTL:             durationOrDefault(lookup, "AUTH_SESSION_TTL", 30*24*time.Hour),
 		},
 		Database: DatabaseConfig{
 			ConnMaxIdleTime: durationOrDefault(lookup, "DATABASE_CONN_MAX_IDLE_TIME", 5*time.Minute),

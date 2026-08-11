@@ -10,7 +10,7 @@ import (
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$`)
 var contextIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$`)
 
-// Middleware creates request IDs and propagates trusted gateway context.
+// Middleware creates request IDs and propagates bounded request context.
 func Middleware(generator identity.Generator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		requestID := request.Header.Get("X-Request-ID")

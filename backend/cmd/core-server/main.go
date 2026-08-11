@@ -125,16 +125,15 @@ func run(logger *logging.Logger) error {
 	systemClock := clock.System{}
 	idGenerator := identity.Generator{}
 	authService := &auth.Service{
-		AccessTokenTTL:           processConfig.Auth.AccessTokenTTL,
-		AgentVerificationTokenID: processConfig.Auth.AgentVerificationTokenID,
-		Clock:                    systemClock,
-		DeviceAuthorizationTTL:   processConfig.Auth.DeviceAuthorizationTTL,
-		DevicePollInterval:       processConfig.Auth.DevicePollInterval,
-		DeviceVerificationURI:    strings.TrimRight(processConfig.PublicURL, "/") + "/cli/authorize",
-		Generator:                idGenerator,
-		JWTSecret:                []byte(processConfig.Auth.JWTSecret),
-		SessionTTL:               processConfig.Auth.SessionTTL,
-		Store:                    auth.PostgresStore{DB: db},
+		AccessTokenTTL:         processConfig.Auth.AccessTokenTTL,
+		Clock:                  systemClock,
+		DeviceAuthorizationTTL: processConfig.Auth.DeviceAuthorizationTTL,
+		DevicePollInterval:     processConfig.Auth.DevicePollInterval,
+		DeviceVerificationURI:  strings.TrimRight(processConfig.PublicURL, "/") + "/cli/authorize",
+		Generator:              idGenerator,
+		JWTSecret:              []byte(processConfig.Auth.JWTSecret),
+		SessionTTL:             processConfig.Auth.SessionTTL,
+		Store:                  auth.PostgresStore{DB: db},
 	}
 	transactionManager := transaction.Manager{DB: transaction.SQLBeginner{DB: db}}
 	outboxWriter := outbox.Writer{Clock: systemClock, Generator: idGenerator}
@@ -495,6 +494,7 @@ func run(logger *logging.Logger) error {
 		Audit: auditRecorder, Clock: systemClock, DB: db, Generator: idGenerator,
 		Outbox: outboxWriter, Transaction: transactionManager,
 	}
+	artifactService.AgentRuns = agentStore
 	authService.Store = auth.PostgresStore{
 		AgentCredentials: agentStore,
 		DB:               db,
@@ -511,7 +511,8 @@ func run(logger *logging.Logger) error {
 	}
 	agentService := &agent.Service{
 		Adapters: agentAdapters, Audit: auditRecorder, Auth: authService,
-		Clock: systemClock, GatewayURL: processConfig.Agent.GatewayURL,
+		Artifacts: artifactService,
+		Clock:     systemClock, GatewayURL: processConfig.Agent.GatewayURL,
 		Generator: idGenerator, Metrics: metricRegistry, Projects: projectService,
 		Settings: &settingsService, Store: agentStore,
 	}
@@ -749,7 +750,6 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	handler := coreapp.NewHandler(coreapp.Options{
-		AgentRequestGuard: authService.AuthorizeAgentRequest,
 		Audit: func(ctx context.Context, observation coreapp.HTTPObservation) error {
 			outcome := "success"
 			if observation.Status == 401 || observation.Status == 403 {

@@ -224,11 +224,15 @@ func normalizeSSEEvent(namedEvent, upstreamID string, data []byte, streamID stri
 		event.Type, event.Status = agent.EventMessageCompleted, "completed"
 		event.Text = stringValue(payload["content"])
 	case "tool.progress":
-		event.Type, event.Status = agent.EventToolProgress, "running"
-		event.Tool = &agent.ToolCall{Name: firstString(payload, "tool_name", "tool"), Status: "running"}
+		if firstString(payload, "tool_name", "tool") == "_thinking" {
+			event.Type, event.Status = agent.EventReasoningAvailable, "reasoning_available"
+		} else {
+			event.Type, event.Status = agent.EventToolProgress, "running"
+			event.Tool = safeToolCall(payload, "running")
+		}
 	case "tool.started":
 		event.Type, event.Status = agent.EventToolStarted, "running"
-		event.Tool = &agent.ToolCall{Name: firstString(payload, "tool_name", "tool"), Status: "running"}
+		event.Tool = safeToolCall(payload, "running")
 	case "tool.completed":
 		event.Type, event.Status = agent.EventToolCompleted, "completed"
 		toolStatus := "completed"
@@ -236,14 +240,14 @@ func normalizeSSEEvent(namedEvent, upstreamID string, data []byte, streamID stri
 			event.Type, event.Status = agent.EventToolFailed, "failed"
 			toolStatus = "failed"
 		}
-		event.Tool = &agent.ToolCall{Name: firstString(payload, "tool_name", "tool"), Status: toolStatus}
+		event.Tool = safeToolCall(payload, toolStatus)
 	case "tool.failed":
 		event.Type, event.Status = agent.EventToolFailed, "failed"
-		event.Tool = &agent.ToolCall{Name: firstString(payload, "tool_name", "tool"), Status: "failed"}
+		event.Tool = safeToolCall(payload, "failed")
 	case "reasoning.available":
 		// Presence is useful UI state, but the reasoning text is deliberately
 		// discarded at this boundary.
-		event.Type, event.Status = agent.EventToolProgress, "reasoning_available"
+		event.Type, event.Status = agent.EventReasoningAvailable, "reasoning_available"
 	case "subagent.start":
 		event.Type, event.Status = agent.EventSubagentStarted, "running"
 	case "subagent.complete":
@@ -270,6 +274,14 @@ func normalizeSSEEvent(namedEvent, upstreamID string, data []byte, streamID stri
 		return agent.Event{}, false
 	}
 	return eventIdentity(event, upstreamID, streamID, fallbackSequence), true
+}
+
+func safeToolCall(payload map[string]any, status string) *agent.ToolCall {
+	return &agent.ToolCall{
+		RemoteID: firstString(payload, "tool_call_id", "call_id", "id"),
+		Name:     firstString(payload, "tool_name", "tool"),
+		Status:   status,
+	}
 }
 
 func correlateApproval(event *agent.Event, active *[]string) {

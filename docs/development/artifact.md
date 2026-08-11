@@ -12,6 +12,11 @@ Migration `000013_artifact` owns the domain tables. Migration
 transfer state without changing the frozen public Artifact schema. Both must
 be applied through the normal migrator.
 
+Migration `000035_agent_artifact` adds the reserved `agent` kind/source and an
+optional `agent_instance_id` on upload sessions. Existing public upload
+contracts and rows are unchanged. The Agent-specific initialization route is
+private Core and is reached only from MCP Gateway with the inbound Agent Token.
+
 ## Storage backends
 
 `ARTIFACT_STORAGE_BACKEND` selects one of three adapters:
@@ -136,7 +141,9 @@ state, then idempotently upserts `artifact` and
 reappear after restoration. Projection metadata contains no object key,
 provider upload ID, credential, or signed URL.
 
-Generic MCP `data.list/read` remains the only Stage 2 Agent surface.
+Generic MCP `data.list/read` remains the Stage 2 read surface. The later Agent
+integration adds exact-scope `artifact.read` for chat attachments and
+`artifact.upload` for Agent-produced images and files.
 `data.list` reads projections; `data.read` passes through current Project RBAC
 to the Artifact reader and signs a short-lived download only for that call.
 Project creation remains step one of the source-file flow. After upload, PATCH
@@ -144,6 +151,22 @@ Project creation remains step one of the source-file flow. After upload, PATCH
 requires every ID to be unique, same-Project, available, and not trashed. Data
 Hub's Project-home `problem` section resolves those validated source files and
 their current preview state.
+
+`artifact.upload` carries metadata and multipart state only. It calls the
+dedicated Agent initialization operation, requires `kind/source=agent`, and
+returns direct object-storage PUT grants. Hermes computes SHA-256 and performs
+the PUTs itself; Gateway/Core never buffer a complete part or file. Upload
+continuation is bound to the creating Agent instance. A remote Hermes
+deployment must be able to reach the configured object-storage endpoint;
+Local/Core-proxy transfer mode is rejected by the Tool.
+
+Agent uploads may provide the current Session and Run only as a pair. Core
+validates their Agent/Project ownership and records an `output` relation to the
+Run. Browser composer uploads remain `kind=attachment`, `source=user_upload`;
+starting a Run records an `attachment` relation to its current immutable
+Version. Transcript cards and previews are derived from those two relation
+types. `artifact.read` delegates to the standard Artifact download grant and
+never returns permanent object locations.
 
 ## Core verification
 

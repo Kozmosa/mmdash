@@ -637,9 +637,20 @@ func (module Module) handleRuns(
 		if !httpx.DecodeJSON(response, request, &body) {
 			return
 		}
+		artifactIDs := []string{}
+		if body.ArtifactIDs != nil {
+			artifactIDs = *body.ArtifactIDs
+		}
+		reasoningEffort := ""
+		if body.ReasoningEffort != nil {
+			reasoningEffort = string(*body.ReasoningEffort)
+		}
 		run, err := module.Service.StartRun(
 			request.Context(), identity, projectID, instanceID, sessionID,
-			StartRunInput{Input: body.Message},
+			StartRunInput{
+				Input: body.Message, ArtifactIDs: artifactIDs,
+				ReasoningEffort: reasoningEffort,
+			},
 		)
 		if err != nil {
 			writeAgentError(response, request, err)
@@ -1165,6 +1176,9 @@ func sessionView(item SessionRecord, defaultSessionID string) map[string]interfa
 	if item.LastRunAt != nil {
 		view["last_run_at"] = item.LastRunAt
 	}
+	if item.LastRunID != "" {
+		view["last_run_id"] = item.LastRunID
+	}
 	if item.EndedAt != nil {
 		view["ended_at"] = item.EndedAt
 	}
@@ -1187,6 +1201,9 @@ func messageView(item Message) map[string]interface{} {
 		}
 		view["tool_calls"] = calls
 	}
+	if len(item.Attachments) > 0 {
+		view["attachments"] = item.Attachments
+	}
 	if item.Timestamp != nil {
 		view["created_at"] = item.Timestamp
 	}
@@ -1196,7 +1213,15 @@ func messageView(item Message) map[string]interface{} {
 func runView(item RunRecord) map[string]interface{} {
 	calls := make([]interface{}, 0, len(item.ToolCalls))
 	for _, call := range item.ToolCalls {
-		calls = append(calls, toolCallRecordView(call))
+		callView := toolCallRecordView(call)
+		if terminalRunStatus(item.Status) && (call.Status == "queued" || call.Status == "running") {
+			if item.Status == RunRecordCompleted {
+				callView["status"] = "completed"
+			} else {
+				callView["status"] = "failed"
+			}
+		}
+		calls = append(calls, callView)
 	}
 	view := map[string]interface{}{
 		"created_at":    item.CreatedAt,

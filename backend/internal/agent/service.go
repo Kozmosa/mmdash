@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mmdash/mmdash/backend/internal/artifact"
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
@@ -36,7 +37,11 @@ type ProjectAccess interface {
 }
 
 type Service struct {
-	Adapters   *Registry
+	Adapters  *Registry
+	Artifacts interface {
+		AttachAgentRunInputs(context.Context, auth.Identity, string, string, []string) ([]artifact.ChatAttachment, error)
+		ListAgentRunAttachments(context.Context, auth.Identity, string, []string) ([]artifact.ChatAttachment, error)
+	}
 	Audit      audit.Recorder
 	Auth       *auth.Service
 	Clock      interface{ Now() time.Time }
@@ -262,8 +267,9 @@ func (service Service) CreateInstance(
 	result := InstanceResult{Instance: instance}
 	if input.ManagementMode == ManagementManual {
 		result.OneTimeToken = &OneTimeTokenMaterial{
-			AllowedTools: append([]string(nil), tools...), GatewayURL: service.GatewayURL,
-			Token: issued.Secret, TokenID: issued.Token.ID,
+			AllowedTools: append([]string(nil), tools...),
+			GatewayURL:   verificationEndpoint(service.GatewayURL, issued.Challenge),
+			Token:        issued.Secret, TokenID: issued.Token.ID,
 		}
 		return result, nil
 	}
@@ -451,8 +457,9 @@ func (service Service) UpdateInstance(
 	result.Rotation = &rotation
 	if updated.ManagementMode == ManagementManual {
 		result.OneTimeToken = &OneTimeTokenMaterial{
-			AllowedTools: append([]string(nil), requestedTools...), GatewayURL: service.GatewayURL,
-			Token: issued.Secret, TokenID: issued.Token.ID,
+			AllowedTools: append([]string(nil), requestedTools...),
+			GatewayURL:   verificationEndpoint(service.GatewayURL, issued.Challenge),
+			Token:        issued.Secret, TokenID: issued.Token.ID,
 		}
 		return result, nil
 	}
@@ -645,7 +652,7 @@ func (service Service) RotateToken(
 	if item.ManagementMode == ManagementManual {
 		result.OneTimeToken = &OneTimeTokenMaterial{
 			AllowedTools: append([]string(nil), item.Grant.AllowedTools...),
-			GatewayURL:   service.GatewayURL, Token: issued.Secret,
+			GatewayURL:   verificationEndpoint(service.GatewayURL, issued.Challenge), Token: issued.Secret,
 			TokenID: issued.Token.ID,
 		}
 		return result, nil
@@ -701,7 +708,7 @@ func (service Service) VerifyToken(
 			"failed", "token_expired", service.now())
 		return Instance{}, ErrConflict
 	}
-	if !service.hasTrustedVerification(token) {
+	if !hasAgentVerification(token) {
 		return Instance{}, ErrConflict
 	}
 	if _, err := service.Store.UpdateRotation(ctx, rotation.RotationID,
@@ -921,7 +928,10 @@ func (service Service) CreateSession(
 	}
 	input.Title = strings.TrimSpace(input.Title)
 	input.SessionType = strings.TrimSpace(input.SessionType)
-	if input.Title == "" || !validSessionType(input.SessionType) {
+	// Human-facing Agent conversations are always main Sessions. Progress and
+	// experiment Sessions are reserved for their owning internal workflows,
+	// which create them through dedicated in-process services.
+	if input.Title == "" || input.SessionType != "main" {
 		return SessionRecord{}, ErrInvalid
 	}
 	instance, err := service.Store.GetInstance(ctx, projectID, instanceID)
@@ -1136,6 +1146,32 @@ func (service Service) ListMessages(
 	}
 	if messages == nil {
 		messages = []Message{}
+	}
+	if service.Artifacts != nil {
+		runs, listErr := service.Store.ListRuns(ctx, sessionID)
+		if listErr != nil {
+			return nil, listErr
+		}
+		runIDs := make([]string, 0, len(runs))
+		for _, run := range runs {
+			runIDs = append(runIDs, run.ID)
+		}
+		attachments, listErr := service.Artifacts.ListAgentRunAttachments(
+			ctx, caller, projectID, runIDs,
+		)
+		if listErr != nil {
+			return nil, listErr
+		}
+		messages = append(messages, attachmentMessages(attachments, runs)...)
+		sort.SliceStable(messages, func(left, right int) bool {
+			if messages[left].Timestamp == nil {
+				return false
+			}
+			if messages[right].Timestamp == nil {
+				return true
+			}
+			return messages[left].Timestamp.Before(*messages[right].Timestamp)
+		})
 	}
 	return messages, nil
 }
@@ -1468,12 +1504,25 @@ func (service Service) startRun(
 	if input.Input == "" || len(input.Input) > 200000 {
 		return RunRecord{}, ErrInvalid
 	}
+	input.ReasoningEffort = strings.TrimSpace(input.ReasoningEffort)
+	if !validReasoningEffort(input.ReasoningEffort) {
+		return RunRecord{}, ErrInvalid
+	}
 	session, adapter, err := service.sessionAdapter(ctx, projectID, instanceID, sessionID)
 	if err != nil {
 		return RunRecord{}, err
 	}
 	if session.Status != SessionActive {
 		return RunRecord{}, ErrConflict
+	}
+	remoteMessages, err := adapter.ListMessages(ctx, session.RemoteSessionID)
+	if err != nil {
+		return RunRecord{}, mapAdapterError(err)
+	}
+	history := conversationHistory(remoteMessages)
+	previousAttachments, err := service.sessionAttachments(ctx, caller, projectID, sessionID)
+	if err != nil {
+		return RunRecord{}, err
 	}
 	localID, err := service.Generator.New()
 	if err != nil {
@@ -1489,11 +1538,29 @@ func (service Service) startRun(
 	if _, err := service.Store.ReserveRun(ctx, reserved); err != nil {
 		return RunRecord{}, err
 	}
+	attachments := []artifact.ChatAttachment{}
+	if len(input.ArtifactIDs) > 0 {
+		if service.Artifacts == nil {
+			_ = service.Store.FailRunReservation(ctx, caller.User.ID, localID,
+				"artifact_service_unavailable", service.now())
+			return RunRecord{}, ErrNotConfigured
+		}
+		attachments, err = service.Artifacts.AttachAgentRunInputs(
+			ctx, caller, projectID, localID, input.ArtifactIDs,
+		)
+		if err != nil {
+			_ = service.Store.FailRunReservation(ctx, caller.User.ID, localID,
+				"artifact_attachment_failed", service.now())
+			return RunRecord{}, err
+		}
+	}
 	instructions := runInstructions(strings.TrimSpace(input.Instructions),
-		projectID, sessionID, localID)
+		projectID, sessionID, localID, attachments, previousAttachments)
 	remote, err := adapter.StartRun(ctx, StartRunRequest{
 		Input: input.Input, Instructions: instructions,
-		SessionRemoteID: session.RemoteSessionID,
+		SessionRemoteID:     session.RemoteSessionID,
+		ConversationHistory: history,
+		ReasoningEffort:     input.ReasoningEffort,
 	})
 	if err != nil {
 		code := safeAdapterCode(err, "runtime_failed")
@@ -1637,7 +1704,8 @@ func (service Service) configureAndActivate(
 	now := service.now()
 	request := ProjectAccessRequest{
 		BindingID: rotation.RotationID, Credential: issued.Secret,
-		Endpoint: service.GatewayURL, ExpectedTools: grant.AllowedTools,
+		Endpoint:        verificationEndpoint(service.GatewayURL, issued.Challenge),
+		ExpectedTools:   grant.AllowedTools,
 		CurrentRemoteID: grant.RemoteAccessID,
 	}
 	var access ProjectAccessResult
@@ -1662,7 +1730,7 @@ func (service Service) configureAndActivate(
 		return err
 	}
 	token, err := service.Auth.GetAgentToken(ctx, issued.Token.ID)
-	if err != nil || !service.hasTrustedVerification(token) {
+	if err != nil || !hasAgentVerification(token) {
 		code := "gateway_verification_missing"
 		_, _ = service.Store.UpdateRotation(ctx, rotation.RotationID, "failed", code, now)
 		instance.Status = InstanceDegraded
@@ -1758,7 +1826,7 @@ func (service Service) hasVerifiedActiveAgentAccess(ctx context.Context, grantID
 	for _, token := range tokens {
 		if token.Status == "active" && token.RevokedAt == nil &&
 			(token.ExpiresAt == nil || token.ExpiresAt.After(now)) &&
-			service.hasTrustedVerification(token) {
+			hasAgentVerification(token) {
 			return true
 		}
 	}
@@ -1851,6 +1919,15 @@ func validManagementMode(value string) bool {
 
 func validSessionType(value string) bool {
 	return value == SessionMain || value == SessionProgress || value == SessionExperiment
+}
+
+func validReasoningEffort(value string) bool {
+	switch value {
+	case "", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra":
+		return true
+	default:
+		return false
+	}
 }
 
 func validApprovalChoice(value ApprovalChoice) bool {
@@ -1954,20 +2031,146 @@ Problem summary: %s
 Project constraints:
 %s
 
-Use only the MCP tools granted to this Agent. Read authoritative project data through MCP instead of assuming copied context is current. Use context.promote for durable conclusions; proposals remain untrusted until a human confirms them. Never expose credentials, signed URLs, hidden reasoning, or complete tool output.`, item.Name, item.ProblemTitle, item.ProblemSummary, constraints)
+Use only the MCP tools granted to this Agent. Read authoritative project data through MCP instead of assuming copied context is current. Use context.promote for durable conclusions; proposals remain untrusted until a human confirms them. When a useful response is naturally a file or image, proactively create it and use artifact.upload with the current Run provenance so it appears in the mmdash chat; do not wait for the user to ask you to upload it. Use artifact.read for files attached by the user. Hermes can expose MCP tools under aliases such as mcp__<server>__artifact_read and mcp__<server>__artifact_upload; select the available alias whose canonical tool name matches instead of attempting to call the dotted canonical name as an unregistered native tool. Never expose credentials, signed URLs, hidden reasoning, or complete tool output.`, item.Name, item.ProblemTitle, item.ProblemSummary, constraints)
 }
 
-func runInstructions(base, projectID, sessionID, runID string) string {
+func runInstructions(
+	base, projectID, sessionID, runID string,
+	attachments, previousAttachments []artifact.ChatAttachment,
+) string {
 	provenance := fmt.Sprintf(`mmdash provenance for this Run:
 - project_id: %s
 - agent_session_id: %s
 - agent_run_id: %s
 
-When calling context.promote for a conclusion produced by this Run, include both agent_session_id and agent_run_id exactly as shown. These identifiers are traceability metadata, not credentials.`, projectID, sessionID, runID)
+When calling context.promote or beginning artifact.upload for this Run, include both agent_session_id and agent_run_id exactly as shown. These identifiers are traceability metadata, not credentials.
+
+If your answer naturally includes a useful file or image, proactively create it and use artifact.upload so mmdash can display it in this chat. Do not wait for a separate upload request. Hermes can expose this MCP tool under an alias such as mcp__<server>__artifact_upload; use the available alias whose canonical tool is artifact.upload.`, projectID, sessionID, runID)
+	if len(attachments) > 0 {
+		lines := make([]string, 0, len(attachments))
+		for _, attachment := range attachments {
+			lines = append(lines, fmt.Sprintf(
+				"- artifact_id=%s version_id=%s filename=%q mime_type=%q size_bytes=%d",
+				attachment.ArtifactID, attachment.VersionID, attachment.Filename,
+				attachment.MIMEType, attachment.SizeBytes,
+			))
+		}
+		provenance += "\n\nFiles attached by the user to this message:\n" +
+			strings.Join(lines, "\n") +
+			"\nAttachments are first-class message input. Before answering, proactively inspect every current attachment relevant to the user's request with artifact.read, even when the user did not explicitly say read, open, inspect, or check the file. Do not answer that the content is unknown until the relevant attached bytes have been inspected. Hermes can expose artifact.read under an alias such as mcp__<server>__artifact_read; use the available alias whose canonical tool is artifact.read instead of calling a missing dotted native tool. Do not ask the user to upload these files again."
+	}
+	if len(previousAttachments) > 0 {
+		lines := make([]string, 0, len(previousAttachments))
+		for _, attachment := range previousAttachments {
+			lines = append(lines, fmt.Sprintf(
+				"- direction=%s run_id=%s artifact_id=%s version_id=%s filename=%q mime_type=%q size_bytes=%d",
+				attachment.Direction, attachment.RunID, attachment.ArtifactID,
+				attachment.VersionID, attachment.Filename, attachment.MIMEType,
+				attachment.SizeBytes,
+			))
+		}
+		provenance += "\n\nFiles previously exchanged in this mmdash Session (newest 50):\n" +
+			strings.Join(lines, "\n") +
+			"\nThese files remain available in later turns. When the user's question depends on one of them, inspect it with artifact.read instead of claiming it is unavailable or asking for another upload. Read only the files relevant to the current request."
+	}
 	if base == "" {
 		return provenance
 	}
 	return base + "\n\n" + provenance
+}
+
+func (service Service) sessionAttachments(
+	ctx context.Context,
+	caller auth.Identity,
+	projectID string,
+	sessionID string,
+) ([]artifact.ChatAttachment, error) {
+	if service.Artifacts == nil {
+		return []artifact.ChatAttachment{}, nil
+	}
+	runs, err := service.Store.ListRuns(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	runIDs := make([]string, 0, len(runs))
+	for _, run := range runs {
+		runIDs = append(runIDs, run.ID)
+	}
+	if len(runIDs) == 0 {
+		return []artifact.ChatAttachment{}, nil
+	}
+	items, err := service.Artifacts.ListAgentRunAttachments(ctx, caller, projectID, runIDs)
+	if err != nil {
+		return nil, err
+	}
+	const maximumSessionAttachments = 50
+	if len(items) > maximumSessionAttachments {
+		items = items[len(items)-maximumSessionAttachments:]
+	}
+	return items, nil
+}
+
+func conversationHistory(messages []Message) []ConversationMessage {
+	items := make([]ConversationMessage, 0, len(messages))
+	for _, message := range messages {
+		role := strings.TrimSpace(message.Role)
+		content := strings.TrimSpace(message.Content)
+		if (role != "user" && role != "assistant") || content == "" {
+			continue
+		}
+		items = append(items, ConversationMessage{Role: role, Content: content})
+	}
+	const maximumHistoryMessages = 200
+	if len(items) > maximumHistoryMessages {
+		items = items[len(items)-maximumHistoryMessages:]
+	}
+	return items
+}
+
+func attachmentMessages(items []artifact.ChatAttachment, runs []RunRecord) []Message {
+	type groupKey struct{ runID, direction string }
+	runTimestamps := map[string]time.Time{}
+	for _, run := range runs {
+		if run.CompletedAt != nil {
+			runTimestamps[run.ID] = run.CompletedAt.Add(time.Nanosecond)
+		} else if terminalRunStatus(run.Status) {
+			runTimestamps[run.ID] = run.UpdatedAt.Add(time.Nanosecond)
+		}
+	}
+	grouped := map[groupKey][]ChatAttachment{}
+	timestamps := map[groupKey]time.Time{}
+	order := []groupKey{}
+	for _, item := range items {
+		key := groupKey{runID: item.RunID, direction: item.Direction}
+		if _, exists := grouped[key]; !exists {
+			order = append(order, key)
+			timestamps[key] = item.CreatedAt
+		}
+		grouped[key] = append(grouped[key], ChatAttachment{
+			ArtifactID: item.ArtifactID, VersionID: item.VersionID, RunID: item.RunID,
+			Direction: item.Direction, Name: item.Name, Filename: item.Filename,
+			MIMEType: item.MIMEType, SizeBytes: item.SizeBytes, CreatedAt: item.CreatedAt,
+		})
+	}
+	messages := make([]Message, 0, len(order))
+	for _, key := range order {
+		role := "assistant"
+		if key.direction == "input" {
+			role = "user"
+		}
+		timestamp := timestamps[key]
+		if key.direction == "output" {
+			if settledTimestamp, exists := runTimestamps[key.runID]; exists {
+				timestamp = settledTimestamp
+			}
+		}
+		messages = append(messages, Message{
+			Attachments: grouped[key],
+			RemoteID:    "mmdash-artifacts-" + key.runID + "-" + key.direction,
+			Role:        role, Timestamp: &timestamp,
+		})
+	}
+	return messages
 }
 
 func normalizeRunStatus(status RunStatus) string {
@@ -2055,10 +2258,8 @@ func safeAdapterCode(err error, fallback string) string {
 	return fallback
 }
 
-func (service Service) hasTrustedVerification(token auth.AgentToken) bool {
-	return service.Auth != nil &&
-		strings.TrimSpace(service.Auth.AgentVerificationTokenID) != "" &&
-		token.Verification != nil &&
+func hasAgentVerification(token auth.AgentToken) bool {
+	return token.Verification != nil &&
 		token.Verification.EvidenceID != "" &&
 		token.Verification.MCPMethod == auth.AgentTokenVerificationMethod &&
 		token.Verification.MCPSessionID != "" &&
@@ -2066,8 +2267,18 @@ func (service Service) hasTrustedVerification(token auth.AgentToken) bool {
 		token.Verification.AgentInstanceID == token.AgentInstanceID &&
 		token.Verification.ProjectID == token.ProjectID &&
 		token.Verification.TokenID == token.ID &&
-		token.Verification.VerifiedByTokenID == strings.TrimSpace(service.Auth.AgentVerificationTokenID) &&
 		!token.Verification.VerifiedAt.Before(token.CreatedAt)
+}
+
+func verificationEndpoint(endpoint string, challenge string) string {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || strings.TrimSpace(challenge) == "" {
+		return endpoint
+	}
+	query := parsed.Query()
+	query.Set("mmdash_challenge", challenge)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func mapAdapterError(err error) error {
