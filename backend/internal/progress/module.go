@@ -148,6 +148,14 @@ func (module Module) handleMilestones(w http.ResponseWriter, r *http.Request, id
 		httpx.WriteJSON(w, http.StatusOK, item)
 		return
 	}
+	if len(rest) == 1 && r.Method == http.MethodDelete {
+		if err := module.Service.DeleteMilestone(r.Context(), identity, projectID, rest[0]); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	writeError(w, r, ErrNotFound)
 }
 
@@ -378,7 +386,7 @@ func (module Module) handleSettings(w http.ResponseWriter, r *http.Request, iden
 			AutoTaskChanges: body.AutoTaskChanges, AutoTrackingEnabled: body.AutoTrackingEnabled,
 			EventTriggersEnabled: body.EventTriggersEnabled, CronEnabled: body.CronEnabled,
 			CronSchedule: body.CronSchedule, DebounceSeconds: int(body.DebounceSeconds),
-			MinIntervalSeconds: int(body.MinIntervalSeconds), AgentInstanceID: stringValue(body.AgentInstanceID),
+			MinIntervalSeconds: int(body.MinIntervalSeconds), ReasoningEffort: string(body.ReasoningEffort), AgentInstanceID: stringValue(body.AgentInstanceID),
 		})
 		if err != nil {
 			writeError(w, r, err)
@@ -553,6 +561,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusConflict, "PROGRESS_CONFLICT", "The Progress record has changed or is already resolved"
 	case errors.Is(err, ErrNotFound):
 		status, code, message = http.StatusNotFound, "PROGRESS_NOT_FOUND", "Progress record not found"
+	case errors.Is(err, ErrEvaluationConfiguration):
+		status, code, message = http.StatusUnprocessableEntity, "PROGRESS_EVALUATOR_CONFIGURATION_INVALID", "Progress evaluator configuration is invalid"
 	case errors.Is(err, ErrEvaluationUnavailable):
 		status, code, message = http.StatusServiceUnavailable, "PROGRESS_EVALUATOR_UNAVAILABLE", "Progress evaluation is temporarily unavailable"
 	case errors.Is(err, jobs.ErrLeaseLost), errors.Is(err, jobs.ErrWorkerToken):

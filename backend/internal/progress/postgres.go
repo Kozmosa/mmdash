@@ -153,6 +153,16 @@ func (store PostgresStore) GetTask(ctx context.Context, projectID, id string) (T
 	return item, mapNotFound(err)
 }
 
+func (store PostgresStore) DeleteMilestone(ctx context.Context, projectID, id, actorID string) error {
+	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var title string
+		if err := tx.QueryRowContext(ctx, `DELETE FROM progress_milestones WHERE project_id=$1 AND milestone_id=$2 RETURNING title`, projectID, id).Scan(&title); err != nil {
+			return mapNotFound(err)
+		}
+		return store.progressEvent(ctx, tx, "progress.milestone.deleted", projectID, actorID, id, "milestone", title, "deleted", map[string]interface{}{"source": "human"})
+	})
+}
+
 func (store PostgresStore) CreateTask(ctx context.Context, projectID, actorID string, input CreateTaskInput, source string) (Task, error) {
 	var err error
 	input.MilestoneID, err = normalizeReferenceID(input.MilestoneID)

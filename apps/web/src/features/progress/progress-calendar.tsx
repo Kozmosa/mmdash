@@ -22,6 +22,8 @@ type Props = {
   milestones: ProgressMilestone[];
   tasks: ProgressTask[];
   onCreate: (at: Date, kind?: "task" | "milestone", targetHasTime?: boolean) => void;
+  onDeleteMilestone: (milestone: ProgressMilestone) => void;
+  onDeleteTask: (task: ProgressTask) => void;
   onMoveMilestone: (id: string, at: Date) => void;
   onMoveTask: (id: string, startAt: Date, dueAt: Date) => void;
   onOpenMilestone: (milestone: ProgressMilestone) => void;
@@ -139,7 +141,7 @@ export function ProgressCalendar(props: Readonly<Props>) {
   );
 }
 
-function MilestoneStrip({ canManage, completionByTarget, day, milestones, onCreate, onMoveMilestone, onOpenMilestone, onReview, onToggleMilestone }: Readonly<Props & { day: Date }>) {
+function MilestoneStrip({ canManage, completionByTarget, day, milestones, onCreate, onDeleteMilestone, onMoveMilestone, onOpenMilestone, onReview, onToggleMilestone }: Readonly<Props & { day: Date }>) {
   const values = milestones.filter((item) => item.target_at && localDayKey(new Date(item.target_at)) === localDayKey(day));
   return <div className="min-h-16 space-y-1 border-r border-border p-1" onDoubleClick={(event) => { if (event.currentTarget === event.target) onCreate(dateAtMinutes(day, 9 * 60), "milestone", false); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
     const id = event.dataTransfer.getData("application/x-mmdash-milestone");
@@ -149,7 +151,7 @@ function MilestoneStrip({ canManage, completionByTarget, day, milestones, onCrea
     target.setFullYear(day.getFullYear(), day.getMonth(), day.getDate());
     onMoveMilestone(id, target);
   }}>
-    {values.map((milestone) => <div draggable={canManage} key={milestone.milestone_id} onDragEnd={endNativeProgressDrag} onDragStart={(event) => beginNativeProgressDrag(event, "application/x-mmdash-milestone", milestone.milestone_id)}><ProgressItemCard canManage={canManage} compact item={milestone} kind="milestone" onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} /></div>)}
+    {values.map((milestone) => <div draggable={canManage} key={milestone.milestone_id} onDragEnd={endNativeProgressDrag} onDragStart={(event) => beginNativeProgressDrag(event, "application/x-mmdash-milestone", milestone.milestone_id)}><ProgressItemCard canManage={canManage} compact item={milestone} kind="milestone" onDelete={() => onDeleteMilestone(milestone)} onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} /></div>)}
   </div>;
 }
 
@@ -160,7 +162,7 @@ function DayColumn(props: Readonly<Props & {
   dragPosition: { x: number; y: number } | null;
   now: Date;
 }>) {
-  const { activeDrag, beginDrag, canManage, completionByTarget, day, dragPosition, milestones, now, onCreate, onOpenMilestone, onOpenTask, onReview, onToggleMilestone, onToggleTask, tasks } = props;
+  const { activeDrag, beginDrag, canManage, completionByTarget, day, dragPosition, milestones, now, onCreate, onDeleteMilestone, onDeleteTask, onOpenMilestone, onOpenTask, onReview, onToggleMilestone, onToggleTask, tasks } = props;
   const scheduled = tasks.filter((task) => task.start_at && task.due_at && localDayKey(new Date(task.start_at)) === localDayKey(day));
   const lanes = assignOverlapLanes(scheduled.map((task) => ({ end: new Date(task.due_at!).getTime(), id: task.task_id, start: new Date(task.start_at!).getTime() })));
   const timedMilestones = milestones.filter((item) => item.target_has_time && item.target_at && localDayKey(new Date(item.target_at)) === localDayKey(day));
@@ -192,7 +194,7 @@ function DayColumn(props: Readonly<Props & {
       const height = Math.max(24, (visualDueAt.getTime() - visualStartAt.getTime()) / 60_000 * PX_PER_MINUTE);
       return <div className={cn("absolute z-10 px-0.5 transition-opacity", activeDrag?.id === task.task_id && activeDrag.mode === "move" && "opacity-30")} data-testid={`calendar-task-${task.task_id}`} key={task.task_id} style={{ height, left: `${lane.lane / lane.lanes * 100}%`, top, width: `${100 / lane.lanes}%` }}>
         <button aria-label={`调整 ${task.title} 开始时间`} className="absolute inset-x-2 top-0 z-20 h-1 cursor-ns-resize" onPointerDown={(event) => beginDrag(event, { endAt: dueAt, id: task.task_id, kind: "task", mode: "start", startAt, title: task.title })} type="button" />
-        <div className="h-full cursor-grab" onPointerDown={(event) => beginDrag(event, { endAt: dueAt, id: task.task_id, kind: "task", mode: "move", startAt, title: task.title })}><ProgressItemCard canManage={canManage} className="h-full" compact item={task} kind="task" onOpen={() => onOpenTask(task)} onReview={onReview} onToggle={() => onToggleTask(task)} pendingCompletion={completionByTarget.get(task.task_id)} /></div>
+        <div className="h-full cursor-grab" onPointerDown={(event) => beginDrag(event, { endAt: dueAt, id: task.task_id, kind: "task", mode: "move", startAt, title: task.title })}><ProgressItemCard canManage={canManage} className="h-full" compact item={task} kind="task" onDelete={() => onDeleteTask(task)} onOpen={() => onOpenTask(task)} onReview={onReview} onToggle={() => onToggleTask(task)} pendingCompletion={completionByTarget.get(task.task_id)} /></div>
         <button aria-label={`调整 ${task.title} 结束时间`} className="absolute inset-x-2 bottom-0 z-20 h-1 cursor-ns-resize" onPointerDown={(event) => beginDrag(event, { endAt: dueAt, id: task.task_id, kind: "task", mode: "end", startAt, title: task.title })} type="button" />
         {isActiveResize ? <div aria-hidden="true" className="pointer-events-none absolute bottom-1 right-1 z-30 rounded bg-foreground/80 px-1.5 py-0.5 text-[9px] font-medium text-background shadow" data-testid="calendar-resize-preview">{formatTime(visualStartAt)}–{formatTime(visualDueAt)}</div> : null}
       </div>;
@@ -200,7 +202,7 @@ function DayColumn(props: Readonly<Props & {
     {timedMilestones.map((milestone) => {
       const at = new Date(milestone.target_at!);
       return <div className={cn("absolute left-2 right-2 z-20 cursor-grab transition-opacity", activeDrag?.id === milestone.milestone_id && "opacity-30")} key={milestone.milestone_id} onPointerDown={(event) => beginDrag(event, { id: milestone.milestone_id, kind: "milestone", mode: "move", startAt: at, title: milestone.title })} style={{ top: minutesFromDayStart(at) * PX_PER_MINUTE - 10 }}>
-        <ProgressItemCard canManage={canManage} className="border-violet-400 bg-violet-100 text-violet-950 dark:bg-violet-950 dark:text-violet-100" compact item={milestone} kind="milestone" onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} />
+        <ProgressItemCard canManage={canManage} className="border-violet-400 bg-violet-100 text-violet-950 dark:bg-violet-950 dark:text-violet-100" compact item={milestone} kind="milestone" onDelete={() => onDeleteMilestone(milestone)} onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} />
       </div>;
     })}
   </div>;

@@ -113,6 +113,7 @@ export const agentApi = {
   ) {
     return apiClient.request<AgentRun>(
       runPath(projectId, instanceId, sessionId, runId),
+      { cache: "no-store" },
     );
   },
   listInstances(projectId: string) {
@@ -123,6 +124,7 @@ export const agentApi = {
   listMessages(projectId: string, instanceId: string, sessionId: string) {
     return apiClient.request<{ items: AgentMessage[] }>(
       `${sessionPath(projectId, instanceId, sessionId)}/messages`,
+      { cache: "no-store" },
     );
   },
   listSessions(projectId: string, instanceId: string) {

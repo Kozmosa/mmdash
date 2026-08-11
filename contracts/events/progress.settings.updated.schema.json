@@ -4,7 +4,7 @@
   "title": "progress.settings.updated payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resource_id", "resource_type", "auto_task_changes", "auto_tracking_enabled", "event_triggers_enabled", "cron_enabled", "cron_schedule", "debounce_seconds", "min_interval_seconds"],
+  "required": ["resource_id", "resource_type", "auto_task_changes", "auto_tracking_enabled", "event_triggers_enabled", "cron_enabled", "cron_schedule", "debounce_seconds", "min_interval_seconds", "reasoning_effort"],
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "progress_settings" },
@@ -15,6 +15,7 @@
     "cron_schedule": { "type": "string", "minLength": 1, "maxLength": 100 },
     "debounce_seconds": { "type": "integer", "minimum": 0, "maximum": 3600 },
     "min_interval_seconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+    "reasoning_effort": { "type": "string", "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] },
     "agent_instance_id": { "type": "string", "format": "uuid" }
   }
 }

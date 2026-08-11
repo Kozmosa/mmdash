@@ -568,7 +568,9 @@ function AgentWorkspace({
               if (terminalStatuses.has(latest.status)) {
                 setSettledStreamRunId(latest.run_id);
                 setStreamError(
-                  latest.status === "failed" ? "Agent 回复失败，请重试。" : null,
+                  latest.status === "failed"
+                    ? "Agent 回复失败，请重试。"
+                    : null,
                 );
                 await finishRun();
                 return;
@@ -1258,7 +1260,8 @@ function AgentWorkspace({
                       className="max-w-24 bg-transparent py-1 outline-none"
                       disabled={runBusy}
                       onChange={(event) => {
-                        const value = event.target.value as ReasoningEffortPreference;
+                        const value = event.target
+                          .value as ReasoningEffortPreference;
                         setReasoningEffort(value);
                         if (instanceId) {
                           window.localStorage.setItem(
@@ -1727,7 +1730,7 @@ function SessionMenuItem({
   );
 }
 
-function MessageBubble({
+export function MessageBubble({
   message,
   onOpenArtifact,
   optimistic,
@@ -1915,7 +1918,7 @@ function formatBytes(size: number): string {
   return `${(size / 1_048_576).toFixed(1)} MB`;
 }
 
-function RunActivity({
+export function RunActivity({
   reasoningState,
   runBusy,
   toolCalls,
@@ -2260,7 +2263,7 @@ function isReasoningEffortPreference(
   return reasoningEffortOptions.some((option) => option.value === value);
 }
 
-function upsertToolCall(
+export function upsertToolCall(
   current: AgentToolCall[],
   toolCall: AgentToolCall,
 ): AgentToolCall[] {
@@ -2270,14 +2273,14 @@ function upsertToolCall(
   ];
 }
 
-function mergeToolCalls(
+export function mergeToolCalls(
   persisted: AgentToolCall[],
   streamed: AgentToolCall[],
 ): AgentToolCall[] {
   return streamed.reduce(upsertToolCall, persisted);
 }
 
-function mergeStreamText(current: string, incoming: string): string {
+export function mergeStreamText(current: string, incoming: string): string {
   if (!current) return incoming;
   if (!incoming || current === incoming || current.endsWith(incoming)) {
     return current;
@@ -2292,11 +2295,11 @@ function mergeStreamText(current: string, incoming: string): string {
   return current + incoming;
 }
 
-function messageComparisonKey(content: string): string {
+export function messageComparisonKey(content: string): string {
   return content.trim().replace(/\s+/g, " ");
 }
 
-function prepareMessagesForDisplay(
+export function prepareMessagesForDisplay(
   messages: AgentMessage[],
   activeToolCallIds: Set<string>,
   deferAssistantAttachments = false,

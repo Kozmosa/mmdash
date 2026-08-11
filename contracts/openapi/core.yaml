@@ -2803,6 +2803,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Milestone"
+    delete:
+      tags: [Progress]
+      summary: Delete a human milestone
+      operationId: progress.milestones.delete
+      responses:
+        "204": { description: Milestone deleted. }
   /v1/projects/{projectId}/progress/tasks:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -3044,6 +3050,10 @@ paths:
     get:
       tags: [Progress]
       summary: Read Progress automatic-change settings
+      description: >-
+        Reads the project-owned automatic evaluation settings. Periodic
+        evaluation due times are calculated and claimed by mmdash Core; the
+        selected Agent instance executes the resulting evaluation Run only.
       operationId: progress.settings.get
       responses:
         "200":
@@ -3055,6 +3065,10 @@ paths:
     patch:
       tags: [Progress]
       summary: Update Progress automatic-change settings
+      description: >-
+        Updates event and periodic evaluation policy owned by mmdash Core. A
+        five-field Cron expression is evaluated in UTC by the Core scheduler;
+        this operation does not create or update a Hermes Job.
       operationId: progress.settings.update
       requestBody:
         required: true
@@ -7730,7 +7744,14 @@ components:
           {
             type: string,
             enum:
-              [milestone.create, milestone.update, milestone.complete, task.create, task.update, task.complete],
+              [
+                milestone.create,
+                milestone.update,
+                milestone.complete,
+                task.create,
+                task.update,
+                task.complete,
+              ],
           }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
@@ -7764,7 +7785,14 @@ components:
           {
             type: string,
             enum:
-              [milestone.create, milestone.update, milestone.complete, task.create, task.update, task.complete],
+              [
+                milestone.create,
+                milestone.update,
+                milestone.complete,
+                task.create,
+                task.update,
+                task.complete,
+              ],
           }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
@@ -7804,7 +7832,7 @@ components:
           cron_schedule,
           debounce_seconds,
           min_interval_seconds,
-          cron_sync_status,
+          reasoning_effort,
           evaluator_mode,
           updated_by,
           updated_at,
@@ -7814,17 +7842,29 @@ components:
         auto_task_changes: { type: boolean }
         auto_tracking_enabled: { type: boolean }
         event_triggers_enabled: { type: boolean }
-        cron_enabled: { type: boolean }
-        cron_schedule: { type: string, minLength: 1, maxLength: 100 }
+        cron_enabled:
+          type: boolean
+          description: Whether mmdash Core schedules periodic Progress evaluations.
+        cron_schedule:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Five-field UTC Cron expression evaluated by mmdash Core.
         debounce_seconds: { type: integer, minimum: 0, maximum: 3600 }
         min_interval_seconds: { type: integer, minimum: 0, maximum: 86400 }
+        reasoning_effort:
+          type: string
+          enum: [none, minimal, low, medium, high, xhigh, max, ultra]
         evaluator_mode: { type: string, enum: [core_agent, mock] }
         agent_instance_id: { type: string, format: uuid }
-        cron_remote_job_id: { type: string }
-        cron_sync_status:
-          { type: string, enum: [pending, syncing, ready, failed, disabled] }
-        cron_error_code: { type: string }
-        cron_synced_at: { type: string, format: date-time }
+        cron_next_run_at:
+          type: string
+          format: date-time
+          description: Next periodic evaluation occurrence calculated by mmdash Core.
+        cron_last_scheduled_at:
+          type: string
+          format: date-time
+          description: Most recent occurrence scheduled by mmdash Core.
         updated_by: { type: string, format: uuid }
         updated_at: { type: string, format: date-time }
     UpdateProgressSettingsRequest:
@@ -7839,15 +7879,25 @@ components:
           cron_schedule,
           debounce_seconds,
           min_interval_seconds,
+          reasoning_effort,
         ]
       properties:
         auto_task_changes: { type: boolean }
         auto_tracking_enabled: { type: boolean }
         event_triggers_enabled: { type: boolean }
-        cron_enabled: { type: boolean }
-        cron_schedule: { type: string, minLength: 1, maxLength: 100 }
+        cron_enabled:
+          type: boolean
+          description: Whether mmdash Core should schedule periodic Progress evaluations.
+        cron_schedule:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Five-field UTC Cron expression evaluated by mmdash Core.
         debounce_seconds: { type: integer, minimum: 0, maximum: 3600 }
         min_interval_seconds: { type: integer, minimum: 0, maximum: 86400 }
+        reasoning_effort:
+          type: string
+          enum: [none, minimal, low, medium, high, xhigh, max, ultra]
         agent_instance_id: { type: string, format: uuid }
     ProgressTrackerState:
       type: object
@@ -7989,7 +8039,9 @@ components:
           {
             type: array,
             items:
-              { $ref: "#/components/schemas/ProgressEvaluationWorkStateUpdate" },
+              {
+                $ref: "#/components/schemas/ProgressEvaluationWorkStateUpdate",
+              },
           }
         suggestions:
           {

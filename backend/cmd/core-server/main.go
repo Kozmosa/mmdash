@@ -826,7 +826,7 @@ func run(logger *logging.Logger) error {
 		return fmt.Errorf("create Progress tracking processor identity: %w", err)
 	}
 	go (progress.TrackingProcessor{
-		Agent: agentService, Facts: dataStore,
+		Facts: dataStore,
 		Lease: processConfig.Progress.TrackingLease, Metrics: metricRegistry,
 		Owner:      "core-progress-tracking-" + progressTrackingProcessorID,
 		Poll:       processConfig.Progress.TrackingPollInterval,

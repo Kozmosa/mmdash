@@ -1234,6 +1234,18 @@ export class CoreClient {
     );
   }
 
+  async deleteProgressMilestone(
+    projectId: string,
+    milestoneId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/milestones/${encodeURIComponent(milestoneId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
   async listProgressTasks(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["TaskList"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/tasks`,

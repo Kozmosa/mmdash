@@ -33,6 +33,7 @@ Stage 4 and Stage 6 Progress operations:
 
 - Core Stage 4: `progress.get`, `progress.milestones.list`,
   `progress.milestones.create`, `progress.milestones.update`,
+  `progress.milestones.delete`,
   `progress.tasks.list`, `progress.tasks.create`, `progress.tasks.update`,
   `progress.tasks.delete`, `progress.dependencies.list`,
   `progress.dependencies.create`, `progress.dependencies.delete`,
@@ -42,6 +43,7 @@ Stage 4 and Stage 6 Progress operations:
   `progress.settings.get`, and `progress.settings.update`.
 - Web BFF Stage 4: `bff.progress.get`, `bff.progress.milestones.list`,
   `bff.progress.milestones.create`, `bff.progress.milestones.update`,
+  `bff.progress.milestones.delete`,
   `bff.progress.tasks.list`, `bff.progress.tasks.create`,
   `bff.progress.tasks.update`, `bff.progress.tasks.delete`,
   `bff.progress.dependencies.list`, `bff.progress.dependencies.create`,
@@ -63,6 +65,13 @@ Stage 4 and Stage 6 Progress operations:
   routes.
 - MCP Gateway exposes `progress.get` and `progress.recalculate` through exact
   Agent Tool grants and the same Core RBAC boundary.
+
+`progress.settings.get` and `progress.settings.update` expose a project-owned
+automatic evaluation policy. `cron_schedule` is a five-field UTC expression
+evaluated by mmdash Core; `cron_next_run_at` and `cron_last_scheduled_at` report
+Core scheduler state. These endpoints do not create or synchronize Hermes
+Jobs. Each resulting evaluation records its Agent Session and Run provenance,
+which the browser uses for the read-only live Session view.
 
 Notification 3.17 operations:
 

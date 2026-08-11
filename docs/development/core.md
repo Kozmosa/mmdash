@@ -20,46 +20,46 @@ MinIO readiness and reads the canonical OpenAPI file before accepting traffic.
 
 ## Configuration
 
-| Variable                        | Default                       | Purpose                                                        |
-| ------------------------------- | ----------------------------- | -------------------------------------------------------------- |
-| `CORE_ADDR`                     | `:8080`                       | HTTP listen address                                            |
-| `CORE_OPENAPI_PATH`             | `contracts/openapi/core.yaml` | Contract served at `/openapi.yaml`                             |
-| `CORE_STARTUP_TIMEOUT`          | `15s`                         | Dependency initialization deadline                             |
-| `CORE_SHUTDOWN_TIMEOUT`         | `10s`                         | Graceful HTTP drain deadline                                   |
-| `MMDASH_VERSION`                | `0.1.0`                       | Version in liveness and build-info metrics                     |
-| `DATABASE_URL`                  | required                      | PostgreSQL DSN                                                 |
-| `DATABASE_MAX_OPEN_CONNS`       | `20`                          | Pool upper bound                                               |
-| `DATABASE_MAX_IDLE_CONNS`       | `5`                           | Idle pool bound                                                |
-| `DATABASE_CONN_MAX_IDLE_TIME`   | `5m`                          | Idle connection lifetime                                       |
-| `DATABASE_CONN_MAX_LIFETIME`    | `30m`                         | Absolute connection lifetime                                   |
-| `OBJECT_STORAGE_ENDPOINT`       | required                      | MinIO/S3-compatible HTTP(S) origin                             |
-| `OBJECT_STORAGE_ACCESS_KEY`     | required                      | Object storage access identity                                 |
-| `OBJECT_STORAGE_SECRET_KEY`     | required                      | Object storage secret                                          |
-| `OBJECT_STORAGE_BUCKET`         | `mmdash`                      | Authoritative Artifact bucket                                  |
-| `AUTH_BOOTSTRAP_EMAIL`          | `admin@mmdash.local`          | First local account email                                      |
-| `AUTH_BOOTSTRAP_DISPLAY_NAME`   | `Local Admin`                 | First local account display name                               |
-| `AUTH_BOOTSTRAP_PASSWORD`       | `mmdash-local-admin`          | First local account password; change outside local development |
-| `AUTH_JWT_SECRET`               | local-only fallback           | HMAC key for browser session JWTs                              |
-| `AUTH_ACCESS_TOKEN_TTL`         | `24h`                         | JWT access-token lifetime                                      |
-| `AUTH_SESSION_TTL`              | `720h`                        | Maximum refreshable browser/CLI session lifetime               |
-| `AUTH_DEVICE_AUTHORIZATION_TTL` | `10m`                         | CLI device-code lifetime                                       |
-| `AUTH_DEVICE_POLL_INTERVAL`     | `5s`                          | Minimum advertised CLI polling interval                        |
-| `SETTINGS_ENCRYPTION_KEY`       | local-only fallback           | Stable key material for AES-256-GCM setting secrets            |
-| `NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK` | `false`             | Explicitly allow HTTP only for literal loopback development Webhooks |
-| `OUTBOX_POLL_INTERVAL`          | `500ms`                       | Idle event Processor delay                                     |
-| `OUTBOX_EVENT_LEASE`            | `30s`                         | Outbox publication lease                                       |
-| `OUTBOX_DELIVERY_LEASE`         | `30s`                         | Per-consumer processing lease                                  |
-| `OUTBOX_RETRY_DELAY`            | `2s`                          | Baseline publication and consumer retry delay                  |
-| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`                        | Idle due Reminder scan interval                                |
-| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`                        | Maximum Reminders claimed per scan                             |
-| `PROGRESS_REMINDER_LEASE`         | `30s`                       | Recoverable due Reminder processing lease                      |
-| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`                        | Retry delay after a due event transaction failure              |
-| `PROGRESS_TRACKING_POLL_INTERVAL` | `1s`                        | Automatic Progress request/Cron scan interval                   |
-| `PROGRESS_TRACKING_LEASE`         | `2m`                        | Recoverable Progress assembly/Cron claim lease                  |
-| `PROGRESS_TRACKING_RETRY_DELAY`   | `30s`                       | Progress assembly/queue/Cron retry delay                        |
-| `MMDASH_PROGRESS_EVALUATOR_MODE`  | `core_agent`                | `core_agent` or deterministic local `mock`                      |
-| `PROJECT_INVITATION_EXPIRY_POLL_INTERVAL` | `30s`              | Idle scan interval for due Project invitations                 |
-| `PROJECT_INVITATION_EXPIRY_BATCH_SIZE` | `100`                    | Maximum invitations expired in one transaction                 |
+| Variable                                   | Default                       | Purpose                                                              |
+| ------------------------------------------ | ----------------------------- | -------------------------------------------------------------------- |
+| `CORE_ADDR`                                | `:8080`                       | HTTP listen address                                                  |
+| `CORE_OPENAPI_PATH`                        | `contracts/openapi/core.yaml` | Contract served at `/openapi.yaml`                                   |
+| `CORE_STARTUP_TIMEOUT`                     | `15s`                         | Dependency initialization deadline                                   |
+| `CORE_SHUTDOWN_TIMEOUT`                    | `10s`                         | Graceful HTTP drain deadline                                         |
+| `MMDASH_VERSION`                           | `0.1.0`                       | Version in liveness and build-info metrics                           |
+| `DATABASE_URL`                             | required                      | PostgreSQL DSN                                                       |
+| `DATABASE_MAX_OPEN_CONNS`                  | `20`                          | Pool upper bound                                                     |
+| `DATABASE_MAX_IDLE_CONNS`                  | `5`                           | Idle pool bound                                                      |
+| `DATABASE_CONN_MAX_IDLE_TIME`              | `5m`                          | Idle connection lifetime                                             |
+| `DATABASE_CONN_MAX_LIFETIME`               | `30m`                         | Absolute connection lifetime                                         |
+| `OBJECT_STORAGE_ENDPOINT`                  | required                      | MinIO/S3-compatible HTTP(S) origin                                   |
+| `OBJECT_STORAGE_ACCESS_KEY`                | required                      | Object storage access identity                                       |
+| `OBJECT_STORAGE_SECRET_KEY`                | required                      | Object storage secret                                                |
+| `OBJECT_STORAGE_BUCKET`                    | `mmdash`                      | Authoritative Artifact bucket                                        |
+| `AUTH_BOOTSTRAP_EMAIL`                     | `admin@mmdash.local`          | First local account email                                            |
+| `AUTH_BOOTSTRAP_DISPLAY_NAME`              | `Local Admin`                 | First local account display name                                     |
+| `AUTH_BOOTSTRAP_PASSWORD`                  | `mmdash-local-admin`          | First local account password; change outside local development       |
+| `AUTH_JWT_SECRET`                          | local-only fallback           | HMAC key for browser session JWTs                                    |
+| `AUTH_ACCESS_TOKEN_TTL`                    | `24h`                         | JWT access-token lifetime                                            |
+| `AUTH_SESSION_TTL`                         | `720h`                        | Maximum refreshable browser/CLI session lifetime                     |
+| `AUTH_DEVICE_AUTHORIZATION_TTL`            | `10m`                         | CLI device-code lifetime                                             |
+| `AUTH_DEVICE_POLL_INTERVAL`                | `5s`                          | Minimum advertised CLI polling interval                              |
+| `SETTINGS_ENCRYPTION_KEY`                  | local-only fallback           | Stable key material for AES-256-GCM setting secrets                  |
+| `NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK` | `false`                       | Explicitly allow HTTP only for literal loopback development Webhooks |
+| `OUTBOX_POLL_INTERVAL`                     | `500ms`                       | Idle event Processor delay                                           |
+| `OUTBOX_EVENT_LEASE`                       | `30s`                         | Outbox publication lease                                             |
+| `OUTBOX_DELIVERY_LEASE`                    | `30s`                         | Per-consumer processing lease                                        |
+| `OUTBOX_RETRY_DELAY`                       | `2s`                          | Baseline publication and consumer retry delay                        |
+| `PROGRESS_REMINDER_POLL_INTERVAL`          | `1s`                          | Idle due Reminder scan interval                                      |
+| `PROGRESS_REMINDER_BATCH_SIZE`             | `20`                          | Maximum Reminders claimed per scan                                   |
+| `PROGRESS_REMINDER_LEASE`                  | `30s`                         | Recoverable due Reminder processing lease                            |
+| `PROGRESS_REMINDER_RETRY_DELAY`            | `2s`                          | Retry delay after a due event transaction failure                    |
+| `PROGRESS_TRACKING_POLL_INTERVAL`          | `1s`                          | Automatic Progress request/Cron scan interval                        |
+| `PROGRESS_TRACKING_LEASE`                  | `2m`                          | Recoverable Progress assembly/Cron claim lease                       |
+| `PROGRESS_TRACKING_RETRY_DELAY`            | `30s`                         | Progress assembly/queue/Cron retry delay                             |
+| `MMDASH_PROGRESS_EVALUATOR_MODE`           | `core_agent`                  | `core_agent` or deterministic local `mock`                           |
+| `PROJECT_INVITATION_EXPIRY_POLL_INTERVAL`  | `30s`                         | Idle scan interval for due Project invitations                       |
+| `PROJECT_INVITATION_EXPIRY_BATCH_SIZE`     | `100`                         | Maximum invitations expired in one transaction                       |
 
 Configuration validates all values before opening listeners. JSON logging
 recursively redacts credential, authorization, secret, token, password,
@@ -124,7 +124,7 @@ legacy record as upgrade evidence. Domain migrations must only change their own
 table prefix and semantics.
 
 Stage 6 Progress uses the same PostgreSQL Job Queue and Outbox. Core claims
-debounced evaluation requests and Hermes Cron reconciliation with
+due local Cron schedules and debounced evaluation requests with
 `FOR UPDATE SKIP LOCKED`, serializes Project scheduling/application with an
 advisory transaction lock, assembles a stable Data Hub/Progress snapshot, and
 creates `progress.evaluate`. Worker completion returns through Job lifecycle

@@ -52,12 +52,12 @@ export type ProgressSettings = {
   cron_schedule: string;
   debounce_seconds: number;
   min_interval_seconds: number;
+  reasoning_effort:
+    "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
   evaluator_mode: "core_agent" | "mock";
   agent_instance_id?: string;
-  cron_remote_job_id?: string;
-  cron_sync_status: "pending" | "syncing" | "ready" | "failed" | "disabled";
-  cron_error_code?: string;
-  cron_synced_at?: string;
+  cron_next_run_at?: string;
+  cron_last_scheduled_at?: string;
   updated_by: string;
   updated_at: string;
 };
@@ -141,14 +141,25 @@ export type ProgressAggregate = {
   overdue: ProgressTask[];
   blocked: ProgressTask[];
   proposals: ProgressProposal[];
-  reminders: { reminder_id: string; note: string; status: string; remind_at: string }[];
+  reminders: {
+    reminder_id: string;
+    note: string;
+    status: string;
+    remind_at: string;
+  }[];
   board: {
     todo: ProgressTask[];
     in_progress: ProgressTask[];
     blocked: ProgressTask[];
     done: ProgressTask[];
   };
-  gantt: { id: string; kind: string; title: string; target_at?: string; status: string }[];
+  gantt: {
+    id: string;
+    kind: string;
+    title: string;
+    target_at?: string;
+    status: string;
+  }[];
   settings: ProgressSettings;
   tracking: ProgressTrackerState;
   latest_evaluation?: ProgressEvaluation;

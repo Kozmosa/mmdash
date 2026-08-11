@@ -2281,7 +2281,8 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete a human milestone */
+    delete: operations["progress.milestones.delete"];
     options?: never;
     head?: never;
     /**
@@ -2498,14 +2499,20 @@ export interface paths {
       };
       cookie?: never;
     };
-    /** Read Progress automatic-change settings */
+    /**
+     * Read Progress automatic-change settings
+     * @description Reads the project-owned automatic evaluation settings. Periodic evaluation due times are calculated and claimed by mmdash Core; the selected Agent instance executes the resulting evaluation Run only.
+     */
     get: operations["progress.settings.get"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
-    /** Update Progress automatic-change settings */
+    /**
+     * Update Progress automatic-change settings
+     * @description Updates event and periodic evaluation policy owned by mmdash Core. A five-field Cron expression is evaluated in UTC by the Core scheduler; this operation does not create or update a Hermes Job.
+     */
     patch: operations["progress.settings.update"];
     trace?: never;
   };
@@ -4992,20 +4999,36 @@ export interface components {
       auto_task_changes: boolean;
       auto_tracking_enabled: boolean;
       event_triggers_enabled: boolean;
+      /** @description Whether mmdash Core schedules periodic Progress evaluations. */
       cron_enabled: boolean;
+      /** @description Five-field UTC Cron expression evaluated by mmdash Core. */
       cron_schedule: string;
       debounce_seconds: number;
       min_interval_seconds: number;
       /** @enum {string} */
+      reasoning_effort:
+        | "none"
+        | "minimal"
+        | "low"
+        | "medium"
+        | "high"
+        | "xhigh"
+        | "max"
+        | "ultra";
+      /** @enum {string} */
       evaluator_mode: "core_agent" | "mock";
       /** Format: uuid */
       agent_instance_id?: string;
-      cron_remote_job_id?: string;
-      /** @enum {string} */
-      cron_sync_status: "pending" | "syncing" | "ready" | "failed" | "disabled";
-      cron_error_code?: string;
-      /** Format: date-time */
-      cron_synced_at?: string;
+      /**
+       * Format: date-time
+       * @description Next periodic evaluation occurrence calculated by mmdash Core.
+       */
+      cron_next_run_at?: string;
+      /**
+       * Format: date-time
+       * @description Most recent occurrence scheduled by mmdash Core.
+       */
+      cron_last_scheduled_at?: string;
       /** Format: uuid */
       updated_by: string;
       /** Format: date-time */
@@ -5015,10 +5038,22 @@ export interface components {
       auto_task_changes: boolean;
       auto_tracking_enabled: boolean;
       event_triggers_enabled: boolean;
+      /** @description Whether mmdash Core should schedule periodic Progress evaluations. */
       cron_enabled: boolean;
+      /** @description Five-field UTC Cron expression evaluated by mmdash Core. */
       cron_schedule: string;
       debounce_seconds: number;
       min_interval_seconds: number;
+      /** @enum {string} */
+      reasoning_effort:
+        | "none"
+        | "minimal"
+        | "low"
+        | "medium"
+        | "high"
+        | "xhigh"
+        | "max"
+        | "ultra";
       /** Format: uuid */
       agent_instance_id?: string;
     };
@@ -9567,6 +9602,27 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["Milestone"];
         };
+      };
+    };
+  };
+  "progress.milestones.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        milestoneId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Milestone deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

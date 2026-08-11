@@ -27,6 +27,7 @@ const updateSettings = z.object({
   cron_schedule: z.string().trim().min(1).max(100),
   debounce_seconds: z.number().int().min(0).max(3_600),
   min_interval_seconds: z.number().int().min(0).max(86_400),
+  reasoning_effort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]),
   agent_instance_id: z.string().uuid().optional(),
 });
 const recalculate = z.object({ trigger_kind: z.enum(["manual", "cron"]), force: z.boolean() });
@@ -38,6 +39,7 @@ export function registerProgressRoutes(app: FastifyInstance, coreClient: CoreCli
   app.get("/api/projects/:projectId/progress/milestones", { config: { auth: "required", project: "required" } }, async (request) => coreClient.listProgressMilestones(request.currentProjectId!, context(request)));
   app.post("/api/projects/:projectId/progress/milestones", { config: { auth: "required", project: "required" } }, async (request, reply) => reply.code(201).send(await coreClient.createProgressMilestone(request.currentProjectId!, createMilestone.parse(request.body), context(request))));
   app.patch("/api/projects/:projectId/progress/milestones/:milestoneId", { config: { auth: "required", project: "required" } }, async (request) => { const params = milestoneId.parse(request.params); return coreClient.updateProgressMilestone(params.projectId, params.milestoneId, updateMilestone.parse(request.body), context(request)); });
+  app.delete("/api/projects/:projectId/progress/milestones/:milestoneId", { config: { auth: "required", project: "required" } }, async (request, reply) => { const params = milestoneId.parse(request.params); await coreClient.deleteProgressMilestone(params.projectId, params.milestoneId, context(request)); return reply.code(204).send(); });
 
   app.get("/api/projects/:projectId/progress/tasks", { config: { auth: "required", project: "required" } }, async (request) => coreClient.listProgressTasks(request.currentProjectId!, context(request)));
   app.post("/api/projects/:projectId/progress/tasks", { config: { auth: "required", project: "required" } }, async (request, reply) => reply.code(201).send(await coreClient.createProgressTask(request.currentProjectId!, createTask.parse(request.body), context(request))));
