@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,7 +22,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx); err != nil {
+	if err := run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		panic(err)
 	}
 }
@@ -53,6 +54,7 @@ func run(ctx context.Context) error {
 
 func configuredRuntimes(limits contracts.ResourceLimits) ([]contracts.Runtime, gateway.RuntimeFactory, error) {
 	localImage := getenv("MMDASH_BOX_LOCAL_IMAGE", "mmdash/sandbox:latest")
+	localUser := localDockerUser()
 	reported := []contracts.Runtime{{Name: "local-docker", Version: "1", Image: localImage}}
 	var remote sandbox.Runtime
 	if apiKey := strings.TrimSpace(os.Getenv("E2B_API_KEY")); apiKey != "" {
@@ -80,7 +82,7 @@ func configuredRuntimes(limits contracts.ResourceLimits) ([]contracts.Runtime, g
 		}
 		switch spec.Runtime {
 		case "local-docker":
-			return localdocker.Runtime{Image: localImage}, nil
+			return localdocker.Runtime{Image: localImage, User: localUser}, nil
 		case "e2b":
 			if remote == nil {
 				return nil, errors.New("E2B runtime is not configured")
@@ -91,6 +93,29 @@ func configuredRuntimes(limits contracts.ResourceLimits) ([]contracts.Runtime, g
 		}
 	}
 	return reported, factory, nil
+}
+
+func localDockerUser() string {
+	if configured := strings.TrimSpace(os.Getenv("MMDASH_BOX_LOCAL_USER")); configured != "" {
+		return configured
+	}
+	current, err := user.Current()
+	if err != nil || !decimal(current.Uid) || !decimal(current.Gid) {
+		return ""
+	}
+	return current.Uid + ":" + current.Gid
+}
+
+func decimal(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func withinBoxLimits(requested, available contracts.ResourceLimits) error {

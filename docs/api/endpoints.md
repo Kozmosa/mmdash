@@ -5,8 +5,8 @@ Stage 8 Experiment and Box operations:
 - Core Experiment: `experiment.list`, `experiment.create`, `experiment.compare`,
   `experiment.get`, `experiment.run`, `experiment.cancel`,
   `experiment.archive`, `experiment.logs.list`, and `result.get`.
-- Core Box Control: `box.list`, `box.register`, `box.get`, `box.heartbeat`,
-  `box.binding.set`, `box.binding.delete`, `box.tasks.claim`,
+- Core Box Control: `box.list`, `box.register`, `box.get`, `box.revoke`,
+  `box.heartbeat`, `box.binding.set`, `box.binding.delete`, `box.tasks.claim`,
   `box.tasks.heartbeat`, `box.tasks.logs.append`, `box.tasks.status`, and
   `box.tasks.result`, `box.tasks.artifact.upload`.
 - Web BFF: `bff.experiment.list`, `bff.experiment.create`,

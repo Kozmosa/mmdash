@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { resolveComposeCommand } from "./compose-command.mjs";
+import { resolveComposeCommand, runCompose } from "./compose-command.mjs";
 import { runRepoSmoke } from "./repo-smoke.mjs";
 
 const webUrl = trim(process.env.MMDASH_SMOKE_URL ?? "http://localhost:3000");
@@ -86,6 +86,7 @@ const sessionHeaders = {
 
 const issued = await jsonChecked(`${coreUrl}/v1/auth/tokens`, {
   body: {
+    expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
     kind: "api",
     name: `stage-3.15-worker-${runId}`,
     project_id: projectId,
@@ -94,7 +95,8 @@ const issued = await jsonChecked(`${coreUrl}/v1/auth/tokens`, {
   method: "POST",
 });
 const workerToken = issued.body.token;
-assert(workerToken, "Core did not issue the Worker API token.");
+const workerTokenId = issued.body.credential?.id;
+assert(workerToken && workerTokenId, "Core did not issue the Worker API token.");
 
 const jobResult = await jsonChecked(`${coreUrl}/v1/jobs`, {
   body: {
@@ -261,6 +263,7 @@ const repo =
       })
     : null;
 const stage8 = await runStage8Smoke({
+  accessToken,
   coreUrl,
   projectId: repo?.project_id ?? projectId,
   repository: repo,
@@ -281,6 +284,11 @@ if (process.env.MMDASH_SMOKE_SKIP_CLI === "1") {
   });
 }
 
+await fetchChecked(`${coreUrl}/v1/auth/tokens/${workerTokenId}`, {
+  headers: sessionHeaders,
+  method: "DELETE",
+});
+
 console.log(
   JSON.stringify({
     audit_events: audits.items.length,
@@ -300,6 +308,7 @@ async function jsonChecked(url, options = {}) {
 }
 
 async function runStage8Smoke({
+  accessToken,
   coreUrl,
   projectId,
   repository,
@@ -317,34 +326,379 @@ async function runStage8Smoke({
   const sourceCommit =
     repository.code_head ?? process.env.MMDASH_SMOKE_STAGE8_COMMIT;
   if (!sourceCommit) {
-    return { status: "skipped", reason: "MMDASH_SMOKE_STAGE8_COMMIT is not configured" };
+    return {
+      status: "skipped",
+      reason: "MMDASH_SMOKE_STAGE8_COMMIT is not configured",
+    };
   }
-  const created = await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments`, {
-    body: {
-      name: `Stage 8 smoke ${runId}`,
-      source_commit: sourceCommit,
-      entrypoint: "python:run.py",
-      parameters: {}, environment: {}, inputs: {}, runtime: "local-docker",
-      limits: { cpu_millis: 500, memory_bytes: 1048576, timeout_seconds: 60, disk_bytes: 1048576, pids: 32, network: "disabled" },
-      idempotency_key: `stage8-${runId}`,
-    },
-    headers: sessionHeaders,
-    method: "POST",
-  });
-  const experimentId = created.body.experiment_id;
-  assert(experimentId, "Stage 8 smoke did not create an Experiment.");
-  const status = await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}`, { headers: sessionHeaders });
-  assert(status.body.status === "created", "Stage 8 smoke did not preserve the frozen created state.");
-  if (process.env.MMDASH_SMOKE_STAGE8_RUN !== "1") {
-    return { experiment_id: experimentId, status: "created" };
-  }
-  await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}/run`, { headers: sessionHeaders, method: "POST" });
-  const terminal = await poll(
-    async () => (await jsonChecked(`${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}`, { headers: sessionHeaders })).body,
-    (item) => ["succeeded", "failed", "canceled", "archived"].includes(item.status),
-    "Stage 8 Experiment did not reach a terminal state.",
+  const runtime =
+    process.env.MMDASH_SMOKE_STAGE8_RUNTIME?.trim() || "local-docker";
+  assert(
+    runtime === "local-docker" || runtime === "e2b",
+    "MMDASH_SMOKE_STAGE8_RUNTIME must be local-docker or e2b.",
   );
-  return { experiment_id: experimentId, status: terminal.status };
+  const limits = stage8Limits(runtime);
+  let nativeBox;
+  try {
+    if (
+      process.env.MMDASH_SMOKE_STAGE8_RUN === "1" &&
+      process.env.MMDASH_SMOKE_STAGE8_BOX_MODE === "native"
+    ) {
+      nativeBox = await startNativeStage8Box({
+        accessToken,
+        coreUrl,
+        limits,
+        projectId,
+        repository,
+        runtime,
+        sessionHeaders,
+        sourceCommit,
+      });
+    }
+    const created = await jsonChecked(
+      `${coreUrl}/v1/projects/${projectId}/experiments`,
+      {
+        body: {
+          name: `Stage 8 smoke ${runId}`,
+          source_commit: sourceCommit,
+          entrypoint: "python:run.py",
+          parameters: {},
+          environment: {},
+          inputs: {},
+          runtime,
+          limits,
+          idempotency_key: `stage8-${runId}`,
+        },
+        headers: sessionHeaders,
+        method: "POST",
+      },
+    );
+    const experimentId = created.body.experiment_id;
+    assert(experimentId, "Stage 8 smoke did not create an Experiment.");
+    const status = await jsonChecked(
+      `${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}`,
+      { headers: sessionHeaders },
+    );
+    assert(
+      status.body.status === "created",
+      "Stage 8 smoke did not preserve the frozen created state.",
+    );
+    if (process.env.MMDASH_SMOKE_STAGE8_RUN !== "1") {
+      return { experiment_id: experimentId, runtime, status: "created" };
+    }
+    await jsonChecked(
+      `${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}/run`,
+      { headers: sessionHeaders, method: "POST" },
+    );
+    const terminal = await poll(
+      async () => {
+        await nativeBox?.assertRunning();
+        return (
+          await jsonChecked(
+            `${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}`,
+            { headers: sessionHeaders },
+          )
+        ).body;
+      },
+      (item) =>
+        ["succeeded", "failed", "canceled", "archived"].includes(item.status),
+      "Stage 8 Experiment did not reach a terminal state.",
+      120,
+    );
+    assert(
+      terminal.status === "succeeded" || terminal.status === "archived",
+      `Stage 8 Experiment failed: ${JSON.stringify({ code: terminal.failure_code, message: terminal.failure_message, status: terminal.status })}`,
+    );
+    const result = await jsonChecked(
+      `${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}/result`,
+      { headers: sessionHeaders },
+    );
+    assert(
+      result.body.artifact?.artifact_id &&
+        result.body.artifact?.version_id &&
+        result.body.manifest?.experiment_id === experimentId &&
+        result.body.manifest?.status === "succeeded" &&
+        result.body.manifest?.files?.some(
+          (file) => file.path === "summary.md",
+        ) &&
+        result.body.manifest?.files?.some(
+          (file) => file.path === "logs/stdout.log",
+        ),
+      `Stage 8 result bundle is incomplete: ${JSON.stringify(result.body)}`,
+    );
+    const logs = await jsonChecked(
+      `${coreUrl}/v1/projects/${projectId}/experiments/${experimentId}/logs?limit=100`,
+      { headers: sessionHeaders },
+    );
+    assert(
+      logs.body.items?.some((item) =>
+        item.message.includes("MMDASH_STAGE8_STDOUT"),
+      ),
+      "Stage 8 terminal smoke did not preserve streamed Sandbox logs.",
+    );
+    return {
+      artifact_id: result.body.artifact.artifact_id,
+      box_id: nativeBox?.boxId,
+      experiment_id: experimentId,
+      runtime,
+      status: terminal.status,
+    };
+  } finally {
+    await nativeBox?.stop();
+  }
+}
+
+function stage8Limits(runtime) {
+  return {
+    cpu_millis: Number(process.env.MMDASH_SMOKE_STAGE8_CPU_MILLIS ?? "1000"),
+    memory_bytes: Number(
+      process.env.MMDASH_SMOKE_STAGE8_MEMORY_BYTES ??
+        (runtime === "e2b" ? "536870912" : "268435456"),
+    ),
+    timeout_seconds: Number(
+      process.env.MMDASH_SMOKE_STAGE8_TIMEOUT_SECONDS ?? "90",
+    ),
+    disk_bytes: Number(
+      process.env.MMDASH_SMOKE_STAGE8_DISK_BYTES ?? "1073741824",
+    ),
+    pids: Number(process.env.MMDASH_SMOKE_STAGE8_PIDS ?? "64"),
+    network: process.env.MMDASH_SMOKE_STAGE8_NETWORK?.trim() || "disabled",
+  };
+}
+
+async function startNativeStage8Box({
+  accessToken,
+  coreUrl,
+  limits,
+  projectId,
+  repository,
+  runtime,
+  sessionHeaders,
+  sourceCommit,
+}) {
+  assert(
+    repository?.fixture_root && repository?.remote,
+    "Native Stage 8 Box smoke requires the Docker Repo fixture.",
+  );
+  if (runtime === "e2b") {
+    assert(
+      process.env.E2B_API_KEY?.trim(),
+      "E2B_API_KEY must be injected into the smoke process for paid terminal acceptance.",
+    );
+  }
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "mmdash-stage8-box-smoke-"));
+  const workspace = join(temporaryRoot, "workspace");
+  const boxBinary = join(temporaryRoot, "mmdash-box");
+  const boxName = `stage8-box-${runId}`;
+  const containerWorkspace = `${repository.fixture_root}/box-workspace-${safeRunId(runId)}`;
+  let bootstrapTokenId;
+  let bootstrapRevoked = false;
+  let processHandle;
+  let registeredBoxId;
+  try {
+    runCompose([
+      "exec",
+      "-T",
+      "core",
+      "git",
+      "clone",
+      "--no-checkout",
+      repository.remote,
+      containerWorkspace,
+    ]);
+    runCompose([
+      "exec",
+      "-T",
+      "core",
+      "git",
+      "-C",
+      containerWorkspace,
+      "checkout",
+      "--detach",
+      sourceCommit,
+    ]);
+    runCompose([
+      "exec",
+      "-T",
+      "core",
+      "sh",
+      "-c",
+      'printf "%s\\n" "$1" > "$2/.mmdash-commit"',
+      "mmdash-stage8-marker",
+      sourceCommit,
+      containerWorkspace,
+    ]);
+    mkdirSync(workspace, { recursive: true });
+    runCompose(["cp", `core:${containerWorkspace}/.`, workspace]);
+    assert(
+      readFileSync(join(workspace, ".mmdash-commit"), "utf8").trim() ===
+        sourceCommit,
+      "Prepared Box workspace has the wrong commit marker.",
+    );
+    const build = spawnSync(
+      "go",
+      ["build", "-trimpath", "-o", boxBinary, "./box/cmd/mmdash-box"],
+      { encoding: "utf8", timeout: 120_000 },
+    );
+    assert(
+      build.status === 0,
+      `Native Box build failed:\n${build.stdout}\n${build.stderr}`,
+    );
+    const bootstrap = await jsonChecked(`${coreUrl}/v1/auth/tokens`, {
+      body: {
+        expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+        kind: "api",
+        name: `stage8-box-bootstrap-${runId}`,
+        project_id: projectId,
+      },
+      headers: sessionHeaders,
+      method: "POST",
+    });
+    bootstrapTokenId = bootstrap.body.credential?.id;
+    const bootstrapSecret = bootstrap.body.token;
+    assert(
+      bootstrapTokenId && bootstrapSecret,
+      "Core did not issue the short-lived Box bootstrap credential.",
+    );
+    processHandle = startProcess(boxBinary, {
+      ...process.env,
+      MMDASH_BOX_CLAIM_INTERVAL: "500ms",
+      MMDASH_BOX_CPU_MILLIS: String(limits.cpu_millis),
+      MMDASH_BOX_DATA_ROOT: join(temporaryRoot, "data"),
+      MMDASH_BOX_DISK_BYTES: String(limits.disk_bytes),
+      MMDASH_BOX_HEARTBEAT_INTERVAL: "1s",
+      MMDASH_BOX_LEASE: "30s",
+      MMDASH_BOX_LOCAL_IMAGE:
+        process.env.MMDASH_BOX_LOCAL_IMAGE?.trim() || "python:3.12-alpine",
+      MMDASH_BOX_MAX_CONCURRENT: "1",
+      MMDASH_BOX_MEMORY_BYTES: String(limits.memory_bytes),
+      MMDASH_BOX_NAME: boxName,
+      MMDASH_BOX_NETWORK: limits.network,
+      MMDASH_BOX_PIDS: String(limits.pids),
+      MMDASH_BOX_PROJECT_ID: projectId,
+      MMDASH_BOX_REGISTRATION_TOKEN: bootstrapSecret,
+      MMDASH_BOX_STATE_PATH: join(temporaryRoot, "state.json"),
+      MMDASH_BOX_TIMEOUT_SECONDS: String(limits.timeout_seconds),
+      MMDASH_BOX_VERSION: "stage8-acceptance",
+      MMDASH_BOX_WORKSPACE: workspace,
+      MMDASH_BOX_WORKSPACE_COMMIT: sourceCommit,
+      MMDASH_CORE_URL: coreUrl,
+    });
+    const box = await poll(
+      async () => {
+        if (
+          processHandle.child.exitCode !== null ||
+          processHandle.child.signalCode !== null
+        ) {
+          const finished = await processHandle.finished;
+          throw new Error(
+            `Native Box exited before registration:\n${finished.stdout}\n${finished.stderr}`,
+          );
+        }
+        const page = await jsonChecked(
+          `${coreUrl}/v1/boxes?project_id=${encodeURIComponent(projectId)}`,
+          { headers: sessionHeaders },
+        );
+        return page.body.items?.find((item) => item.name === boxName);
+      },
+      (item) =>
+        item?.status === "online" &&
+        item.runtimes?.some((advertised) => advertised.name === runtime),
+      "Native Stage 8 Box did not register and advertise the requested runtime.",
+      30,
+    );
+    registeredBoxId = box.box_id;
+    await fetchChecked(`${coreUrl}/v1/auth/tokens/${bootstrapTokenId}`, {
+      headers: sessionHeaders,
+      method: "DELETE",
+    });
+    bootstrapRevoked = true;
+    await jsonChecked(`${coreUrl}/v1/projects/${projectId}/box`, {
+      body: { box_id: box.box_id },
+      headers: sessionHeaders,
+      method: "PUT",
+    });
+    return {
+      assertRunning: async () => {
+        if (
+          processHandle.child.exitCode === null &&
+          processHandle.child.signalCode === null
+        ) {
+          return;
+        }
+        const finished = await processHandle.finished;
+        throw new Error(
+          `Native Box exited during terminal execution:\n${finished.stdout}\n${finished.stderr}`,
+        );
+      },
+      boxId: box.box_id,
+      stop: async () => {
+        try {
+          await stopChild(processHandle.child);
+          const finished = await processHandle.finished;
+          if (finished.code !== 0 && finished.code !== null) {
+            process.stderr.write(
+              `Native Box cleanup exited with code ${finished.code}:\n${finished.stderr}\n`,
+            );
+          }
+          await revokeStage8Box(coreUrl, sessionHeaders, box.box_id);
+        } finally {
+          rmSync(temporaryRoot, { force: true, recursive: true });
+        }
+      },
+    };
+  } catch (error) {
+    await stopChild(processHandle?.child);
+    let cleanupError;
+    if (registeredBoxId) {
+      try {
+        await revokeStage8Box(coreUrl, sessionHeaders, registeredBoxId);
+      } catch (caught) {
+        cleanupError = caught;
+      }
+    }
+    rmSync(temporaryRoot, { force: true, recursive: true });
+    if (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Native Stage 8 Box setup and cleanup both failed.",
+      );
+    }
+    throw error;
+  } finally {
+    if (bootstrapTokenId && !bootstrapRevoked) {
+      try {
+        await fetchChecked(`${coreUrl}/v1/auth/tokens/${bootstrapTokenId}`, {
+          headers: { authorization: `Bearer ${accessToken}` },
+          method: "DELETE",
+        });
+      } catch {
+        // Best-effort cleanup after a failed acceptance setup.
+      }
+    }
+  }
+}
+
+async function revokeStage8Box(coreUrl, sessionHeaders, boxId) {
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 45; attempt += 1) {
+    const response = await fetch(`${coreUrl}/v1/boxes/${boxId}`, {
+      headers: sessionHeaders,
+      method: "DELETE",
+      signal: AbortSignal.timeout(20_000),
+    });
+    lastStatus = response.status;
+    if (response.ok || response.status === 404) return;
+    if (response.status !== 409) {
+      throw new Error(
+        `DELETE ${coreUrl}/v1/boxes/${boxId}: HTTP ${response.status} ${await response.text()}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(
+    `Stage 8 Box ${boxId} could not be revoked after terminal cleanup (HTTP ${lastStatus}).`,
+  );
 }
 
 async function fetchChecked(url, options = {}) {
@@ -369,9 +723,9 @@ async function fetchChecked(url, options = {}) {
   return response;
 }
 
-async function poll(load, ready, message) {
+async function poll(load, ready, message, attempts = 30) {
   let last;
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     last = await load();
     if (ready(last)) return last;
     await new Promise((resolve) => setTimeout(resolve, 1_000));
@@ -603,6 +957,29 @@ function startCli(cliBinary, arguments_, environment, onStderr) {
   return { child, finished };
 }
 
+function startProcess(executable, environment) {
+  const child = spawn(executable, [], {
+    env: environment,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  const append = (current, text) => (current + text).slice(-1_000_000);
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (text) => {
+    stdout = append(stdout, text);
+  });
+  child.stderr.on("data", (text) => {
+    stderr = append(stderr, text);
+  });
+  const finished = new Promise((resolveFinished, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolveFinished({ code, stderr, stdout }));
+  });
+  return { child, finished };
+}
+
 async function stopChild(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   child.kill();
@@ -631,6 +1008,10 @@ async function withTimeout(promise, timeoutMs, message) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function safeRunId(value) {
+  return value.replace(/[^A-Za-z0-9_-]/g, "-");
 }
 
 function trim(value) {

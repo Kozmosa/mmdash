@@ -3266,7 +3266,8 @@ export interface paths {
     get: operations["box.get"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Revoke one Box, remove its binding, and revoke its credential */
+    delete: operations["box.revoke"];
     options?: never;
     head?: never;
     patch?: never;
@@ -11659,6 +11660,26 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["Box"];
         };
+      };
+    };
+  };
+  "box.revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Box and credential revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

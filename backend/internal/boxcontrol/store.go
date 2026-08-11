@@ -14,6 +14,7 @@ type Store interface {
 	List(context.Context, string) ([]Box, error)
 	UpdateHeartbeat(context.Context, string, Box, time.Time) (Box, error)
 	MarkOffline(context.Context, time.Time, time.Time, int) ([]Box, error)
+	Revoke(context.Context, string, time.Time) (Box, error)
 	Bind(context.Context, string, string, time.Time) (Box, error)
 	Unbind(context.Context, string, time.Time) error
 	CreateTask(context.Context, Task) error
@@ -38,7 +39,7 @@ type TokenIssuer interface {
 }
 
 type TokenRevoker interface {
-	RevokeToken(context.Context, auth.Identity, string) error
+	RevokeManagedToken(context.Context, auth.Identity, string, string, string) error
 }
 
 type IDGenerator interface{ New() (string, error) }

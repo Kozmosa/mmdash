@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,145 @@ import (
 
 	"github.com/mmdash/mmdash/box/contracts"
 )
+
+const (
+	manifestFilename = "manifest.json"
+	maxArtifactBytes = int64(10 << 30)
+	maxArtifactFiles = 10_000
+	maxSummaryBytes  = int64(20_000)
+)
+
+// GenerateManifest creates the authoritative result manifest from the actual
+// Sandbox output. Experiment programs only write result files; they cannot
+// choose the terminal status, experiment identity, hashes, or packaged paths.
+func GenerateManifest(root, experimentID string, exitCode int, diskLimit int64) (contracts.Manifest, error) {
+	if root == "" || experimentID == "" || diskLimit < 1 {
+		return contracts.Manifest{}, errors.New("invalid manifest generation input")
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return contracts.Manifest{}, err
+	}
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return contracts.Manifest{}, errors.New("Sandbox output is unavailable")
+	}
+	limit := diskLimit
+	if limit > maxArtifactBytes {
+		limit = maxArtifactBytes
+	}
+	manifest := contracts.Manifest{
+		SchemaVersion: "1",
+		ExperimentID:  experimentID,
+		Status:        "succeeded",
+		ExitCode:      &exitCode,
+		Files:         []contracts.ManifestFile{},
+	}
+	var total int64
+	err = filepath.WalkDir(rootReal, func(localPath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(rootReal, localPath)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			return nil
+		}
+		relative = filepath.ToSlash(relative)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing symlink in Sandbox output: %s", relative)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing unsupported Sandbox output type: %s", relative)
+		}
+		// The wrapper owns manifest.json. A program-supplied file with the same
+		// name is deliberately ignored and replaced in artifact.zip.
+		if relative == manifestFilename {
+			return nil
+		}
+		if len(manifest.Files) >= maxArtifactFiles {
+			return errors.New("Sandbox output contains too many files")
+		}
+		total += info.Size()
+		if total > limit {
+			return errors.New("Sandbox output exceeds the frozen disk limit")
+		}
+		digest, err := fileSHA256(localPath)
+		if err != nil {
+			return err
+		}
+		manifest.Files = append(manifest.Files, contracts.ManifestFile{
+			Path: relative, SHA256: digest, Size: info.Size(), Kind: artifactKind(relative),
+			MIMEType: mime.TypeByExtension(filepath.Ext(relative)),
+		})
+		return nil
+	})
+	if err != nil {
+		return contracts.Manifest{}, err
+	}
+	sort.Slice(manifest.Files, func(left, right int) bool { return manifest.Files[left].Path < manifest.Files[right].Path })
+	manifest.Summary = readSummary(rootReal)
+	if err := manifest.Validate(); err != nil {
+		return contracts.Manifest{}, err
+	}
+	return manifest, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func artifactKind(relative string) string {
+	if relative == "summary.md" {
+		return "summary"
+	}
+	prefix, _, _ := strings.Cut(relative, "/")
+	switch prefix {
+	case "logs":
+		return "log"
+	case "figures":
+		return "figure"
+	case "tables":
+		return "table"
+	case "data":
+		return "data"
+	case "models":
+		return "model"
+	default:
+		return "file"
+	}
+}
+
+func readSummary(root string) string {
+	path := filepath.Join(root, "summary.md")
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxSummaryBytes {
+		return ""
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.ToValidUTF8(string(content), "")
+}
 
 func CollectManifest(root string, manifest contracts.Manifest) (contracts.Manifest, error) {
 	if err := manifest.Validate(); err != nil {
@@ -52,7 +192,7 @@ func BuildArtifactZip(root, destination string, manifest contracts.Manifest) (co
 	if err != nil {
 		return contracts.ArtifactPointer{}, err
 	}
-	if filepath.Clean(destination) == filepath.Clean(filepath.Join(root, "manifest.json")) {
+	if filepath.Clean(destination) == filepath.Clean(filepath.Join(root, manifestFilename)) {
 		return contracts.ArtifactPointer{}, errors.New("artifact destination must be outside output directory")
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
@@ -68,7 +208,7 @@ func BuildArtifactZip(root, destination string, manifest contracts.Manifest) (co
 		_ = file.Close()
 		return contracts.ArtifactPointer{}, err
 	}
-	entry, err := archive.Create("manifest.json")
+	entry, err := archive.Create(manifestFilename)
 	if err == nil {
 		_, err = entry.Write(manifestBytes)
 	}

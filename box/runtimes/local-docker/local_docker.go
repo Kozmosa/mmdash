@@ -15,6 +15,7 @@ import (
 
 type Runtime struct {
 	Image string
+	User  string
 }
 
 func (runtime Runtime) Run(ctx context.Context, request sandbox.RunRequest) (sandbox.RunResult, error) {
@@ -31,7 +32,7 @@ func (runtime Runtime) Run(ctx context.Context, request sandbox.RunRequest) (san
 	if err := ensureOutput(request.OutputDir); err != nil {
 		return sandbox.RunResult{}, err
 	}
-	args, err := buildArgs(runtime.Image, request, command)
+	args, err := buildArgs(runtime.Image, runtime.User, request, command)
 	if err != nil {
 		return sandbox.RunResult{}, err
 	}
@@ -59,7 +60,10 @@ func (runtime Runtime) Run(ctx context.Context, request sandbox.RunRequest) (san
 	return result, nil
 }
 
-func buildArgs(image string, request sandbox.RunRequest, command []string) ([]string, error) {
+func buildArgs(image, user string, request sandbox.RunRequest, command []string) ([]string, error) {
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+		return nil, errors.New("sandbox command is required")
+	}
 	args := []string{
 		"run", "--rm", "--init", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
 		"--cpus", fmt.Sprintf("%.3f", float64(request.Spec.Limits.CPUMillis)/1000),
@@ -77,8 +81,13 @@ func buildArgs(image string, request sandbox.RunRequest, command []string) ([]st
 		}
 		args = append(args, "--env", key+"="+value)
 	}
-	args = append(args, image)
-	args = append(args, command...)
+	if user != "" {
+		args = append(args, "--user", user)
+	}
+	// Always replace an image-defined ENTRYPOINT so the reviewed Sandbox argv
+	// is executed directly instead of being appended to an unrelated process.
+	args = append(args, "--entrypoint", command[0], image)
+	args = append(args, command[1:]...)
 	return args, nil
 }
 

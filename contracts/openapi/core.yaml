@@ -4006,6 +4006,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Box" }
+    delete:
+      tags: [Box]
+      summary: Revoke one Box, remove its binding, and revoke its credential
+      operationId: box.revoke
+      responses:
+        "204": { description: Box and credential revoked. }
   /v1/boxes/{boxId}/heartbeat:
     parameters: [{ $ref: "#/components/parameters/BoxId" }]
     post:

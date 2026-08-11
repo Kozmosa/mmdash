@@ -4,14 +4,18 @@
 - Branch: `codex/stage-8-experiment-box-sandbox`
 - Worktree: `/data/yile.chen/code/mmdash-stage8`
 - Base: local `2fe2c05` (`fix(repo): stabilize maintenance git identity`)
-- Remote note: `origin/main` is still at `9282b4e`; the base fix is present in
-  this isolated branch but has not been pushed to or changed on the original
-  `main` worktree.
+- Draft PR: <https://github.com/Kozmosa/mmdash/pull/35>; keep Draft and do not
+  merge it.
+- Remote note: a fresh fetch on 2026-08-11 confirmed
+  `imouup/main == origin/main == 9282b4e`; the `imouup` remote has no newer
+  Stage 8 fix to integrate. Before the final push, the PR head contained the
+  six committed Stage 8 changes through `4b076fb`; the verified follow-up
+  commit described in this handoff advances that same branch.
 - Migration: `000033_stage8_box_experiment`
-- Delivery state: Stage 8 implementation and direct E2B provider acceptance
-  are complete on this branch. Keep the PR Draft and never merge it while the
-  remaining operator-gated full Box terminal workflow and headless CLI
-  credential-store acceptance are not claimed.
+- Delivery state: Stage 8 implementation, Local Docker terminal acceptance,
+  and the complete `Core -> registered Box Gateway -> E2B` hosted acceptance
+  are complete. The PR remains Draft only because the user explicitly forbids
+  merging it, not because an E2B or Box terminal workflow is outstanding.
 
 ## Stage 8 implementation snapshot
 
@@ -20,7 +24,9 @@ Implemented in this worktree:
 - Core Experiment lifecycle, frozen `run_spec`, PostgreSQL task queue,
   lease/timeout/cancel/recovery paths, Audit, Outbox, and Data Hub projections.
 - Core Box registration, scoped token use, heartbeat/offline state, binding,
-  task lease/status/log/result/artifact boundaries, and permission checks.
+  task lease/status/log/result/artifact boundaries, permission checks, and a
+  formal revoke lifecycle that unbinds the Box, records Audit/Outbox, and asks
+  Auth to revoke the project-scoped Box credential.
 - Artifact-side `artifact.zip` stream staging with manifest, path, symlink,
   zip-slip, file count, uncompressed size, file hash, and declared-size checks.
 - Independent Go 1.26 Box Gateway, commit-marker workspace pinning, restart
@@ -37,26 +43,36 @@ Verification completed:
 - `go test -race ./box/...` passed with the permanent E2B Platform
   REST/Envd Connect mock, including secure routing, transfer, logs, metrics,
   timeout, cancellation, malformed-create reconciliation, redaction, and
-  cleanup.
-- The standard Compose command built all images, but could not bind Core's
-  `8080` because unrelated services already occupy the host port; its created
-  containers were stopped with ordinary `down`.
-- An isolated Compose project passed `up -d --build` and health checks on
-  host ports `13000` (Web), `13001` (BFF), `13002` (MCP), `18080` (Core),
-  `15432` (PostgreSQL), and `19000/19001` (MinIO), preserving its volumes.
-- Isolated baseline smoke passed, and Repo-backed Stage 8 smoke passed with
-  Local Git fixed-commit synchronization and Experiment create/freeze checks.
-  Native CLI MCP smoke was skipped only because this headless workstation has
-  no unlocked Linux Secret Service keyring; the CLI build and tests passed.
+  cleanup. Focused Auth, Box Control, Experiment, Data Hub, Audit, and Core
+  tests also passed against the real isolated PostgreSQL database.
+- The current isolated Compose project is `mmdash-stage8-terminal`: Web
+  `13100`, BFF `13101`, MCP `13102`, Core `18180`, PostgreSQL `15442`, and
+  MinIO `19100/19101`. Current Core was rebuilt after the final SQL, Audit,
+  maintenance, retry, Local Docker, artifact, and Box revoke changes; all six
+  long-running services were healthy.
+- Repo-backed Local Docker terminal smoke passed with Experiment
+  `80022a50-338c-42e0-8d73-308620372abb` and Artifact
+  `c3e40bb3-4743-4cba-badf-13d0de7d6a66`.
+- Repo-backed hosted E2B terminal smoke passed with Experiment
+  `0f37dbf1-0835-450a-ad98-c08e8ac95299` and Artifact
+  `46abae4e-0543-476b-aaf2-4c5b9a1da3b4`. A direct official
+  `/v2/sandboxes` query after cleanup returned zero active sandboxes.
+- Both successful terminal smokes automatically revoked their Box node and
+  credential. The acceptance database finished with zero active Stage 8 Box,
+  Box Token, bootstrap Token, or Worker smoke Token. Ten older Box credentials
+  and eleven older Worker smoke credentials from failed development runs were
+  retired through product APIs before the final reruns.
+- Recent Compose logs had no panic/fatal/error, `invalid audit input`, bad
+  connection, or E2B credential-pattern match. Native CLI MCP login was
+  skipped in the final terminal smokes only because this headless workstation
+  has no unlocked Linux Secret Service keyring; CLI build and tests passed in
+  `pnpm check`.
 - The repository-requested `.localscripts/dev.ps1` entry point is absent in
   this checkout and was not claimed as used. Compose acceptance uses
   `up -d --build` and ordinary `down`, never `down -v`.
-- The final isolated Compose rerun used Web `13000`, BFF `13001`, MCP `13002`,
-  Core `18080`, PostgreSQL `15432`, and MinIO `19000/19001`. All long-running
-  services were healthy, migration/init jobs exited zero, baseline and
-  Repo-backed Stage 8 smoke passed, Box profile image build passed, and recent
-  logs contained no panic/fatal/error or E2B credential pattern. Containers
-  were stopped with ordinary `down`; volumes were preserved.
+- After the final health, log, provider, and credential-leak checks, the
+  `mmdash-stage8-terminal` project was stopped with ordinary `down`. Its
+  PostgreSQL, MinIO, Artifact, and Repo volumes remain preserved.
 
 ## Known limits and acceptance evidence
 
@@ -66,28 +82,25 @@ Verification completed:
   direct argv, dynamic custom-domain routing, and unconditional cleanup.
 - Paid hosted acceptance passed success/log/file/artifact collection, a
   two-second timeout, active cancellation, and final sandbox count returning
-  to zero. The credential was not written to source, docs, handoff, logs, or
-  the PR. The dashboard API Key ID/Project ID is not sent by the API client.
+  to zero. The full production-shaped Core/Box/E2B success path was rerun after
+  the final Gateway, Experiment, Audit, Local Docker, artifact, and lifecycle
+  fixes. The credential was not written to source, docs, handoff, logs, or the
+  PR. The dashboard API Key ID/Project ID is not sent by the API client.
 - The hosted `base` Template exposed one CPU, 512 MiB memory, and 10 GiB disk.
   Live acceptance therefore requests 512 MiB. Production checks each created
   sandbox's actual CPU/memory/disk capacity against the frozen request; Box
   deployment limits should be configured conservatively for all enabled
   runtimes.
-- The final hosted success/timeout/cancel run preceded the last custom-domain
-  routing and malformed-create cleanup hardening. Those changes do not alter
-  the hosted `sandbox.e2b.app` path and are covered by the permanent
-  high-fidelity mock; the credential was intentionally not persisted for an
-  automatic repeat run.
 - The default Box workspace mode consumes a Repo-owned detached checkout and
   requires a matching `.mmdash-commit` marker. It intentionally does not run
   Git or accept long-lived Git credentials.
 - The optional Compose Box profile requires a Core-issued registration token,
   a populated read-only workspace volume, and explicit Docker socket privilege
   for Local Docker.
-- Real Box terminal execution was not claimed: this acceptance did not have a
-  prepared Repo detached workspace with `.mmdash-commit`, a registered Box,
-  and the configured sandbox image. `MMDASH_SMOKE_STAGE8_RUN=1` therefore
-  remains an operator-gated follow-up.
+- Local Docker acceptance used the already cached `python:3.12-slim` image.
+  An initial rerun with uncached `python:3.12-alpine` failed at Docker image
+  pull because Docker Hub timed out; the Experiment correctly recorded
+  `NON_ZERO_EXIT`, and the failed run still revoked its Box and credential.
 
 # mmdash v0.1 Stage 7 integration handoff
 

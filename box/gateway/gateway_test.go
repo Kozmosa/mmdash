@@ -14,9 +14,14 @@ import (
 )
 
 type recordingCore struct {
-	statuses []string
-	result   bool
-	uploaded bool
+	statuses       []string
+	statusCalls    int
+	statusFailures int
+	result         bool
+	uploaded       bool
+	manifest       contracts.Manifest
+	exitCode       *int
+	errorCode      string
 }
 
 func (client *recordingCore) Register(context.Context, string, RegistrationInput) (Registration, error) {
@@ -34,12 +39,25 @@ func (client *recordingCore) Renew(context.Context, string, string, string, time
 func (client *recordingCore) Log(context.Context, string, string, string, contracts.Log) error {
 	return nil
 }
-func (client *recordingCore) Status(_ context.Context, _, _, _, status string, _ *int, _, _ string, _ map[string]interface{}, _ string) error {
+func (client *recordingCore) Status(_ context.Context, _, _, _, status string, exitCode *int, errorCode, _ string, _ map[string]interface{}, _ string) error {
+	client.statusCalls++
+	if client.statusFailures > 0 {
+		client.statusFailures--
+		return transientCoreError{}
+	}
 	client.statuses = append(client.statuses, status)
+	client.exitCode = exitCode
+	client.errorCode = errorCode
 	return nil
 }
-func (client *recordingCore) Result(context.Context, string, string, string, contracts.Manifest, contracts.ArtifactPointer) error {
+
+type transientCoreError struct{}
+
+func (transientCoreError) Error() string   { return "temporary Core failure" }
+func (transientCoreError) Temporary() bool { return true }
+func (client *recordingCore) Result(_ context.Context, _, _, _ string, manifest contracts.Manifest, _ contracts.ArtifactPointer) error {
 	client.result = true
+	client.manifest = manifest
 	return nil
 }
 func (client *recordingCore) UploadArtifact(_ context.Context, _, _, _ string, input io.Reader, size int64, sha string) (contracts.ArtifactPointer, error) {
@@ -59,10 +77,6 @@ type recordingRuntime struct{}
 func (recordingRuntime) Run(_ context.Context, request sandbox.RunRequest) (sandbox.RunResult, error) {
 	contents := []byte("summary")
 	if err := os.WriteFile(filepath.Join(request.OutputDir, "summary.md"), contents, 0o600); err != nil {
-		return sandbox.RunResult{}, err
-	}
-	manifest := `{"schema_version":"1","experiment_id":"experiment-1","status":"succeeded","files":[{"path":"summary.md","sha256":"` + contracts.SHA256(contents) + `","size_bytes":7,"kind":"summary"}]}`
-	if err := os.WriteFile(filepath.Join(request.OutputDir, "manifest.json"), []byte(manifest), 0o600); err != nil {
 		return sandbox.RunResult{}, err
 	}
 	return sandbox.RunResult{}, nil
@@ -88,6 +102,9 @@ func TestGatewayExecutesAndCleansSuccessfulTask(t *testing.T) {
 	if !client.uploaded || !client.result {
 		t.Fatalf("artifact/result were not submitted: %#v", client)
 	}
+	if client.manifest.ExperimentID != task.ExperimentID || client.manifest.Status != "succeeded" || len(client.manifest.Files) != 3 {
+		t.Fatalf("Gateway did not generate the authoritative manifest: %#v", client.manifest)
+	}
 	if strings.Join(client.statuses, ",") != "preparing,running" {
 		t.Fatalf("unexpected statuses: %#v", client.statuses)
 	}
@@ -96,6 +113,69 @@ func TestGatewayExecutesAndCleansSuccessfulTask(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outputRoot, task.TaskID+".artifact.zip")); !os.IsNotExist(err) {
 		t.Fatalf("artifact staging file was not removed: %v", err)
+	}
+}
+
+func TestGatewayRetriesIdempotentStatusCallbacks(t *testing.T) {
+	client := &recordingCore{statusFailures: 1}
+	gateway := Gateway{
+		Client: client,
+		Config: Config{
+			BoxID: "box-1", BoxToken: "box-token", OutputRoot: t.TempDir(), Lease: time.Minute,
+			CallbackAttempts: 3, CallbackRetryDelay: time.Millisecond,
+		},
+		Workspace: workspaceFunc(func(context.Context, contracts.RunSpec) (string, func(), error) {
+			return t.TempDir(), func() {}, nil
+		}),
+		Runtime: func(contracts.RunSpec) (sandbox.Runtime, error) { return recordingRuntime{}, nil },
+	}
+	task := contracts.Task{TaskID: "task-1", ExperimentID: "experiment-1", ProjectID: "project-1", RunSpec: runSpecMap("experiment-1")}
+	if err := gateway.execute(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	if client.statusCalls != 3 || strings.Join(client.statuses, ",") != "preparing,running" {
+		t.Fatalf("transient status callback was not retried safely: calls=%d statuses=%#v", client.statusCalls, client.statuses)
+	}
+}
+
+func TestGatewayDoesNotRetryPermanentCallbackFailures(t *testing.T) {
+	calls := 0
+	gateway := Gateway{Config: Config{CallbackAttempts: 4, CallbackRetryDelay: time.Millisecond}}
+	err := gateway.retryCoreCallback(context.Background(), func() error {
+		calls++
+		return io.ErrUnexpectedEOF
+	})
+	if err == nil || calls != 1 {
+		t.Fatalf("permanent callback failure was retried: calls=%d err=%v", calls, err)
+	}
+}
+
+type nonZeroRuntime struct{ recordingRuntime }
+
+func (nonZeroRuntime) Run(_ context.Context, request sandbox.RunRequest) (sandbox.RunResult, error) {
+	_, err := request.Stdout.Write([]byte("failed output\n"))
+	return sandbox.RunResult{ExitCode: 7}, err
+}
+
+func TestGatewayRejectsNonZeroExitWithoutSuccessArtifact(t *testing.T) {
+	client := &recordingCore{}
+	gateway := Gateway{
+		Client: client,
+		Config: Config{BoxID: "box-1", BoxToken: "box-token", OutputRoot: t.TempDir(), Lease: time.Minute},
+		Workspace: workspaceFunc(func(context.Context, contracts.RunSpec) (string, func(), error) {
+			return t.TempDir(), func() {}, nil
+		}),
+		Runtime: func(contracts.RunSpec) (sandbox.Runtime, error) { return nonZeroRuntime{}, nil },
+	}
+	task := contracts.Task{TaskID: "task-1", ExperimentID: "experiment-1", ProjectID: "project-1", RunSpec: runSpecMap("experiment-1")}
+	if err := gateway.execute(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	if client.uploaded || client.result || client.exitCode == nil || *client.exitCode != 7 || client.errorCode != "NON_ZERO_EXIT" {
+		t.Fatalf("non-zero exit was not reported as a terminal failure: %#v", client)
+	}
+	if strings.Join(client.statuses, ",") != "preparing,running,failed" {
+		t.Fatalf("unexpected statuses: %#v", client.statuses)
 	}
 }
 

@@ -139,8 +139,13 @@ func TestTaskResultAndArchiveArtifactRequireValidatedPointers(t *testing.T) {
 	}
 }
 
-func TestExperimentTransitionsAreMonotonic(t *testing.T) {
-	valid := [][2]string{{StatusCreated, StatusQueued}, {StatusQueued, StatusPreparing}, {StatusPreparing, StatusRunning}, {StatusRunning, StatusSucceeded}, {StatusRunning, StatusFailed}}
+func TestExperimentTransitionsIncludeLeaseRecovery(t *testing.T) {
+	valid := [][2]string{
+		{StatusCreated, StatusQueued}, {StatusQueued, StatusPreparing},
+		{StatusQueued, StatusFailed}, {StatusPreparing, StatusQueued},
+		{StatusPreparing, StatusRunning}, {StatusRunning, StatusQueued},
+		{StatusRunning, StatusSucceeded}, {StatusRunning, StatusFailed},
+	}
 	for _, pair := range valid {
 		if !validTransition(pair[0], pair[1]) {
 			t.Fatalf("expected transition %s -> %s", pair[0], pair[1])

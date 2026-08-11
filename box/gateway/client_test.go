@@ -66,4 +66,19 @@ func TestHTTPClientUploadStreamsExactArtifactMetadata(t *testing.T) {
 	}
 }
 
+func TestCoreAPIErrorsClassifyOnlyRecoverableResponsesAsTemporary(t *testing.T) {
+	for status, expected := range map[int]bool{
+		http.StatusBadRequest:      false,
+		http.StatusUnauthorized:    false,
+		http.StatusRequestTimeout:  true,
+		http.StatusTooManyRequests: true,
+		http.StatusBadGateway:      true,
+	} {
+		err := &coreAPIError{status: status, message: "safe error"}
+		if err.Temporary() != expected {
+			t.Fatalf("HTTP %d temporary=%v, want %v", status, err.Temporary(), expected)
+		}
+	}
+}
+
 func nilContext() context.Context { return context.Background() }

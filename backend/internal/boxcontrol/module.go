@@ -77,6 +77,14 @@ func (module Module) handleResource(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, box)
 		return
 	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		if err := module.Service.Revoke(r.Context(), identity, boxID); err != nil {
+			writeError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "heartbeat" && r.Method == http.MethodPost {
 		var body contract.BoxHeartbeatRequest
 		if !httpx.DecodeJSON(w, r, &body) {

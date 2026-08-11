@@ -14,6 +14,13 @@ default, renews the lease, streams bounded logs, reports status, uploads
 staged archive are removed after every terminal path. Repeated callbacks are
 safe at Core.
 
+Registration creates a dedicated project-scoped Box credential. Operators
+retire a Box with `DELETE /v1/boxes/{boxId}` after active tasks have reached a
+terminal state. Core atomically marks the Box revoked, removes its Project
+binding, records Audit/Outbox lifecycle evidence, and then asks the Auth owner
+to revoke the credential. The normal Stage 8 terminal smoke performs this
+cleanup and treats a leftover active Box as an acceptance failure.
+
 The default `StaticWorkspace` mode consumes a Repo-owned detached checkout
 mounted by the operator. It requires both `MMDASH_BOX_WORKSPACE_COMMIT` and a
 `.mmdash-commit` marker in the mounted directory to equal the frozen
@@ -40,7 +47,10 @@ permanent provider mock covers create/detail/metrics/delete, secure routing,
 workspace transfer, direct argv, logs, output collection, timeout,
 cancellation, malformed-create reconciliation, credential redaction, and
 cleanup. A paid hosted acceptance on 2026-08-11 passed success/artifact,
-two-second timeout, active cancellation, and final zero leaked sandboxes.
+two-second timeout, active cancellation, and final zero leaked sandboxes. The
+complete product chain was then rerun through Core, a registered Box Gateway,
+E2B, Artifact, and Result retrieval; automatic Box/Token cleanup and the
+official provider list both finished at zero active resources.
 
 E2B can be self-hosted only by operating the complete E2B infrastructure, not
 by starting a standalone sandbox container. `E2B_DOMAIN`, `E2B_API_URL`, and
@@ -59,6 +69,7 @@ API Key IDs and Project IDs are not request credentials.
 | `MMDASH_BOX_WORKSPACE` | Repo-owned detached checkout mount |
 | `MMDASH_BOX_WORKSPACE_COMMIT` | Commit recorded in the checkout marker |
 | `MMDASH_BOX_LOCAL_IMAGE` | Predefined Sandbox image |
+| `MMDASH_BOX_LOCAL_USER` | Optional numeric `uid:gid`; defaults to the Box process user |
 | `MMDASH_BOX_STATE_PATH` | User-only restart state file |
 | `MMDASH_BOX_CPU_MILLIS` | Box-wide CPU admission ceiling |
 | `MMDASH_BOX_MEMORY_BYTES` | Box-wide memory admission ceiling |

@@ -16,7 +16,7 @@ func TestBuildArgsKeepsAllDockerOptionsBeforeImage(t *testing.T) {
 		Inputs: map[string]interface{}{}, Runtime: "local-docker",
 		Limits: contracts.ResourceLimits{CPUMillis: 500, MemoryBytes: 1 << 20, TimeoutSecond: 30, DiskBytes: 1 << 20, PIDs: 32, Network: "disabled"},
 	}
-	args, err := buildArgs("sandbox:fixed", sandbox.RunRequest{Spec: spec, Workspace: "/workspace", OutputDir: "/output"}, []string{"python3", "/workspace/run.py"})
+	args, err := buildArgs("sandbox:fixed", "1000:1000", sandbox.RunRequest{Spec: spec, Workspace: "/workspace", OutputDir: "/output"}, []string{"python3", "/workspace/run.py"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,13 +24,22 @@ func TestBuildArgsKeepsAllDockerOptionsBeforeImage(t *testing.T) {
 	if imageIndex < 0 {
 		t.Fatal("image missing")
 	}
-	for _, option := range []string{"--env", "MODE=test", "--network", "none", "--storage-opt", "size=1048576"} {
+	for _, option := range []string{"--env", "MODE=test", "--network", "none", "--storage-opt", "size=1048576", "--user", "1000:1000"} {
 		if indexOf(args, option) > imageIndex {
 			t.Fatalf("Docker option %q appears after image: %#v", option, args)
 		}
 	}
-	if got := strings.Join(args[imageIndex+1:], " "); got != "python3 /workspace/run.py" {
+	if indexOf(args, "--entrypoint") < 0 || args[indexOf(args, "--entrypoint")+1] != "python3" {
+		t.Fatalf("fixed executable was not installed as the Docker entrypoint: %#v", args)
+	}
+	if got := strings.Join(args[imageIndex+1:], " "); got != "/workspace/run.py" {
 		t.Fatalf("unexpected fixed command: %s", got)
+	}
+}
+
+func TestBuildArgsRejectsEmptyCommand(t *testing.T) {
+	if _, err := buildArgs("sandbox:fixed", "", sandbox.RunRequest{}, nil); err == nil {
+		t.Fatal("empty Sandbox command was accepted")
 	}
 }
 
@@ -42,7 +51,7 @@ func TestBuildArgsRejectsUnsafeEnvironmentNames(t *testing.T) {
 		Inputs: map[string]interface{}{}, Runtime: "local-docker",
 		Limits: contracts.ResourceLimits{CPUMillis: 500, MemoryBytes: 1 << 20, TimeoutSecond: 30, DiskBytes: 1 << 20, PIDs: 32, Network: "disabled"},
 	}
-	if _, err := buildArgs("sandbox:fixed", sandbox.RunRequest{Spec: spec, Workspace: "/workspace", OutputDir: "/output"}, []string{"python3", "/workspace/run.py"}); err == nil {
+	if _, err := buildArgs("sandbox:fixed", "", sandbox.RunRequest{Spec: spec, Workspace: "/workspace", OutputDir: "/output"}, []string{"python3", "/workspace/run.py"}); err == nil {
 		t.Fatal("unsafe environment name was accepted")
 	}
 }

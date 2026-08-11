@@ -37,6 +37,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/metrics"
 	"github.com/mmdash/mmdash/backend/internal/platform/module"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
+	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/progress"
@@ -680,7 +681,7 @@ func run(logger *logging.Logger) error {
 	for _, eventType := range []string{
 		"experiment.created", "experiment.started", "experiment.succeeded",
 		"experiment.failed", "experiment.canceled", "experiment.archived",
-		"box.registered", "box.heartbeat.received",
+		"box.registered", "box.heartbeat.received", "box.revoked",
 	} {
 		if err := projections.Register(eventType, datahub.ProjectorFunc(dataStore.ProjectStage8)); err != nil {
 			return err
@@ -1029,10 +1030,13 @@ func runBoxMaintenance(ctx context.Context, service *boxcontrol.Service, logger 
 	defer ticker.Stop()
 	for {
 		now := time.Now().UTC()
-		if _, err := service.MarkOffline(ctx, now, now.Add(-45*time.Second), 100); err != nil && !errors.Is(err, context.Canceled) {
+		maintenanceContext := requestctx.WithValues(ctx, requestctx.Values{
+			RequestID: fmt.Sprintf("box-maintenance-%d", now.UnixNano()),
+		})
+		if _, err := service.MarkOffline(maintenanceContext, now, now.Add(-45*time.Second), 100); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("box.offline.detect.failed", map[string]interface{}{"error": err.Error()})
 		}
-		if _, err := service.RecoverExpired(ctx, now, 100); err != nil && !errors.Is(err, context.Canceled) {
+		if _, err := service.RecoverExpired(maintenanceContext, now, 100); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("box.task.recovery.failed", map[string]interface{}{"error": err.Error()})
 		}
 		select {

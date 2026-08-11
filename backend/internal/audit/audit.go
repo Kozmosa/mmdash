@@ -283,7 +283,9 @@ func (recorder Recorder) prepare(ctx context.Context, event *Event) error {
 	if event.ActorID == "" {
 		values := requestctx.TrustedSnapshot(ctx)
 		event.ActorID = values.ActorID
-		event.ActorKind = values.ActorKind
+		if event.ActorKind == "" {
+			event.ActorKind = values.ActorKind
+		}
 		event.ProjectID = firstNonEmpty(event.ProjectID, values.ProjectID)
 	}
 	if event.ActorKind == "" {
