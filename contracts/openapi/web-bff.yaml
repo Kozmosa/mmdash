@@ -1335,6 +1335,25 @@ paths:
                     },
                 },
             }
+  /api/projects/{projectId}/progress/proposals/batch-review:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Progress]
+      summary: Review a set of Progress Proposals atomically
+      operationId: bff.progress.proposals.batch_review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/BatchReviewProgressProposalsRequest"
+      responses:
+        "200":
+          description: Reviewed proposals.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProgressProposalList"
   /api/projects/{projectId}/progress/settings:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:

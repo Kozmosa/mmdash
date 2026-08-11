@@ -1313,6 +1313,13 @@ func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
 	if run.Source != "progress_evaluation" || run.SourceEvaluationID != evaluationID || run.SourceRunID != "" {
 		t.Fatalf("progress provenance overloaded parent Run reference: %#v", run)
 	}
+	session, ok := fixture.store.sessions[run.SessionID]
+	if !ok || session.SessionType != SessionProgress {
+		t.Fatalf("progress evaluation used a non-Progress Session: %#v", session)
+	}
+	if len(fixture.adapter.startRunRequests) != 1 || !strings.Contains(fixture.adapter.startRunRequests[0].Instructions, "Progress-type Session") || !strings.Contains(fixture.adapter.startRunRequests[0].Instructions, "task.complete") {
+		t.Fatalf("progress evaluation instructions lost the human review boundary: %#v", fixture.adapter.startRunRequests)
+	}
 }
 
 func (fixture *agentServiceFixture) trustLastCreatedToken(t *testing.T) auth.AgentToken {

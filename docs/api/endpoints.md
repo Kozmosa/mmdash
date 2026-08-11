@@ -50,12 +50,13 @@ Stage 4 and Stage 6 Progress operations:
   `bff.progress.proposals.list`, `bff.progress.proposals.create`,
   `bff.progress.proposals.review`, `bff.progress.settings.get`, and
   `bff.progress.settings.update`.
-- Core adds `progress.recalculate`, `progress.evaluations.list`,
+- Core adds `progress.proposals.batch_review`, `progress.recalculate`,
+  `progress.evaluations.list`,
   `progress.evaluations.get`, `progress.evaluations.retry`,
   `progress.stage_override.set`, `progress.stage_override.clear`, and the
   leased-Worker-only `progress.worker.input` / `progress.worker.execute` to the
   existing Stage 4 Progress operations.
-- Web BFF adds `bff.progress.recalculate`,
+- Web BFF adds `bff.progress.proposals.batch_review`, `bff.progress.recalculate`,
   `bff.progress.evaluations.list`, `bff.progress.evaluations.get`,
   `bff.progress.evaluations.retry`, `bff.progress.stage_override.set`, and
   `bff.progress.stage_override.clear` to its existing one-to-one Progress
@@ -388,6 +389,7 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/stop`                   | `bff.agent.runs.stop`                      | agent                | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/regenerate`             | `bff.agent.runs.regenerate`                | agent                | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs/{runId}/rerun`                  | `bff.agent.runs.rerun`                     | agent                | `web-bff.yaml`              |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/proposals/batch-review`                                                             | `progress.proposals.batch_review`          | progress             | `core.yaml`                 |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/progress/recalculate`                                                                        | `progress.recalculate`                     | progress tracking    | `core.yaml`                 |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/progress/evaluations`                                                                        | `progress.evaluations.list`                | progress tracking    | `core.yaml`                 |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/progress/evaluations/{evaluationId}`                                                         | `progress.evaluations.get`                 | progress tracking    | `core.yaml`                 |
@@ -396,6 +398,7 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/progress/stage-override`                                                                     | `progress.stage_override.clear`            | progress tracking    | `core.yaml`                 |
 | Core        | Internal HTTP | `GET`         | `/v1/internal/progress-evaluation-jobs/{jobId}/input`                                                                  | `progress.worker.input`                    | progress tracking    | `core.yaml`                 |
 | Core        | Internal HTTP | `POST`        | `/v1/internal/progress-evaluation-jobs/{jobId}/execute`                                                                | `progress.worker.execute`                  | progress tracking    | `core.yaml`                 |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/proposals/batch-review`                                                            | `bff.progress.proposals.batch_review`      | progress             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/progress/recalculate`                                                                       | `bff.progress.recalculate`                 | progress tracking    | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/progress/evaluations`                                                                       | `bff.progress.evaluations.list`            | progress tracking    | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/progress/evaluations/{evaluationId}`                                                        | `bff.progress.evaluations.get`             | progress tracking    | `web-bff.yaml`              |

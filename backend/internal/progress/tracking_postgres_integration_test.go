@@ -116,10 +116,14 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 			"completed_items": []string{}, "in_progress_items": []string{"task"}, "blockers": []string{},
 			"pending_questions": []string{"Confirm deadline"},
 			"risks":             []interface{}{map[string]interface{}{"key": "deadline", "title": "Deadline risk", "severity": "high", "detail": "Schedule is tight"}},
+			"work_state_updates": []interface{}{
+				map[string]interface{}{"task_id": task.ID, "state": TaskInProgress},
+			},
 			"suggestions": []interface{}{
 				map[string]interface{}{"key": "milestone", "proposal_type": "milestone.create", "title": "Final review", "rationale": "Needed", "changes": map[string]interface{}{"title": "Final review", "critical": true}},
 				map[string]interface{}{"key": "task-create", "proposal_type": "task.create", "title": "Generated task", "rationale": "Observed work", "changes": map[string]interface{}{"title": "Generated task", "status": TaskTodo}},
-				map[string]interface{}{"key": "task", "proposal_type": "task.update", "target_id": task.ID, "title": "Update task", "rationale": "Progress observed", "changes": map[string]interface{}{"title": "Agent title", "status": TaskDone}},
+				map[string]interface{}{"key": "task", "proposal_type": "task.update", "target_id": task.ID, "title": "Update task", "rationale": "Progress observed", "changes": map[string]interface{}{"title": "Agent title"}},
+				map[string]interface{}{"key": "task-complete", "proposal_type": "task.complete", "target_id": task.ID, "title": "Mark task complete", "rationale": "Completion evidence observed", "changes": map[string]interface{}{}},
 			},
 		},
 	}
@@ -132,12 +136,17 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 		t.Fatalf("complete evaluation: %v", err)
 	}
 	updated, err := fixture.store.GetTask(fixture.ctx, fixture.projectID, task.ID)
-	if err != nil || updated.Title != humanTitle || updated.Status != TaskDone || updated.SourceEvaluationID != evaluation.ID || len(updated.ManualOverrideFields) != 1 || updated.ManualOverrideFields[0] != "title" {
-		t.Fatalf("automatic task boundary: task=%#v err=%v", updated, err)
+	if err != nil || updated.Title != humanTitle || updated.Status != TaskInProgress || updated.SourceEvaluationID != evaluation.ID || len(updated.ManualOverrideFields) != 1 || updated.ManualOverrideFields[0] != "title" {
+		t.Fatalf("automatic work-state boundary: task=%#v err=%v", updated, err)
 	}
 	proposals, err := fixture.store.ListProposals(fixture.ctx, fixture.projectID)
-	if err != nil || len(proposals) != 1 || proposals[0].ProposalType != "milestone.create" || proposals[0].SourceEvaluationID != evaluation.ID || proposals[0].Status != "pending" {
-		t.Fatalf("milestone proposal boundary: proposals=%#v err=%v", proposals, err)
+	if err != nil || len(proposals) != 4 {
+		t.Fatalf("review proposal boundary: proposals=%#v err=%v", proposals, err)
+	}
+	for _, proposal := range proposals {
+		if proposal.SourceEvaluationID != evaluation.ID || proposal.Status != "pending" {
+			t.Fatalf("evaluation suggestion bypassed review: proposal=%#v", proposal)
+		}
 	}
 	state, err := fixture.store.GetState(fixture.ctx, fixture.projectID)
 	if err != nil || state.DetectedStage != "execution" || state.EffectiveStage != "review" || !state.StageOverridden || state.Summary != "Human review stage" {
@@ -165,21 +174,27 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 	for _, expected := range []struct {
 		action     string
 		payloadKey string
+		count      int
 	}{
-		{action: "progress.evaluation.started", payloadKey: "resource_id"},
-		{action: "progress.task.created", payloadKey: "source_evaluation_id"},
-		{action: "progress.task.updated", payloadKey: "source_evaluation_id"},
-		{action: "progress.proposal.created", payloadKey: "source_evaluation_id"},
-		{action: "progress.risk.detected", payloadKey: "evaluation_id"},
-		{action: "progress.evaluation.completed", payloadKey: "resource_id"},
+		{action: "progress.evaluation.started", payloadKey: "resource_id", count: 1},
+		{action: "progress.proposal.created", payloadKey: "source_evaluation_id", count: 4},
+		{action: "progress.risk.detected", payloadKey: "evaluation_id", count: 1},
+		{action: "progress.evaluation.completed", payloadKey: "resource_id", count: 1},
 	} {
 		var count int
-		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM audit_events WHERE project_id=$1 AND action=$2`, fixture.projectID, expected.action).Scan(&count); err != nil || count != 1 {
+		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM audit_events WHERE project_id=$1 AND action=$2`, fixture.projectID, expected.action).Scan(&count); err != nil || count != expected.count {
 			t.Fatalf("automatic mutation audit %s: count=%d err=%v", expected.action, count, err)
 		}
-		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM system_outbox WHERE project_id=$1 AND event_type=$2 AND payload->>$3=$4`, fixture.projectID, expected.action, expected.payloadKey, evaluation.ID).Scan(&count); err != nil || count != 1 {
+		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM system_outbox WHERE project_id=$1 AND event_type=$2 AND payload->>$3=$4`, fixture.projectID, expected.action, expected.payloadKey, evaluation.ID).Scan(&count); err != nil || count != expected.count {
 			t.Fatalf("automatic mutation outbox %s: count=%d err=%v", expected.action, count, err)
 		}
+	}
+	var workStateAudit, workStateEvent int
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM audit_events WHERE project_id=$1 AND action='progress.task.updated'`, fixture.projectID).Scan(&workStateAudit); err != nil || workStateAudit != 1 {
+		t.Fatalf("automatic work-state audit: count=%d err=%v", workStateAudit, err)
+	}
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM system_outbox WHERE project_id=$1 AND event_type='progress.task.updated' AND payload->>'source_evaluation_id'=$2`, fixture.projectID, evaluation.ID).Scan(&workStateEvent); err != nil || workStateEvent != 1 {
+		t.Fatalf("automatic work-state event: count=%d err=%v", workStateEvent, err)
 	}
 	converged := fixture.queueEvaluation(t, map[string]interface{}{"version": "convergence"})
 	convergedJob, err := fixture.jobs.Get(fixture.ctx, converged.JobID)
@@ -196,8 +211,8 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 		t.Fatalf("complete converged evaluation: %v", err)
 	}
 	var automaticTasks, repeatedMutations int
-	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_tasks WHERE project_id=$1 AND source_key='task-create'`, fixture.projectID).Scan(&automaticTasks); err != nil || automaticTasks != 1 {
-		t.Fatalf("automatic task source-key convergence: count=%d err=%v", automaticTasks, err)
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_tasks WHERE project_id=$1 AND source_key='task-create'`, fixture.projectID).Scan(&automaticTasks); err != nil || automaticTasks != 0 {
+		t.Fatalf("evaluation created a task without review: count=%d err=%v", automaticTasks, err)
 	}
 	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_proposals WHERE project_id=$1 AND source_key='milestone' AND status='pending'`, fixture.projectID).Scan(&automaticTasks); err != nil || automaticTasks != 1 {
 		t.Fatalf("automatic proposal convergence: count=%d err=%v", automaticTasks, err)
@@ -208,7 +223,7 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 
 	invalid := EvaluationSuggestion{Key: "cross-project", ProposalType: "task.create", Title: "Invalid", Changes: map[string]interface{}{"title": "Invalid", "assignee_id": fixture.generator.MustNew()}}
 	err = fixture.store.Transaction.Within(fixture.ctx, nil, func(tx transaction.Tx) error {
-		return fixture.store.applyEvaluationSuggestion(fixture.ctx, tx, fixture.projectID, evaluation.ID, fixture.userID, "", true, invalid, fixture.clock.Now())
+		return fixture.store.applyEvaluationSuggestion(fixture.ctx, tx, fixture.projectID, evaluation.ID, fixture.userID, "", invalid, fixture.clock.Now())
 	})
 	if !errors.Is(err, ErrReferenceInvalid) {
 		t.Fatalf("invalid automatic task reference returned %v", err)
