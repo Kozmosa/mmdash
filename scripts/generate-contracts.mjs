@@ -77,6 +77,7 @@ function renderGoHandlerTypes(document) {
     "CreateReminderRequest",
     "CreateProgressProposalRequest",
     "ReviewProgressProposalRequest",
+    "BatchReviewProgressProposalsRequest",
     "UpdateProgressSettingsRequest",
     "RecalculateProgressRequest",
     "SetProgressStageOverrideRequest",

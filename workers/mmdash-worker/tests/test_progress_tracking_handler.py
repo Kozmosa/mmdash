@@ -31,6 +31,7 @@ class FakeClient:
                     "in_progress_items": [],
                     "blockers": ["Blocked"],
                     "risks": [],
+                    "work_state_updates": [],
                     "suggestions": [],
                     "pending_questions": [],
                 }

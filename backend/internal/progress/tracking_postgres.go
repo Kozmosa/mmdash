@@ -701,12 +701,13 @@ func (store PostgresStore) CompleteEvaluation(ctx context.Context, tx transactio
 		agentInstanceID = value
 	}
 	now := store.now()
-	settings, err := store.getSettingsTx(ctx, tx, projectID)
-	if err != nil {
-		return err
+	for _, update := range output.WorkStateUpdates {
+		if err := store.applyEvaluationWorkState(ctx, tx, projectID, evaluationID, actorID, agentRunID, update, now); err != nil {
+			return err
+		}
 	}
 	for _, suggestion := range output.Suggestions {
-		if err := store.applyEvaluationSuggestion(ctx, tx, projectID, evaluationID, actorID, agentRunID, settings.AutoTaskChanges, suggestion, now); err != nil {
+		if err := store.applyEvaluationSuggestion(ctx, tx, projectID, evaluationID, actorID, agentRunID, suggestion, now); err != nil {
 			return err
 		}
 	}
@@ -776,28 +777,37 @@ func (store PostgresStore) FailEvaluation(ctx context.Context, tx transaction.Tx
 	return store.trackingAudit(ctx, tx, actorID, "system", projectID, "progress.evaluation.failed", "progress-evaluation", evaluationID, "error", failure.Code, map[string]interface{}{"attempts": job.Attempts})
 }
 
-func (store PostgresStore) applyEvaluationSuggestion(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, autoTasks bool, suggestion EvaluationSuggestion, now time.Time) error {
-	if strings.HasPrefix(suggestion.ProposalType, "milestone.") || !autoTasks {
-		return store.createEvaluationProposal(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
+func (store PostgresStore) applyEvaluationSuggestion(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, suggestion EvaluationSuggestion, now time.Time) error {
+	return store.createEvaluationProposal(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
+}
+
+func (store PostgresStore) applyEvaluationWorkState(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, update EvaluationWorkStateUpdate, now time.Time) error {
+	taskID, err := normalizeReferenceID(update.TaskID)
+	if err != nil || !validAutomaticWorkState(update.State) {
+		return ErrReferenceInvalid
 	}
-	switch suggestion.ProposalType {
-	case "task.create":
-		targetID, changes, err := store.validateProposalReferences(ctx, tx, projectID, suggestion.ProposalType, suggestion.TargetID, suggestion.Changes)
-		if err != nil {
-			return err
+	var title, currentStatus, currentWorkState string
+	if err := tx.QueryRowContext(ctx, `SELECT title,status,work_state FROM progress_tasks WHERE task_id=$1 AND project_id=$2 FOR UPDATE`, taskID, projectID).Scan(&title, &currentStatus, &currentWorkState); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrReferenceInvalid
 		}
-		suggestion.TargetID, suggestion.Changes = targetID, changes
-		return store.createEvaluationTask(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
-	case "task.update":
-		targetID, changes, err := store.validateProposalReferences(ctx, tx, projectID, suggestion.ProposalType, suggestion.TargetID, suggestion.Changes)
-		if err != nil {
-			return err
-		}
-		suggestion.TargetID, suggestion.Changes = targetID, changes
-		return store.updateEvaluationTask(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
-	default:
-		return store.createEvaluationProposal(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
+		return err
 	}
+	if currentWorkState == update.State {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET work_state=$3,status=CASE WHEN status='done' THEN status ELSE $3 END,source='agent',source_run_id=$4,source_evaluation_id=$5,updated_by=$6,updated_at=$7 WHERE task_id=$1 AND project_id=$2`, taskID, projectID, update.State, runID, evaluationID, actorID, now); err != nil {
+		return err
+	}
+	eventStatus := currentStatus
+	if eventStatus != string(TaskDone) {
+		eventStatus = update.State
+	}
+	metadata := map[string]interface{}{"source": "agent", "source_run_id": runID, "source_evaluation_id": evaluationID, "previous_work_state": currentWorkState, "work_state": update.State, "automatic_work_state": true}
+	if err := store.progressEvent(ctx, tx, "progress.task.updated", projectID, actorID, taskID, "progress_task", title, eventStatus, metadata); err != nil {
+		return err
+	}
+	return store.trackingAudit(ctx, tx, actorID, "system", projectID, "progress.task.updated", "progress-task", taskID, "success", "", metadata)
 }
 
 func (store PostgresStore) createEvaluationProposal(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, suggestion EvaluationSuggestion, now time.Time) error {

@@ -565,11 +565,12 @@ func (request ReviewContextProposalRequest) Validate() error {
 
 // CreateMilestoneRequest is generated from the Core request-body schema.
 type CreateMilestoneRequest struct {
-	Title       string     `json:"title"`
-	Description *string    `json:"description,omitempty"`
-	Critical    *bool      `json:"critical,omitempty"`
-	StartAt     *time.Time `json:"start_at,omitempty"`
-	TargetAt    *time.Time `json:"target_at,omitempty"`
+	Title         string     `json:"title"`
+	Description   *string    `json:"description,omitempty"`
+	Critical      *bool      `json:"critical,omitempty"`
+	StartAt       *time.Time `json:"start_at,omitempty"`
+	TargetAt      *time.Time `json:"target_at,omitempty"`
+	TargetHasTime *bool      `json:"target_has_time,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -593,17 +594,18 @@ func (request CreateMilestoneRequest) Validate() error {
 
 // UpdateMilestoneRequest is generated from the Core request-body schema.
 type UpdateMilestoneRequest struct {
-	Title       *string    `json:"title,omitempty"`
-	Description *string    `json:"description,omitempty"`
-	Status      *string    `json:"status,omitempty"`
-	Critical    *bool      `json:"critical,omitempty"`
-	StartAt     *time.Time `json:"start_at,omitempty"`
-	TargetAt    *time.Time `json:"target_at,omitempty"`
+	Title         *string    `json:"title,omitempty"`
+	Description   *string    `json:"description,omitempty"`
+	Status        *string    `json:"status,omitempty"`
+	Critical      *bool      `json:"critical,omitempty"`
+	StartAt       *time.Time `json:"start_at,omitempty"`
+	TargetAt      *time.Time `json:"target_at,omitempty"`
+	TargetHasTime *bool      `json:"target_has_time,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request UpdateMilestoneRequest) Validate() error {
-	if request.Title == nil && request.Description == nil && request.Status == nil && request.Critical == nil && request.StartAt == nil && request.TargetAt == nil {
+	if request.Title == nil && request.Description == nil && request.Status == nil && request.Critical == nil && request.StartAt == nil && request.TargetAt == nil && request.TargetHasTime == nil {
 		return fmt.Errorf("at least one field is required")
 	}
 	if request.Title != nil {
@@ -620,7 +622,7 @@ func (request UpdateMilestoneRequest) Validate() error {
 		}
 	}
 	if request.Status != nil {
-		if *request.Status != "planned" && *request.Status != "in_progress" && *request.Status != "completed" && *request.Status != "cancelled" {
+		if *request.Status != "planned" && *request.Status != "in_progress" && *request.Status != "completed" {
 			return fmt.Errorf("status has an unsupported value")
 		}
 	}
@@ -659,7 +661,7 @@ func (request CreateTaskRequest) Validate() error {
 		}
 	}
 	if request.Status != nil {
-		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" && *request.Status != "cancelled" {
+		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" {
 			return fmt.Errorf("status has an unsupported value")
 		}
 	}
@@ -708,7 +710,7 @@ func (request UpdateTaskRequest) Validate() error {
 		}
 	}
 	if request.Status != nil {
-		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" && *request.Status != "cancelled" {
+		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" {
 			return fmt.Errorf("status has an unsupported value")
 		}
 	}
@@ -779,7 +781,7 @@ func (request CreateProgressProposalRequest) Validate() error {
 	if request.ProposalType == "" {
 		return fmt.Errorf("proposal_type is required")
 	}
-	if request.ProposalType != "milestone.create" && request.ProposalType != "milestone.update" && request.ProposalType != "task.create" && request.ProposalType != "task.update" {
+	if request.ProposalType != "milestone.create" && request.ProposalType != "milestone.update" && request.ProposalType != "milestone.complete" && request.ProposalType != "task.create" && request.ProposalType != "task.update" && request.ProposalType != "task.complete" {
 		return fmt.Errorf("proposal_type has an unsupported value")
 	}
 	if request.Title == "" {
@@ -815,6 +817,38 @@ type ReviewProgressProposalRequest struct {
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request ReviewProgressProposalRequest) Validate() error {
+	if request.Decision == "" {
+		return fmt.Errorf("decision is required")
+	}
+	if request.Decision != "accepted" && request.Decision != "rejected" {
+		return fmt.Errorf("decision has an unsupported value")
+	}
+	if request.Note != nil {
+		if len(*request.Note) > 4000 {
+			return fmt.Errorf("note is too long")
+		}
+	}
+	return nil
+}
+
+// BatchReviewProgressProposalsRequest is generated from the Core request-body schema.
+type BatchReviewProgressProposalsRequest struct {
+	ProposalIDs []string `json:"proposal_ids"`
+	Decision    string   `json:"decision"`
+	Note        *string  `json:"note,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request BatchReviewProgressProposalsRequest) Validate() error {
+	if request.ProposalIDs == nil {
+		return fmt.Errorf("proposal_ids is required")
+	}
+	if len(request.ProposalIDs) > 100 {
+		return fmt.Errorf("proposal_ids has too many items")
+	}
+	if len(request.ProposalIDs) < 1 {
+		return fmt.Errorf("proposal_ids has too few items")
+	}
 	if request.Decision == "" {
 		return fmt.Errorf("decision is required")
 	}
