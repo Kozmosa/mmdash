@@ -10,6 +10,7 @@ import (
 	"github.com/mmdash/mmdash/clients/cli/internal/app"
 	"github.com/mmdash/mmdash/clients/cli/internal/credentials"
 	"github.com/mmdash/mmdash/clients/cli/internal/features/core"
+	experimentFeature "github.com/mmdash/mmdash/clients/cli/internal/features/experiment"
 	modelFeature "github.com/mmdash/mmdash/clients/cli/internal/features/model"
 	"github.com/mmdash/mmdash/clients/cli/internal/features/project"
 )
@@ -26,6 +27,7 @@ func main() {
 			core.Feature{},
 			project.Feature{},
 			modelFeature.Feature{},
+			experimentFeature.Feature{},
 		},
 		Stderr:  os.Stderr,
 		Stdin:   os.Stdin,

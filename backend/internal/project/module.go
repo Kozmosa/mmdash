@@ -15,6 +15,8 @@ import (
 type Module struct {
 	Agent        http.Handler
 	Artifact     http.Handler
+	Box          http.Handler
+	Experiment   http.Handler
 	Model        http.Handler
 	Notification http.Handler
 	Progress     http.Handler
@@ -103,6 +105,16 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 	case "agent-instances":
 		if module.Agent != nil {
 			module.Agent.ServeHTTP(response, request)
+			return
+		}
+	case "box":
+		if module.Box != nil {
+			module.Box.ServeHTTP(response, request)
+			return
+		}
+	case "experiments":
+		if module.Experiment != nil {
+			module.Experiment.ServeHTTP(response, request)
 			return
 		}
 	case "artifacts":

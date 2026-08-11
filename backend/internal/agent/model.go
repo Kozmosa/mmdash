@@ -44,6 +44,10 @@ var DefaultAllowedTools = []string{
 	"context.promote",
 	"progress.get",
 	"progress.recalculate",
+	"experiment.create",
+	"experiment.run",
+	"experiment.status",
+	"result.get",
 }
 
 // CheckSnapshot deliberately stores only normalized status and safe codes.

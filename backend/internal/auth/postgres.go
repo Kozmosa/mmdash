@@ -415,6 +415,20 @@ func (store PostgresStore) RevokeToken(
 	return requireAffected(result, err)
 }
 
+func (store PostgresStore) RevokeManagedToken(
+	ctx context.Context,
+	tokenID string,
+	projectID string,
+	kind string,
+	now time.Time,
+) error {
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE auth_tokens SET revoked_at = COALESCE(revoked_at, $4)
+		WHERE token_id = $1 AND project_id = $2 AND kind = $3
+	`, tokenID, projectID, kind, now)
+	return requireAffected(result, err)
+}
+
 func (store PostgresStore) CreateAgentToken(ctx context.Context, token AgentToken) error {
 	if token.ExpiresAt != nil && !token.ExpiresAt.After(token.CreatedAt) {
 		return ErrConflict

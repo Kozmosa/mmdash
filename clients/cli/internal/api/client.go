@@ -118,6 +118,24 @@ type ModelSync struct {
 	JobID      string `json:"job_id"`
 }
 
+type Experiment struct {
+	ID             string `json:"experiment_id"`
+	ProjectID      string `json:"project_id"`
+	Name           string `json:"name"`
+	Status         string `json:"status"`
+	SourceCommit   string `json:"source_commit"`
+	Entrypoint     string `json:"entrypoint"`
+	Runtime        string `json:"runtime"`
+	BoxID          string `json:"box_id,omitempty"`
+	TaskID         string `json:"task_id,omitempty"`
+	FailureCode    string `json:"failure_code,omitempty"`
+	FailureMessage string `json:"failure_message,omitempty"`
+}
+type ExperimentPage struct {
+	Items   []Experiment `json:"items"`
+	HasMore bool         `json:"has_more"`
+}
+
 type Error struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
@@ -192,6 +210,31 @@ func (client *Client) SyncModels(ctx context.Context, token, projectID, question
 		path = "/v1/projects/" + url.PathEscape(projectID) + "/models/questions/" + url.PathEscape(questionID) + "/sync"
 	}
 	err := client.do(ctx, http.MethodPost, path, nil, token, &result, false)
+	return result, err
+}
+
+func (client *Client) ListExperiments(ctx context.Context, token, projectID string) (ExperimentPage, error) {
+	var result ExperimentPage
+	err := client.do(ctx, http.MethodGet, "/v1/projects/"+url.PathEscape(projectID)+"/experiments", nil, token, &result, true)
+	return result, err
+}
+
+func (client *Client) CreateExperiment(ctx context.Context, token, projectID, name, commit, entrypoint string) (Experiment, error) {
+	var result Experiment
+	body := map[string]interface{}{"name": name, "source_commit": commit, "entrypoint": entrypoint, "parameters": map[string]interface{}{}, "environment": map[string]string{}, "inputs": map[string]interface{}{}, "runtime": "local-docker", "limits": map[string]interface{}{"cpu_millis": 1000, "memory_bytes": 1073741824, "timeout_seconds": 300, "disk_bytes": 1073741824, "pids": 128, "network": "disabled"}, "idempotency_key": requestID()}
+	err := client.do(ctx, http.MethodPost, "/v1/projects/"+url.PathEscape(projectID)+"/experiments", body, token, &result, false)
+	return result, err
+}
+
+func (client *Client) RunExperiment(ctx context.Context, token, projectID, experimentID string) (Experiment, error) {
+	var result Experiment
+	err := client.do(ctx, http.MethodPost, "/v1/projects/"+url.PathEscape(projectID)+"/experiments/"+url.PathEscape(experimentID)+"/run", nil, token, &result, false)
+	return result, err
+}
+
+func (client *Client) GetExperiment(ctx context.Context, token, projectID, experimentID string) (Experiment, error) {
+	var result Experiment
+	err := client.do(ctx, http.MethodGet, "/v1/projects/"+url.PathEscape(projectID)+"/experiments/"+url.PathEscape(experimentID), nil, token, &result, true)
 	return result, err
 }
 

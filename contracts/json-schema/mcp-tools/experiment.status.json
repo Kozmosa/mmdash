@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/mcp/experiment.status.json",
+  "title": "Read experiment status",
+  "x-operation-id": "experiment.status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "experiment_id"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "experiment_id": { "type": "string", "format": "uuid" }
+  }
+}
