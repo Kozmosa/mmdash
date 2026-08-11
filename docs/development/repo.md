@@ -53,6 +53,11 @@ Windows. An empty allowlist disables Local Git. Core canonicalizes the source
 and rejects traversal, symlink escape, non-bare/non-worktree repositories, and
 paths outside every configured root.
 
+Every Git subprocess receives the stable internal maintenance identity
+`mmdash <repo@mmdash.local>` so ref and reflog updates never depend on host
+name resolution. Authenticated workspace commits override both author and
+committer with the requesting user's validated identity.
+
 ## Readiness, logs, and metrics
 
 `GET /health/ready` verifies PostgreSQL, object storage, Git availability and

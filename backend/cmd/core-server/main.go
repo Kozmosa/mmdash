@@ -17,10 +17,12 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/artifact"
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	"github.com/mmdash/mmdash/backend/internal/boxcontrol"
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/datahub"
 	"github.com/mmdash/mmdash/backend/internal/events"
 	"github.com/mmdash/mmdash/backend/internal/example"
+	"github.com/mmdash/mmdash/backend/internal/experiment"
 	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/model"
 	"github.com/mmdash/mmdash/backend/internal/notification"
@@ -35,6 +37,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/metrics"
 	"github.com/mmdash/mmdash/backend/internal/platform/module"
 	"github.com/mmdash/mmdash/backend/internal/platform/outbox"
+	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 	"github.com/mmdash/mmdash/backend/internal/platform/server"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/progress"
@@ -56,6 +59,13 @@ func main() {
 type registrationSettingsPolicy struct{ Store settings.Store }
 
 type modelArtifactImporter struct{ Service *artifact.Service }
+
+type repoCommitValidator struct{ Service *repo.Service }
+
+func (validator repoCommitValidator) ValidateCommit(ctx context.Context, identity auth.Identity, projectID, commitSHA string) error {
+	_, err := validator.Service.GetCommit(ctx, identity, projectID, commitSHA)
+	return err
+}
 
 func (adapter modelArtifactImporter) ImportModelFile(ctx context.Context, input model.ModelFileImport) (model.ModelFileReference, error) {
 	detail, err := adapter.Service.ImportModelFile(ctx, artifact.ModelFileImport{
@@ -558,6 +568,49 @@ func run(logger *logging.Logger) error {
 		Projects: projectService, Service: &artifactService,
 	}
 	repoModule := repo.Module{Service: repoService}
+	boxStore := boxcontrol.PostgresStore{Audit: auditRecorder, DB: db, Generator: idGenerator, Outbox: outboxWriter, Transaction: transactionManager}
+	boxService := &boxcontrol.Service{
+		Access: projectService, Clock: systemClock, Generator: idGenerator,
+		Issuer: authService, Revoker: authService, Store: boxStore,
+	}
+	experimentStore := experiment.PostgresStore{Audit: auditRecorder, DB: db, Generator: idGenerator, Outbox: outboxWriter, Transaction: transactionManager}
+	experimentService := &experiment.Service{
+		Access: projectService, Artifacts: &artifactService, Boxes: boxService, Clock: systemClock,
+		Commit: repoCommitValidator{Service: &repoService}, Generator: idGenerator,
+		Store: experimentStore,
+	}
+	boxService.Observer = experimentService
+	boxService.Artifacts = experimentService
+	boxModule := boxcontrol.Module{Service: boxService}
+	experimentModule := experiment.Module{Service: experimentService}
+	for _, definition := range []struct {
+		objectType string
+		read       func(context.Context, auth.Identity, string, string) (interface{}, error)
+	}{
+		{"experiment", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return experimentService.Get(ctx, caller, projectID, sourceID)
+		}},
+		{"experiment_run", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return boxService.ReadTask(ctx, caller, projectID, sourceID)
+		}},
+		{"result_bundle", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return experimentService.Result(ctx, caller, projectID, sourceID)
+		}},
+		{"box", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			box, err := boxService.Get(ctx, caller, sourceID)
+			if err != nil || box.ProjectID != projectID {
+				return nil, datahub.ErrNotFound
+			}
+			return box, nil
+		}},
+	} {
+		definition := definition
+		if err := dataAdapters.Register(definition.objectType, datahub.ReaderFunc(func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			return definition.read(ctx, caller, object.ProjectID, object.SourceID)
+		})); err != nil {
+			return err
+		}
+	}
 	artifactDataReader := artifact.DataHubReaderAdapter{
 		Registry: artifactStore, Service: &artifactService,
 	}
@@ -622,6 +675,15 @@ func run(logger *logging.Logger) error {
 		if err := projections.Register(
 			eventType, datahub.ProjectorFunc(repoProjector.Project),
 		); err != nil {
+			return err
+		}
+	}
+	for _, eventType := range []string{
+		"experiment.created", "experiment.started", "experiment.succeeded",
+		"experiment.failed", "experiment.canceled", "experiment.archived",
+		"box.registered", "box.heartbeat.received", "box.revoked",
+	} {
+		if err := projections.Register(eventType, datahub.ProjectorFunc(dataStore.ProjectStage8)); err != nil {
 			return err
 		}
 	}
@@ -704,12 +766,20 @@ func run(logger *logging.Logger) error {
 	if err := modules.Register(project.Module{
 		Agent:        agentModule.ProjectHandler(),
 		Artifact:     artifactModule.ProjectHandler(),
+		Box:          boxModule.ProjectHandler(),
+		Experiment:   experimentModule.ProjectHandler(),
 		Model:        modelModule.ProjectHandler(),
 		Notification: notification.Module{Auth: authService, Service: notificationService, Settings: settingsService}.ProjectHandler(),
 		Progress:     progress.Module{Service: *progressService}.ProjectHandler(),
 		Repository:   repoModule.ProjectHandler(),
 		Service:      *projectService,
 	}); err != nil {
+		return err
+	}
+	if err := modules.Register(boxModule); err != nil {
+		return err
+	}
+	if err := modules.Register(experimentModule); err != nil {
 		return err
 	}
 	if err := modules.Register(agentModule); err != nil {
@@ -834,6 +904,7 @@ func run(logger *logging.Logger) error {
 	}).Run(ctx, func(processorErr error) {
 		logger.Error("progress.tracking.processor.failed", map[string]interface{}{"error": processorErr.Error()})
 	})
+	go runBoxMaintenance(ctx, boxService, logger)
 	startInvitationExpiryProcessor(ctx, project.InvitationExpiryProcessor{
 		BatchSize: processConfig.Project.InvitationExpiryBatchSize,
 		Clock:     systemClock,
@@ -945,6 +1016,28 @@ func runModelScheduler(ctx context.Context, service *model.Service, owner string
 	for {
 		if _, err := service.RunScheduledSyncs(ctx, owner, 20); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("model.scheduler.failed", map[string]interface{}{"error": err.Error()})
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func runBoxMaintenance(ctx context.Context, service *boxcontrol.Service, logger *logging.Logger) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		now := time.Now().UTC()
+		maintenanceContext := requestctx.WithValues(ctx, requestctx.Values{
+			RequestID: fmt.Sprintf("box-maintenance-%d", now.UnixNano()),
+		})
+		if _, err := service.MarkOffline(maintenanceContext, now, now.Add(-45*time.Second), 100); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("box.offline.detect.failed", map[string]interface{}{"error": err.Error()})
+		}
+		if _, err := service.RecoverExpired(maintenanceContext, now, 100); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("box.task.recovery.failed", map[string]interface{}{"error": err.Error()})
 		}
 		select {
 		case <-ctx.Done():

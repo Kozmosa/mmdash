@@ -7,3 +7,7 @@ and are compiled by `pnpm contracts:check`.
 `common/dtos.schema.json` owns shared identifiers, timestamps, errors,
 pagination, and actors. Feature modules add schemas under their own directory
 instead of copying these definitions.
+
+Stage 8 freezes `run_spec.schema.json`, `manifest.schema.json`, and the Box
+capability/resource definitions in `box.schema.json`. `manifest.json` is the
+only result manifest name; `result_manifest.json` is not a supported alias.

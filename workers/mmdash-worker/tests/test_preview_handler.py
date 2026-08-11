@@ -102,6 +102,8 @@ def test_production_registry_advertises_artifact_preview() -> None:
     registry = worker_registry(FakeTransferClient())
     assert registry.names() == (
         "artifact.preview",
+        "experiment.result.compare",
+        "experiment.result.summarize",
         "model.notion.discover",
         "model.notion.snapshot",
         "progress.evaluate",
