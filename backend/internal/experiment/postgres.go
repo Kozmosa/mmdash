@@ -297,7 +297,7 @@ func (store PostgresStore) ApplyTaskStatus(ctx context.Context, task boxcontrol.
 			if !validTransition(previous, status) {
 				return ErrConflict
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE experiments SET status=$2,box_id=NULLIF($3,''),exit_code=$4,failure_code=NULLIF($5,''),failure_message=NULLIF($6,''),resource_usage=$7,summary=NULLIF($8,''),started_at=CASE WHEN $2 IN ('preparing','running') THEN COALESCE(started_at,$9) ELSE started_at END,finished_at=CASE WHEN $2 IN ('succeeded','failed','canceled') THEN COALESCE(finished_at,$9) ELSE finished_at END,updated_at=$9 WHERE experiment_id=$1`, task.ExperimentID, status, task.BoxID, task.ExitCode, task.ErrorCode, task.ErrorMessage, usage, task.Summary, now); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE experiments SET status=$2,box_id=NULLIF($3,'')::uuid,exit_code=$4,failure_code=NULLIF($5,''),failure_message=NULLIF($6,''),resource_usage=$7,summary=NULLIF($8,''),started_at=CASE WHEN $2 IN ('preparing','running') THEN COALESCE(started_at,$9) ELSE started_at END,finished_at=CASE WHEN $2 IN ('succeeded','failed','canceled') THEN COALESCE(finished_at,$9) ELSE finished_at END,updated_at=$9 WHERE experiment_id=$1`, task.ExperimentID, status, task.BoxID, task.ExitCode, task.ErrorCode, task.ErrorMessage, usage, task.Summary, now); err != nil {
 				return err
 			}
 			if status != StatusSucceeded {
@@ -309,7 +309,7 @@ func (store PostgresStore) ApplyTaskStatus(ctx context.Context, task boxcontrol.
 			return Experiment{}, err
 		}
 	} else {
-		row := store.DB.QueryRowContext(ctx, `UPDATE experiments SET status=$2,box_id=NULLIF($3,''),exit_code=$4,failure_code=NULLIF($5,''),failure_message=NULLIF($6,''),resource_usage=$7,summary=NULLIF($8,''),started_at=CASE WHEN $2 IN ('preparing','running') THEN COALESCE(started_at,$9) ELSE started_at END,finished_at=CASE WHEN $2 IN ('succeeded','failed','canceled') THEN COALESCE(finished_at,$9) ELSE finished_at END,updated_at=$9 WHERE experiment_id=$1 RETURNING experiment_id`, task.ExperimentID, status, task.BoxID, task.ExitCode, task.ErrorCode, task.ErrorMessage, usage, task.Summary, now)
+		row := store.DB.QueryRowContext(ctx, `UPDATE experiments SET status=$2,box_id=NULLIF($3,'')::uuid,exit_code=$4,failure_code=NULLIF($5,''),failure_message=NULLIF($6,''),resource_usage=$7,summary=NULLIF($8,''),started_at=CASE WHEN $2 IN ('preparing','running') THEN COALESCE(started_at,$9) ELSE started_at END,finished_at=CASE WHEN $2 IN ('succeeded','failed','canceled') THEN COALESCE(finished_at,$9) ELSE finished_at END,updated_at=$9 WHERE experiment_id=$1 RETURNING experiment_id`, task.ExperimentID, status, task.BoxID, task.ExitCode, task.ErrorCode, task.ErrorMessage, usage, task.Summary, now)
 		var ignored string
 		if err := row.Scan(&ignored); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -415,13 +415,13 @@ func validTransition(from, to string) bool {
 	if from == StatusCreated && to == StatusQueued {
 		return true
 	}
-	if from == StatusQueued && (to == StatusPreparing || to == StatusCanceled) {
+	if from == StatusQueued && (to == StatusPreparing || to == StatusFailed || to == StatusCanceled) {
 		return true
 	}
-	if from == StatusPreparing && (to == StatusRunning || to == StatusFailed || to == StatusCanceled) {
+	if from == StatusPreparing && (to == StatusQueued || to == StatusRunning || to == StatusFailed || to == StatusCanceled) {
 		return true
 	}
-	if from == StatusRunning && (to == StatusSucceeded || to == StatusFailed || to == StatusCanceled) {
+	if from == StatusRunning && (to == StatusQueued || to == StatusSucceeded || to == StatusFailed || to == StatusCanceled) {
 		return true
 	}
 	return false

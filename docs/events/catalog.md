@@ -85,6 +85,7 @@ All entries currently use envelope schema version `1`.
 | `experiment.archived`           | experiment | yes          | `experiment_id`, `status=archived`                                                                             | `datahub.projections`          |
 | `box.registered`                | boxcontrol | yes         | `box_id`, `project_id`, `version`, `status=registering`                                                        | `datahub.projections`          |
 | `box.heartbeat.received`        | boxcontrol | yes         | `box_id`, `project_id`, `version`, `running_tasks`, `status`                                                   | none                           |
+| `box.revoked`                   | boxcontrol | yes         | `box_id`, `project_id`, `name`, `version`, `status=revoked`                                                    | `datahub.projections`          |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.

@@ -84,7 +84,7 @@ func stage8Objects(event contract.EventEnvelope) []stage8ProjectionObject {
 			}
 		}
 		return objects
-	case event.EventType == "box.registered" || event.EventType == "box.heartbeat.received":
+	case event.EventType == "box.registered" || event.EventType == "box.heartbeat.received" || event.EventType == "box.revoked":
 		boxID, _ := payload["box_id"].(string)
 		if boxID == "" || status == "" {
 			return nil

@@ -16,8 +16,11 @@ created -> queued -> preparing -> running
                                                 -> archived
 ```
 
-The state machine is monotonic and repeated `run`, status, and result callbacks
-are idempotent. Core remains the only writer of Experiment, Box task, Audit,
+The normal execution path is forward-only and repeated `run`, status, and
+result callbacks are idempotent. Lease recovery may project `preparing` or
+`running` back to `queued` while an attempt remains, and a terminal task may
+project `queued` directly to `failed` when the Experiment callback lags behind
+the task record. Core remains the only writer of Experiment, Box task, Audit,
 Outbox, and Data Hub state. PostgreSQL is the queue and claims use
 `FOR UPDATE SKIP LOCKED`.
 

@@ -86,7 +86,7 @@ func (service Service) Register(ctx context.Context, identity auth.Identity, pro
 	box.TokenID = issued.Token.ID
 	if err := service.Store.Create(ctx, box, idempotency); err != nil {
 		if service.Revoker != nil {
-			_ = service.Revoker.RevokeToken(ctx, identity, issued.Token.ID)
+			_ = service.Revoker.RevokeManagedToken(ctx, identity, projectID, "box", issued.Token.ID)
 		}
 		return BoxRegistration{}, err
 	}
@@ -117,12 +117,30 @@ func (service Service) Get(ctx context.Context, identity auth.Identity, boxID st
 	return box, nil
 }
 
+func (service Service) Revoke(ctx context.Context, identity auth.Identity, boxID string) error {
+	box, err := service.Store.Get(ctx, strings.TrimSpace(boxID))
+	if err != nil {
+		return err
+	}
+	if err := service.authorize(ctx, identity, box.ProjectID, project.PermissionBoxManage); err != nil {
+		return err
+	}
+	if service.Revoker == nil {
+		return ErrInvalid
+	}
+	box, err = service.Store.Revoke(ctx, box.ID, service.now())
+	if err != nil {
+		return err
+	}
+	return service.Revoker.RevokeManagedToken(ctx, identity, box.ProjectID, "box", box.TokenID)
+}
+
 func (service Service) Heartbeat(ctx context.Context, identity auth.Identity, boxID string, update Box) (Heartbeat, error) {
 	box, err := service.authorizeBoxIdentity(ctx, identity, boxID)
 	if err != nil {
 		return Heartbeat{}, err
 	}
-	if err := validateBox(&update, box.ProjectID); err != nil {
+	if err := validateHeartbeat(&update, box); err != nil {
 		return Heartbeat{}, err
 	}
 	updated, err := service.Store.UpdateHeartbeat(ctx, box.ID, update, service.now())
@@ -359,6 +377,13 @@ func validateBox(box *Box, projectID string) error {
 	}
 	box.Load = normalizeLoad(box.Load)
 	return nil
+}
+
+func validateHeartbeat(update *Box, registered Box) error {
+	// Heartbeats update mutable capability/load fields only. Preserve the
+	// registered identity before applying the common Box validator.
+	update.Name, update.ProjectID = registered.Name, registered.ProjectID
+	return validateBox(update, registered.ProjectID)
 }
 
 func validateLimits(limits ResourceLimits) error {

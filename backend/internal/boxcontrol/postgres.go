@@ -135,13 +135,24 @@ func (store PostgresStore) MarkOffline(ctx context.Context, now time.Time, heart
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
 		for rows.Next() {
 			item, scanErr := store.scanBox(rows)
 			if scanErr != nil {
+				_ = rows.Close()
 				return scanErr
 			}
 			items = append(items, item)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		// pgx cannot execute Audit/Outbox statements on the same transaction
+		// while the UPDATE ... RETURNING result set is still open.
+		for _, item := range items {
 			if store.Audit != nil {
 				if err := store.Audit.RecordInTransaction(ctx, tx, audit.Event{Action: "box.offline", ActorKind: "system", Category: "box", Outcome: "error", ProjectID: item.ProjectID, ResourceID: item.ID, ResourceType: "box", Source: "core", OccurredAt: now}); err != nil {
 					return err
@@ -151,9 +162,48 @@ func (store PostgresStore) MarkOffline(ctx context.Context, now time.Time, heart
 				return err
 			}
 		}
-		return rows.Err()
+		return nil
 	})
 	return items, err
+}
+
+func (store PostgresStore) Revoke(ctx context.Context, boxID string, now time.Time) (Box, error) {
+	if store.Transaction.DB == nil {
+		return Box{}, ErrInvalid
+	}
+	var item Box
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var err error
+		item, err = store.scanBox(tx.QueryRowContext(ctx, `SELECT box_id,project_id,name,status,version,capabilities,runtimes,limits,load,token_id,last_heartbeat_at,disconnected_at,created_at,updated_at FROM box_nodes WHERE box_id=$1 FOR UPDATE`, boxID))
+		if err != nil {
+			return err
+		}
+		var activeTasks int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM box_tasks WHERE box_id=$1 AND status IN ('preparing','running')`, boxID).Scan(&activeTasks); err != nil {
+			return err
+		}
+		if activeTasks > 0 {
+			return ErrConflict
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM box_project_bindings WHERE box_id=$1`, boxID); err != nil {
+			return err
+		}
+		if item.Status == StatusRevoked {
+			return nil
+		}
+		item, err = store.scanBox(tx.QueryRowContext(ctx, `UPDATE box_nodes SET status='revoked',disconnected_at=COALESCE(disconnected_at,$2),updated_at=$2 WHERE box_id=$1 RETURNING box_id,project_id,name,status,version,capabilities,runtimes,limits,load,token_id,last_heartbeat_at,disconnected_at,created_at,updated_at`, boxID, now))
+		if err != nil {
+			return err
+		}
+		if store.Audit != nil {
+			if err := store.Audit.RecordInTransaction(ctx, tx, audit.Event{Action: "box.revoked", Category: "box", Outcome: "success", ProjectID: item.ProjectID, ResourceID: item.ID, ResourceType: "box", Source: "core", OccurredAt: now}); err != nil {
+				return err
+			}
+		}
+		_, err = store.Outbox.Write(ctx, tx, outbox.Event{EventType: "box.revoked", Payload: map[string]interface{}{"box_id": item.ID, "project_id": item.ProjectID, "name": item.Name, "status": StatusRevoked, "version": item.Version}, Producer: "boxcontrol", ProjectID: item.ProjectID, OccurredAt: now})
+		return err
+	})
+	return item, err
 }
 
 func (store PostgresStore) Bind(ctx context.Context, projectID, boxID string, now time.Time) (Box, error) {
@@ -188,7 +238,7 @@ func (store PostgresStore) ClaimTask(ctx context.Context, boxID string, now time
 		WHERE task_id=(SELECT t.task_id FROM box_tasks t JOIN box_project_bindings b ON b.project_id=t.project_id JOIN box_nodes n ON n.box_id=b.box_id WHERE b.box_id=$1 AND n.status='online' AND t.status='queued' AND (t.lease_expires_at IS NULL OR t.lease_expires_at <= $3) AND t.cancel_requested_at IS NULL ORDER BY t.created_at,t.task_id FOR UPDATE SKIP LOCKED LIMIT 1)
 		RETURNING task_id,experiment_id,project_id,COALESCE(box_id::text,''),status,attempt,max_attempts,lease_expires_at,cancel_requested_at,run_spec,exit_code,error_code,error_message,resource_usage,summary,created_at,started_at,finished_at,updated_at`, boxID, expires, now)
 	task, err := scanTask(row)
-	if errors.Is(err, sql.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, ErrNotFound) {
 		return nil, ErrNoTask
 	}
 	if err != nil {
@@ -365,8 +415,9 @@ func (store PostgresStore) scanBox(row scanner) (Box, error) {
 func scanTask(row scanner) (Task, error) {
 	var task Task
 	var lease, cancel, started, finished sql.NullTime
+	var errorCode, errorMessage, summary sql.NullString
 	var runSpec, usage []byte
-	err := row.Scan(&task.ID, &task.ExperimentID, &task.ProjectID, &task.BoxID, &task.Status, &task.Attempt, &task.MaxAttempts, &lease, &cancel, &runSpec, &task.ExitCode, &task.ErrorCode, &task.ErrorMessage, &usage, &task.Summary, &task.CreatedAt, &started, &finished, &task.UpdatedAt)
+	err := row.Scan(&task.ID, &task.ExperimentID, &task.ProjectID, &task.BoxID, &task.Status, &task.Attempt, &task.MaxAttempts, &lease, &cancel, &runSpec, &task.ExitCode, &errorCode, &errorMessage, &usage, &summary, &task.CreatedAt, &started, &finished, &task.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Task{}, ErrNotFound
 	}
@@ -376,7 +427,8 @@ func scanTask(row scanner) (Task, error) {
 	if err := json.Unmarshal(runSpec, &task.RunSpec); err != nil {
 		return Task{}, err
 	}
-	if err := json.Unmarshal(usage, &task.ResourceUsage); err != nil {
+	task.ResourceUsage, err = decodeOptionalMap(usage)
+	if err != nil {
 		return Task{}, err
 	}
 	if lease.Valid {
@@ -392,7 +444,27 @@ func scanTask(row scanner) (Task, error) {
 		value := finished.Time
 		task.FinishedAt = &value
 	}
+	if errorCode.Valid {
+		task.ErrorCode = errorCode.String
+	}
+	if errorMessage.Valid {
+		task.ErrorMessage = errorMessage.String
+	}
+	if summary.Valid {
+		task.Summary = summary.String
+	}
 	return task, nil
+}
+
+func decodeOptionalMap(value []byte) (map[string]interface{}, error) {
+	if len(value) == 0 {
+		return map[string]interface{}{}, nil
+	}
+	decoded := map[string]interface{}{}
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }
 
 func mapConflict(err error) error {

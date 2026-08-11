@@ -40,3 +40,12 @@ func TestStage8ProjectionDoesNotCreateSuccessfulResultForFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestStage8ProjectionMarksRevokedBox(t *testing.T) {
+	objects := stage8Objects(contract.EventEnvelope{EventType: "box.revoked", Payload: map[string]interface{}{
+		"box_id": "00000000-0000-4000-8000-000000000004", "name": "retired", "status": "revoked", "version": "1",
+	}})
+	if len(objects) != 1 || objects[0].objectType != "box" || objects[0].status != "revoked" || objects[0].title != "retired" {
+		t.Fatalf("unexpected revoked Box projection: %#v", objects)
+	}
+}

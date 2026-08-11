@@ -169,6 +169,24 @@ func TestRecorderUsesTrustedRequestContext(t *testing.T) {
 	}
 }
 
+func TestRecorderPreservesExplicitSystemActorWithoutUserIdentity(t *testing.T) {
+	store := &storeStub{}
+	recorder := Recorder{
+		Clock: clock.Fixed{Time: time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)},
+		Store: store,
+	}
+	ctx := requestctx.WithValues(context.Background(), requestctx.Values{RequestID: "box-maintenance-1"})
+	if err := recorder.Record(ctx, Event{
+		Action: "box.offline", ActorKind: "system", Category: "box",
+		Metadata: map[string]interface{}{}, Outcome: "error", Source: "core",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if store.event.ActorID != "" || store.event.ActorKind != "system" || store.event.RequestID != "box-maintenance-1" {
+		t.Fatalf("explicit system actor was overwritten: %#v", store.event)
+	}
+}
+
 func TestRecorderWritesThroughBusinessTransaction(t *testing.T) {
 	store := &storeStub{}
 	recorder := Recorder{

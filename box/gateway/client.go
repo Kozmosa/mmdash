@@ -47,6 +47,26 @@ type HTTPClient struct {
 	Client  *http.Client
 }
 
+type coreAPIError struct {
+	status  int
+	message string
+}
+
+func (err *coreAPIError) Error() string {
+	return fmt.Sprintf("Core Box API returned HTTP %d: %s", err.status, err.message)
+}
+
+func (err *coreAPIError) Temporary() bool {
+	return err.status == http.StatusRequestTimeout || err.status == http.StatusTooEarly ||
+		err.status == http.StatusTooManyRequests || err.status >= http.StatusInternalServerError
+}
+
+type coreTransportError struct{ err error }
+
+func (err *coreTransportError) Error() string { return err.err.Error() }
+func (err *coreTransportError) Unwrap() error { return err.err }
+func (*coreTransportError) Temporary() bool   { return true }
+
 func (client HTTPClient) Register(ctx context.Context, authorization string, input RegistrationInput) (Registration, error) {
 	var response struct {
 		Box struct {
@@ -133,12 +153,12 @@ func (client HTTPClient) UploadArtifact(ctx context.Context, boxID, token, taskI
 	}
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return result, err
+		return result, &coreTransportError{err: err}
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-		return result, fmt.Errorf("Core artifact upload returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		return result, &coreAPIError{status: response.StatusCode, message: strings.TrimSpace(string(message))}
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil {
 		return result, err
@@ -169,7 +189,7 @@ func (client HTTPClient) do(ctx context.Context, method, path, token string, bod
 	}
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return err
+		return &coreTransportError{err: err}
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNoContent {
@@ -177,7 +197,7 @@ func (client HTTPClient) do(ctx context.Context, method, path, token string, bod
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-		return fmt.Errorf("Core Box API returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		return &coreAPIError{status: response.StatusCode, message: strings.TrimSpace(string(message))}
 	}
 	if result == nil {
 		return nil

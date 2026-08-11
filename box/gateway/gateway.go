@@ -22,22 +22,24 @@ import (
 )
 
 type Config struct {
-	ProjectID         string
-	Name              string
-	Version           string
-	RegistrationToken string
-	BoxID             string
-	BoxToken          string
-	StatePath         string
-	WorkspaceRoot     string
-	OutputRoot        string
-	HeartbeatInterval time.Duration
-	ClaimInterval     time.Duration
-	Lease             time.Duration
-	MaxConcurrent     int
-	Capabilities      []contracts.Capability
-	Runtimes          []contracts.Runtime
-	Limits            contracts.ResourceLimits
+	ProjectID          string
+	Name               string
+	Version            string
+	RegistrationToken  string
+	BoxID              string
+	BoxToken           string
+	StatePath          string
+	WorkspaceRoot      string
+	OutputRoot         string
+	HeartbeatInterval  time.Duration
+	ClaimInterval      time.Duration
+	Lease              time.Duration
+	MaxConcurrent      int
+	CallbackAttempts   int
+	CallbackRetryDelay time.Duration
+	Capabilities       []contracts.Capability
+	Runtimes           []contracts.Runtime
+	Limits             contracts.ResourceLimits
 }
 
 type WorkspaceProvider interface {
@@ -182,7 +184,9 @@ func (gateway *Gateway) claimOne(ctx context.Context) error {
 	gateway.mu.Unlock()
 	go func() {
 		defer func() { gateway.mu.Lock(); delete(gateway.running, task.TaskID); gateway.mu.Unlock() }()
-		_ = gateway.execute(ctx, *task)
+		if err := gateway.execute(ctx, *task); err != nil && !errors.Is(err, context.Canceled) {
+			gateway.writeTaskError(task.TaskID, err)
+		}
 	}()
 	return nil
 }
@@ -193,7 +197,7 @@ func (gateway *Gateway) execute(parent context.Context, task contracts.Task) err
 	if err := json.Unmarshal(encoded, &spec); err != nil || spec.Validate() != nil {
 		return gateway.reportFailure(parent, task, "INVALID_RUN_SPEC", "the frozen run specification is invalid")
 	}
-	if err := gateway.Client.Status(parent, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, "preparing", nil, "", "", nil, ""); err != nil {
+	if err := gateway.reportStatus(parent, task.TaskID, "preparing", nil, "", "", nil, ""); err != nil {
 		return err
 	}
 	workspace, cleanup, err := gateway.Workspace.Prepare(parent, spec)
@@ -206,6 +210,28 @@ func (gateway *Gateway) execute(parent context.Context, task contracts.Task) err
 		return gateway.reportFailure(parent, task, "OUTPUT_UNAVAILABLE", err.Error())
 	}
 	defer os.RemoveAll(output)
+	logsRoot := filepath.Join(output, "logs")
+	if err := os.MkdirAll(logsRoot, 0o700); err != nil {
+		return gateway.reportFailure(parent, task, "OUTPUT_UNAVAILABLE", err.Error())
+	}
+	stdoutFile, err := os.OpenFile(filepath.Join(logsRoot, "stdout.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return gateway.reportFailure(parent, task, "OUTPUT_UNAVAILABLE", err.Error())
+	}
+	stderrFile, err := os.OpenFile(filepath.Join(logsRoot, "stderr.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		_ = stdoutFile.Close()
+		return gateway.reportFailure(parent, task, "OUTPUT_UNAVAILABLE", err.Error())
+	}
+	logsClosed := false
+	closeLogs := func() error {
+		if logsClosed {
+			return nil
+		}
+		logsClosed = true
+		return errors.Join(stdoutFile.Close(), stderrFile.Close())
+	}
+	defer closeLogs()
 	archivePath := filepath.Join(gateway.Config.OutputRoot, task.TaskID+".artifact.zip")
 	defer os.Remove(archivePath)
 	runtime, err := gateway.Runtime(spec)
@@ -229,7 +255,7 @@ func (gateway *Gateway) execute(parent context.Context, task contracts.Task) err
 			case <-runCtx.Done():
 				return
 			case <-ticker.C:
-				cancelRequested, err := gateway.Client.Renew(runCtx, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, gateway.Config.Lease)
+				cancelRequested, err := gateway.renew(runCtx, task.TaskID)
 				if err != nil || cancelRequested {
 					_ = runtime.Cancel(context.Background(), task.TaskID)
 					cancel()
@@ -238,20 +264,30 @@ func (gateway *Gateway) execute(parent context.Context, task contracts.Task) err
 			}
 		}
 	}()
-	if err := gateway.Client.Status(parent, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, "running", nil, "", "", nil, ""); err != nil {
+	if err := gateway.reportStatus(parent, task.TaskID, "running", nil, "", "", nil, ""); err != nil {
 		return err
 	}
-	result, runErr := runtime.Run(runCtx, sandbox.RunRequest{ID: task.TaskID, Spec: spec, Workspace: workspace, OutputDir: output, Stdout: gateway.logWriter(runCtx, task.TaskID, "info"), Stderr: gateway.logWriter(runCtx, task.TaskID, "error")})
+	result, runErr := runtime.Run(runCtx, sandbox.RunRequest{
+		ID: task.TaskID, Spec: spec, Workspace: workspace, OutputDir: output,
+		Stdout: io.MultiWriter(gateway.logWriter(runCtx, task.TaskID, "info"), stdoutFile),
+		Stderr: io.MultiWriter(gateway.logWriter(runCtx, task.TaskID, "error"), stderrFile),
+	})
+	if closeErr := closeLogs(); runErr == nil {
+		runErr = closeErr
+	}
 	if runErr != nil {
 		return gateway.reportFailure(parent, task, "RUNTIME_FAILED", runErr.Error())
 	}
 	if result.TimedOut {
-		return gateway.Client.Status(parent, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, "timed_out", &result.ExitCode, "TIMED_OUT", "sandbox deadline exceeded", result.ResourceUsage, "")
+		return gateway.reportStatus(parent, task.TaskID, "timed_out", &result.ExitCode, "TIMED_OUT", "sandbox deadline exceeded", result.ResourceUsage, "")
 	}
 	if result.Canceled {
-		return gateway.Client.Status(parent, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, "canceled", &result.ExitCode, "CANCELED", "sandbox canceled", result.ResourceUsage, "")
+		return gateway.reportStatus(parent, task.TaskID, "canceled", &result.ExitCode, "CANCELED", "sandbox canceled", result.ResourceUsage, "")
 	}
-	manifest, err := loadManifest(output)
+	if result.ExitCode != 0 {
+		return gateway.reportStatus(parent, task.TaskID, "failed", &result.ExitCode, "NON_ZERO_EXIT", fmt.Sprintf("sandbox exited with code %d", result.ExitCode), result.ResourceUsage, "")
+	}
+	manifest, err := sandbox.GenerateManifest(output, spec.ExperimentID, result.ExitCode, spec.Limits.DiskBytes)
 	if err != nil {
 		return gateway.reportFailure(parent, task, "MANIFEST_INVALID", err.Error())
 	}
@@ -273,14 +309,85 @@ func (gateway *Gateway) execute(parent context.Context, task contracts.Task) err
 	if err != nil {
 		return err
 	}
-	if err := gateway.Client.Result(parent, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, manifest, artifact); err != nil {
+	if err := gateway.retryCoreCallback(parent, func() error {
+		return gateway.Client.Result(parent, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, manifest, artifact)
+	}); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (gateway *Gateway) reportFailure(ctx context.Context, task contracts.Task, code, message string) error {
-	return gateway.Client.Status(ctx, gateway.Config.BoxID, gateway.Config.BoxToken, task.TaskID, "failed", nil, code, message, nil, "")
+	return gateway.reportStatus(ctx, task.TaskID, "failed", nil, code, message, nil, "")
+}
+
+func (gateway *Gateway) reportStatus(ctx context.Context, taskID, status string, exitCode *int, code, message string, usage map[string]interface{}, summary string) error {
+	return gateway.retryCoreCallback(ctx, func() error {
+		return gateway.Client.Status(ctx, gateway.Config.BoxID, gateway.Config.BoxToken, taskID, status, exitCode, code, message, usage, summary)
+	})
+}
+
+func (gateway *Gateway) renew(ctx context.Context, taskID string) (bool, error) {
+	cancelRequested := false
+	err := gateway.retryCoreCallback(ctx, func() error {
+		value, err := gateway.Client.Renew(ctx, gateway.Config.BoxID, gateway.Config.BoxToken, taskID, gateway.Config.Lease)
+		if err == nil {
+			cancelRequested = value
+		}
+		return err
+	})
+	return cancelRequested, err
+}
+
+func (gateway *Gateway) retryCoreCallback(ctx context.Context, callback func() error) error {
+	attempts := gateway.Config.CallbackAttempts
+	if attempts < 1 {
+		attempts = 4
+	}
+	if attempts > 8 {
+		attempts = 8
+	}
+	delay := gateway.Config.CallbackRetryDelay
+	if delay <= 0 {
+		delay = 100 * time.Millisecond
+	}
+	var err error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if err = callback(); err == nil {
+			return nil
+		}
+		if !isRetryableCoreError(err) || attempt == attempts-1 {
+			return err
+		}
+		timer := time.NewTimer(delay << attempt)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func isRetryableCoreError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var temporary interface{ Temporary() bool }
+	return errors.As(err, &temporary) && temporary.Temporary()
+}
+
+func (gateway *Gateway) writeTaskError(taskID string, err error) {
+	message := strings.TrimSpace(err.Error())
+	if len(message) > 2_000 {
+		message = message[:2_000]
+	}
+	writer := gateway.Stderr
+	if writer == nil {
+		writer = io.Discard
+	}
+	_, _ = fmt.Fprintf(writer, "Box task %s execution failed: %s\n", taskID, message)
 }
 
 type logWriter struct {
@@ -301,21 +408,6 @@ func (writer logWriter) Write(contents []byte) (int, error) {
 }
 func (gateway *Gateway) logWriter(ctx context.Context, taskID, level string) io.Writer {
 	return logWriter{ctx: ctx, gateway: gateway, taskID: taskID, level: level}
-}
-
-func loadManifest(root string) (contracts.Manifest, error) {
-	data, err := os.ReadFile(filepath.Join(root, "manifest.json"))
-	if err != nil {
-		return contracts.Manifest{}, err
-	}
-	var manifest contracts.Manifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return contracts.Manifest{}, err
-	}
-	if err := manifest.Validate(); err != nil {
-		return contracts.Manifest{}, err
-	}
-	return manifest, nil
 }
 
 type persistedState struct {

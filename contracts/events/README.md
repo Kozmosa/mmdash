@@ -65,6 +65,7 @@ Stage 8 Experiment and Box lifecycle payloads are defined by:
 - `experiment.archived.schema.json`
 - `box.registered.schema.json`
 - `box.heartbeat.received.schema.json`
+- `box.revoked.schema.json`
 
 The result bundle is always named `artifact.zip` and contains `manifest.json`.
 
