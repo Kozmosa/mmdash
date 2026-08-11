@@ -4,12 +4,53 @@
 - Branch: `main`
 - Base: `origin/main@9282b4e`
 - Canonical migrations: continuous `000001` through
-  `000036_agent_chat_artifacts`
+  `000037_progress_human_workbench`
 - Delivery state: Agent single-token authentication, private-Core boundary,
   recoverable instance removal, full-screen workbench, and Agent Artifact
-  upload implemented and accepted against the persistent local Hermes instance;
-  final repository gate and Docker Compose smoke acceptance passed; commit and
-  requested Progress-refactor integration pending
+  upload are integrated with the Progress human scheduling workbench and review
+  policy; the merged repository gate and Docker Compose smoke acceptance pass
+
+## 2026-08-11 Progress human workbench integration
+
+- The Progress page now exposes Calendar and TODO views. Calendar supports day
+  and cycling two/three/four-day ranges, fixed two-axis scrolling, current-time
+  positioning, a Milestone strip, optional timed Milestone duplication,
+  15-minute creation/move/resize snapping, overlap lanes, drag ghosts, live
+  resize geometry, and one detail drawer. TODO remains one waterfall; its
+  day-versus-period setting changes grouping depth without rewriting stored
+  time.
+- Human completion is independent from the automatic `todo`, `in_progress`,
+  and `blocked` assessment. Human completion renders a filled/faded card;
+  automatic completion remains an amber `task.complete` or
+  `milestone.complete` Proposal until explicitly accepted or rejected. Agent
+  creation and scheduling changes are likewise reviewable, including atomic
+  approve-all/reject-all, while work-state assessments apply directly.
+- Automatic evaluation uses a dedicated `session_type=progress` Agent Session.
+  The isolated-branch acceptance completed a real Hermes evaluation, left its
+  creation/scheduling suggestions pending until browser batch rejection, and
+  accepted a controlled completion Proposal through the card.
+- The branch's original `000033_progress_human_workbench` migration was
+  deliberately renumbered to `000037_progress_human_workbench` during merge;
+  Agent/Auth/Artifact already authoritatively own migrations `000033` through
+  `000036`. Its column, constraint, and index setup is re-entrant so a shared
+  development database that previously received the old unrecorded migration
+  body can still adopt the canonical `000037` record safely. The integration
+  test exercises up/down/up behavior.
+- Before integration, the Progress branch passed its Web, BFF, Worker, Go,
+  build, contract, API, and Caddy checks. Browser acceptance covered live
+  resize, drag preview, timed Milestone completion/reopen, optimistic rollback,
+  AI review, and Progress Agent selection. The merged repository is revalidated
+  separately below before delivery.
+- After integration, the repository gate passed with 123 Web tests, 55 Web BFF
+  tests, 37 MCP Gateway tests, all Go/Core/CLI tests, 36 Worker tests, all three
+  language builds, contract compatibility, and a 373-operation API catalog.
+  Caddy validation returned `Valid configuration` outside the process sandbox.
+  Docker Compose then applied canonical migration `000037` to the existing
+  shared database, brought every long-running service healthy, and passed the
+  full repository smoke including Worker, native CLI device login, local/remote
+  MCP, Audit, events, and Data Hub. Recent application logs contained no
+  panic/fatal/error entries; acceptance containers/network were removed with
+  `down` and volumes were preserved.
 
 ## 2026-08-11 Agent workbench and Agent Artifact integration
 

@@ -10,14 +10,15 @@ const reminderId = projectId.extend({ reminderId: z.string().uuid() });
 const proposalId = projectId.extend({ proposalId: z.string().uuid() });
 const evaluationId = projectId.extend({ evaluationId: z.string().uuid() });
 const date = z.string().datetime({ offset: true }).optional();
-const createMilestone = z.object({ title: z.string().trim().min(1).max(255), description: z.string().max(10_000).optional(), critical: z.boolean().optional(), start_at: date, target_at: date });
-const updateMilestone = z.object({ title: z.string().trim().min(1).max(255).optional(), description: z.string().max(10_000).optional(), status: z.enum(["planned", "in_progress", "completed", "cancelled"]).optional(), critical: z.boolean().optional(), start_at: date, target_at: date }).refine((value) => Object.keys(value).length > 0);
-const createTask = z.object({ milestone_id: z.string().uuid().optional(), title: z.string().trim().min(1).max(255), description: z.string().max(10_000).optional(), status: z.enum(["todo", "in_progress", "blocked", "done", "cancelled"]).optional(), assignee_id: z.string().uuid().optional(), start_at: date, due_at: date, related_object_ids: z.array(z.string().uuid()).optional(), source_run_id: z.string().max(200).optional() });
+const createMilestone = z.object({ title: z.string().trim().min(1).max(255), description: z.string().max(10_000).optional(), critical: z.boolean().optional(), start_at: date, target_at: date, target_has_time: z.boolean().optional() });
+const updateMilestone = z.object({ title: z.string().trim().min(1).max(255).optional(), description: z.string().max(10_000).optional(), status: z.enum(["planned", "in_progress", "completed"]).optional(), critical: z.boolean().optional(), start_at: date, target_at: date, target_has_time: z.boolean().optional() }).refine((value) => Object.keys(value).length > 0);
+const createTask = z.object({ milestone_id: z.string().uuid().optional(), title: z.string().trim().min(1).max(255), description: z.string().max(10_000).optional(), status: z.enum(["todo", "in_progress", "blocked", "done"]).optional(), assignee_id: z.string().uuid().optional(), start_at: date, due_at: date, related_object_ids: z.array(z.string().uuid()).optional(), source_run_id: z.string().max(200).optional() });
 const updateTask = createTask.partial().refine((value) => Object.keys(value).length > 0);
 const createDependency = z.object({ task_id: z.string().uuid(), depends_on_task_id: z.string().uuid(), kind: z.enum(["blocks", "relates_to"]).optional() });
 const createReminder = z.object({ task_id: z.string().uuid().optional(), milestone_id: z.string().uuid().optional(), remind_at: z.string().datetime({ offset: true }), note: z.string().max(2_000).optional() });
-const createProposal = z.object({ proposal_type: z.enum(["milestone.create", "milestone.update", "task.create", "task.update"]), target_id: z.string().uuid().optional(), title: z.string().trim().min(1).max(255), rationale: z.string().max(10_000).optional(), changes: z.record(z.string(), z.unknown()), source_run_id: z.string().max(200).optional() });
+const createProposal = z.object({ proposal_type: z.enum(["milestone.create", "milestone.update", "milestone.complete", "task.create", "task.update", "task.complete"]), target_id: z.string().uuid().optional(), title: z.string().trim().min(1).max(255), rationale: z.string().max(10_000).optional(), changes: z.record(z.string(), z.unknown()), source_run_id: z.string().max(200).optional() });
 const reviewProposal = z.object({ decision: z.enum(["accepted", "rejected"]), note: z.string().max(4_000).optional() });
+const batchReviewProposals = z.object({ proposal_ids: z.array(z.string().uuid()).min(1).max(100), decision: z.enum(["accepted", "rejected"]), note: z.string().max(4_000).optional() });
 const updateSettings = z.object({
   auto_task_changes: z.boolean(),
   auto_tracking_enabled: z.boolean(),
@@ -53,6 +54,7 @@ export function registerProgressRoutes(app: FastifyInstance, coreClient: CoreCli
 
   app.get("/api/projects/:projectId/progress/proposals", { config: { auth: "required", project: "required" } }, async (request) => coreClient.listProgressProposals(request.currentProjectId!, context(request)));
   app.post("/api/projects/:projectId/progress/proposals", { config: { auth: "required", project: "required" } }, async (request, reply) => reply.code(201).send(await coreClient.createProgressProposal(request.currentProjectId!, createProposal.parse(request.body), context(request))));
+  app.post("/api/projects/:projectId/progress/proposals/batch-review", { config: { auth: "required", project: "required" } }, async (request) => coreClient.batchReviewProgressProposals(request.currentProjectId!, batchReviewProposals.parse(request.body), context(request)));
   app.post("/api/projects/:projectId/progress/proposals/:proposalId/review", { config: { auth: "required", project: "required" } }, async (request) => { const params = proposalId.parse(request.params); return coreClient.reviewProgressProposal(params.projectId, params.proposalId, reviewProposal.parse(request.body), context(request)); });
 
   app.get("/api/projects/:projectId/progress/settings", { config: { auth: "required", project: "required" } }, async (request) => coreClient.getProgressSettings(request.currentProjectId!, context(request)));

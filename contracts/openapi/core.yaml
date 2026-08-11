@@ -2820,7 +2820,7 @@ paths:
     post:
       tags: [Progress]
       summary: Create a task
-      description: Agent task changes are tagged with their source and obey the project automatic-change setting.
+      description: Human sessions create tasks directly. Agents and automatic evaluations submit a Progress Proposal.
       operationId: progress.tasks.create
       requestBody:
         required: true
@@ -3017,6 +3017,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProgressProposal"
+  /v1/projects/{projectId}/progress/proposals/batch-review:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Progress]
+      summary: Review a set of Progress Proposals atomically
+      description: Human session only. Every proposal must still be pending and belong to the route Project; otherwise none are reviewed.
+      operationId: progress.proposals.batch_review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchReviewProgressProposalsRequest"
+      responses:
+        "200":
+          description: Reviewed proposals in request order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressProposalList"
   /v1/projects/{projectId}/progress/settings:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -7455,6 +7476,7 @@ components:
           description,
           status,
           critical,
+          target_has_time,
           source,
           created_by,
           updated_by,
@@ -7466,9 +7488,9 @@ components:
         project_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [planned, in_progress, completed, cancelled] }
+        status: { type: string, enum: [planned, in_progress, completed] }
         critical: { type: boolean }
+        target_has_time: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time }
@@ -7495,6 +7517,7 @@ components:
         critical: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
+        target_has_time: { type: boolean }
     UpdateMilestoneRequest:
       type: object
       additionalProperties: false
@@ -7502,11 +7525,11 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [planned, in_progress, completed, cancelled] }
+        status: { type: string, enum: [planned, in_progress, completed] }
         critical: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
+        target_has_time: { type: boolean }
     Task:
       type: object
       additionalProperties: false
@@ -7531,8 +7554,8 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
+        work_state: { type: string, enum: [todo, in_progress, blocked] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
@@ -7575,8 +7598,7 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
@@ -7593,8 +7615,7 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
@@ -7709,7 +7730,7 @@ components:
           {
             type: string,
             enum:
-              [milestone.create, milestone.update, task.create, task.update],
+              [milestone.create, milestone.update, milestone.complete, task.create, task.update, task.complete],
           }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
@@ -7743,7 +7764,7 @@ components:
           {
             type: string,
             enum:
-              [milestone.create, milestone.update, task.create, task.update],
+              [milestone.create, milestone.update, milestone.complete, task.create, task.update, task.complete],
           }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
@@ -7755,6 +7776,19 @@ components:
       additionalProperties: false
       required: [decision]
       properties:
+        decision: { type: string, enum: [accepted, rejected] }
+        note: { type: string, maxLength: 4000 }
+    BatchReviewProgressProposalsRequest:
+      type: object
+      additionalProperties: false
+      required: [proposal_ids, decision]
+      properties:
+        proposal_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
         decision: { type: string, enum: [accepted, rejected] }
         note: { type: string, maxLength: 4000 }
     ProgressSettings:
@@ -7903,12 +7937,26 @@ components:
           {
             type: string,
             enum:
-              [milestone.create, milestone.update, task.create, task.update],
+              [
+                milestone.create,
+                milestone.update,
+                milestone.complete,
+                task.create,
+                task.update,
+                task.complete,
+              ],
           }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         rationale: { type: string }
         changes: { type: object, additionalProperties: true }
+    ProgressEvaluationWorkStateUpdate:
+      type: object
+      additionalProperties: false
+      required: [task_id, state]
+      properties:
+        task_id: { type: string, format: uuid }
+        state: { type: string, enum: [todo, in_progress, blocked] }
     ProgressEvaluationOutput:
       type: object
       additionalProperties: false
@@ -7921,6 +7969,7 @@ components:
           in_progress_items,
           blockers,
           risks,
+          work_state_updates,
           suggestions,
           pending_questions,
         ]
@@ -7935,6 +7984,12 @@ components:
           {
             type: array,
             items: { $ref: "#/components/schemas/ProgressEvaluationRiskInput" },
+          }
+        work_state_updates:
+          {
+            type: array,
+            items:
+              { $ref: "#/components/schemas/ProgressEvaluationWorkStateUpdate" },
           }
         suggestions:
           {

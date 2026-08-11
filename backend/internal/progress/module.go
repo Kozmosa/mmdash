@@ -114,7 +114,7 @@ func (module Module) handleMilestones(w http.ResponseWriter, r *http.Request, id
 			writeError(w, r, ErrInvalid)
 			return
 		}
-		item, err := module.Service.CreateMilestone(r.Context(), identity, projectID, CreateMilestoneInput{Title: body.Title, Description: stringValue(body.Description), Critical: boolValue(body.Critical), StartAt: body.StartAt, TargetAt: body.TargetAt})
+		item, err := module.Service.CreateMilestone(r.Context(), identity, projectID, CreateMilestoneInput{Title: body.Title, Description: stringValue(body.Description), Critical: boolValue(body.Critical), StartAt: body.StartAt, TargetAt: body.TargetAt, TargetHasTime: boolValue(body.TargetHasTime)})
 		if err != nil {
 			writeError(w, r, err)
 			return
@@ -131,7 +131,7 @@ func (module Module) handleMilestones(w http.ResponseWriter, r *http.Request, id
 			writeError(w, r, ErrInvalid)
 			return
 		}
-		input := UpdateMilestoneInput{Title: body.Title, Description: body.Description, Status: body.Status, Critical: body.Critical}
+		input := UpdateMilestoneInput{Title: body.Title, Description: body.Description, Status: body.Status, Critical: body.Critical, TargetHasTime: body.TargetHasTime}
 		if body.StartAt != nil {
 			value := body.StartAt
 			input.StartAt = &value
@@ -317,6 +317,23 @@ func (module Module) handleProposals(w http.ResponseWriter, r *http.Request, ide
 			return
 		}
 		httpx.WriteJSON(w, http.StatusCreated, item)
+		return
+	}
+	if len(rest) == 1 && rest[0] == "batch-review" && r.Method == http.MethodPost {
+		var body contract.BatchReviewProgressProposalsRequest
+		if !httpx.DecodeJSON(w, r, &body) {
+			return
+		}
+		if err := body.Validate(); err != nil {
+			writeError(w, r, ErrInvalid)
+			return
+		}
+		items, err := module.Service.ReviewProposals(r.Context(), identity, projectID, BatchReviewProposalInput{ProposalIDs: body.ProposalIDs, Decision: body.Decision, Note: stringValue(body.Note)})
+		if err != nil {
+			writeError(w, r, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]interface{}{"items": items})
 		return
 	}
 	if len(rest) == 2 && rest[1] == "review" && r.Method == http.MethodPost {
