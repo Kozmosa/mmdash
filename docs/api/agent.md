@@ -288,7 +288,11 @@ current Session. Both record their source Run for traceability.
 Core generates a default project Prompt from authorized, versioned project
 facts. A user can store a Project-specific override or reset it to the current
 generated default. Prompt reads identify the default, effective text, custom
-state, and version without exposing credentials.
+state, and version without exposing credentials. The generated Prompt and every
+mmdash-started Run explicitly tell the Agent that the chat supports Markdown
+and KaTeX-compatible LaTeX (`$...$` / `$$...$$` and `\(...\)` / `\[...\]`),
+so it must not downgrade mathematical responses to plain-text formulas because
+the renderer is assumed unknown.
 
 The MCP Tool `context.promote` submits an explicit conclusion through the
 existing Data Hub Context Proposal boundary. For Runs started by mmdash, the

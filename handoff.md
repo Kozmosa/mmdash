@@ -8,7 +8,8 @@
 - Delivery state: Agent single-token authentication, private-Core boundary,
   recoverable instance removal, full-screen workbench, and Agent Artifact
   upload are integrated with the Progress human scheduling workbench and review
-  policy; the merged repository gate and Docker Compose smoke acceptance pass
+  policy; the merged repository gate and Docker Compose smoke acceptance pass;
+  Project and per-Run instructions explicitly advertise Markdown/KaTeX support
 
 ## 2026-08-11 Progress human workbench integration
 

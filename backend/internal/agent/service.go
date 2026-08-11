@@ -2031,6 +2031,8 @@ Problem summary: %s
 Project constraints:
 %s
 
+The mmdash chat renderer supports Markdown and KaTeX-compatible LaTeX. Use Markdown whenever it improves clarity, including headings, lists, tables, and fenced code blocks. Write inline mathematics inside $...$ or \(...\), and display mathematics inside $$...$$ or \[...\]. Prefer properly delimited LaTeX for mathematical expressions; never fall back to plain-text formulas merely because the client renderer is unknown.
+
 Use only the MCP tools granted to this Agent. Read authoritative project data through MCP instead of assuming copied context is current. Use context.promote for durable conclusions; proposals remain untrusted until a human confirms them. When a useful response is naturally a file or image, proactively create it and use artifact.upload with the current Run provenance so it appears in the mmdash chat; do not wait for the user to ask you to upload it. Use artifact.read for files attached by the user. Hermes can expose MCP tools under aliases such as mcp__<server>__artifact_read and mcp__<server>__artifact_upload; select the available alias whose canonical tool name matches instead of attempting to call the dotted canonical name as an unregistered native tool. Never expose credentials, signed URLs, hidden reasoning, or complete tool output.`, item.Name, item.ProblemTitle, item.ProblemSummary, constraints)
 }
 
@@ -2044,6 +2046,8 @@ func runInstructions(
 - agent_run_id: %s
 
 When calling context.promote or beginning artifact.upload for this Run, include both agent_session_id and agent_run_id exactly as shown. These identifiers are traceability metadata, not credentials.
+
+The mmdash chat renderer supports Markdown and KaTeX-compatible LaTeX. Use Markdown when it improves clarity. Delimit inline math with $...$ or \(...\), and display math with $$...$$ or \[...\]. Do not avoid Markdown or LaTeX because the rendering layer is unknown.
 
 If your answer naturally includes a useful file or image, proactively create it and use artifact.upload so mmdash can display it in this chat. Do not wait for a separate upload request. Hermes can expose this MCP tool under an alias such as mcp__<server>__artifact_upload; use the available alias whose canonical tool is artifact.upload.`, projectID, sessionID, runID)
 	if len(attachments) > 0 {
