@@ -885,6 +885,7 @@ type UpdateProgressSettingsRequest struct {
 	CronSchedule         string  `json:"cron_schedule"`
 	DebounceSeconds      int64   `json:"debounce_seconds"`
 	MinIntervalSeconds   int64   `json:"min_interval_seconds"`
+	ReasoningEffort      string  `json:"reasoning_effort"`
 	AgentInstanceID      *string `json:"agent_instance_id,omitempty"`
 }
 
@@ -910,6 +911,12 @@ func (request UpdateProgressSettingsRequest) Validate() error {
 	}
 	if request.MinIntervalSeconds > 86400 {
 		return fmt.Errorf("min_interval_seconds exceeds its maximum")
+	}
+	if request.ReasoningEffort == "" {
+		return fmt.Errorf("reasoning_effort is required")
+	}
+	if request.ReasoningEffort != "none" && request.ReasoningEffort != "minimal" && request.ReasoningEffort != "low" && request.ReasoningEffort != "medium" && request.ReasoningEffort != "high" && request.ReasoningEffort != "xhigh" && request.ReasoningEffort != "max" && request.ReasoningEffort != "ultra" {
+		return fmt.Errorf("reasoning_effort has an unsupported value")
 	}
 	return nil
 }

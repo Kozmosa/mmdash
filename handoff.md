@@ -476,8 +476,8 @@ supporting lease/deduplication indexes.
 - `MMDASH_PROGRESS_EVALUATOR_MODE=core_agent` is the production default;
   `mock` is explicit deterministic development/acceptance behavior only.
 - Automatic tracking in `core_agent` mode requires an active Project Agent
-  instance. Cron synchronization uses the existing Hermes Jobs API and stores
-  only the remote Job ID/status in Progress settings.
+  instance. Cron due-time calculation, leases, retries, and request creation
+  are owned by mmdash Core/PostgreSQL; Hermes only executes each evaluation Run.
 - Hermes-facing behavior is contract/mock tested; a real Hermes environment
   remains the release-environment integration check.
 - PostgreSQL and MinIO acceptance volumes were preserved.

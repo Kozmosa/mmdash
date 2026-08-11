@@ -16,14 +16,32 @@ const evaluateRoles = new Set(["owner", "maintainer", "editor", "viewer"]);
 export default function ProgressPage() {
   const project = useCurrentProject();
   const progress = useQuery({
-    queryFn: () => apiClient.request<ProgressAggregate>(`/projects/${encodeURIComponent(project.id)}/progress`),
+    queryFn: () =>
+      apiClient.request<ProgressAggregate>(
+        `/projects/${encodeURIComponent(project.id)}/progress`,
+        { cache: "no-store" },
+      ),
     queryKey: ["progress", project.id],
-    refetchInterval: 15_000,
+    refetchInterval: (query) => {
+      const latest = (query.state.data as ProgressAggregate | undefined)
+        ?.latest_evaluation;
+      return latest && ["queued", "running"].includes(latest.status)
+        ? 1_000
+        : 5_000;
+    },
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: "always",
   });
 
   if (progress.isLoading) return <LoadingState label="正在读取进度安排…" />;
   if (progress.isError || !progress.data) {
-    return <ErrorState description="Progress 暂时无法读取，请稍后重试。" onRetry={() => progress.refetch()} title="无法打开进度工作台" />;
+    return (
+      <ErrorState
+        description="Progress 暂时无法读取，请稍后重试。"
+        onRetry={() => progress.refetch()}
+        title="无法打开进度工作台"
+      />
+    );
   }
 
   return (
@@ -33,8 +51,15 @@ export default function ProgressPage() {
           <CalendarClock aria-hidden="true" className="size-5" />
         </span>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight" id="progress-title">Progress</h1>
-          <p className="mt-1 text-sm text-muted-foreground">把关键节点、时间安排和 AI 进度判断放在同一条可操作的时间线上。</p>
+          <h1
+            className="text-2xl font-semibold tracking-tight"
+            id="progress-title"
+          >
+            Progress
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            把关键节点、时间安排和 AI 进度判断放在同一条可操作的时间线上。
+          </p>
         </div>
       </header>
       <ProgressWorkbench

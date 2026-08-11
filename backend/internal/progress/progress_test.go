@@ -62,6 +62,9 @@ func (stub *progressStoreTestStub) CreateMilestone(_ context.Context, projectID,
 func (stub *progressStoreTestStub) UpdateMilestone(context.Context, string, string, string, UpdateMilestoneInput) (Milestone, error) {
 	return Milestone{ID: "milestone-1"}, nil
 }
+func (stub *progressStoreTestStub) DeleteMilestone(context.Context, string, string, string) error {
+	return nil
+}
 func (stub *progressStoreTestStub) ListTasks(context.Context, string) ([]Task, error) {
 	return stub.tasks, nil
 }
@@ -317,6 +320,20 @@ func TestReferenceErrorsUseStableSafeAPIResponse(t *testing.T) {
 	}
 	if ErrorCode(ErrReferenceInvalid) != "PROGRESS_REFERENCE_INVALID" {
 		t.Fatalf("audit error code=%s", ErrorCode(ErrReferenceInvalid))
+	}
+}
+
+func TestEvaluatorConfigurationErrorIsNonRetryable(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/internal/progress-evaluation-jobs/job/execute", nil)
+	response := httptest.NewRecorder()
+	writeError(response, request, ErrEvaluationConfiguration)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("evaluator configuration status=%d, want 422", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"code":"PROGRESS_EVALUATOR_CONFIGURATION_INVALID"`) ||
+		!strings.Contains(body, `"message":"Progress evaluator configuration is invalid"`) {
+		t.Fatalf("unsafe or unstable evaluator configuration response: %s", body)
 	}
 }
 

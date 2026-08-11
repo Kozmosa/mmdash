@@ -99,9 +99,10 @@ claims reuse the same local ID, but the pinned Hermes wire request cannot carry
 it. Provider-targetable approval IDs require a future verified Hermes contract
 and a new pin; do not add an unrecognized `approval_id` field to this version.
 
-Hermes Jobs are mapped and probed in this stage but are not scheduled by the
-product. Do not add automatic Progress evaluation, Cron creation, event
-consumers, debounce, or Stage 6 triggers here.
+Hermes Jobs are mapped and probed in this stage but are not used for automatic
+Progress evaluation. Stage 6 stores Cron policy, due time, claim lease, and
+retry state in mmdash Core/PostgreSQL; Hermes only executes the Agent Run that
+Core queues. Do not create or synchronize a Hermes Job for a Progress schedule.
 
 `StreamChat` is a tested interface port (session event streaming). The current
 product message path executes through StartRun plus StreamRun so that Run

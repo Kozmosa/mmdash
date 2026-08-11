@@ -25,6 +25,7 @@ describe("Progress automatic tracking routes", () => {
       debounce_seconds: 60,
       event_triggers_enabled: true,
       min_interval_seconds: 300,
+      reasoning_effort: "high",
     };
 
     const response = await app.inject({ headers: { cookie }, method: "PATCH", payload, url: `/api/projects/${projectId}/progress/settings` });

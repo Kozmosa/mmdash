@@ -136,11 +136,10 @@ type Settings struct {
 	CronSchedule         string     `json:"cron_schedule"`
 	DebounceSeconds      int        `json:"debounce_seconds"`
 	MinIntervalSeconds   int        `json:"min_interval_seconds"`
+	ReasoningEffort      string     `json:"reasoning_effort"`
 	AgentInstanceID      string     `json:"agent_instance_id,omitempty"`
-	CronRemoteJobID      string     `json:"cron_remote_job_id,omitempty"`
-	CronSyncStatus       string     `json:"cron_sync_status"`
-	CronErrorCode        string     `json:"cron_error_code,omitempty"`
-	CronSyncedAt         *time.Time `json:"cron_synced_at,omitempty"`
+	CronNextRunAt        *time.Time `json:"cron_next_run_at,omitempty"`
+	CronLastScheduledAt  *time.Time `json:"cron_last_scheduled_at,omitempty"`
 	EvaluatorMode        string     `json:"evaluator_mode"`
 	UpdatedBy            string     `json:"updated_by"`
 	UpdatedAt            time.Time  `json:"updated_at"`
@@ -270,6 +269,7 @@ type Store interface {
 	GetMilestone(context.Context, string, string) (Milestone, error)
 	CreateMilestone(context.Context, string, string, CreateMilestoneInput) (Milestone, error)
 	UpdateMilestone(context.Context, string, string, string, UpdateMilestoneInput) (Milestone, error)
+	DeleteMilestone(context.Context, string, string, string) error
 	ListTasks(context.Context, string) ([]Task, error)
 	GetTask(context.Context, string, string) (Task, error)
 	CreateTask(context.Context, string, string, CreateTaskInput, string) (Task, error)
@@ -496,6 +496,18 @@ func (service Service) UpdateMilestone(ctx context.Context, identity auth.Identi
 	item, err := service.Store.UpdateMilestone(ctx, projectID, milestoneID, identity.User.ID, input)
 	service.record(ctx, identity, "progress.milestone.updated", "milestone", milestoneID, projectID, map[string]interface{}{"source": "human"}, err)
 	return item, err
+}
+
+func (service Service) DeleteMilestone(ctx context.Context, identity auth.Identity, projectID, milestoneID string) error {
+	if identity.Kind != "session" {
+		return ErrHumanRequired
+	}
+	if err := service.Access.Authorize(ctx, identity, projectID, project.PermissionProgressManage); err != nil {
+		return err
+	}
+	err := service.Store.DeleteMilestone(ctx, projectID, milestoneID, identity.User.ID)
+	service.record(ctx, identity, "progress.milestone.deleted", "milestone", milestoneID, projectID, map[string]interface{}{"source": "human"}, err)
+	return err
 }
 
 func (service Service) CreateTask(ctx context.Context, identity auth.Identity, projectID string, input CreateTaskInput) (Task, error) {
@@ -789,6 +801,10 @@ func ErrorCode(err error) string {
 		return "PROGRESS_NOT_FOUND"
 	case errors.Is(err, ErrForbidden):
 		return "FORBIDDEN"
+	case errors.Is(err, ErrEvaluationConfiguration):
+		return "PROGRESS_EVALUATOR_CONFIGURATION_INVALID"
+	case errors.Is(err, ErrEvaluationUnavailable):
+		return "PROGRESS_EVALUATOR_UNAVAILABLE"
 	default:
 		return "INVALID_PROGRESS_REQUEST"
 	}

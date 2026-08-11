@@ -17,6 +17,8 @@ type Props = {
   milestones: ProgressMilestone[];
   tasks: ProgressTask[];
   onCreate: (at: Date, kind?: "task" | "milestone", targetHasTime?: boolean) => void;
+  onDeleteMilestone: (milestone: ProgressMilestone) => void;
+  onDeleteTask: (task: ProgressTask) => void;
   onMoveMilestone: (id: string, at: Date) => void;
   onMoveTask: (id: string, startAt: Date, dueAt: Date) => void;
   onOpenMilestone: (milestone: ProgressMilestone) => void;
@@ -46,15 +48,15 @@ export function ProgressTodoStream(props: Readonly<Props>) {
   );
 }
 
-function Unscheduled({ canManage, completionByTarget, milestones, onCreate, onOpenMilestone, onOpenTask, onReview, onToggleMilestone, onToggleTask, tasks }: Readonly<Props>) {
+function Unscheduled({ canManage, completionByTarget, milestones, onCreate, onDeleteMilestone, onDeleteTask, onOpenMilestone, onOpenTask, onReview, onToggleMilestone, onToggleTask, tasks }: Readonly<Props>) {
   const unscheduledTasks = tasks.filter((task) => !task.start_at || !task.due_at);
   const unscheduledMilestones = milestones.filter((milestone) => !milestone.target_at);
   if (!unscheduledTasks.length && !unscheduledMilestones.length) return null;
-  return <section className="border-b border-border bg-muted/20 p-4" onDoubleClick={(event) => { if (event.currentTarget === event.target) onCreate(dateAtMinutes(new Date(), 9 * 60)); }}><h3 className="mb-2 text-sm font-semibold">未安排</h3><div className="space-y-2">{unscheduledMilestones.map((milestone) => <ProgressItemCard canManage={canManage} item={milestone} key={milestone.milestone_id} kind="milestone" onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} />)}{unscheduledTasks.map((task) => <ProgressItemCard canManage={canManage} item={task} key={task.task_id} kind="task" onOpen={() => onOpenTask(task)} onReview={onReview} onToggle={() => onToggleTask(task)} pendingCompletion={completionByTarget.get(task.task_id)} />)}</div></section>;
+  return <section className="border-b border-border bg-muted/20 p-4" onDoubleClick={(event) => { if (event.currentTarget === event.target) onCreate(dateAtMinutes(new Date(), 9 * 60)); }}><h3 className="mb-2 text-sm font-semibold">未安排</h3><div className="space-y-2">{unscheduledMilestones.map((milestone) => <ProgressItemCard canManage={canManage} item={milestone} key={milestone.milestone_id} kind="milestone" onDelete={() => onDeleteMilestone(milestone)} onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} />)}{unscheduledTasks.map((task) => <ProgressItemCard canManage={canManage} item={task} key={task.task_id} kind="task" onDelete={() => onDeleteTask(task)} onOpen={() => onOpenTask(task)} onReview={onReview} onToggle={() => onToggleTask(task)} pendingCompletion={completionByTarget.get(task.task_id)} />)}</div></section>;
 }
 
 function TodoDay(props: Readonly<Props & { day: Date; periodMode: boolean }>) {
-  const { canManage, completionByTarget, day, milestones, onCreate, onMoveMilestone, onOpenMilestone, onReview, onToggleMilestone, periodMode, tasks } = props;
+  const { canManage, completionByTarget, day, milestones, onCreate, onDeleteMilestone, onMoveMilestone, onOpenMilestone, onReview, onToggleMilestone, periodMode, tasks } = props;
   const dayKey = localDayKey(day);
   const nodeValues = milestones.filter((item) => item.target_at && localDayKey(new Date(item.target_at)) === dayKey);
   const taskValues = tasks.filter((task) => task.start_at && effectiveDayKey(new Date(task.start_at)) === dayKey).sort((left, right) => new Date(left.start_at!).getTime() - new Date(right.start_at!).getTime());
@@ -70,13 +72,13 @@ function TodoDay(props: Readonly<Props & { day: Date; periodMode: boolean }>) {
       onMoveMilestone(id, at);
     }}>
       <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">节点</p>
-      <div className="flex flex-wrap gap-2">{nodeValues.length ? nodeValues.map((milestone) => <div className="min-w-44 max-w-72 flex-1" draggable={canManage} key={milestone.milestone_id} onDragEnd={endNativeProgressDrag} onDragStart={(event) => beginNativeProgressDrag(event, "application/x-mmdash-milestone", milestone.milestone_id)}><ProgressItemCard canManage={canManage} compact item={milestone} kind="milestone" onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} /></div>) : <p className="py-1 text-xs text-muted-foreground">双击此处添加关键节点</p>}</div>
+      <div className="flex flex-wrap gap-2">{nodeValues.length ? nodeValues.map((milestone) => <div className="min-w-44 max-w-72 flex-1" draggable={canManage} key={milestone.milestone_id} onDragEnd={endNativeProgressDrag} onDragStart={(event) => beginNativeProgressDrag(event, "application/x-mmdash-milestone", milestone.milestone_id)}><ProgressItemCard canManage={canManage} compact item={milestone} kind="milestone" onDelete={() => onDeleteMilestone(milestone)} onOpen={() => onOpenMilestone(milestone)} onReview={onReview} onToggle={() => onToggleMilestone(milestone)} pendingCompletion={completionByTarget.get(milestone.milestone_id)} /></div>) : <p className="py-1 text-xs text-muted-foreground">双击此处添加关键节点</p>}</div>
     </div>
     {periodMode ? PERIODS.map((period) => <TodoSection {...props} allTasks={tasks} day={day} key={period.key} label={period.label} periodStart={period.start % (24 * 60)} showCurrentTime={today && periodForDate(new Date()).key === period.key} tasks={taskValues.filter((task) => periodForDate(new Date(task.start_at!)).key === period.key)} />) : <TodoSection {...props} allTasks={tasks} day={day} label="全天安排" showCurrentTime={today} tasks={taskValues} />}
   </section>;
 }
 
-function TodoSection({ allTasks, canManage, completionByTarget, day, label, onCreate, onMoveTask, onOpenTask, onReview, onToggleTask, periodStart, showCurrentTime, tasks }: Readonly<Omit<Props, "tasks"> & { allTasks: ProgressTask[]; day: Date; label: string; periodStart?: number; showCurrentTime: boolean; tasks: ProgressTask[] }>) {
+function TodoSection({ allTasks, canManage, completionByTarget, day, label, onCreate, onDeleteTask, onMoveTask, onOpenTask, onReview, onToggleTask, periodStart, showCurrentTime, tasks }: Readonly<Omit<Props, "tasks"> & { allTasks: ProgressTask[]; day: Date; label: string; periodStart?: number; showCurrentTime: boolean; tasks: ProgressTask[] }>) {
   const now = new Date();
   let lineRendered = false;
   function moveHere(id: string) {
@@ -94,7 +96,7 @@ function TodoSection({ allTasks, canManage, completionByTarget, day, label, onCr
       {tasks.map((task) => {
         const before = showCurrentTime && !lineRendered && new Date(task.start_at!).getTime() > now.getTime();
         if (before) lineRendered = true;
-        return <div key={task.task_id}>{before ? <NowLine /> : null}<div draggable={canManage} onDragEnd={endNativeProgressDrag} onDragStart={(event) => beginNativeProgressDrag(event, "application/x-mmdash-task", task.task_id)}><ProgressItemCard canManage={canManage} item={task} kind="task" onOpen={() => onOpenTask(task)} onReview={onReview} onToggle={() => onToggleTask(task)} pendingCompletion={completionByTarget.get(task.task_id)} /></div></div>;
+        return <div key={task.task_id}>{before ? <NowLine /> : null}<div draggable={canManage} onDragEnd={endNativeProgressDrag} onDragStart={(event) => beginNativeProgressDrag(event, "application/x-mmdash-task", task.task_id)}><ProgressItemCard canManage={canManage} item={task} kind="task" onDelete={() => onDeleteTask(task)} onOpen={() => onOpenTask(task)} onReview={onReview} onToggle={() => onToggleTask(task)} pendingCompletion={completionByTarget.get(task.task_id)} /></div></div>;
       })}
       {!tasks.length ? <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">双击此区域插入任务</p> : null}
       {showCurrentTime && !lineRendered ? <NowLine /> : null}

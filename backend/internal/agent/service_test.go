@@ -19,6 +19,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
 	"github.com/mmdash/mmdash/backend/internal/platform/pagination"
 	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
+	"github.com/mmdash/mmdash/backend/internal/progress"
 	"github.com/mmdash/mmdash/backend/internal/project"
 	"github.com/mmdash/mmdash/backend/internal/settings"
 )
@@ -703,6 +704,7 @@ func (store *agentServiceTestStore) UpdateRotation(
 
 type agentServiceTestAdapter struct {
 	createSessionRequests []CreateSessionRequest
+	sessions              map[string]Session
 	updateSessionRequests []UpdateSessionRequest
 	forkSessionRequests   []ForkSessionRequest
 	startRunRequests      []StartRunRequest
@@ -758,11 +760,19 @@ func (adapter *agentServiceTestAdapter) CreateSession(
 	request CreateSessionRequest,
 ) (Session, error) {
 	adapter.createSessionRequests = append(adapter.createSessionRequests, request)
-	return Session{RemoteID: "remote-" + request.RemoteID, Source: request.Source, Title: request.Title}, nil
+	created := Session{RemoteID: request.RemoteID, Source: request.Source, Title: request.Title}
+	if adapter.sessions == nil {
+		adapter.sessions = map[string]Session{}
+	}
+	adapter.sessions[created.RemoteID] = created
+	return created, nil
 }
 
-func (*agentServiceTestAdapter) GetSession(context.Context, string) (Session, error) {
-	return Session{}, nil
+func (adapter *agentServiceTestAdapter) GetSession(_ context.Context, remoteID string) (Session, error) {
+	if session, ok := adapter.sessions[remoteID]; ok {
+		return session, nil
+	}
+	return Session{}, &AdapterError{Code: ErrorNotFound, Operation: "session.get"}
 }
 
 func (adapter *agentServiceTestAdapter) UpdateSession(
@@ -1300,8 +1310,13 @@ func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
 	evaluationID := "00000000-0000-4000-8000-000000000099"
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	var started progress.AgentExecution
 	result, err := fixture.service.EvaluateProgress(
 		ctx, "project-1", "agent-1", evaluationID, map[string]interface{}{"project_id": "project-1"},
+		func(execution progress.AgentExecution) error {
+			started = execution
+			return nil
+		},
 	)
 	if err != nil {
 		t.Fatalf("evaluate progress: %v", err)
@@ -1313,12 +1328,44 @@ func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
 	if run.Source != "progress_evaluation" || run.SourceEvaluationID != evaluationID || run.SourceRunID != "" {
 		t.Fatalf("progress provenance overloaded parent Run reference: %#v", run)
 	}
+	if started.AgentSessionID != run.SessionID || started.AgentRunID != run.ID || started.AgentInstanceID != "agent-1" {
+		t.Fatalf("progress provenance was not published when the Run started: %#v", started)
+	}
 	session, ok := fixture.store.sessions[run.SessionID]
 	if !ok || session.SessionType != SessionProgress {
 		t.Fatalf("progress evaluation used a non-Progress Session: %#v", session)
 	}
 	if len(fixture.adapter.startRunRequests) != 1 || !strings.Contains(fixture.adapter.startRunRequests[0].Instructions, "Progress-type Session") || !strings.Contains(fixture.adapter.startRunRequests[0].Instructions, "task.complete") {
 		t.Fatalf("progress evaluation instructions lost the human review boundary: %#v", fixture.adapter.startRunRequests)
+	}
+	if len(fixture.adapter.createSessionRequests) != 1 || fixture.adapter.createSessionRequests[0].Title == "Progress automation" {
+		t.Fatalf("progress Session did not use a collision-safe identity: %#v", fixture.adapter.createSessionRequests)
+	}
+}
+
+func TestEvaluateProgressAdoptsDeterministicRemoteSession(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	remoteID := progressSessionRemoteID("project-1", "agent-1")
+	fixture.adapter.sessions = map[string]Session{
+		remoteID: {RemoteID: remoteID, Source: "api_server", Title: progressSessionTitle(remoteID)},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := fixture.service.EvaluateProgress(
+		ctx,
+		"project-1",
+		"agent-1",
+		"00000000-0000-4000-8000-000000000098",
+		map[string]interface{}{"project_id": "project-1"},
+		nil,
+	); err != nil {
+		t.Fatalf("adopt deterministic Progress Session: %v", err)
+	}
+	if len(fixture.adapter.createSessionRequests) != 0 {
+		t.Fatalf("existing deterministic remote Session was recreated: %#v", fixture.adapter.createSessionRequests)
 	}
 }
 

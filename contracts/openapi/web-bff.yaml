@@ -1059,6 +1059,11 @@ paths:
                   schema: { $ref: "./core.yaml#/components/schemas/Milestone" },
                 },
             }
+    delete:
+      tags: [Progress]
+      summary: Delete a Progress milestone
+      operationId: bff.progress.milestones.delete
+      responses: { "204": { description: Milestone deleted. } }
   /api/projects/{projectId}/progress/tasks:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
@@ -1359,6 +1364,9 @@ paths:
     get:
       tags: [Progress]
       summary: Read Progress settings
+      description: >-
+        Reads the project-owned automatic evaluation policy and mmdash
+        scheduler timestamps.
       operationId: bff.progress.settings.get
       responses:
         "200":
@@ -1376,6 +1384,9 @@ paths:
     patch:
       tags: [Progress]
       summary: Update Progress settings
+      description: >-
+        Updates the automatic evaluation policy owned by mmdash Core. The
+        selected Agent executes evaluation Runs but does not own the schedule.
       operationId: bff.progress.settings.update
       requestBody:
         required: true
