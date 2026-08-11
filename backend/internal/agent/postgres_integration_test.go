@@ -46,6 +46,8 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 	projectID := generator.MustNew()
 	agentInstanceID := generator.MustNew()
 	grantID := generator.MustNew()
+	removableInstanceID := generator.MustNew()
+	removableGrantID := generator.MustNew()
 	sessionID := generator.MustNew()
 	oldTokenID := generator.MustNew()
 	newTokenID := generator.MustNew()
@@ -82,6 +84,23 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 		) VALUES($1,$2,$3,'active','["project.get"]'::jsonb,'managed-access-old',$4,$5,$5)
 	`, grantID, agentInstanceID, projectID, userID, now); err != nil {
 		t.Fatalf("insert agent grant: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO agent_instances(
+			agent_instance_id,adapter_type,display_name,management_mode,
+			runtime_url,status,disabled_at,created_by,created_at,updated_at
+		) VALUES($1,'hermes','Disabled Integration Hermes','manual',
+			'https://disabled-hermes.integration.test','disabled',$3,$2,$3,$3)
+	`, removableInstanceID, userID, now); err != nil {
+		t.Fatalf("insert removable disabled agent instance: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO agent_project_grants(
+			grant_id,agent_instance_id,project_id,status,allowed_tools,
+			created_by,created_at,updated_at
+		) VALUES($1,$2,$3,'active','["project.get"]'::jsonb,$4,$5,$5)
+	`, removableGrantID, removableInstanceID, projectID, userID, now); err != nil {
+		t.Fatalf("insert removable disabled agent grant: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO auth_agent_tokens(
@@ -141,8 +160,8 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_sessions WHERE session_id=$1`, sessionID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_token_rotations WHERE rotation_id=$1`, rotationID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM auth_agent_tokens WHERE token_id IN ($1,$2)`, oldTokenID, newTokenID)
-		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_project_grants WHERE grant_id=$1`, grantID)
-		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_instances WHERE agent_instance_id=$1`, agentInstanceID)
+		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_project_grants WHERE grant_id IN ($1,$2)`, grantID, removableGrantID)
+		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_instances WHERE agent_instance_id IN ($1,$2)`, agentInstanceID, removableInstanceID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM projects WHERE project_id=$1`, projectID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM auth_users WHERE user_id=$1`, userID)
 	})
@@ -163,6 +182,32 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 		Transaction: transaction.Manager{
 			DB: transaction.SQLBeginner{DB: db},
 		},
+	}
+	removable, err := store.GetInstance(ctx, projectID, removableInstanceID)
+	if err != nil || removable.Status != InstanceDisabled {
+		t.Fatalf("disabled instance must remain visible until removed: %#v %v", removable, err)
+	}
+	removedAt := now.Add(time.Second)
+	if err := store.DisableInstance(
+		ctx, userID, "user", projectID, removableInstanceID, removedAt,
+	); err != nil {
+		t.Fatalf("remove an already-disabled instance: %v", err)
+	}
+	if _, err := store.GetInstance(ctx, projectID, removableInstanceID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removed instance remained visible: %v", err)
+	}
+	var storedRemovedAt time.Time
+	var removableGrantStatus string
+	if err := db.QueryRowContext(ctx, `
+		SELECT instance.removed_at, grant_row.status
+		FROM agent_instances instance
+		JOIN agent_project_grants grant_row ON grant_row.agent_instance_id=instance.agent_instance_id
+		WHERE instance.agent_instance_id=$1 AND grant_row.grant_id=$2
+	`, removableInstanceID, removableGrantID).Scan(&storedRemovedAt, &removableGrantStatus); err != nil {
+		t.Fatalf("read retained removed instance: %v", err)
+	}
+	if !storedRemovedAt.Equal(removedAt) || removableGrantStatus != "revoked" {
+		t.Fatalf("removed instance retention: removed_at=%v grant=%q", storedRemovedAt, removableGrantStatus)
 	}
 	progressRunID := generator.MustNew()
 	progressReservation := RunRecord{
@@ -273,6 +318,10 @@ func TestPostgresRunReservationActivationFailureAndAudit(t *testing.T) {
 		activated.RemoteRunID != rollbackCandidate.RemoteRunID ||
 		activated.StartedAt == nil || !activated.StartedAt.Equal(startedAt) {
 		t.Fatalf("activated run: %#v", activated)
+	}
+	storedSession, err := store.GetSession(ctx, projectID, agentInstanceID, sessionID)
+	if err != nil || storedSession.LastRunID == "" {
+		t.Fatalf("session did not expose its latest run: %#v %v", storedSession, err)
 	}
 	assertAgentSessionRunTimes(t, ctx, db, sessionID, true)
 	assertAgentOutboxEvent(t, ctx, db, projectID, rollbackRunID,

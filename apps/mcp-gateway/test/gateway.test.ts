@@ -97,6 +97,8 @@ describe("MCP Gateway", () => {
     await client.close();
 
     expect(listed.tools.map((tool) => tool.name)).toEqual([
+      "artifact.read",
+      "artifact.upload",
       "context.promote",
       "data.list",
       "data.read",
@@ -170,7 +172,7 @@ describe("MCP Gateway", () => {
     expect(getProject).toHaveBeenCalledWith(
       "allowed-project",
       expect.objectContaining({
-        accessToken: "test-core-access-token-that-is-at-least-32-characters",
+        accessToken: cliToken,
       }),
     );
     expect(audit.events.map((event) => event.toolName)).toEqual([
@@ -198,25 +200,46 @@ describe("MCP Gateway", () => {
     });
     gateways.push(gateway);
     const sessionFetch = createSessionFetch(gateway, cliToken);
-    const transport = new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), { fetch: sessionFetch.fetch });
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
     const client = new Client(
       { name: "mmdash-progress-test", version: "0.1.0" },
       { versionNegotiation: { mode: { pin: "2026-07-28" } } },
     );
 
     await client.connect(transport);
-    const read = await client.callTool({ arguments: { project_id: "project-1" }, name: "progress.get" });
-    const recalculate = await client.callTool({ arguments: { force: false, project_id: "project-1", trigger_kind: "manual" }, name: "progress.recalculate" });
+    const read = await client.callTool({
+      arguments: { project_id: "project-1" },
+      name: "progress.get",
+    });
+    const recalculate = await client.callTool({
+      arguments: {
+        force: false,
+        project_id: "project-1",
+        trigger_kind: "manual",
+      },
+      name: "progress.recalculate",
+    });
     await client.close();
 
-    expect(read.structuredContent).toMatchObject({ tracking: { effective_stage: "execution" } });
+    expect(read.structuredContent).toMatchObject({
+      tracking: { effective_stage: "execution" },
+    });
     expect(recalculate.structuredContent).toMatchObject({ status: "pending" });
     expect(recalculateProgress).toHaveBeenCalledWith(
       "project-1",
       { force: false, trigger_kind: "manual" },
-      expect.objectContaining({ accessToken: "test-core-access-token-that-is-at-least-32-characters", projectId: "project-1" }),
+      expect.objectContaining({
+        accessToken: cliToken,
+        projectId: "project-1",
+      }),
     );
-    expect(audit.events.map((event) => event.toolName)).toEqual(["progress.get", "progress.recalculate"]);
+    expect(audit.events.map((event) => event.toolName)).toEqual([
+      "progress.get",
+      "progress.recalculate",
+    ]);
   });
 
   it("reads Data Hub objects through Core with project scope and audit", async () => {
@@ -268,7 +291,7 @@ describe("MCP Gateway", () => {
     expect(listDataObjects).toHaveBeenCalledWith(
       "project-1",
       expect.objectContaining({
-        accessToken: "test-core-access-token-that-is-at-least-32-characters",
+        accessToken: cliToken,
         projectId: "project-1",
       }),
       { cursor: undefined, limit: 25, type: "repo_file" },
@@ -277,7 +300,7 @@ describe("MCP Gateway", () => {
       "project-1",
       "00000000-0000-4000-8000-000000000091",
       expect.objectContaining({
-        accessToken: "test-core-access-token-that-is-at-least-32-characters",
+        accessToken: cliToken,
       }),
     );
     expect(audit.events).toHaveLength(2);
@@ -512,7 +535,7 @@ describe("MCP Gateway", () => {
       mcpSessionHeader,
     );
     const transport = new StreamableHTTPClientTransport(
-      new URL("http://test.local/mcp"),
+      new URL("http://test.local/mcp?mmdash_challenge=one-time-challenge"),
       { fetch: sessionFetch.fetch },
     );
     const client = new Client(
@@ -592,13 +615,14 @@ describe("MCP Gateway", () => {
     expect(tokenId).toBe("00000000-0000-4000-8000-000000000031");
     expect(input).toEqual({
       agent_instance_id: productAgentInstanceId,
+      challenge: "one-time-challenge",
       mcp_method: "tools/list",
       mcp_session_id: initializedSessionId,
       project_id: productProjectId,
       request_id: expect.any(String),
     });
     expect(context).toEqual({
-      accessToken: "gateway-core-service-token-that-is-at-least-32-chars",
+      accessToken: productAgentToken,
       projectId: productProjectId,
       requestId: input.request_id,
     });
@@ -631,7 +655,7 @@ describe("MCP Gateway", () => {
     for (const name of ["first", "second"]) {
       const sessionFetch = createSessionFetch(gateway, productAgentToken);
       const transport = new StreamableHTTPClientTransport(
-        new URL("http://test.local/mcp"),
+        new URL("http://test.local/mcp?mmdash_challenge=one-time-challenge"),
         { fetch: sessionFetch.fetch },
       );
       const client = new Client(
@@ -862,8 +886,6 @@ describe("MCP Gateway", () => {
       },
       {
         accessToken: productAgentToken,
-        gatewayAccessToken:
-          "gateway-core-service-token-that-is-at-least-32-chars",
         projectId: productProjectId,
         requestId: expect.any(String),
       },
@@ -877,6 +899,270 @@ describe("MCP Gateway", () => {
         toolName: "context.promote",
       }),
     ]);
+  });
+
+  it("creates and completes an Agent Artifact through direct multipart grants", async () => {
+    const audit = new MemoryAuditSink();
+    const uploadId = "00000000-0000-4000-8000-000000000071";
+    const initializeAgentArtifactUpload = vi.fn().mockResolvedValue({
+      artifact_id: "00000000-0000-4000-8000-000000000072",
+      completed_parts: [],
+      created_at: "2026-08-11T00:00:00Z",
+      expires_at: "2026-08-11T01:00:00Z",
+      part_count: 1,
+      part_size_bytes: 5_242_880,
+      sha256: "a".repeat(64),
+      size_bytes: 4,
+      status: "initialized",
+      transfer_mode: "direct",
+      updated_at: "2026-08-11T00:00:00Z",
+      upload_id: uploadId,
+      upload_mode: "multipart",
+      version_id: "00000000-0000-4000-8000-000000000073",
+    });
+    const signArtifactUploadParts = vi.fn().mockResolvedValue({
+      items: [
+        {
+          part_number: 1,
+          size_bytes: 4,
+          transfer: {
+            expires_at: "2026-08-11T00:10:00Z",
+            headers: { "content-type": "image/png" },
+            method: "PUT",
+            url: "http://object-store.test/agent-part-1",
+          },
+        },
+      ],
+    });
+    const confirmArtifactUpload = vi.fn().mockResolvedValue({
+      artifact: {
+        artifact_id: "00000000-0000-4000-8000-000000000072",
+        kind: "agent",
+        source: "agent",
+      },
+    });
+    const gateway = buildGateway({
+      audit,
+      config: productAgentConfig(),
+      coreClient: {
+        confirmArtifactUpload,
+        currentIdentity: vi.fn().mockResolvedValue({
+          ...productAgentIdentity(),
+          allowed_tools: ["artifact.upload"],
+        }),
+        getArtifactUpload: vi
+          .fn()
+          .mockResolvedValue({ transfer_mode: "direct" }),
+        initializeAgentArtifactUpload,
+        signArtifactUploadParts,
+      } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, productAgentToken);
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
+    const client = new Client(
+      { name: "mmdash-agent-artifact", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const begun = await client.callTool({
+      arguments: {
+        action: "begin",
+        filename: "plot.png",
+        idempotency_key: "run-1-plot",
+        mime_type: "image/png",
+        project_id: productProjectId,
+        sha256: "a".repeat(64),
+        size_bytes: 4,
+      },
+      name: "artifact.upload",
+    });
+    const completed = await client.callTool({
+      arguments: {
+        action: "complete",
+        parts: [{ etag: "part-etag", part_number: 1 }],
+        project_id: productProjectId,
+        upload_id: uploadId,
+      },
+      name: "artifact.upload",
+    });
+    await client.close();
+
+    expect(begun.isError).not.toBe(true);
+    expect(begun.structuredContent).toMatchObject({
+      part_grants: [
+        {
+          part_number: 1,
+          transfer: { method: "PUT" },
+        },
+      ],
+      upload: { upload_id: uploadId },
+    });
+    expect(completed.structuredContent).toMatchObject({
+      artifact: { artifact: { kind: "agent", source: "agent" } },
+      upload_id: uploadId,
+    });
+    expect(initializeAgentArtifactUpload).toHaveBeenCalledWith(
+      productProjectId,
+      expect.objectContaining({ filename: "plot.png" }),
+      {
+        accessToken: productAgentToken,
+        projectId: productProjectId,
+        requestId: expect.any(String),
+      },
+    );
+    expect(signArtifactUploadParts).toHaveBeenCalledWith(
+      productProjectId,
+      uploadId,
+      { part_numbers: [1] },
+      expect.objectContaining({ accessToken: productAgentToken }),
+    );
+    expect(confirmArtifactUpload).toHaveBeenCalledWith(
+      productProjectId,
+      uploadId,
+      { parts: [{ etag: "part-etag", part_number: 1 }] },
+      expect.objectContaining({ accessToken: productAgentToken }),
+    );
+    expect(audit.events).toHaveLength(2);
+    expect(audit.events).toEqual([
+      expect.objectContaining({
+        outcome: "success",
+        toolName: "artifact.upload",
+      }),
+      expect.objectContaining({
+        outcome: "success",
+        toolName: "artifact.upload",
+      }),
+    ]);
+  });
+
+  it("returns a short-lived Artifact download grant to a product Agent", async () => {
+    const audit = new MemoryAuditSink();
+    const artifactId = "00000000-0000-4000-8000-000000000072";
+    const versionId = "00000000-0000-4000-8000-000000000073";
+    const downloadArtifact = vi.fn().mockResolvedValue({
+      artifact_id: artifactId,
+      filename: "notes.txt",
+      mime_type: "text/plain",
+      transfer: {
+        expires_at: "2026-08-11T00:10:00Z",
+        headers: {},
+        method: "GET",
+        url: "http://object-store.test/signed-notes",
+      },
+      version_id: versionId,
+    });
+    const gateway = buildGateway({
+      audit,
+      config: productAgentConfig(),
+      coreClient: {
+        currentIdentity: vi.fn().mockResolvedValue({
+          ...productAgentIdentity(),
+          allowed_tools: ["artifact.read"],
+        }),
+        downloadArtifact,
+      } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, productAgentToken);
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
+    const client = new Client(
+      { name: "mmdash-agent-artifact-read", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const result = await client.callTool({
+      arguments: {
+        artifact_id: artifactId,
+        project_id: productProjectId,
+        version_id: versionId,
+      },
+      name: "artifact.read",
+    });
+    await client.close();
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      artifact_id: artifactId,
+      transfer: { method: "GET" },
+      version_id: versionId,
+    });
+    expect(downloadArtifact).toHaveBeenCalledWith(
+      productProjectId,
+      artifactId,
+      expect.objectContaining({ accessToken: productAgentToken }),
+      versionId,
+    );
+    expect(audit.events).toEqual([
+      expect.objectContaining({
+        outcome: "success",
+        toolName: "artifact.read",
+      }),
+    ]);
+  });
+
+  it("aborts an Agent Artifact when only a Core-local transfer is available", async () => {
+    const uploadId = "00000000-0000-4000-8000-000000000081";
+    const abortArtifactUpload = vi.fn().mockResolvedValue(undefined);
+    const gateway = buildGateway({
+      audit: new MemoryAuditSink(),
+      config: productAgentConfig(),
+      coreClient: {
+        abortArtifactUpload,
+        currentIdentity: vi.fn().mockResolvedValue({
+          ...productAgentIdentity(),
+          allowed_tools: ["artifact.upload"],
+        }),
+        initializeAgentArtifactUpload: vi.fn().mockResolvedValue({
+          part_count: 1,
+          transfer_mode: "local_proxy",
+          upload_id: uploadId,
+          upload_mode: "multipart",
+        }),
+      } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, productAgentToken);
+    const transport = new StreamableHTTPClientTransport(
+      new URL("http://test.local/mcp"),
+      { fetch: sessionFetch.fetch },
+    );
+    const client = new Client(
+      { name: "mmdash-agent-artifact-local", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+
+    await client.connect(transport);
+    const result = await client.callTool({
+      arguments: {
+        action: "begin",
+        filename: "local.txt",
+        idempotency_key: "local-transfer",
+        project_id: productProjectId,
+        sha256: "c".repeat(64),
+        size_bytes: 5,
+      },
+      name: "artifact.upload",
+    });
+    await client.close();
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain(
+      "ARTIFACT_DIRECT_TRANSFER_REQUIRED",
+    );
+    expect(abortArtifactUpload).toHaveBeenCalledWith(
+      productProjectId,
+      uploadId,
+      expect.objectContaining({ accessToken: productAgentToken }),
+    );
   });
 
   it("requires Agent Session and Run provenance as a pair", async () => {
@@ -1081,14 +1367,13 @@ function productAgentConfig() {
     agentToken: undefined,
     cliToken: undefined,
     coreAuditToken: "gateway-audit-service-token-that-is-at-least-32-chars",
-    coreAccessToken: "gateway-core-service-token-that-is-at-least-32-chars",
   };
 }
 
 function mcpRequest(
   token: string,
   options: {
-    body: Record<string, unknown>;
+    body: Record<string, unknown> | Record<string, unknown>[];
     sessionId?: string;
   },
 ): Request {

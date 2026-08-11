@@ -62,6 +62,7 @@ func (request CreateTokenRequest) Validate() error {
 type RecordAgentTokenVerificationRequest struct {
 	ProjectID       string `json:"project_id"`
 	AgentInstanceID string `json:"agent_instance_id"`
+	Challenge       string `json:"challenge"`
 	McpMethod       string `json:"mcp_method"`
 	McpSessionID    string `json:"mcp_session_id"`
 	RequestID       string `json:"request_id"`
@@ -74,6 +75,18 @@ func (request RecordAgentTokenVerificationRequest) Validate() error {
 	}
 	if request.AgentInstanceID == "" {
 		return fmt.Errorf("agent_instance_id is required")
+	}
+	if request.Challenge == "" {
+		return fmt.Errorf("challenge is required")
+	}
+	if len(request.Challenge) < 32 {
+		return fmt.Errorf("challenge is too short")
+	}
+	if len(request.Challenge) > 200 {
+		return fmt.Errorf("challenge is too long")
+	}
+	if matched, err := regexp.MatchString("^mmdash_challenge_[A-Za-z0-9_-]+$", request.Challenge); err != nil || !matched {
+		return fmt.Errorf("challenge has an invalid format")
 	}
 	if request.McpMethod == "" {
 		return fmt.Errorf("mcp_method is required")
@@ -1019,7 +1032,7 @@ func (request CreateAgentInstanceRequest) Validate() error {
 	if request.AllowedTools == nil {
 		return fmt.Errorf("allowed_tools is required")
 	}
-	if len(request.AllowedTools) > 6 {
+	if len(request.AllowedTools) > 8 {
 		return fmt.Errorf("allowed_tools has too many items")
 	}
 	if len(request.AllowedTools) < 1 {
@@ -1123,7 +1136,7 @@ func (request UpdateAgentInstanceRequest) Validate() error {
 		}
 	}
 	if request.AllowedTools != nil {
-		if len(*request.AllowedTools) > 6 {
+		if len(*request.AllowedTools) > 8 {
 			return fmt.Errorf("allowed_tools has too many items")
 		}
 		if len(*request.AllowedTools) < 1 {
@@ -1208,7 +1221,7 @@ func (request CreateAgentSessionRequest) Validate() error {
 	if request.SessionType == "" {
 		return fmt.Errorf("session_type is required")
 	}
-	if request.SessionType != "main" && request.SessionType != "progress" && request.SessionType != "experiment" {
+	if request.SessionType != "main" {
 		return fmt.Errorf("session_type has an unsupported value")
 	}
 	return nil
@@ -1269,7 +1282,9 @@ func (request ForkAgentSessionRequest) Validate() error {
 
 // StartAgentRunRequest is generated from the Core request-body schema.
 type StartAgentRunRequest struct {
-	Message string `json:"message"`
+	Message         string    `json:"message"`
+	ArtifactIDs     *[]string `json:"artifact_ids,omitempty"`
+	ReasoningEffort *string   `json:"reasoning_effort,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -1282,6 +1297,16 @@ func (request StartAgentRunRequest) Validate() error {
 	}
 	if len(request.Message) > 100000 {
 		return fmt.Errorf("message is too long")
+	}
+	if request.ArtifactIDs != nil {
+		if len(*request.ArtifactIDs) > 10 {
+			return fmt.Errorf("artifact_ids has too many items")
+		}
+	}
+	if request.ReasoningEffort != nil {
+		if *request.ReasoningEffort != "none" && *request.ReasoningEffort != "minimal" && *request.ReasoningEffort != "low" && *request.ReasoningEffort != "medium" && *request.ReasoningEffort != "high" && *request.ReasoningEffort != "xhigh" && *request.ReasoningEffort != "max" && *request.ReasoningEffort != "ultra" {
+			return fmt.Errorf("reasoning_effort has an unsupported value")
+		}
 	}
 	return nil
 }
@@ -1672,6 +1697,78 @@ func (request ArtifactInitializeUploadRequest) Validate() error {
 	}
 	if request.Kind != "problem" && request.Kind != "attachment" && request.Kind != "other" {
 		return fmt.Errorf("kind has an unsupported value")
+	}
+	if request.Tags != nil {
+		if len(*request.Tags) > 32 {
+			return fmt.Errorf("tags has too many items")
+		}
+	}
+	if request.Description != nil {
+		if len(*request.Description) > 4000 {
+			return fmt.Errorf("description is too long")
+		}
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// AgentArtifactInitializeUploadRequest is generated from the Core request-body schema.
+type AgentArtifactInitializeUploadRequest struct {
+	AgentSessionID *string   `json:"agent_session_id,omitempty"`
+	AgentRunID     *string   `json:"agent_run_id,omitempty"`
+	Filename       string    `json:"filename"`
+	Name           *string   `json:"name,omitempty"`
+	SizeBytes      int64     `json:"size_bytes"`
+	Sha256         string    `json:"sha256"`
+	MimeType       *string   `json:"mime_type,omitempty"`
+	Tags           *[]string `json:"tags,omitempty"`
+	Description    *string   `json:"description,omitempty"`
+	IdempotencyKey string    `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request AgentArtifactInitializeUploadRequest) Validate() error {
+	if request.Filename == "" {
+		return fmt.Errorf("filename is required")
+	}
+	if len(request.Filename) < 1 {
+		return fmt.Errorf("filename is too short")
+	}
+	if len(request.Filename) > 255 {
+		return fmt.Errorf("filename is too long")
+	}
+	if request.Name != nil {
+		if len(*request.Name) < 1 {
+			return fmt.Errorf("name is too short")
+		}
+		if len(*request.Name) > 255 {
+			return fmt.Errorf("name is too long")
+		}
+	}
+	if request.SizeBytes < 0 {
+		return fmt.Errorf("size_bytes is below its minimum")
+	}
+	if request.Sha256 == "" {
+		return fmt.Errorf("sha256 is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{64}$", request.Sha256); err != nil || !matched {
+		return fmt.Errorf("sha256 has an invalid format")
+	}
+	if request.MimeType != nil {
+		if len(*request.MimeType) < 1 {
+			return fmt.Errorf("mime_type is too short")
+		}
+		if len(*request.MimeType) > 255 {
+			return fmt.Errorf("mime_type is too long")
+		}
 	}
 	if request.Tags != nil {
 		if len(*request.Tags) > 32 {

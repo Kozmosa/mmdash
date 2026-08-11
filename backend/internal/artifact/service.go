@@ -46,7 +46,10 @@ type IDGenerator interface {
 
 // Service owns Artifact authorization, state transitions, and verification.
 type Service struct {
-	Access                Access
+	Access    Access
+	AgentRuns interface {
+		ValidateProvenance(context.Context, string, string, string, string) error
+	}
 	Audit                 AuditRecorder
 	Clock                 interface{ Now() time.Time }
 	Generator             IDGenerator
@@ -164,6 +167,34 @@ func (service Service) Initialize(
 	); err != nil {
 		return PublicUploadSession{}, err
 	}
+	createdBy := identity.User.ID
+	source := SourceUserUpload
+	if identity.Kind == "agent" {
+		if identity.AgentInstanceID == "" || createdBy == "" || input.Kind != KindAgent {
+			return PublicUploadSession{}, safe(
+				"ARTIFACT_KIND_INVALID",
+				"Agent uploads must create an Agent Artifact",
+				ErrKindInvalid,
+			)
+		}
+		if (input.AgentSessionID == "") != (input.AgentRunID == "") {
+			return PublicUploadSession{}, ErrInvalid
+		}
+		if input.AgentRunID != "" {
+			if service.validateAgentRunProvenance(
+				ctx, identity, projectID, input.AgentSessionID, input.AgentRunID,
+			) != nil {
+				return PublicUploadSession{}, ErrForbidden
+			}
+		}
+		source = SourceAgent
+	} else if input.Kind == KindAgent {
+		return PublicUploadSession{}, safe(
+			"ARTIFACT_KIND_INVALID",
+			"Agent Artifact kind is reserved for Agent uploads",
+			ErrKindInvalid,
+		)
+	}
 	plan, err := service.normalizeInitialize(&input)
 	if err != nil {
 		return PublicUploadSession{}, err
@@ -171,7 +202,8 @@ func (service Service) Initialize(
 	if existing, err := service.Store.GetUploadByIdempotency(
 		ctx, projectID, input.IdempotencyKey,
 	); err == nil {
-		if !matchesInitial(existing, identity.User.ID, input) {
+		if !service.uploadOwnedBy(identity, existing) ||
+			!matchesInitial(existing, createdBy, input) {
 			return PublicUploadSession{}, safe(
 				"ARTIFACT_UPLOAD_CONFLICT",
 				"Idempotency key belongs to another upload",
@@ -191,26 +223,29 @@ func (service Service) Initialize(
 	now := service.now()
 	artifact := Artifact{
 		ID: artifactID, ProjectID: projectID, Kind: input.Kind,
-		Source: SourceUserUpload, Tags: input.Tags, Name: input.Name,
+		Source: source, Tags: input.Tags, Name: input.Name,
 		Description: input.Description, RecommendedUsage: []string{},
 		CurrentVersionID: &versionID, Status: StatusPendingUpload,
-		CreatedBy: identity.User.ID, CreatedAt: now, UpdatedAt: now,
+		CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
 	}
 	version := Version{
 		ID: versionID, ArtifactID: artifactID, ProjectID: projectID,
 		VersionNo: 1, StorageClass: "object", Filename: input.Filename,
 		SHA256: input.SHA256, MIMEType: input.MIMEType,
 		SizeBytes: input.SizeBytes, Status: StatusPendingUpload,
-		CreatedBy: identity.User.ID, CreatedAt: now,
+		CreatedBy: createdBy, CreatedAt: now,
 	}
 	upload, providerUpload, err := service.prepareUpload(
-		ctx, projectID, artifactID, versionID, uploadID, identity.User.ID,
+		ctx, projectID, artifactID, versionID, uploadID, createdBy,
 		input.Filename, input.MIMEType, input.SHA256, input.SizeBytes,
 		input.IdempotencyKey, plan,
 	)
 	if err != nil {
 		return PublicUploadSession{}, err
 	}
+	upload.AgentInstanceID = identity.AgentInstanceID
+	upload.AgentSessionID = input.AgentSessionID
+	upload.AgentRunID = input.AgentRunID
 	if upload.Status == UploadCompleted {
 		artifact.Status = StatusAvailable
 		version.Status = StatusAvailable
@@ -225,7 +260,8 @@ func (service Service) Initialize(
 			existing, findErr := service.Store.GetUploadByIdempotency(
 				ctx, projectID, input.IdempotencyKey,
 			)
-			if findErr == nil && matchesInitial(existing, identity.User.ID, input) {
+			if findErr == nil && service.uploadOwnedBy(identity, existing) &&
+				matchesInitial(existing, createdBy, input) {
 				outcome = "success"
 				return service.publicUpload(existing), nil
 			}
@@ -234,6 +270,70 @@ func (service Service) Initialize(
 	}
 	outcome = "success"
 	return service.publicUpload(upload), nil
+}
+
+func (service Service) validateAgentRunProvenance(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	sessionID string,
+	runID string,
+) error {
+	if service.AgentRuns == nil {
+		return ErrForbidden
+	}
+	return service.AgentRuns.ValidateProvenance(
+		ctx, identity.AgentInstanceID, projectID, sessionID, runID,
+	)
+}
+
+// AttachAgentRunInputs links available project Artifacts to one already
+// reserved Agent Run. Artifact remains the authoritative file owner.
+func (service Service) AttachAgentRunInputs(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	runID string,
+	artifactIDs []string,
+) ([]ChatAttachment, error) {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactRead); err != nil {
+		return nil, err
+	}
+	if runID == "" || len(artifactIDs) > 10 {
+		return nil, ErrInvalid
+	}
+	seen := map[string]bool{}
+	items := make([]ChatAttachment, 0, len(artifactIDs))
+	for _, artifactID := range artifactIDs {
+		artifactID = strings.TrimSpace(artifactID)
+		if artifactID == "" || seen[artifactID] {
+			return nil, ErrInvalid
+		}
+		seen[artifactID] = true
+		item, err := service.Store.AttachToAgentRun(
+			ctx, projectID, artifactID, runID, identity.User.ID, service.now(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (service Service) ListAgentRunAttachments(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	runIDs []string,
+) ([]ChatAttachment, error) {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactRead); err != nil {
+		return nil, err
+	}
+	if len(runIDs) > 500 {
+		return nil, ErrInvalid
+	}
+	return service.Store.ListAgentRunAttachments(ctx, projectID, runIDs)
 }
 
 func (service Service) InitializeVersion(
@@ -252,6 +352,9 @@ func (service Service) InitializeVersion(
 		ctx, identity, projectID, project.PermissionArtifactUpload,
 	); err != nil {
 		return PublicUploadSession{}, err
+	}
+	if identity.Kind == "agent" {
+		return PublicUploadSession{}, ErrForbidden
 	}
 	if _, err := service.Store.GetDetail(ctx, projectID, artifactID, false); err != nil {
 		return PublicUploadSession{}, err
@@ -343,6 +446,9 @@ func (service Service) GetUpload(
 	if err != nil {
 		return PublicUploadSession{}, err
 	}
+	if !service.uploadOwnedBy(identity, upload) {
+		return PublicUploadSession{}, ErrForbidden
+	}
 	if service.uploadExpired(upload) {
 		if err := service.expire(ctx, upload); err != nil {
 			return PublicUploadSession{}, err
@@ -395,6 +501,9 @@ func (service Service) SignParts(
 	upload, err := service.Store.GetUpload(ctx, projectID, uploadID)
 	if err != nil {
 		return PartGrantList{}, err
+	}
+	if !service.uploadOwnedBy(identity, upload) {
+		return PartGrantList{}, ErrForbidden
 	}
 	if err := service.requireActiveUpload(ctx, upload); err != nil {
 		return PartGrantList{}, err
@@ -530,6 +639,9 @@ func (service Service) Confirm(
 	upload, err := service.Store.GetUpload(ctx, projectID, uploadID)
 	if err != nil {
 		return Detail{}, false, err
+	}
+	if !service.uploadOwnedBy(identity, upload) {
+		return Detail{}, false, ErrForbidden
 	}
 	if upload.Status == UploadCompleted {
 		detail, err := service.Store.GetDetail(
@@ -674,6 +786,9 @@ func (service Service) Abort(
 	upload, err := service.Store.GetUpload(ctx, projectID, uploadID)
 	if err != nil {
 		return err
+	}
+	if !service.uploadOwnedBy(identity, upload) {
+		return ErrForbidden
 	}
 	switch upload.Status {
 	case UploadCompleted:
@@ -1123,7 +1238,7 @@ func (service Service) normalizeInitialize(
 		!sha256Pattern.MatchString(input.SHA256) {
 		return MultipartPlan{}, ErrInvalid
 	}
-	if !isPublicKind(input.Kind) {
+	if !isInitialKind(input.Kind) {
 		return MultipartPlan{}, safe(
 			"ARTIFACT_KIND_INVALID", "Artifact kind is not available for upload",
 			ErrKindInvalid,
@@ -1841,6 +1956,18 @@ func isPublicKind(value string) bool {
 	return value == KindProblem || value == KindAttachment || value == KindOther
 }
 
+func isInitialKind(value string) bool {
+	return isPublicKind(value) || value == KindAgent
+}
+
+func (service Service) uploadOwnedBy(identity auth.Identity, upload UploadSession) bool {
+	if identity.Kind == "agent" {
+		return identity.AgentInstanceID != "" &&
+			upload.AgentInstanceID == identity.AgentInstanceID
+	}
+	return true
+}
+
 func validFilename(value string) bool {
 	return value != "" && len(value) <= 255 &&
 		!strings.ContainsAny(value, "\x00\r\n/\\")
@@ -1853,6 +1980,7 @@ func validListFilter(filter ListFilter) bool {
 		filter.Kind != KindExperimentResult &&
 		filter.Kind != KindModelFile &&
 		filter.Kind != KindArticleBuild &&
+		filter.Kind != KindAgent &&
 		filter.Kind != KindOther {
 		return false
 	}
@@ -1861,6 +1989,7 @@ func validListFilter(filter ListFilter) bool {
 		filter.Source != SourceExperiment &&
 		filter.Source != SourceModel &&
 		filter.Source != SourceArticle &&
+		filter.Source != SourceAgent &&
 		filter.Source != SourceSystem {
 		return false
 	}
@@ -1885,7 +2014,9 @@ func matchesInitial(
 		upload.ExpectedSHA256 == input.SHA256 &&
 		upload.ExpectedSize == input.SizeBytes &&
 		upload.MIMEType == input.MIMEType &&
-		upload.Filename == input.Filename
+		upload.Filename == input.Filename &&
+		upload.AgentSessionID == input.AgentSessionID &&
+		upload.AgentRunID == input.AgentRunID
 }
 
 func matchesVersion(

@@ -543,10 +543,10 @@ paths:
               schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult" }
     delete:
       tags: [Agent]
-      summary: Disable an Agent instance
+      summary: Remove an Agent instance
       operationId: bff.agent.instances.disable
       responses:
-        "204": { description: Instance disabled and credentials revoked. }
+        "204": { description: Instance removed from the workspace and credentials revoked. }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/checks:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"

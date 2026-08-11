@@ -82,7 +82,6 @@ async function execute(
     }
     const result = await operation({
       accessToken: context.coreAccessToken,
-      gatewayAccessToken: context.coreGatewayAccessToken,
       projectId: projectIdValue,
       requestId: context.requestId,
     });

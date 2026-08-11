@@ -346,13 +346,11 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Record trusted MCP verification evidence for a pending Agent Token
-     * @description Internal callback used only by MCP Gateway after a pending product
-     *     Agent Token completes one successful `tools/list` request in a
-     *     protocol-negotiated MCP session. Requires the dedicated Gateway Core
-     *     API credential. Browser sessions, Agent Tokens, Box Tokens, ordinary
-     *     `/auth/me`, current `server/discover`, and legacy `initialize` cannot
-     *     create verification evidence on their own.
+     * Consume a pending Agent Token verification challenge
+     * @description After a pending product Agent Token completes one successful
+     *     `tools/list` request in a protocol-negotiated MCP session, the same
+     *     Agent identity consumes the one-time challenge embedded in its MCP
+     *     endpoint. Browser, API, and Box identities cannot consume it.
      */
     post: operations["auth.agent_tokens.verification.record"];
     delete?: never;
@@ -554,6 +552,25 @@ export interface paths {
     put?: never;
     /** Initialize the first immutable Version and its multipart upload */
     post: operations["artifact.uploads.initialize"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/agent-uploads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Initialize an Agent-owned immutable Artifact multipart upload */
+    post: operations["artifact.agentUploads.initialize"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1685,8 +1702,11 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Disable an Agent instance and revoke Project access
-     * @description Disables the local instance and credentials without deleting Hermes message history.
+     * Remove an Agent instance and revoke Project access
+     * @description Revokes every credential and removes the instance from the workspace.
+     *     Referential records and Hermes message history remain available to
+     *     Audit and retention processing. Repeating removal for a previously
+     *     disabled visible instance is supported.
      */
     delete: operations["agent.instances.disable"];
     options?: never;
@@ -3200,6 +3220,8 @@ export interface components {
       project_id: string;
       /** Format: uuid */
       agent_instance_id: string;
+      /** @description One-time challenge embedded in the pending MCP endpoint. */
+      challenge: string;
       /** @constant */
       mcp_method: "tools/list";
       mcp_session_id: string;
@@ -3334,6 +3356,7 @@ export interface components {
       | "experiment_result"
       | "model_file"
       | "article_build"
+      | "agent"
       | "other";
     /** @enum {string} */
     ArtifactErrorCode:
@@ -3360,7 +3383,7 @@ export interface components {
     ArtifactPublicKind: "problem" | "attachment" | "other";
     /** @enum {string} */
     ArtifactSource:
-      "user_upload" | "experiment" | "model" | "article" | "system";
+      "user_upload" | "experiment" | "model" | "article" | "agent" | "system";
     /** @enum {string} */
     ArtifactStatus:
       "pending_upload" | "verifying" | "available" | "failed" | "trashed";
@@ -3392,6 +3415,26 @@ export interface components {
       sha256: string;
       mime_type?: string;
       kind: components["schemas"]["ArtifactPublicKind"];
+      tags?: string[];
+      description?: string;
+      idempotency_key: string;
+    };
+    AgentArtifactInitializeUploadRequest: {
+      /**
+       * Format: uuid
+       * @description Local mmdash Agent Session provenance; must be paired with agent_run_id.
+       */
+      agent_session_id?: string;
+      /**
+       * Format: uuid
+       * @description Local mmdash Agent Run provenance; must belong to the authenticated Agent and agent_session_id.
+       */
+      agent_run_id?: string;
+      filename: string;
+      name?: string;
+      size_bytes: number;
+      sha256: string;
+      mime_type?: string;
       tags?: string[];
       description?: string;
       idempotency_key: string;
@@ -5282,7 +5325,7 @@ export interface components {
     /** @enum {string} */
     AgentAdapterType: "hermes";
     /**
-     * @description Closed Stage 6 product Agent Tool scope. Additional MCP tools require a later-stage domain and contract change before they can be granted.
+     * @description Closed product Agent Tool scope. artifact.upload creates only Agent Artifacts through short-lived direct multipart transfer grants; artifact.read issues an authorized short-lived download grant.
      * @enum {string}
      */
     AgentToolName:
@@ -5291,7 +5334,9 @@ export interface components {
       | "data.read"
       | "context.promote"
       | "progress.get"
-      | "progress.recalculate";
+      | "progress.recalculate"
+      | "artifact.upload"
+      | "artifact.read";
     /** @enum {string} */
     AgentManagementMode: "manual" | "auto";
     /** @enum {string} */
@@ -5381,7 +5426,9 @@ export interface components {
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -5416,7 +5463,9 @@ export interface components {
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -5491,14 +5540,16 @@ export interface components {
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
       /**
-       * @description Exact reviewed Stage 6 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @description Exact reviewed MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
        * @example [
        *       "project.get",
        *       "data.list",
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -5518,14 +5569,16 @@ export interface components {
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
       /**
-       * @description Exact reviewed Stage 6 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @description Exact reviewed MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
        * @example [
        *       "project.get",
        *       "data.list",
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools?: components["schemas"]["AgentToolName"][];
@@ -5534,7 +5587,10 @@ export interface components {
       /** @description Opaque Agent Token returned exactly once in manual mode. */
       readonly token: string;
       credential: components["schemas"]["AgentCredential"];
-      /** Format: uri */
+      /**
+       * Format: uri
+       * @description MCP endpoint containing the pending credential's one-time verification challenge. The challenge is consumed by the first successful negotiated tools/list and has no authority afterward.
+       */
       mcp_endpoint: string;
       /** @description Recommended Hermes MCP server name. */
       server_name?: string;
@@ -5647,7 +5703,11 @@ export interface components {
     };
     CreateAgentSessionRequest: {
       title: string;
-      session_type: components["schemas"]["AgentSessionType"];
+      /**
+       * @description Human-created Agent conversations are always main Sessions.
+       * @constant
+       */
+      session_type: "main";
       default?: boolean;
     };
     UpdateAgentSessionRequest: {
@@ -5680,8 +5740,26 @@ export interface components {
       content: string;
       tool_call_id?: string;
       tool_calls?: components["schemas"]["AgentToolCall"][];
+      attachments?: components["schemas"]["AgentChatAttachment"][];
       /** Format: date-time */
       created_at?: string;
+    };
+    AgentChatAttachment: {
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      /** Format: uuid */
+      run_id: string;
+      /** @enum {string} */
+      direction: "input" | "output";
+      name: string;
+      filename: string;
+      mime_type: string;
+      /** Format: int64 */
+      size_bytes: number;
+      /** Format: date-time */
+      created_at: string;
     };
     AgentMessageList: {
       items: components["schemas"]["AgentMessage"][];
@@ -5724,6 +5802,20 @@ export interface components {
     };
     StartAgentRunRequest: {
       message: string;
+      artifact_ids?: string[];
+      /**
+       * @description Request-scoped Hermes reasoning intensity. Omit to use the runtime default.
+       * @enum {string}
+       */
+      reasoning_effort?:
+        | "none"
+        | "minimal"
+        | "low"
+        | "medium"
+        | "high"
+        | "xhigh"
+        | "max"
+        | "ultra";
     };
     ReplayAgentRunRequest: {
       message_id?: string;
@@ -5744,6 +5836,7 @@ export interface components {
       | "message.started"
       | "message.delta"
       | "message.completed"
+      | "reasoning.available"
       | "tool.progress"
       | "tool.started"
       | "tool.completed"
@@ -6741,6 +6834,35 @@ export interface operations {
           "application/json": components["schemas"]["ArtifactUploadSession"];
         };
       };
+      409: components["responses"]["Error"];
+      413: components["responses"]["Error"];
+    };
+  };
+  "artifact.agentUploads.initialize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgentArtifactInitializeUploadRequest"];
+      };
+    };
+    responses: {
+      /** @description Agent Artifact, pending Version, and upload session initialized. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactUploadSession"];
+        };
+      };
+      403: components["responses"]["Error"];
       409: components["responses"]["Error"];
       413: components["responses"]["Error"];
     };
@@ -8529,7 +8651,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Instance disabled and credentials revoked. */
+      /** @description Instance removed from the workspace and credentials revoked. */
       204: {
         headers: {
           [name: string]: unknown;

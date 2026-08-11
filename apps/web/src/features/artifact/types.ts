@@ -4,12 +4,18 @@ export type ArtifactKind =
   | "experiment_result"
   | "model_file"
   | "article_build"
+  | "agent"
   | "other";
 
 export type PublicArtifactKind = "problem" | "attachment" | "other";
 
 export type ArtifactSource =
-  "user_upload" | "experiment" | "model" | "article" | "system";
+  | "user_upload"
+  | "experiment"
+  | "model"
+  | "article"
+  | "agent"
+  | "system";
 
 export type ArtifactStatus = "pending_upload" | "available" | "trashed";
 

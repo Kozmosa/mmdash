@@ -8,12 +8,14 @@ const (
 	KindExperimentResult = "experiment_result"
 	KindModelFile        = "model_file"
 	KindArticleBuild     = "article_build"
+	KindAgent            = "agent"
 	KindOther            = "other"
 
 	SourceUserUpload = "user_upload"
 	SourceExperiment = "experiment"
 	SourceModel      = "model"
 	SourceArticle    = "article"
+	SourceAgent      = "agent"
 	SourceSystem     = "system"
 
 	StatusPendingUpload = "pending_upload"
@@ -124,6 +126,9 @@ type UploadPart struct {
 // never be serialized through public handlers.
 type UploadSession struct {
 	ID               string
+	AgentInstanceID  string
+	AgentSessionID   string
+	AgentRunID       string
 	ProjectID        string
 	ArtifactID       string
 	VersionID        string
@@ -199,6 +204,8 @@ type DownloadGrant struct {
 
 // InitializeUploadInput creates the stable Artifact and first Version.
 type InitializeUploadInput struct {
+	AgentSessionID string
+	AgentRunID     string
 	Filename       string
 	Name           string
 	SizeBytes      int64
@@ -208,6 +215,21 @@ type InitializeUploadInput struct {
 	Tags           []string
 	Description    *string
 	IdempotencyKey string
+}
+
+// ChatAttachment is an immutable Artifact Version linked to an Agent Run.
+// It contains display metadata only; callers must request an authorized,
+// short-lived download grant separately.
+type ChatAttachment struct {
+	ArtifactID string    `json:"artifact_id"`
+	VersionID  string    `json:"version_id"`
+	RunID      string    `json:"run_id"`
+	Direction  string    `json:"direction"`
+	Name       string    `json:"name"`
+	Filename   string    `json:"filename"`
+	MIMEType   string    `json:"mime_type"`
+	SizeBytes  int64     `json:"size_bytes"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // InitializeVersionInput creates another immutable Version.

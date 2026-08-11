@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/artifact.read.json",
+  "title": "artifact.read MCP tool",
+  "description": "Issues a short-lived authorized download grant for an immutable Artifact Version.",
+  "x-operation-id": "artifact.read",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "artifact_id"],
+      "properties": {
+        "project_id": { "type": "string", "format": "uuid" },
+        "artifact_id": { "type": "string", "format": "uuid" },
+        "version_id": { "type": "string", "format": "uuid" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Artifact identity, immutable Version metadata, and a short-lived GET transfer grant."
+    }
+  }
+}

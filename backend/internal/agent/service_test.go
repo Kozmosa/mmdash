@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/mmdash/mmdash/backend/internal/artifact"
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
@@ -26,6 +29,30 @@ type agentServiceTestProjects struct {
 	authorizeErr error
 	item         project.Project
 	permissions  []project.Permission
+}
+
+type agentServiceTestArtifacts struct {
+	attachments []artifact.ChatAttachment
+	inputs      []artifact.ChatAttachment
+}
+
+func (items *agentServiceTestArtifacts) AttachAgentRunInputs(
+	_ context.Context,
+	_ auth.Identity,
+	_ string,
+	_ string,
+	_ []string,
+) ([]artifact.ChatAttachment, error) {
+	return append([]artifact.ChatAttachment(nil), items.inputs...), nil
+}
+
+func (items *agentServiceTestArtifacts) ListAgentRunAttachments(
+	_ context.Context,
+	_ auth.Identity,
+	_ string,
+	_ []string,
+) ([]artifact.ChatAttachment, error) {
+	return append([]artifact.ChatAttachment(nil), items.attachments...), nil
 }
 
 func (projects *agentServiceTestProjects) Authorize(
@@ -361,6 +388,22 @@ func (store *agentServiceTestStore) GetRun(
 	}
 	item.PendingApprovalIDs = store.pendingApprovalIDs(runID)
 	return item, nil
+}
+
+func (store *agentServiceTestStore) ListRuns(
+	_ context.Context,
+	sessionID string,
+) ([]RunRecord, error) {
+	items := []RunRecord{}
+	for _, item := range store.runs {
+		if item.SessionID == sessionID {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(left, right int) bool {
+		return items[left].CreatedAt.Before(items[right].CreatedAt)
+	})
+	return items, nil
 }
 
 func (store *agentServiceTestStore) RecordRunApproval(
@@ -1155,11 +1198,10 @@ func newAgentServiceFixture(t *testing.T) *agentServiceFixture {
 		}
 	}
 	authService := &auth.Service{
-		AgentVerificationTokenID: "trusted-gateway-token",
-		Clock:                    clock.Fixed{Time: agentServiceTestNow},
-		Generator:                identity.Generator{},
-		ProjectTokens:            agentServiceTestTokenAuthorizer{},
-		Store:                    authStore,
+		Clock:         clock.Fixed{Time: agentServiceTestNow},
+		Generator:     identity.Generator{},
+		ProjectTokens: agentServiceTestTokenAuthorizer{},
+		Store:         authStore,
 	}
 	auditStore := &agentServiceTestAuditStore{}
 	projects := &agentServiceTestProjects{item: project.Project{
@@ -1239,15 +1281,14 @@ func (fixture *agentServiceFixture) seedRun(status string) RunRecord {
 
 func trustedAgentServiceTestEvidence(token auth.AgentToken) *auth.AgentTokenVerificationEvidence {
 	return &auth.AgentTokenVerificationEvidence{
-		AgentInstanceID:   token.AgentInstanceID,
-		EvidenceID:        "evidence-1",
-		MCPSessionID:      "mcp-session-1",
-		ProjectID:         token.ProjectID,
-		RequestID:         "gateway-request-1",
-		TokenID:           token.ID,
-		MCPMethod:         auth.AgentTokenVerificationMethod,
-		VerifiedAt:        token.CreatedAt.Add(time.Second),
-		VerifiedByTokenID: "trusted-gateway-token",
+		AgentInstanceID: token.AgentInstanceID,
+		EvidenceID:      "evidence-1",
+		MCPSessionID:    "mcp-session-1",
+		ProjectID:       token.ProjectID,
+		RequestID:       "gateway-request-1",
+		TokenID:         token.ID,
+		MCPMethod:       auth.AgentTokenVerificationMethod,
+		VerifiedAt:      token.CreatedAt.Add(time.Second),
 	}
 }
 
@@ -1308,20 +1349,26 @@ func (fixture *agentServiceFixture) setEncryptedSetting(t *testing.T, key, value
 func TestServiceSessionLifecycle(t *testing.T) {
 	fixture := newAgentServiceFixture(t)
 	created := map[string]SessionRecord{}
-	for _, sessionType := range []string{SessionMain, SessionProgress, SessionExperiment} {
-		item, err := fixture.service.CreateSession(
+	for _, reservedType := range []string{SessionProgress, SessionExperiment} {
+		if _, err := fixture.service.CreateSession(
 			context.Background(), fixture.caller, "project-1", "agent-1",
-			CreateSessionInput{SessionType: sessionType, Title: strings.ToUpper(sessionType)},
-		)
-		if err != nil {
-			t.Fatalf("create %s session: %v", sessionType, err)
+			CreateSessionInput{SessionType: reservedType, Title: strings.ToUpper(reservedType)},
+		); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("human created reserved %s session: %v", reservedType, err)
 		}
-		if item.Status != SessionActive || item.RemoteSessionID == "" || item.SessionType != sessionType {
-			t.Fatalf("unexpected created %s session: %#v", sessionType, item)
-		}
-		created[sessionType] = item
 	}
-	if len(fixture.adapter.createSessionRequests) != 3 ||
+	item, err := fixture.service.CreateSession(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		CreateSessionInput{SessionType: SessionMain, Title: "MAIN"},
+	)
+	if err != nil {
+		t.Fatalf("create main session: %v", err)
+	}
+	created[SessionMain] = item
+	if item.Status != SessionActive || item.RemoteSessionID == "" || item.SessionType != SessionMain {
+		t.Fatalf("unexpected created main session: %#v", item)
+	}
+	if len(fixture.adapter.createSessionRequests) != 1 ||
 		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "Traceable model") ||
 		strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "top-secret") {
 		t.Fatalf("unexpected runtime session requests: %#v", fixture.adapter.createSessionRequests)
@@ -1329,7 +1376,7 @@ func TestServiceSessionLifecycle(t *testing.T) {
 	items, err := fixture.service.ListSessions(
 		context.Background(), fixture.caller, "project-1", "agent-1",
 	)
-	if err != nil || len(items) != 3 {
+	if err != nil || len(items) != 1 {
 		t.Fatalf("list sessions: items=%#v err=%v", items, err)
 	}
 	mainSession, err := fixture.service.GetSession(
@@ -1459,6 +1506,105 @@ func TestServiceReplayRunSupportsRerunAndRegenerate(t *testing.T) {
 				t.Fatalf("rerun unexpectedly forked: %#v", result)
 			}
 		})
+	}
+}
+
+func TestServiceStartRunPassesExistingConversationHistory(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.adapter.messages = []Message{
+		{RemoteID: "message-1", Role: "user", Content: "Remember cobalt-17."},
+		{RemoteID: "message-2", Role: "tool", Content: "ignored tool output"},
+		{RemoteID: "message-3", Role: "assistant", Content: "I will remember cobalt-17."},
+		{RemoteID: "message-4", Role: "assistant", Content: "   "},
+	}
+
+	if _, err := fixture.service.StartRun(
+		context.Background(), fixture.caller, "project-1", "agent-1", "session-1",
+		StartRunInput{Input: "What value did I ask you to remember?"},
+	); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if len(fixture.adapter.startRunRequests) != 1 {
+		t.Fatalf("unexpected start requests: %#v", fixture.adapter.startRunRequests)
+	}
+	request := fixture.adapter.startRunRequests[0]
+	if request.SessionRemoteID != "remote-session-1" {
+		t.Fatalf("wrong remote session: %#v", request)
+	}
+	expected := []ConversationMessage{
+		{Role: "user", Content: "Remember cobalt-17."},
+		{Role: "assistant", Content: "I will remember cobalt-17."},
+	}
+	if !reflect.DeepEqual(request.ConversationHistory, expected) {
+		t.Fatalf("conversation history was not preserved: got=%#v want=%#v", request.ConversationHistory, expected)
+	}
+}
+
+func TestServiceStartRunPassesValidatedReasoningEffort(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+
+	if _, err := fixture.service.StartRun(
+		context.Background(), fixture.caller, "project-1", "agent-1", "session-1",
+		StartRunInput{Input: "Analyze carefully", ReasoningEffort: "xhigh"},
+	); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if got := fixture.adapter.startRunRequests[0].ReasoningEffort; got != "xhigh" {
+		t.Fatalf("reasoning effort was not forwarded: %q", got)
+	}
+	if _, err := fixture.service.StartRun(
+		context.Background(), fixture.caller, "project-1", "agent-1", "session-1",
+		StartRunInput{Input: "Analyze", ReasoningEffort: "unbounded"},
+	); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid reasoning effort: %v", err)
+	}
+}
+
+func TestServiceStartRunPassesCurrentAndPreviousSessionFiles(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.seedSession(SessionActive)
+	fixture.seedRun(RunRecordCompleted)
+	fixture.service.Artifacts = &agentServiceTestArtifacts{
+		attachments: []artifact.ChatAttachment{{
+			ArtifactID: "artifact-previous", VersionID: "version-previous",
+			RunID: "run-1", Direction: "output", Filename: "heart-curve.png",
+			MIMEType: "image/png", SizeBytes: 2048,
+		}},
+		inputs: []artifact.ChatAttachment{{
+			ArtifactID: "artifact-current", VersionID: "version-current",
+			Direction: "input", Filename: "measurements.csv",
+			MIMEType: "text/csv", SizeBytes: 512,
+		}},
+	}
+
+	if _, err := fixture.service.StartRun(
+		context.Background(), fixture.caller, "project-1", "agent-1", "session-1",
+		StartRunInput{Input: "What is the value?", ArtifactIDs: []string{"artifact-current"}},
+	); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	instructions := fixture.adapter.startRunRequests[0].Instructions
+	for _, expected := range []string{
+		"heart-curve.png", "artifact-previous", "version-previous", "direction=output",
+		"measurements.csv", "artifact-current", "first-class message input",
+		"even when the user did not explicitly say", "previously exchanged in this mmdash Session",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("run instructions do not contain %q:\n%s", expected, instructions)
+		}
+	}
+}
+
+func TestConversationHistoryKeepsTheNewestTwoHundredMessages(t *testing.T) {
+	messages := make([]Message, 0, 205)
+	for index := range 205 {
+		messages = append(messages, Message{Role: "user", Content: fmt.Sprintf("message-%03d", index)})
+	}
+	history := conversationHistory(messages)
+	if len(history) != 200 || history[0].Content != "message-005" || history[199].Content != "message-204" {
+		t.Fatalf("unexpected bounded history: first=%#v last=%#v len=%d", history[0], history[len(history)-1], len(history))
 	}
 }
 
@@ -1955,6 +2101,7 @@ func TestServiceSwitchFromManualToAutoConfiguresFreshCredential(t *testing.T) {
 	}
 	fixture.adapter.onConfigureAccess = func(request ProjectAccessRequest) {
 		if request.Credential == "" || request.CurrentRemoteID != "" ||
+			!strings.Contains(request.Endpoint, "mmdash_challenge=") ||
 			!sameTools(request.ExpectedTools, DefaultAllowedTools) {
 			t.Fatalf("unexpected manual-to-auto access request: %#v", request)
 		}
@@ -1999,7 +2146,8 @@ func TestServiceAutoRotationFinalizesOldAccessOnlyAfterActivation(t *testing.T) 
 		Tools: append([]string(nil), DefaultAllowedTools...), Verified: true,
 	}
 	fixture.adapter.onRotateAccess = func(request ProjectAccessRequest) {
-		if request.CurrentRemoteID != "managed-access-old" {
+		if request.CurrentRemoteID != "managed-access-old" ||
+			!strings.Contains(request.Endpoint, "mmdash_challenge=") {
 			t.Fatalf("unexpected previous remote access: %#v", request)
 		}
 		fixture.trustLastCreatedToken(t)
@@ -2147,7 +2295,8 @@ func TestServiceRotateTokenRecoversWithoutUsableActiveCredential(t *testing.T) {
 					Tools: append([]string(nil), DefaultAllowedTools...), Verified: true,
 				}
 				fixture.adapter.onConfigureAccess = func(request ProjectAccessRequest) {
-					if request.CurrentRemoteID != "" || request.Credential == "" {
+					if request.CurrentRemoteID != "" || request.Credential == "" ||
+						!strings.Contains(request.Endpoint, "mmdash_challenge=") {
 						t.Fatalf("recovery attempted unsafe rotation: %#v", request)
 					}
 					fixture.trustLastCreatedToken(t)
@@ -2165,6 +2314,7 @@ func TestServiceRotateTokenRecoversWithoutUsableActiveCredential(t *testing.T) {
 				}
 				if mode == ManagementManual {
 					if result.OneTimeToken == nil || result.OneTimeToken.Token == "" ||
+						!strings.Contains(result.OneTimeToken.GatewayURL, "mmdash_challenge=") ||
 						newToken.Status != "pending" || fixture.adapter.configureAccessCalls != 0 {
 						t.Fatalf("manual recovery did not return pending material once: token=%#v result=%#v", newToken, result)
 					}
@@ -2225,7 +2375,7 @@ func TestServiceVerifyTokenFailuresAreTerminalAndKeepOldTokenActive(t *testing.T
 			RotationID: "rotation-failed", Status: "awaiting_user",
 		}
 		storedToken, getErr := fixture.service.Auth.GetAgentToken(context.Background(), pending.ID)
-		if getErr != nil || !fixture.service.hasTrustedVerification(storedToken) {
+		if getErr != nil || !hasAgentVerification(storedToken) {
 			t.Fatalf("invalid verified replacement fixture: token=%#v err=%v", storedToken, getErr)
 		}
 		if _, err := fixture.service.VerifyToken(

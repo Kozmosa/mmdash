@@ -1,4 +1,4 @@
-import { CoreClient } from "@mmdash/core-client";
+import { CoreClient, CoreClientError } from "@mmdash/core-client";
 import {
   createMcpHandler,
   type McpHandlerRequestOptions,
@@ -28,6 +28,8 @@ import {
   SessionRegistry,
 } from "./sessions/session-registry.js";
 import { dataListTool, dataReadTool } from "./tools/data.js";
+import { artifactUploadTool } from "./tools/artifact-upload.js";
+import { artifactReadTool } from "./tools/artifact-read.js";
 import { contextPromoteTool } from "./tools/context-promote.js";
 import { ToolRegistry } from "./tools/registry.js";
 import { systemEchoTool } from "./tools/system-echo.js";
@@ -36,10 +38,7 @@ import {
   projectMemberListTool,
 } from "./tools/project-members.js";
 import { projectGetTool, projectListTool } from "./tools/projects.js";
-import {
-  progressGetTool,
-  progressRecalculateTool,
-} from "./tools/progress.js";
+import { progressGetTool, progressRecalculateTool } from "./tools/progress.js";
 
 export type GatewayFetchHandler = {
   close(): Promise<void>;
@@ -80,12 +79,7 @@ export function buildGateway(
         coreAccessToken: resolveDelegatedCoreToken(
           principal,
           requestContext.authInfo?.token,
-          config.coreAccessToken,
         ),
-        coreGatewayAccessToken:
-          principal.delegated && principal.kind === "agent"
-            ? config.coreAccessToken
-            : undefined,
         now,
         principal,
         requestId: readExtra(requestContext.authInfo?.extra, "requestId"),
@@ -142,6 +136,8 @@ function resolveAuditSink(
 
 function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
+  registry.register(artifactReadTool);
+  registry.register(artifactUploadTool);
   registry.register(contextPromoteTool);
   registry.register(dataListTool);
   registry.register(dataReadTool);
@@ -185,6 +181,7 @@ async function handleGatewayRequest(
       request.headers.get("authorization"),
       requestId,
     );
+    const verificationChallenge = url.searchParams.get("mmdash_challenge");
     const mcpRequest = await readMcpRequest(request);
     const suppliedSession = readGatewaySession(request.headers);
     if (request.method === "DELETE" && suppliedSession) {
@@ -248,8 +245,9 @@ async function handleGatewayRequest(
       }
       await recordAgentTokenVerification(
         coreClient,
-        config,
         principal,
+        authInfo.token,
+        verificationChallenge,
         session.id,
         requestId,
       );
@@ -431,29 +429,38 @@ function sameExactTools(
 
 async function recordAgentTokenVerification(
   coreClient: CoreClient,
-  config: McpGatewayConfig,
   principal: Principal,
+  agentToken: string | undefined,
+  challenge: string | null,
   sessionId: string,
   requestId: string,
 ): Promise<void> {
   const agentInstanceId = principal.agentInstanceId;
   const projectId = principal.projects[0];
   const tokenId = principal.tokenId;
-  if (!config.coreAccessToken || !agentInstanceId || !projectId || !tokenId) {
+  if (!agentToken || !agentInstanceId || !projectId || !tokenId) {
     throw verificationUnavailable();
+  }
+  if (!challenge) {
+    throw new GatewayError(
+      "AGENT_VERIFICATION_CHALLENGE_REQUIRED",
+      "The pending Agent credential requires its one-time verification endpoint",
+      403,
+    );
   }
   try {
     const evidence = await coreClient.recordAgentTokenVerification(
       tokenId,
       {
         agent_instance_id: agentInstanceId,
+        challenge,
         mcp_method: "tools/list",
         mcp_session_id: sessionId,
         project_id: projectId,
         request_id: requestId,
       },
       {
-        accessToken: config.coreAccessToken,
+        accessToken: agentToken,
         projectId,
         requestId,
       },
@@ -468,7 +475,14 @@ async function recordAgentTokenVerification(
     ) {
       throw new Error("Agent verification evidence did not match the request");
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof CoreClientError && error.status < 500) {
+      throw new GatewayError(
+        "AGENT_VERIFICATION_CHALLENGE_INVALID",
+        "The Agent verification challenge is invalid or has expired",
+        error.status === 409 ? 409 : 403,
+      );
+    }
     throw verificationUnavailable();
   }
 }
@@ -493,13 +507,9 @@ function pendingAgentMethodAllowed(method: string): boolean {
 
 function resolveDelegatedCoreToken(
   principal: Principal,
-  delegatedToken: string | undefined,
-  serviceToken: string | undefined,
+  inboundToken: string | undefined,
 ): string | undefined {
-  if (!principal.delegated) {
-    return serviceToken;
-  }
-  return isPendingAgent(principal) ? undefined : delegatedToken;
+  return isPendingAgent(principal) ? undefined : inboundToken;
 }
 
 function verificationUnavailable(): GatewayError {

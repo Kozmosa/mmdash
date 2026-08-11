@@ -103,6 +103,7 @@ function renderGoHandlerTypes(document) {
     "RepoCreateCheckoutRequest",
     "RepoCreateCommitRequest",
     "ArtifactInitializeUploadRequest",
+    "AgentArtifactInitializeUploadRequest",
     "ArtifactInitializeVersionUploadRequest",
     "ArtifactSignPartsRequest",
     "ArtifactConfirmUploadRequest",

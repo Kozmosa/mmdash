@@ -3,11 +3,15 @@
 import { FlaskConical, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { workspaceHref, workspaceRoutes } from "@/lib/navigation";
 import { cn } from "@/lib/cn";
-import { useWorkspaceStore } from "@/stores/workspace";
+import {
+  restoreWorkspaceSidebar,
+  useWorkspaceStore,
+} from "@/stores/workspace";
 
 export function WorkspaceSidebar({
   projectId,
@@ -16,6 +20,8 @@ export function WorkspaceSidebar({
   const sidebarOpen = useWorkspaceStore((state) => state.sidebarOpen);
   const setSidebarOpen = useWorkspaceStore((state) => state.setSidebarOpen);
   const toggleSidebar = useWorkspaceStore((state) => state.toggleSidebar);
+
+  useEffect(() => restoreWorkspaceSidebar(), []);
 
   return (
     <>

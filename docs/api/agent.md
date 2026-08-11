@@ -98,9 +98,12 @@ Grant, Project, and exact MCP Tool names; wildcards are not accepted. Token
 plaintext is returned at most once during a manual issue or rotation and is
 never returned by ordinary instance, credential, Audit, event, or log reads.
 
-The Stage 6 grant contract is deliberately closed to these six Tool names:
+The reviewed grant contract is deliberately closed to these seven Tool names:
 `project.get`, `data.list`, `data.read`, `context.promote`, `progress.get`, and
-`progress.recalculate`. OpenAPI request,
+`progress.recalculate`, plus `artifact.upload`. The last Tool is the only
+Agent mutation that creates file content: it creates an immutable Artifact
+classified as `kind=agent` and `source=agent` through short-lived direct
+multipart grants. OpenAPI request,
 identity, Grant, and credential schemas use the same enum as the Core Agent
 domain; a syntactically valid but unowned MCP Tool name is therefore rejected
 at the browser/Core contract boundary. Expanding this set requires an explicit
@@ -148,33 +151,34 @@ connection. Current MCP `server/discover` and legacy `initialize` only mark the
 Session as negotiated and are insufficient on their own. After the first
 successful `tools/list` in a negotiated MCP Session, Gateway calls
 `auth.agent_tokens.verification.record` with the pending Token ID, Agent
-instance, Project, bounded mmdash Session ID, and request ID. Core stores the
-first evidence record. Repeated `tools/list` callbacks are idempotent: Core
+instance, Project, bounded mmdash Session ID, request ID, and the single-use
+challenge carried by the one-time MCP endpoint. Core stores only the challenge
+hash and consumes it when writing the first evidence record. Repeated
+`tools/list` callbacks are idempotent: Core
 returns that original evidence, and Gateway accepts it only when the stable
 Token, Agent, Project, and `tools/list` binding still matches. The first
 Session and request IDs are never overwritten. Core accepts the callback only
 when all of these are true:
 
-- the caller is an admin `api` identity;
-- its Auth Token ID exactly equals `AUTH_AGENT_VERIFICATION_TOKEN_ID`;
-- any Project scope on that API Token equals the evidence Project; and
+- the caller is the same pending `agent` identity named by the target Token;
+- the Token, Agent instance, and Project bindings all match;
+- the challenge hashes to the unconsumed value stored for that Token; and
 - the target Token is still pending and bound to the supplied Agent and
   Project.
 
-The matching secret is configured on Gateway as `MCP_CORE_ACCESS_TOKEN` and is
-never the pending Agent Token. A normal admin credential cannot stand in for
-the configured Gateway credential. If the callback is unavailable, Gateway
-returns a stable, credential-free `AGENT_VERIFICATION_UNAVAILABLE` failure and
-does not report the pending `tools/list` as successful verification.
+Gateway authenticates that callback with the same pending Agent Token; there is
+no second Gateway credential. A missing, stale, or mismatched challenge fails
+closed without disclosing it. If the callback is unavailable, Gateway returns
+a stable, credential-free `AGENT_VERIFICATION_UNAVAILABLE` failure and does
+not report the pending `tools/list` as successful verification.
 
-After activation, Gateway keeps the product Agent Token as the primary Core
-identity and sends `MCP_CORE_ACCESS_TOKEN` separately in the internal
-`X-Mmdash-Gateway-Authorization` attestation header. Except for direct
-`GET /v1/auth/me` introspection, Core rejects every Agent-authenticated `/v1`
-request without that second credential. Core accepts the attestation only for
-the configured Token ID, an active admin API Token, and a matching optional
-Project scope. The header does not replace the Agent actor and does not carry a
-Tool name; Gateway exact-Tool authorization and Core Agent RBAC both still run.
+After activation, Gateway forwards the original Agent Token to Core for every
+business Tool call. Gateway checks the exact Tool grant first; Core then
+authenticates the same Agent identity and remains the final Project/domain
+permission authority. Core is private on the deployment network. Caddy routes
+the user/CLI `/v1` surface through Web BFF, which admits only user sessions,
+user API Tokens, and explicitly public operations; it rejects Agent and
+service credentials.
 
 Create and update requests may set `request_timeout_seconds` from 1 through
 300. The Hermes Adapter may further reduce that value to its
@@ -183,8 +187,8 @@ deployment-configured maximum; the browser cannot raise the server-side cap.
 Hermes connects directly to MCP Gateway:
 
 ```text
-Hermes -- Agent Token --> MCP Gateway -- Agent Token + Gateway attestation --> Core
-                                                                        --> Project/Data Hub
+Hermes -- Agent Token --> MCP Gateway -- same Agent Token --> private Core
+                                                               --> Project/Data Hub
 ```
 
 The Go CLI is not part of Agent authentication, provisioning, or runtime
@@ -193,9 +197,10 @@ transport.
 ## Sessions, messages, and Runs
 
 mmdash stores a local Session index and the corresponding Hermes Session ID.
-Supported Session types are `main`, `progress`, and `experiment`. Stage 5 uses
-`main` for human chat; the other two stable types reserve module ownership for
-later Progress and Experiment workflows.
+Supported persisted Session types are `main`, `progress`, and `experiment`.
+The human Agent API and workbench can create only `main`; `progress` and
+`experiment` are internal module-owned Sessions used by automatic evaluation
+and result analysis and are hidden from the human Session list.
 
 The API supports creating, listing, selecting a default, renaming, ending,
 continuing, and forking Sessions. Ending is a logical state transition with an
@@ -204,7 +209,10 @@ the product workflow without losing the prior mapping. Forking records a
 parent Session and a distinct remote Session.
 
 The chat surface reads normalized Hermes message history and starts a Run for
-each user message. Product chat uses the Hermes Run API and Run SSE stream so a
+each user message. Before starting the next Run, Core reads that remote Session
+and supplies the newest 200 non-empty user/assistant turns as explicit
+`conversation_history`; the stable Hermes Session ID alone is not treated as a
+memory guarantee. Product chat uses the Hermes Run API and Run SSE stream so a
 Run has a stable remote ID and can be stopped. The normalized SSE stream passes
 through without proxy buffering and returns message, Tool Call
 start/progress/completion, approval, subagent, Run status, done, heartbeat, and
@@ -216,6 +224,49 @@ polling Run status and reconciling Hermes message history rather than event
 replay. `tool.progress` carries only the normalized Tool Call summary. Raw Tool
 arguments, Tool results, reasoning, provider errors, and secrets are not part
 of the browser contract.
+
+`POST .../sessions/{sessionId}/runs` accepts optional `reasoning_effort` with
+`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. Core
+validates the closed set and the Hermes Adapter maps it to request-scoped
+`model_options.reasoning_effort`; omitting it preserves the runtime default.
+Session reads expose the latest local `last_run_id`, allowing the workbench to
+recover the authoritative non-terminal Run after switching away and back.
+
+The workbench reconnects to a non-terminal Run's SSE stream after navigation,
+renders only safe reasoning availability/status and normalized Tool progress
+inline, and reconciles final Hermes history after terminal events. It never
+exposes private chain-of-thought. The composer uses Enter to send and
+Shift+Enter for a newline; the in-composer stop action targets the current Run.
+Session lifecycle actions live in the Session context menu, while Run, Context
+Proposal, and Prompt information live in a collapsible right drawer. The drawer
+automatically starts closed below the desktop-wide breakpoint so it cannot
+cover the composer action, and every create/fork/select transition clears the
+previous Session's transient Run state before the new Session becomes active.
+
+Hermes file and image output is not inferred from a provider-local path or
+embedded as base64 in chat. A Run that needs to retain a local file calls
+`artifact.upload`: `begin` returns direct part PUT grants, `parts` refreshes a
+bounded batch, `complete` verifies every ETag plus the declared size/SHA-256,
+and `abort` cancels unfinished state. The resulting Artifact is visible in the
+normal library and Data Hub. An upload may carry the current local Session/Run
+pair; Core validates that provenance and records an output relation so the
+available file is rendered inline as an image preview or file card. Run
+instructions tell Hermes to upload useful deliverables proactively rather than
+waiting for an additional user request.
+
+Output attachments remain outside the live reasoning/Tool sequence and are
+ordered after their Run settles. Hermes message-history Tool Calls are treated
+as settled history even when the provider omits a terminal status; live
+`queued`/`running` state comes only from the current Run stream.
+
+The browser composer may upload up to ten ordinary `kind=attachment`,
+`source=user_upload` Artifacts before starting a Run. Core records them as
+input relations to that Run and supplies their immutable Artifact/Version IDs
+to Hermes. Hermes uses the exact-scope `artifact.read` Tool to obtain a
+short-lived authorized download grant. Signed URLs are never copied into chat.
+Synthetic attachment messages and remote Hermes messages are reconciled into
+one transcript; the persisted final answer and Tool Calls replace matching
+streamed state instead of being rendered a second time.
 
 When a Run enters `waiting_for_approval`, the SSE event carries only the
 provider-neutral approval ID and allowed choices. The browser responds through
@@ -258,11 +309,16 @@ content or its provenance.
 
 Project RBAC separates Agent read, use, instance management, and Token
 management. MCP Gateway checks Token status, Project binding, and exact Tool
-scope; Core authenticates the same Agent identity, requires the dedicated
-Gateway attestation for business routes, and re-applies domain RBAC.
+scope; Core authenticates the same Agent identity and re-applies domain RBAC.
 Management, Token, Prompt, Session, and Run transitions are auditable with
 bounded, credential-free metadata and publish stable Agent lifecycle events
 through the transactional Outbox.
+
+Deleting an Agent instance is a logical removal, not a destructive history
+rewrite. Core marks `removed_at`, disables the instance, and revokes its active
+Project Grant and credentials. Removed instances disappear from normal lists,
+while Agent Sessions, Runs, Audit, and retained Artifact history remain for
+traceability.
 
 Connection checks report runtime, authentication, capabilities, Sessions,
 messages, SSE, Runs, Jobs, management, and reverse project-access results

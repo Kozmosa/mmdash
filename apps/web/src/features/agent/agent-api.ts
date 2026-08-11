@@ -10,6 +10,7 @@ import type {
   AgentMessage,
   AgentProjectAccessVerificationResult,
   AgentPrompt,
+  AgentReasoningEffort,
   AgentRun,
   AgentRunLaunch,
   AgentSession,
@@ -25,6 +26,8 @@ export const reviewedAgentTools = [
   "context.promote",
   "progress.get",
   "progress.recalculate",
+  "artifact.upload",
+  "artifact.read",
 ] as const;
 
 export const agentApi = {
@@ -188,11 +191,7 @@ export const agentApi = {
       { body: {}, method: "POST" },
     );
   },
-  setDefaultSession(
-    projectId: string,
-    instanceId: string,
-    sessionId: string,
-  ) {
+  setDefaultSession(projectId: string, instanceId: string, sessionId: string) {
     return apiClient.request<AgentSession>(
       `${sessionPath(projectId, instanceId, sessionId)}/default`,
       { method: "POST" },
@@ -203,11 +202,17 @@ export const agentApi = {
     instanceId: string,
     sessionId: string,
     message: string,
+    artifactIds: string[] = [],
+    reasoningEffort?: AgentReasoningEffort,
   ) {
     return apiClient.request<AgentRunLaunch>(
       `${sessionPath(projectId, instanceId, sessionId)}/runs`,
       {
-        body: { message },
+        body: {
+          ...(artifactIds.length ? { artifact_ids: artifactIds } : {}),
+          message,
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+        },
         method: "POST",
       },
     );
@@ -439,5 +444,7 @@ export async function optionalAgentInstance(
   const result = await client.request<{ items: AgentInstance[] }>(
     `/projects/${encodeURIComponent(projectId)}/agent-instances`,
   );
-  return result.items.find((instance) => instance.status !== "disabled") ?? null;
+  return (
+    result.items.find((instance) => instance.status !== "disabled") ?? null
+  );
 }
