@@ -217,7 +217,10 @@ persisted non-terminal Run reattaches to SSE without a refresh. Safe reasoning
 status and normalized Tool progress render inside the transcript; final history
 reconciliation must not overwrite a newer streamed answer with stale data.
 Markdown uses sanitized rendering and KaTeX for inline/display math without
-creating invalid paragraph hydration markup.
+creating invalid paragraph hydration markup. Both the generated Project Prompt
+and per-Run instructions advertise that renderer support explicitly, including
+the accepted inline/display delimiters; per-Run repetition also covers existing
+Hermes Sessions and Project Prompt overrides.
 
 Every Session projection includes its latest `last_run_id`. Switching Sessions
 aborts only the local subscription; returning queries that Run, restores its
