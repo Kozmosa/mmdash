@@ -107,7 +107,7 @@ async function execute(
     context.authorizer.assertToolAccess(context.principal, toolName);
     context.authorizer.assertProjectAccess(context.principal, projectIdValue);
     if (!context.coreAccessToken) throw new GatewayError("CORE_ACCESS_TOKEN_REQUIRED", "The MCP Core access token is not configured", 503);
-    const result = await operation({ accessToken: context.coreAccessToken, gatewayAccessToken: context.coreGatewayAccessToken, projectId: projectIdValue, requestId: context.requestId });
+    const result = await operation({ accessToken: context.coreAccessToken, projectId: projectIdValue, requestId: context.requestId });
     await recordAudit(context, toolName, projectIdValue, startedAt, "success");
     return { content: [{ text: JSON.stringify(result), type: "text" }], structuredContent: result as Record<string, unknown> };
   } catch (error) {
