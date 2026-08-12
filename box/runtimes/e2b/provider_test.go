@@ -406,6 +406,7 @@ func TestProviderClientCancelSignalsAndKillsSandbox(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("main process did not start")
 	}
+	waitForProviderPID(t, client, request.ID)
 	if err := client.Cancel(context.Background(), request.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -424,6 +425,31 @@ func TestProviderClientCancelSignalsAndKillsSandbox(t *testing.T) {
 	}
 	if mock.deletes < 1 {
 		t.Fatal("sandbox was not deleted")
+	}
+}
+
+func waitForProviderPID(t *testing.T, client *ProviderClient, taskID string) {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		client.mu.Lock()
+		session := client.sessions[taskID]
+		pid := 0
+		if session != nil {
+			pid = session.pid
+		}
+		client.mu.Unlock()
+		if pid > 0 {
+			return
+		}
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			t.Fatalf("provider process PID was not registered")
+		}
 	}
 }
 
