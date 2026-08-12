@@ -98,12 +98,15 @@ Grant, Project, and exact MCP Tool names; wildcards are not accepted. Token
 plaintext is returned at most once during a manual issue or rotation and is
 never returned by ordinary instance, credential, Audit, event, or log reads.
 
-The reviewed grant contract is deliberately closed to these seven Tool names:
-`project.get`, `data.list`, `data.read`, `context.promote`, `progress.get`, and
-`progress.recalculate`, plus `artifact.upload`. The last Tool is the only
-Agent mutation that creates file content: it creates an immutable Artifact
-classified as `kind=agent` and `source=agent` through short-lived direct
-multipart grants. OpenAPI request,
+The reviewed grant contract is deliberately closed to these twelve Tool names:
+`project.get`, `data.list`, `data.read`, `context.promote`, `progress.get`,
+`progress.recalculate`, `artifact.upload`, `artifact.read`,
+`experiment.create`, `experiment.run`, `experiment.status`, and `result.get`.
+The Artifact tools use short-lived transfer grants, while the Experiment tools
+use the same Project-scoped Core RBAC and audit boundary as the other Agent
+tools. `artifact.upload` creates an immutable Artifact classified as
+`kind=agent` and `source=agent`; `artifact.read` reads an authorized attached
+Artifact. OpenAPI request,
 identity, Grant, and credential schemas use the same enum as the Core Agent
 domain; a syntactically valid but unowned MCP Tool name is therefore rejected
 at the browser/Core contract boundary. Expanding this set requires an explicit

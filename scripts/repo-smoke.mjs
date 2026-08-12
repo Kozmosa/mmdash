@@ -14,8 +14,18 @@ export async function runRepoSmoke({
 
   const codeHead = createFixtureCommit({
     branch: "main",
-    content: "Stage 1 initial code\n",
-    file: "README.md",
+    files: {
+      "README.md": "Stage 1 initial code\n",
+      "run.py": `import os
+
+print("MMDASH_STAGE8_STDOUT", flush=True)
+os.makedirs("/output/tables", exist_ok=True)
+with open("/output/summary.md", "w", encoding="utf-8") as handle:
+    handle.write("Stage 8 terminal acceptance passed\\n")
+with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
+    handle.write("x,y\\n1,2\\n")
+`,
+    },
     message: "Initial code",
     remote,
   });
@@ -259,7 +269,9 @@ export async function runRepoSmoke({
   return {
     code_head: codeHead,
     detected_head: nextCodeHead,
+    fixture_root: fixtureRoot,
     project_id: projectId,
+    remote,
     repository_id: repositoryId,
   };
 }
@@ -268,15 +280,23 @@ function createFixtureCommit({
   branch,
   content,
   file,
+  files,
   message,
   parent,
   remote,
 }) {
-  const blob = git(remote, ["hash-object", "-w", "--stdin"], {
-    input: content,
-  }).stdout.trim();
+  const entries = files ?? { [file]: content };
+  const treeInput = Object.entries(entries)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([path, value]) => {
+      const blob = git(remote, ["hash-object", "-w", "--stdin"], {
+        input: value,
+      }).stdout.trim();
+      return `100644 blob ${blob}\t${path}`;
+    })
+    .join("\n");
   const tree = git(remote, ["mktree"], {
-    input: `100644 blob ${blob}\t${file}\n`,
+    input: `${treeInput}\n`,
   }).stdout.trim();
   const args = ["commit-tree", tree];
   if (parent) args.push("-p", parent);

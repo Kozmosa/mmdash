@@ -1709,6 +1709,163 @@ export class CoreClient {
     );
   }
 
+  async listExperiments(
+    projectId: string,
+    context: CoreRequestContext,
+    options: { cursor?: string; limit?: number; status?: string } = {},
+  ): Promise<components["schemas"]["ExperimentPage"]> {
+    const query = new URLSearchParams();
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.limit) query.set("limit", String(options.limit));
+    if (options.status) query.set("status", options.status);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createExperiment(
+    projectId: string,
+    input: components["schemas"]["CreateExperimentRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Experiment"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async getExperiment(
+    projectId: string,
+    experimentId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Experiment"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async compareExperiments(
+    projectId: string,
+    experimentIds: string[],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ExperimentComparison"]> {
+    const query = new URLSearchParams();
+    query.set("experiment_id", experimentIds.join(","));
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments/compare?${query.toString()}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async runExperiment(
+    projectId: string,
+    experimentId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Experiment"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/run`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async cancelExperiment(
+    projectId: string,
+    experimentId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Experiment"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/cancel`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async archiveExperiment(
+    projectId: string,
+    experimentId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Experiment"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/archive`,
+      { method: "POST" },
+      context,
+    );
+  }
+
+  async listExperimentLogs(
+    projectId: string,
+    experimentId: string,
+    context: CoreRequestContext,
+    options: { offset?: number; limit?: number } = {},
+  ): Promise<components["schemas"]["ExperimentLogPage"]> {
+    const query = new URLSearchParams();
+    if (options.offset !== undefined) query.set("offset", String(options.offset));
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/logs${suffix}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getExperimentResult(
+    projectId: string,
+    experimentId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ResultBundle"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(experimentId)}/result`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async listBoxes(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["BoxList"]> {
+    return this.request(
+      `/v1/boxes?project_id=${encodeURIComponent(projectId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async getBox(
+    boxId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Box"]> {
+    return this.request(`/v1/boxes/${encodeURIComponent(boxId)}`, { method: "GET" }, context);
+  }
+
+  async bindBox(
+    projectId: string,
+    boxId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["Box"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/box`,
+      { body: { box_id: boxId }, method: "PUT" },
+      context,
+    );
+  }
+
+  async unbindBox(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(`/v1/projects/${encodeURIComponent(projectId)}/box`, { method: "DELETE" }, context);
+  }
+
   async request<T>(
     path: string,
     options: CoreRequestOptions,

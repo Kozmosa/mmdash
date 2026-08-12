@@ -441,6 +441,40 @@ func (store *memoryStore) RevokeToken(
 	return ErrNotFound
 }
 
+func (store *memoryStore) RevokeManagedToken(
+	_ context.Context,
+	tokenID string,
+	projectID string,
+	kind string,
+	now time.Time,
+) error {
+	for hash, token := range store.tokens {
+		if token.ID == tokenID && token.ProjectID == projectID && token.Kind == kind {
+			token.RevokedAt = &now
+			store.tokens[hash] = token
+			return nil
+		}
+	}
+	return ErrNotFound
+}
+
+func TestRevokeManagedTokenUsesProjectScopedAuthLifecycle(t *testing.T) {
+	now := time.Date(2026, time.August, 11, 10, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	store.tokens["hash"] = Token{ID: "token-1", UserID: "creator", ProjectID: "project-1", Kind: "box"}
+	service := Service{Clock: clock.Fixed{Time: now}, ProjectTokens: projectAuthorizerStub{}, Store: store}
+
+	if err := service.RevokeManagedToken(context.Background(), Identity{Kind: "session", User: User{ID: "manager"}}, "project-1", "box", "token-1"); err != nil {
+		t.Fatalf("revoke managed token: %v", err)
+	}
+	if token := store.tokens["hash"]; token.RevokedAt == nil || !token.RevokedAt.Equal(now) {
+		t.Fatalf("managed token was not revoked: %#v", token)
+	}
+	if err := service.RevokeManagedToken(context.Background(), Identity{}, "project-1", "api", "token-1"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unexpected invalid-kind result: %v", err)
+	}
+}
+
 func TestSessionLoginAuthenticationAndRevocation(t *testing.T) {
 	now := time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
 	store := newMemoryStore()

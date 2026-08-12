@@ -246,6 +246,14 @@ type Store interface {
 	DeleteUser(context.Context, string) error
 }
 
+// ManagedTokenStore lets a product domain revoke one of its own
+// project-scoped generic credentials after the caller has passed project
+// token-management authorization. The Auth domain remains the only writer of
+// credential lifecycle state.
+type ManagedTokenStore interface {
+	RevokeManagedToken(context.Context, string, string, string, time.Time) error
+}
+
 // AgentTokenStore is kept separate from Store so lightweight Auth test doubles
 // and non-product deployments do not accidentally implement the Agent token
 // lifecycle with generic user token semantics.
@@ -1081,6 +1089,30 @@ func (service Service) ListTokens(ctx context.Context, identity Identity) ([]Tok
 // RevokeToken revokes one token owned by the caller.
 func (service Service) RevokeToken(ctx context.Context, identity Identity, tokenID string) error {
 	return service.Store.RevokeToken(ctx, identity.User.ID, tokenID, service.Clock.Now().UTC())
+}
+
+// RevokeManagedToken revokes a project-scoped generic credential owned by a
+// product domain. It is intentionally separate from RevokeToken, whose public
+// user-facing semantics only allow a caller to revoke their own credentials.
+func (service Service) RevokeManagedToken(
+	ctx context.Context,
+	identity Identity,
+	projectID string,
+	kind string,
+	tokenID string,
+) error {
+	projectID, kind, tokenID = strings.TrimSpace(projectID), strings.TrimSpace(kind), strings.TrimSpace(tokenID)
+	if projectID == "" || tokenID == "" || kind != "box" {
+		return ErrInvalid
+	}
+	if service.ProjectTokens == nil || service.ProjectTokens.AuthorizeTokenManagement(ctx, identity, projectID) != nil {
+		return ErrForbidden
+	}
+	store, ok := service.Store.(ManagedTokenStore)
+	if !ok {
+		return fmt.Errorf("managed token store is not configured")
+	}
+	return store.RevokeManagedToken(ctx, tokenID, projectID, kind, service.Clock.Now().UTC())
 }
 
 func (service Service) signJWT(claims jwtClaims) (string, error) {
