@@ -81,6 +81,72 @@ func TestProgressProjectReferenceMigrationFreshUpDownUp(t *testing.T) {
 	assertConstraintExists(t, ctx, connection, "progress_tasks_project_milestone_fk", true)
 }
 
+func TestProgressHumanWorkbenchMigrationFreshUpDownUp(t *testing.T) {
+	db := openProgressMigrationDatabase(t)
+	connection, _ := newProgressMigrationSchema(t, db)
+	ctx := context.Background()
+	applyProgressMigrationBase(t, ctx, connection)
+	execProgressMigration(t, ctx, connection, "000024_progress_project_references.up.sql")
+	if _, err := connection.ExecContext(ctx, `ALTER TABLE progress_proposals ADD COLUMN source_evaluation_id UUID`); err != nil {
+		t.Fatalf("add tracking provenance fixture column: %v", err)
+	}
+
+	generator := identity.Generator{}
+	owner, project := generator.MustNew(), generator.MustNew()
+	taskID, milestoneID := generator.MustNew(), generator.MustNew()
+	taskProposalID, milestoneProposalID := generator.MustNew(), generator.MustNew()
+	now := time.Date(2026, time.August, 11, 5, 0, 0, 0, time.UTC)
+	if _, err := connection.ExecContext(ctx, `INSERT INTO auth_users(user_id,email,display_name,password_hash,status,created_at,updated_at) VALUES($1,$2,'Workbench Migration Owner','test','active',$3,$3)`, owner, owner+"@workbench-migration.test", now); err != nil {
+		t.Fatalf("seed workbench migration owner: %v", err)
+	}
+	if _, err := connection.ExecContext(ctx, `INSERT INTO projects(project_id,name,created_by,created_at,updated_at) VALUES($1,'Workbench Migration Project',$2,$3,$3)`, project, owner, now); err != nil {
+		t.Fatalf("seed workbench migration project: %v", err)
+	}
+	if _, err := connection.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role,created_at,updated_at) VALUES($1,$2,'owner',$3,$3)`, project, owner, now); err != nil {
+		t.Fatalf("seed workbench migration member: %v", err)
+	}
+	if _, err := connection.ExecContext(ctx, `INSERT INTO progress_milestones(milestone_id,project_id,title,status,source,created_by,updated_by,created_at,updated_at) VALUES($1,$2,'Legacy cancelled milestone','cancelled','human',$3,$3,$4,$4)`, milestoneID, project, owner, now); err != nil {
+		t.Fatalf("seed workbench migration milestone: %v", err)
+	}
+	if _, err := connection.ExecContext(ctx, `INSERT INTO progress_tasks(task_id,project_id,title,status,source,created_by,updated_by,created_at,updated_at) VALUES($1,$2,'Legacy cancelled task','cancelled','human',$3,$3,$4,$4)`, taskID, project, owner, now); err != nil {
+		t.Fatalf("seed workbench migration task: %v", err)
+	}
+
+	execProgressMigration(t, ctx, connection, "000037_progress_human_workbench.up.sql")
+	var taskStatus, workState, milestoneStatus string
+	var targetHasTime bool
+	if err := connection.QueryRowContext(ctx, `SELECT status,work_state FROM progress_tasks WHERE task_id=$1`, taskID).Scan(&taskStatus, &workState); err != nil {
+		t.Fatalf("read migrated task: %v", err)
+	}
+	if err := connection.QueryRowContext(ctx, `SELECT status,target_has_time FROM progress_milestones WHERE milestone_id=$1`, milestoneID).Scan(&milestoneStatus, &targetHasTime); err != nil {
+		t.Fatalf("read migrated milestone: %v", err)
+	}
+	if taskStatus != TaskTodo || workState != TaskTodo || milestoneStatus != StatusPlanned || targetHasTime {
+		t.Fatalf("unexpected migrated state: task=%s work=%s milestone=%s has_time=%v", taskStatus, workState, milestoneStatus, targetHasTime)
+	}
+	if _, err := connection.ExecContext(ctx, `
+		INSERT INTO progress_proposals(proposal_id,project_id,proposal_type,target_id,title,changes,source,proposed_by,status,created_at,updated_at)
+		VALUES
+		($1,$3,'task.complete',$4,'Complete task','{}'::jsonb,'system',$5,'pending',$6,$6),
+		($2,$3,'milestone.complete',$7,'Complete milestone','{}'::jsonb,'system',$5,'pending',$6,$6)
+	`, taskProposalID, milestoneProposalID, project, taskID, owner, now, milestoneID); err != nil {
+		t.Fatalf("seed completion proposals: %v", err)
+	}
+
+	execProgressMigration(t, ctx, connection, "000037_progress_human_workbench.down.sql")
+	var taskProposalType, taskCompletionStatus, milestoneProposalType, milestoneCompletionStatus string
+	if err := connection.QueryRowContext(ctx, `SELECT proposal_type,changes->>'status' FROM progress_proposals WHERE proposal_id=$1`, taskProposalID).Scan(&taskProposalType, &taskCompletionStatus); err != nil {
+		t.Fatalf("read rolled-back task proposal: %v", err)
+	}
+	if err := connection.QueryRowContext(ctx, `SELECT proposal_type,changes->>'status' FROM progress_proposals WHERE proposal_id=$1`, milestoneProposalID).Scan(&milestoneProposalType, &milestoneCompletionStatus); err != nil {
+		t.Fatalf("read rolled-back milestone proposal: %v", err)
+	}
+	if taskProposalType != "task.update" || taskCompletionStatus != TaskDone || milestoneProposalType != "milestone.update" || milestoneCompletionStatus != StatusCompleted {
+		t.Fatalf("completion proposal rollback lost meaning: task=%s/%s milestone=%s/%s", taskProposalType, taskCompletionStatus, milestoneProposalType, milestoneCompletionStatus)
+	}
+	execProgressMigration(t, ctx, connection, "000037_progress_human_workbench.up.sql")
+}
+
 func TestProgressProjectReferenceMigrationRejectsDirtyDataTransactionally(t *testing.T) {
 	db := openProgressMigrationDatabase(t)
 	connection, _ := newProgressMigrationSchema(t, db)

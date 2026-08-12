@@ -30,8 +30,8 @@ The repository-root `Caddyfile` is the authoritative public route map for
 | ------------------- | ------------------- | -------------------------------------- |
 | `/`                 | Web `:3000`         | Browser pages and static assets        |
 | `/api/*`            | Web BFF `:3001`     | Browser API, files, SSE, and WebSocket |
+| `/v1/*`             | Web BFF `:3001`     | Controlled user/CLI API                |
 | `/mcp` and `/mcp/*` | MCP Gateway `:3002` | Streamable HTTP MCP                    |
-| `/box` and `/box/*` | Core `:8080`        | Box control-plane traffic              |
 
 Caddy preserves these path prefixes. Reverse proxies support WebSocket upgrade
 and use low-latency response flushing for streams.
@@ -39,8 +39,9 @@ and use low-latency response flushing for streams.
 ## Contract rules
 
 - Every operation has a stable, searchable `operationId`.
-- `/v1/*` is the Core API. Browsers reach browser-safe projections under
-  `/api/*` through Web BFF.
+- `/v1/*` is the Core contract, but public traffic terminates at Web BFF;
+  Core itself remains private. Browsers use browser-safe projections under
+  `/api/*`, while CLI/user API calls use the controlled `/v1/*` proxy.
 - MCP methods are cataloged here and implemented by MCP Gateway; they never
   access storage directly.
 - Error responses use a stable code, a safe message, and a `request_id` when a

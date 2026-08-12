@@ -311,6 +311,7 @@ func (module Module) handleAgentTokenVerification(response http.ResponseWriter, 
 	evidence, err := module.Service.RecordAgentTokenVerification(
 		request.Context(), identity, parts[0], RecordAgentTokenVerificationInput{
 			AgentInstanceID: body.AgentInstanceID,
+			Challenge:       body.Challenge,
 			MCPMethod:       body.McpMethod,
 			MCPSessionID:    body.McpSessionID,
 			ProjectID:       body.ProjectID,

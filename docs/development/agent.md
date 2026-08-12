@@ -25,6 +25,14 @@ After Stage 4 fixes are integrated, migration `000026_agent_sessions` owns:
 - resource-scoped encrypted Settings values for per-instance Hermes secrets;
 - Context Proposal actor kind plus optional Agent Session/Run provenance.
 
+Migration `000034_agent_instance_removal` adds recoverable `removed_at`
+semantics. Instance deletion revokes access and hides the row from ordinary
+reads without deleting Session, Run, Audit, or Artifact history. Migration
+`000035_agent_artifact` adds Agent Artifact classification and binds each Agent
+upload session to its exact `agent_instance_id`. Migration
+`000036_agent_chat_artifacts` records the exact Agent Session/Run provenance for
+chat-delivered Artifact uploads and permits `agent_run` Artifact relations.
+
 Migration `000027_agent_run_approvals` adds the Runtime-neutral approval
 lifecycle index without rewriting `000026`: each stable mmdash approval ID is
 bound to its local Run and remains `pending`, short-lease `responding`,
@@ -91,9 +99,10 @@ claims reuse the same local ID, but the pinned Hermes wire request cannot carry
 it. Provider-targetable approval IDs require a future verified Hermes contract
 and a new pin; do not add an unrecognized `approval_id` field to this version.
 
-Hermes Jobs are mapped and probed in this stage but are not scheduled by the
-product. Do not add automatic Progress evaluation, Cron creation, event
-consumers, debounce, or Stage 6 triggers here.
+Hermes Jobs are mapped and probed in this stage but are not used for automatic
+Progress evaluation. Stage 6 stores Cron policy, due time, claim lease, and
+retry state in mmdash Core/PostgreSQL; Hermes only executes the Agent Run that
+Core queues. Do not create or synchronize a Hermes Job for a Progress schedule.
 
 `StreamChat` is a tested interface port (session event streaming). The current
 product message path executes through StartRun plus StreamRun so that Run
@@ -164,31 +173,88 @@ in the same fully negotiated, credential-owned MCP session. Gateway also
 accepts legacy MCP `initialize` as negotiation for compatible clients, but
 neither negotiation request is evidence by itself. The pending credential may
 discover only its reviewed exact Tool grant and cannot execute any
-`tools/call`. After the list succeeds, MCP Gateway records durable evidence
-through a dedicated trusted Core callback. Authentication and `/auth/me` also
-never create evidence.
+`tools/call`. The one-time MCP endpoint carries a high-entropy challenge; Core
+stores only its hash. After the list succeeds, MCP Gateway calls Core with that
+challenge and the same pending Agent Token. Core accepts only the exact pending
+Token/Agent/Project identity, atomically consumes the challenge, and records
+durable evidence. Authentication and `/auth/me` never create evidence.
 
-The callback uses the Core API credential whose plaintext is configured as
-`MCP_CORE_ACCESS_TOKEN`; Core accepts it only when its token ID matches
-`AUTH_AGENT_VERIFICATION_TOKEN_ID`. Keep these values paired and separate from
-the pending Agent Token. If the callback is unavailable, verification fails
-closed and any previous active Token remains valid.
+There is no Gateway access credential. If the challenge callback is missing,
+stale, mismatched, or unavailable, verification fails closed and any previous
+active Token remains valid. After activation, Gateway forwards the original
+Agent Token for business requests. Core authenticates it as a first-class,
+Project-scoped identity and remains the final RBAC authority.
 
-The same dedicated credential attests active Agent business requests in the
-internal `X-Mmdash-Gateway-Authorization` header while the Agent Token remains
-the primary `Authorization` identity. Direct Agent access is limited to
-`GET /v1/auth/me`; all other `/v1` routes fail closed without the exact trusted
-Gateway Token ID, admin role, and compatible Project scope. Never replace this
-check with a caller-controlled Tool-name header.
+Core is reachable only on the private deployment network. Caddy sends the
+public user/CLI `/v1` surface to Web BFF, which accepts user sessions, user API
+Tokens, and explicitly public signed operations, but rejects Agent and service
+credentials. Hermes reaches Agent capabilities only through MCP Gateway.
 
 ## Session, Run, SSE, and Context acceptance
 
-Exercise create/list/get/rename/end/continue/fork/default for all stable
-Session types. Logical end must not delete Hermes history. Product chat starts
+Exercise internal create/list/get/rename/end/continue/fork/default for all
+stable Session types. Human BFF/Web creation must accept only `main` and hide
+internal `progress`/`experiment` Sessions. Logical end must not delete Hermes history. Product chat starts
 a Hermes Run, persists local/remote IDs, streams normalized SSE without proxy
 buffering, renders safe Tool Call progress, responds to a stable approval ID,
 and stops the same Run. Regenerate must fork and replay; rerun must replay in
 the current Session.
+
+Starting a Run must first read its Hermes Session messages and pass the newest
+200 non-empty user/assistant turns as explicit `conversation_history`. Do not
+assume that sending only the remote Session ID preserves model memory across
+independent API Runs. Core also supplies a bounded newest-first ledger of files
+attached to earlier Runs in the same Session. Current attachments are explicit
+first-class inputs and the Run instruction tells Hermes to inspect any relevant
+file proactively through `artifact.read`, even when the user asks about its
+contents without saying "read" or "open".
+
+The Web workbench is viewport-filling rather than max-width constrained. Its
+Session rail and context drawer collapse independently, Session naming appears
+only after New, and lifecycle actions are in the right-click/kebab menu. The
+chat owns its scroll container with overscroll containment; Enter sends,
+Shift+Enter inserts a newline, and Stop occupies the composer action. A
+persisted non-terminal Run reattaches to SSE without a refresh. Safe reasoning
+status and normalized Tool progress render inside the transcript; final history
+reconciliation must not overwrite a newer streamed answer with stale data.
+Markdown uses sanitized rendering and KaTeX for inline/display math without
+creating invalid paragraph hydration markup. Both the generated Project Prompt
+and per-Run instructions advertise that renderer support explicitly, including
+the accepted inline/display delimiters; per-Run repetition also covers existing
+Hermes Sessions and Project Prompt overrides.
+
+Every Session projection includes its latest `last_run_id`. Switching Sessions
+aborts only the local subscription; returning queries that Run, restores its
+non-terminal state, and reconnects SSE. The composer persists a per-Agent
+reasoning preference. `auto` omits the field, while the eight explicit values
+are validated by Web BFF/Core and sent to Hermes as
+`model_options.reasoning_effort`.
+
+A generic SSE `error` is a recoverable transport signal, not a Run terminal
+state. While Core still reports the Run as non-terminal, the Web client resumes
+the same stream with the last event ID and bounded exponential backoff; it does
+not expose an upstream "stream ended unexpectedly" message as if the Agent had
+failed. Output Artifact projections remain withheld from the transcript until
+the Run settles, then use the Run terminal timestamp so files cannot appear
+inside an active reasoning/Tool chain. Persisted Hermes message Tool Calls are
+normalized to terminal history instead of retaining an omitted/stale `running`
+status; live status remains owned by Run SSE.
+
+The workbench polls Session and message projections every two seconds in the
+background so a second browser tab converges without a manual refresh while SSE
+continues to own the active Run stream. The selected Agent and Session are
+encoded in the page URL. Session-rail collapse is persisted per Project/Agent,
+and the workspace navigation collapse is persisted globally, so a refresh keeps
+the current conversation and both layout choices.
+
+At viewports narrower than `1280px`, the context drawer starts collapsed so it
+cannot cover the composer action; resizing across that breakpoint updates the
+drawer automatically, while the header control can still open it as an overlay.
+Creating or forking a Session must use the same state-transition path as an
+explicit Session selection: abort the old stream and clear its active Run,
+draft, Tool Calls, approvals, and reasoning state before enabling the new
+composer. This prevents a stale stop action from addressing a Run owned by the
+previous Session.
 
 `context.promote` accepts optional local `agent_session_id` and `agent_run_id`
 only as a pair. Core must verify that both belong to the authenticated Agent
@@ -203,6 +269,20 @@ automatic evaluation. Runs created by this path persist
 terminal events are excluded from automatic Progress triggers to prevent a
 self-loop. The reviewed Agent Tool scope now also includes `progress.get` and
 `progress.recalculate`; no wildcard or direct Progress-table path is added.
+
+The reviewed scope also includes `artifact.read` and `artifact.upload`.
+Acceptance must cover one
+direct multipart image/file upload with the inbound Agent Token, exact
+size/SHA-256/ETag verification, `kind/source=agent`, same-instance continuation,
+cross-instance denial, and visibility in the Artifact library/Data Hub. File
+bytes must not appear in MCP JSON, Gateway/Core logs, or Audit metadata.
+The composer path must upload `kind=attachment`, bind the immutable Version to
+the next Run, and let Hermes retrieve it through `artifact.read`. Agent uploads
+with validated Session/Run provenance must appear as inline image previews or
+file cards. Selecting a card opens the Artifact detail drawer in place without
+leaving the Agent page; downloading remains an explicit action in that drawer.
+Persisted replies and Tool Calls replace matching streamed state without
+duplicates.
 
 ## Focused checks
 
@@ -225,11 +305,9 @@ interoperability was not executed.
 
 The pinned mock acceptance lives in `scripts/mock-hermes.mjs` and
 `scripts/agent-smoke.mjs` with the port-isolated
-`deploy/compose/compose.acceptance.yaml` override. Agent smoke needs the
-paired Gateway attestation credential: create a Core admin API token after
-the first start, then restart `core` and `mcp-gateway` with
-`AUTH_AGENT_VERIFICATION_TOKEN_ID` and `MCP_CORE_ACCESS_TOKEN` before running
-`node scripts/agent-smoke.mjs`.
+`deploy/compose/compose.acceptance.yaml` override. The smoke path issues a
+pending Agent Token, uses its challenged one-time MCP endpoint, and needs no
+additional Gateway credential before running `node scripts/agent-smoke.mjs`.
 
 For a real-runtime release check, run the pinned Hermes tag in a separate
 state directory and inject its model-provider credential only into the Hermes

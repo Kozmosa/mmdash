@@ -17,8 +17,7 @@ type AgentTokenRotationResult =
   components["schemas"]["AgentTokenRotationResult"];
 type AgentTokenVerificationResult =
   components["schemas"]["AgentTokenVerificationResult"];
-type AgentTokenAbortResult =
-  components["schemas"]["AgentTokenAbortResult"];
+type AgentTokenAbortResult = components["schemas"]["AgentTokenAbortResult"];
 type AgentPrompt = components["schemas"]["AgentPrompt"];
 type AgentSession = components["schemas"]["AgentSession"];
 type AgentSessionList = components["schemas"]["AgentSessionList"];
@@ -32,7 +31,9 @@ const instanceParamsSchema = projectParamsSchema.extend({
   agentInstanceId: idSchema,
 });
 const tokenParamsSchema = instanceParamsSchema.extend({ tokenId: idSchema });
-const sessionParamsSchema = instanceParamsSchema.extend({ sessionId: idSchema });
+const sessionParamsSchema = instanceParamsSchema.extend({
+  sessionId: idSchema,
+});
 const runParamsSchema = sessionParamsSchema.extend({ runId: idSchema });
 const approvalParamsSchema = runParamsSchema.extend({
   approvalId: z.string().trim().min(1).max(500),
@@ -54,7 +55,10 @@ const reservedProfileNames = new Set(["hermes", "test", "tmp", "root", "sudo"]);
 const profileSchema = z
   .string()
   .regex(profileIdPattern, "Invalid Hermes profile")
-  .refine((value) => !reservedProfileNames.has(value), "Reserved Hermes profile");
+  .refine(
+    (value) => !reservedProfileNames.has(value),
+    "Reserved Hermes profile",
+  );
 const hermesApiKeySchema = z.string().min(16).max(4_096);
 const dashboardSessionTokenSchema = z.string().min(16).max(4_096);
 const cloudflareClientIdSchema = z.string().min(1).max(4_096);
@@ -66,12 +70,14 @@ const toolNameSchema = z.enum([
   "context.promote",
   "progress.get",
   "progress.recalculate",
+  "artifact.upload",
+  "artifact.read",
   "experiment.create",
   "experiment.run",
   "experiment.status",
   "result.get",
 ]);
-const allowedToolsSchema = z.array(toolNameSchema).min(1).max(10).superRefine(
+const allowedToolsSchema = z.array(toolNameSchema).min(1).max(12).superRefine(
   (tools, context) => {
     if (new Set(tools).size !== tools.length) {
       context.addIssue({
@@ -79,8 +85,7 @@ const allowedToolsSchema = z.array(toolNameSchema).min(1).max(10).superRefine(
         message: "Allowed tools must be unique",
       });
     }
-  },
-);
+  });
 
 const createInstanceSchema = z
   .object({
@@ -129,7 +134,8 @@ const createInstanceSchema = z
     if (hasCloudflareId !== hasCloudflareSecret) {
       context.addIssue({
         code: "custom",
-        message: "Cloudflare Access client ID and secret must be provided together",
+        message:
+          "Cloudflare Access client ID and secret must be provided together",
         path: ["cloudflare_access_client_id"],
       });
     }
@@ -158,7 +164,8 @@ const updateInstanceSchema = z
     if (hasCloudflareId !== hasCloudflareSecret) {
       context.addIssue({
         code: "custom",
-        message: "Cloudflare Access client ID and secret must be provided together",
+        message:
+          "Cloudflare Access client ID and secret must be provided together",
         path: ["cloudflare_access_client_id"],
       });
     }
@@ -186,7 +193,7 @@ const rotateSchema = z.object({
 const updatePromptSchema = z.object({ content: z.string().min(1).max(50_000) });
 const createSessionSchema = z.object({
   default: z.boolean().optional(),
-  session_type: z.enum(["main", "progress", "experiment"]),
+  session_type: z.literal("main"),
   title: z.string().trim().min(1).max(255),
 });
 const updateSessionSchema = z.object({
@@ -200,7 +207,11 @@ const forkSessionSchema = z.object({
   title: z.string().trim().min(1).max(255).optional(),
 });
 const startRunSchema = z.object({
+  artifact_ids: z.array(z.string().uuid()).max(10).optional(),
   message: z.string().trim().min(1).max(100_000),
+  reasoning_effort: z
+    .enum(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"])
+    .optional(),
 });
 const replayRunSchema = z.object({
   message_id: z.string().trim().min(1).max(500).optional(),
@@ -793,9 +804,7 @@ const forbiddenResponseKeys = new Set([
 
 function redactUnexpectedSecrets<T>(value: T, parentKey?: string): T {
   if (Array.isArray(value)) {
-    return value.map((item) =>
-      redactUnexpectedSecrets(item, parentKey),
-    ) as T;
+    return value.map((item) => redactUnexpectedSecrets(item, parentKey)) as T;
   }
   if (typeof value !== "object" || value === null) {
     return value;
@@ -803,7 +812,8 @@ function redactUnexpectedSecrets<T>(value: T, parentKey?: string): T {
 
   const output: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    const oneTimeAgentToken = parentKey === "one_time_credential" && key === "token";
+    const oneTimeAgentToken =
+      parentKey === "one_time_credential" && key === "token";
     if (!oneTimeAgentToken && forbiddenResponseKeys.has(key.toLowerCase())) {
       continue;
     }

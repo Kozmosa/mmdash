@@ -9,10 +9,10 @@ and [`contracts/openapi/web-bff.yaml`](../../contracts/openapi/web-bff.yaml).
 | --- | --- | --- | --- |
 | Progress aggregate | `progress.get` | `bff.progress.get` | Project Progress read |
 | Milestones | `progress.milestones.*` | `bff.progress.milestones.*` | Human session mutations |
-| Tasks | `progress.tasks.*` | `bff.progress.tasks.*` | Agent Task changes obey `auto_task_changes` |
+| Tasks | `progress.tasks.*` | `bff.progress.tasks.*` | Human mutations; Agent scheduling changes are Proposals |
 | Dependencies | `progress.dependencies.*` | `bff.progress.dependencies.*` | Human session mutations |
 | Reminders | `progress.reminders.*` | `bff.progress.reminders.*` | Core automatically publishes due events to Notification |
-| Proposals | `progress.proposals.*` | `bff.progress.proposals.*` | Non-human creation; human review |
+| Proposals | `progress.proposals.*` | `bff.progress.proposals.*` | Non-human creation; individual or atomic batch human review |
 | Settings | `progress.settings.*` | `bff.progress.settings.*` | Human Project management |
 
 All browser routes use the selected Project context from the BFF session and
@@ -48,3 +48,16 @@ trigger operation use the same PostgreSQL claim and completion path, so only
 one of them can publish `progress.reminder.due`. The event ID is the globally
 unique Reminder UUID, and the `triggered` state plus Outbox row commit in one
 transaction.
+
+Task completion and automatic work state are deliberately separate. `status`
+retains the human completion authority (`done` versus open), while the
+read-only `work_state` records the latest automatic `todo`, `in_progress`, or
+`blocked` assessment. Reopening a completed Task therefore restores its last
+work state instead of erasing the Agent assessment.
+
+An evaluation never directly creates or reschedules a Task or Milestone and
+never directly completes one. Those outputs become pending Progress Proposals;
+`task.complete` and `milestone.complete` are the only completion suggestion
+types. The batch-review endpoint applies all selected proposals in one
+transaction or rolls the whole batch back. Work-state updates are the sole
+automatic task mutation and do not require confirmation.

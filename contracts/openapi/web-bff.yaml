@@ -751,10 +751,10 @@ paths:
               schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult" }
     delete:
       tags: [Agent]
-      summary: Disable an Agent instance
+      summary: Remove an Agent instance
       operationId: bff.agent.instances.disable
       responses:
-        "204": { description: Instance disabled and credentials revoked. }
+        "204": { description: Instance removed from the workspace and credentials revoked. }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/checks:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -1267,6 +1267,11 @@ paths:
                   schema: { $ref: "./core.yaml#/components/schemas/Milestone" },
                 },
             }
+    delete:
+      tags: [Progress]
+      summary: Delete a Progress milestone
+      operationId: bff.progress.milestones.delete
+      responses: { "204": { description: Milestone deleted. } }
   /api/projects/{projectId}/progress/tasks:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
@@ -1543,11 +1548,33 @@ paths:
                     },
                 },
             }
+  /api/projects/{projectId}/progress/proposals/batch-review:
+    parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+    post:
+      tags: [Progress]
+      summary: Review a set of Progress Proposals atomically
+      operationId: bff.progress.proposals.batch_review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/BatchReviewProgressProposalsRequest"
+      responses:
+        "200":
+          description: Reviewed proposals.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ProgressProposalList"
   /api/projects/{projectId}/progress/settings:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
       tags: [Progress]
       summary: Read Progress settings
+      description: >-
+        Reads the project-owned automatic evaluation policy and mmdash
+        scheduler timestamps.
       operationId: bff.progress.settings.get
       responses:
         "200":
@@ -1565,6 +1592,9 @@ paths:
     patch:
       tags: [Progress]
       summary: Update Progress settings
+      description: >-
+        Updates the automatic evaluation policy owned by mmdash Core. The
+        selected Agent executes evaluation Runs but does not own the schedule.
       operationId: bff.progress.settings.update
       requestBody:
         required: true

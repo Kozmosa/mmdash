@@ -7,11 +7,10 @@ import (
 
 func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	environment := map[string]string{
-		"AUTH_AGENT_VERIFICATION_TOKEN_ID": "11111111-1111-4111-8111-111111111111",
-		"DATABASE_URL":                     "postgres://mmdash:test@localhost/mmdash",
-		"OBJECT_STORAGE_ACCESS_KEY":        "access",
-		"OBJECT_STORAGE_ENDPOINT":          "http://localhost:9000",
-		"OBJECT_STORAGE_SECRET_KEY":        "secret",
+		"DATABASE_URL":              "postgres://mmdash:test@localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
 	}
 
 	config, err := Load(mapLookup(environment))
@@ -72,7 +71,6 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 		t.Fatalf("unexpected Agent connector defaults: %+v", config.Agent)
 	}
 	if config.Auth.AccessTokenTTL != 24*time.Hour ||
-		config.Auth.AgentVerificationTokenID != "11111111-1111-4111-8111-111111111111" ||
 		config.Auth.SessionTTL != 30*24*time.Hour ||
 		config.Auth.DeviceAuthorizationTTL != 10*time.Minute ||
 		config.Auth.DevicePollInterval != 5*time.Second {

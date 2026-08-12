@@ -45,6 +45,21 @@ func (store PostgresStore) CreateFirst(
 		if err := insertUpload(ctx, tx, upload); err != nil {
 			return mapPostgresError(err)
 		}
+		if artifact.Source == SourceAgent && upload.AgentRunID != "" {
+			relationID, err := store.Generator.New()
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO artifact_relations(
+					relation_id,project_id,artifact_id,version_id,
+					relation_type,target_type,target_id,created_by,created_at
+				) VALUES($1,$2,$3,$4,'output','agent_run',$5,$6,$7)
+			`, relationID, artifact.ProjectID, artifact.ID, version.ID,
+				upload.AgentRunID, artifact.CreatedBy, artifact.CreatedAt); err != nil {
+				return mapPostgresError(err)
+			}
+		}
 		if artifact.Source == SourceModel {
 			if artifact.SourceObjectID == nil {
 				return ErrSourceInvalid
@@ -212,6 +227,114 @@ func (store PostgresStore) CreateVersion(
 		)
 	})
 	return upload, err
+}
+
+func (store PostgresStore) AttachToAgentRun(
+	ctx context.Context,
+	projectID string,
+	artifactID string,
+	runID string,
+	actorID string,
+	now time.Time,
+) (ChatAttachment, error) {
+	var item ChatAttachment
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var versionID string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT version.version_id
+			FROM artifact_artifacts AS artifact
+			JOIN artifact_versions AS version
+			  ON version.version_id=artifact.current_version_id
+			WHERE artifact.project_id=$1 AND artifact.artifact_id=$2
+			  AND artifact.status='available' AND version.status='available'
+			FOR UPDATE OF artifact
+		`, projectID, artifactID).Scan(&versionID); err != nil {
+			return mapNotFound(err)
+		}
+		relationID, err := store.Generator.New()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO artifact_relations(
+				relation_id,project_id,artifact_id,version_id,
+				relation_type,target_type,target_id,created_by,created_at
+			) VALUES($1,$2,$3,$4,'attachment','agent_run',$5,$6,$7)
+			ON CONFLICT (artifact_id,version_id,relation_type,target_type,target_id)
+			DO NOTHING
+		`, relationID, projectID, artifactID, versionID, runID, actorID, now); err != nil {
+			return mapPostgresError(err)
+		}
+		return store.audit(ctx, tx, "artifact.run.attached", projectID,
+			artifactID, map[string]interface{}{"run_id": runID, "version_id": versionID})
+	})
+	if err != nil {
+		return ChatAttachment{}, err
+	}
+	items, err := store.ListAgentRunAttachments(ctx, projectID, []string{runID})
+	if err != nil {
+		return ChatAttachment{}, err
+	}
+	for _, candidate := range items {
+		if candidate.ArtifactID == artifactID {
+			item = candidate
+			break
+		}
+	}
+	if item.ArtifactID == "" {
+		return ChatAttachment{}, ErrNotFound
+	}
+	return item, nil
+}
+
+func (store PostgresStore) ListAgentRunAttachments(
+	ctx context.Context,
+	projectID string,
+	runIDs []string,
+) ([]ChatAttachment, error) {
+	if len(runIDs) == 0 {
+		return []ChatAttachment{}, nil
+	}
+	placeholders := make([]string, len(runIDs))
+	args := make([]interface{}, 0, len(runIDs)+1)
+	args = append(args, projectID)
+	for index, runID := range runIDs {
+		placeholders[index] = fmt.Sprintf("$%d", index+2)
+		args = append(args, runID)
+	}
+	rows, err := store.DB.QueryContext(ctx, `
+		SELECT relation.artifact_id,relation.version_id,relation.target_id,
+		       CASE relation.relation_type WHEN 'attachment' THEN 'input' ELSE 'output' END,
+		       artifact.name,version.filename,version.mime_type,version.size_bytes,
+		       relation.created_at
+		FROM artifact_relations AS relation
+		JOIN artifact_artifacts AS artifact
+		  ON artifact.project_id=relation.project_id
+		 AND artifact.artifact_id=relation.artifact_id
+		JOIN artifact_versions AS version
+		  ON version.project_id=relation.project_id
+		 AND version.version_id=relation.version_id
+		WHERE relation.project_id=$1 AND relation.target_type='agent_run'
+		  AND relation.target_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND relation.relation_type IN ('attachment','output')
+		  AND artifact.status='available' AND version.status='available'
+		ORDER BY relation.created_at,relation.relation_id
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChatAttachment{}
+	for rows.Next() {
+		var item ChatAttachment
+		if err := rows.Scan(&item.ArtifactID, &item.VersionID, &item.RunID,
+			&item.Direction, &item.Name, &item.Filename, &item.MIMEType,
+			&item.SizeBytes, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (store PostgresStore) FindBlob(
@@ -1122,6 +1245,9 @@ const uploadSelect = `
 	       upload.provider_upload_id,upload.staging_key,upload.expected_sha256,
 	       upload.expected_size_bytes,upload.mime_type,upload.part_size_bytes,
 	       upload.part_count,upload.status,upload.idempotency_key,upload.created_by,
+	       COALESCE(upload.agent_instance_id::text,''),
+	       COALESCE(upload.agent_session_id::text,''),
+	       COALESCE(upload.agent_run_id::text,''),
 	       upload.expires_at,upload.completed_at,upload.aborted_at,
 	       COALESCE(upload.error_code,''),upload.created_at,upload.updated_at,
 	       version.filename,version.version_no,artifact.status
@@ -1205,7 +1331,8 @@ func scanUpload(scan scanner) (UploadSession, error) {
 		&upload.ProviderUploadID, &upload.StagingKey, &upload.ExpectedSHA256,
 		&upload.ExpectedSize, &upload.MIMEType, &upload.PartSizeBytes,
 		&upload.PartCount, &upload.Status, &upload.IdempotencyKey,
-		&upload.CreatedBy, &upload.ExpiresAt, &upload.CompletedAt,
+		&upload.CreatedBy, &upload.AgentInstanceID, &upload.AgentSessionID,
+		&upload.AgentRunID, &upload.ExpiresAt, &upload.CompletedAt,
 		&upload.AbortedAt, &upload.ErrorCode, &upload.CreatedAt,
 		&upload.UpdatedAt, &upload.Filename, &upload.VersionNo,
 		&upload.ArtifactStatus,
@@ -1285,16 +1412,19 @@ func insertUpload(
 			upload_id,project_id,artifact_id,version_id,provider_upload_id,
 			staging_key,expected_sha256,expected_size_bytes,mime_type,
 			part_size_bytes,part_count,status,idempotency_key,created_by,
+			agent_instance_id,agent_session_id,agent_run_id,
 			expires_at,completed_at,aborted_at,error_code,created_at,updated_at
 		) VALUES(
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-			$15,$16,$17,NULLIF($18,''),$19,$20
+			NULLIF($15,'')::uuid,NULLIF($16,'')::uuid,NULLIF($17,'')::uuid,
+			$18,$19,$20,NULLIF($21,''),$22,$23
 		)
 	`, upload.ID, upload.ProjectID, upload.ArtifactID, upload.VersionID,
 		upload.ProviderUploadID, upload.StagingKey, upload.ExpectedSHA256,
 		upload.ExpectedSize, upload.MIMEType, upload.PartSizeBytes,
 		upload.PartCount, upload.Status, upload.IdempotencyKey,
-		upload.CreatedBy, upload.ExpiresAt, upload.CompletedAt,
+		upload.CreatedBy, upload.AgentInstanceID, upload.AgentSessionID,
+		upload.AgentRunID, upload.ExpiresAt, upload.CompletedAt,
 		upload.AbortedAt, upload.ErrorCode, upload.CreatedAt, upload.UpdatedAt)
 	return err
 }

@@ -430,7 +430,8 @@ func (store PostgresStore) RevokeManagedToken(
 }
 
 func (store PostgresStore) CreateAgentToken(ctx context.Context, token AgentToken) error {
-	if token.ExpiresAt != nil && !token.ExpiresAt.After(token.CreatedAt) {
+	if (token.Status == "pending" && token.VerificationChallengeHash == "") ||
+		(token.ExpiresAt != nil && !token.ExpiresAt.After(token.CreatedAt)) {
 		return ErrConflict
 	}
 	tools, err := json.Marshal(token.AllowedTools)
@@ -494,14 +495,15 @@ func (store PostgresStore) CreateAgentToken(ctx context.Context, token AgentToke
 			INSERT INTO auth_agent_tokens (
 				token_id, agent_instance_id, grant_id, project_id, issued_by,
 				name, token_hash, allowed_tools, status, expires_at,
-				replaces_token_id, created_at
+				replaces_token_id, verification_challenge_hash, created_at
 			) VALUES (
 				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-				NULLIF($11, '')::uuid, $12
+				NULLIF($11, '')::uuid, $12, $13
 			)
 		`, token.ID, token.AgentInstanceID, token.GrantID, token.ProjectID,
 			token.IssuedBy, token.Name, token.TokenHash, tools, token.Status,
-			token.ExpiresAt, token.ReplacesTokenID, token.CreatedAt)
+			token.ExpiresAt, token.ReplacesTokenID, token.VerificationChallengeHash,
+			token.CreatedAt)
 		return err
 	})
 	if isUniqueViolation(err) {
@@ -585,21 +587,22 @@ func (store PostgresStore) MarkAgentTokenVerified(
 			verification_method = COALESCE(verification_method, $5),
 			verification_request_id = COALESCE(verification_request_id, $6),
 			verification_session_id = COALESCE(verification_session_id, $7),
-			verified_by_token_id = COALESCE(verified_by_token_id, $8),
-			verified_at = COALESCE(verified_at, $9)
+			verified_at = COALESCE(verified_at, $8),
+			verification_challenge_hash = NULL
 		WHERE token_id = $1 AND agent_instance_id = $2 AND project_id = $3
 		  AND status = 'pending' AND revoked_at IS NULL
-		  AND (expires_at IS NULL OR expires_at > $9)
+		  AND verification_challenge_hash = $9
+		  AND (expires_at IS NULL OR expires_at > $8)
 		RETURNING verification_evidence_id, token_id, agent_instance_id,
 			project_id, verification_method, verification_session_id,
-			verification_request_id, verified_at, verified_by_token_id
+			verification_request_id, verified_at
 	`, evidence.TokenID, evidence.AgentInstanceID, evidence.ProjectID,
 		evidence.EvidenceID, evidence.MCPMethod, evidence.RequestID,
-		evidence.MCPSessionID, evidence.VerifiedByTokenID,
-		evidence.VerifiedAt).Scan(
+		evidence.MCPSessionID, evidence.VerifiedAt,
+		evidence.ChallengeHash).Scan(
 		&result.EvidenceID, &result.TokenID, &result.AgentInstanceID,
 		&result.ProjectID, &result.MCPMethod, &result.MCPSessionID,
-		&result.RequestID, &result.VerifiedAt, &result.VerifiedByTokenID,
+		&result.RequestID, &result.VerifiedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AgentTokenVerificationEvidence{}, ErrConflict
@@ -727,11 +730,11 @@ const agentTokenSelect = `
 	SELECT token_id, agent_instance_id, grant_id, project_id, issued_by,
 	       name, token_hash, allowed_tools, status, expires_at, activated_at,
 	       last_used_at, revoked_at, COALESCE(replaces_token_id::text, ''),
+	       COALESCE(verification_challenge_hash, ''),
 	       COALESCE(verification_evidence_id::text, ''),
 	       COALESCE(verification_method, ''),
 	       COALESCE(verification_request_id, ''),
-	       COALESCE(verification_session_id, ''),
-	       COALESCE(verified_by_token_id::text, ''), verified_at,
+	       COALESCE(verification_session_id, ''), verified_at,
 	       created_at
 	FROM auth_agent_tokens
 `
@@ -747,10 +750,10 @@ func scanAgentToken(scan agentTokenScan) (AgentToken, error) {
 		&token.ID, &token.AgentInstanceID, &token.GrantID, &token.ProjectID,
 		&token.IssuedBy, &token.Name, &token.TokenHash, &tools, &token.Status,
 		&token.ExpiresAt, &token.ActivatedAt, &token.LastUsedAt, &token.RevokedAt,
-		&token.ReplacesTokenID, &verification.EvidenceID,
+		&token.ReplacesTokenID, &token.VerificationChallengeHash,
+		&verification.EvidenceID,
 		&verification.MCPMethod, &verification.RequestID,
-		&verification.MCPSessionID, &verification.VerifiedByTokenID,
-		&verifiedAt, &token.CreatedAt,
+		&verification.MCPSessionID, &verifiedAt, &token.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AgentToken{}, ErrNotFound

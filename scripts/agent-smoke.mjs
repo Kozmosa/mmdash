@@ -4,9 +4,8 @@
 // Requires the acceptance Compose stack on isolated ports:
 //   docker compose -f deploy/compose/compose.yaml \
 //     -f deploy/compose/compose.acceptance.yaml up --build -d
-// and the paired Gateway attestation credential (see compose.acceptance.yaml):
-// create a Core admin API token after first start, then restart core and
-// mcp-gateway with AUTH_AGENT_VERIFICATION_TOKEN_ID / MCP_CORE_ACCESS_TOKEN.
+// The one-time Agent credential includes the challenged MCP endpoint; no
+// separate Gateway access credential is required.
 //
 // Env: CORE_URL (default http://localhost:18080), MCP_URL (default
 // http://localhost:19002), MMDASH_SMOKE_EMAIL/PASSWORD for the admin login,
@@ -85,9 +84,9 @@ async function core(path, options, token) {
   return result.body;
 }
 
-async function mcpInitialize(token) {
+async function mcpInitialize(endpoint, token) {
   const result = await request(
-    `${mcpUrl}/mcp`,
+    endpoint,
     {
       method: "POST",
       headers: {
@@ -116,9 +115,9 @@ async function mcpInitialize(token) {
   return sessionId;
 }
 
-async function mcpRequest(token, sessionId, id, method, params) {
+async function mcpRequest(endpoint, token, sessionId, id, method, params) {
   const result = await request(
-    `${mcpUrl}/mcp`,
+    endpoint,
     {
       method: "POST",
       headers: {
@@ -233,11 +232,18 @@ async function main() {
   const instance = provisioned.instance;
   const instanceId = instance.agent_instance_id;
   const agentToken = provisioned.one_time_credential?.token;
+  const issuedMcpEndpoint = provisioned.one_time_credential?.mcp_endpoint;
   const tokenId = provisioned.one_time_credential?.credential?.id;
   assert(
     Boolean(agentToken) && agentToken.startsWith("mmdash_"),
     "manual provisioning returns a one-time opaque Agent Token",
   );
+  assert(
+    typeof issuedMcpEndpoint === "string" &&
+      issuedMcpEndpoint.includes("mmdash_challenge="),
+    "manual provisioning returns the one-time challenged MCP endpoint",
+  );
+  const agentMcpEndpoint = `${mcpUrl}/mcp${new URL(issuedMcpEndpoint).search}`;
   assert(
     instance.management_mode === "manual" && instance.status === "setup_pending",
     `instance starts setup_pending (${instance.status})`,
@@ -270,10 +276,10 @@ async function main() {
   );
 
   // 3. MCP Gateway: initialize + exact tools/list create verification evidence.
-  const gatewaySession = await mcpInitialize(agentToken);
+  const gatewaySession = await mcpInitialize(agentMcpEndpoint, agentToken);
   assert(Boolean(gatewaySession), "MCP initialize negotiates a gateway session");
 
-  const listed = await mcpRequest(agentToken, gatewaySession, 2, "tools/list");
+  const listed = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 2, "tools/list");
   const toolNames = listed.body?.result?.tools?.map((tool) => tool.name) ?? [];
   assert(
     listed.status === 200 &&
@@ -281,13 +287,13 @@ async function main() {
     `tools/list returns exactly the reviewed tools (${toolNames.join(",")})`,
   );
 
-  const denied = await mcpRequest(agentToken, gatewaySession, 3, "tools/call", {
+  const denied = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 3, "tools/call", {
     arguments: { project_id: projectId },
     name: "project.member.list",
   });
   assert(denied.status === 403, "exact Tool scope denies an unlisted tool");
 
-  const deniedBusiness = await mcpRequest(agentToken, gatewaySession, 4, "tools/call", {
+  const deniedBusiness = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 4, "tools/call", {
     arguments: { project_id: projectId },
     name: "data.list",
   });
@@ -321,7 +327,7 @@ async function main() {
   );
 
   // 5. The active Token can call authorized business tools.
-  const dataCall = await mcpRequest(agentToken, gatewaySession, 5, "tools/call", {
+  const dataCall = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 5, "tools/call", {
     arguments: { project_id: projectId },
     name: "data.list",
   });
@@ -441,7 +447,7 @@ async function main() {
   assert(ended.status === "ended", "session end marks the local index");
 
   // 9. context.promote through MCP with paired provenance lands as a Proposal.
-  const promote = await mcpRequest(agentToken, gatewaySession, 6, "tools/call", {
+  const promote = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 6, "tools/call", {
     arguments: {
       agent_run_id: runIdValue,
       agent_session_id: sessionId,
@@ -524,7 +530,7 @@ async function main() {
   assert(revoked.status === 204, "explicit revoke takes effect immediately");
 
   // 14. Revoked Token can no longer list tools.
-  const revokedList = await mcpRequest(agentToken, gatewaySession, 7, "tools/list");
+  const revokedList = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 7, "tools/list");
   assert(
     revokedList.status === 401 || revokedList.status === 403,
     "revoked Agent Token is rejected by Gateway",

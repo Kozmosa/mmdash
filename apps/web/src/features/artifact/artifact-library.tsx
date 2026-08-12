@@ -456,6 +456,7 @@ function ArtifactFilters({
             ["experiment_result", "实验结果"],
             ["model_file", "模型文件"],
             ["article_build", "论文构建"],
+            ["agent", "Agent 产物"],
             ["other", "其他"],
           ]}
           value={filters.kind ?? ""}
@@ -474,6 +475,7 @@ function ArtifactFilters({
               ["experiment", "实验"],
               ["model", "模型"],
               ["article", "论文"],
+              ["agent", "Agent"],
               ["system", "系统"],
             ]}
             value={filters.source ?? ""}

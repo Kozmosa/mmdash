@@ -19,13 +19,11 @@ const (
 	StatusPlanned    = "planned"
 	StatusInProgress = "in_progress"
 	StatusCompleted  = "completed"
-	StatusCancelled  = "cancelled"
 
 	TaskTodo       = "todo"
 	TaskInProgress = "in_progress"
 	TaskBlocked    = "blocked"
 	TaskDone       = "done"
-	TaskCancelled  = "cancelled"
 
 	ReminderPending    = "pending"
 	ReminderProcessing = "processing"
@@ -35,21 +33,22 @@ const (
 )
 
 type Milestone struct {
-	ID          string     `json:"milestone_id"`
-	ProjectID   string     `json:"project_id"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Status      string     `json:"status"`
-	Critical    bool       `json:"critical"`
-	StartAt     *time.Time `json:"start_at,omitempty"`
-	TargetAt    *time.Time `json:"target_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	Source      string     `json:"source"`
-	SourceRunID string     `json:"source_run_id,omitempty"`
-	CreatedBy   string     `json:"created_by"`
-	UpdatedBy   string     `json:"updated_by"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID            string     `json:"milestone_id"`
+	ProjectID     string     `json:"project_id"`
+	Title         string     `json:"title"`
+	Description   string     `json:"description"`
+	Status        string     `json:"status"`
+	Critical      bool       `json:"critical"`
+	TargetHasTime bool       `json:"target_has_time"`
+	StartAt       *time.Time `json:"start_at,omitempty"`
+	TargetAt      *time.Time `json:"target_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	Source        string     `json:"source"`
+	SourceRunID   string     `json:"source_run_id,omitempty"`
+	CreatedBy     string     `json:"created_by"`
+	UpdatedBy     string     `json:"updated_by"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type Task struct {
@@ -59,6 +58,7 @@ type Task struct {
 	Title                string     `json:"title"`
 	Description          string     `json:"description"`
 	Status               string     `json:"status"`
+	WorkState            string     `json:"work_state"`
 	AssigneeID           string     `json:"assignee_id,omitempty"`
 	StartAt              *time.Time `json:"start_at,omitempty"`
 	DueAt                *time.Time `json:"due_at,omitempty"`
@@ -136,11 +136,10 @@ type Settings struct {
 	CronSchedule         string     `json:"cron_schedule"`
 	DebounceSeconds      int        `json:"debounce_seconds"`
 	MinIntervalSeconds   int        `json:"min_interval_seconds"`
+	ReasoningEffort      string     `json:"reasoning_effort"`
 	AgentInstanceID      string     `json:"agent_instance_id,omitempty"`
-	CronRemoteJobID      string     `json:"cron_remote_job_id,omitempty"`
-	CronSyncStatus       string     `json:"cron_sync_status"`
-	CronErrorCode        string     `json:"cron_error_code,omitempty"`
-	CronSyncedAt         *time.Time `json:"cron_synced_at,omitempty"`
+	CronNextRunAt        *time.Time `json:"cron_next_run_at,omitempty"`
+	CronLastScheduledAt  *time.Time `json:"cron_last_scheduled_at,omitempty"`
 	EvaluatorMode        string     `json:"evaluator_mode"`
 	UpdatedBy            string     `json:"updated_by"`
 	UpdatedAt            time.Time  `json:"updated_at"`
@@ -181,20 +180,22 @@ type GanttItem struct {
 }
 
 type CreateMilestoneInput struct {
-	Title       string
-	Description string
-	Critical    bool
-	StartAt     *time.Time
-	TargetAt    *time.Time
+	Title         string
+	Description   string
+	Critical      bool
+	StartAt       *time.Time
+	TargetAt      *time.Time
+	TargetHasTime bool
 }
 
 type UpdateMilestoneInput struct {
-	Title       *string
-	Description *string
-	Status      *string
-	Critical    *bool
-	StartAt     **time.Time
-	TargetAt    **time.Time
+	Title         *string
+	Description   *string
+	Status        *string
+	Critical      *bool
+	StartAt       **time.Time
+	TargetAt      **time.Time
+	TargetHasTime *bool
 }
 
 type CreateTaskInput struct {
@@ -248,6 +249,12 @@ type ReviewProposalInput struct {
 	Note     string
 }
 
+type BatchReviewProposalInput struct {
+	ProposalIDs []string
+	Decision    string
+	Note        string
+}
+
 type Access interface {
 	Authenticate(context.Context, string) (auth.Identity, error)
 	Authorize(context.Context, auth.Identity, string, project.Permission) error
@@ -262,6 +269,7 @@ type Store interface {
 	GetMilestone(context.Context, string, string) (Milestone, error)
 	CreateMilestone(context.Context, string, string, CreateMilestoneInput) (Milestone, error)
 	UpdateMilestone(context.Context, string, string, string, UpdateMilestoneInput) (Milestone, error)
+	DeleteMilestone(context.Context, string, string, string) error
 	ListTasks(context.Context, string) ([]Task, error)
 	GetTask(context.Context, string, string) (Task, error)
 	CreateTask(context.Context, string, string, CreateTaskInput, string) (Task, error)
@@ -277,6 +285,7 @@ type Store interface {
 	GetProposal(context.Context, string, string) (Proposal, error)
 	CreateProposal(context.Context, string, string, CreateProposalInput) (Proposal, error)
 	ReviewProposal(context.Context, string, string, string, ReviewProposalInput) (Proposal, error)
+	ReviewProposals(context.Context, string, string, BatchReviewProposalInput) ([]Proposal, error)
 	GetSettings(context.Context, string) (Settings, error)
 	UpdateSettings(context.Context, string, string, bool) (Settings, error)
 }
@@ -344,10 +353,10 @@ func (service Service) List(ctx context.Context, identity auth.Identity, project
 		if task.Status == TaskBlocked {
 			result.Blocked = append(result.Blocked, task)
 		}
-		if task.Status != TaskDone && task.Status != TaskCancelled && task.DueAt != nil && task.DueAt.Before(now) {
+		if task.Status != TaskDone && task.DueAt != nil && task.DueAt.Before(now) {
 			result.Overdue = append(result.Overdue, task)
 		}
-		if task.Status != TaskDone && task.Status != TaskCancelled && task.DueAt != nil && !task.DueAt.Before(today) && task.DueAt.Before(tomorrow) {
+		if task.Status != TaskDone && task.DueAt != nil && !task.DueAt.Before(today) && task.DueAt.Before(tomorrow) {
 			result.Today = append(result.Today, task)
 		}
 		switch task.Status {
@@ -401,7 +410,7 @@ func (service Service) ProgressHomeItems(ctx context.Context, identity auth.Iden
 	}
 	taskItems := make([]interface{}, 0, len(tasks))
 	for _, item := range tasks {
-		if item.Status == TaskDone || item.Status == TaskCancelled {
+		if item.Status == TaskDone {
 			continue
 		}
 		taskItems = append(taskItems, item)
@@ -489,23 +498,24 @@ func (service Service) UpdateMilestone(ctx context.Context, identity auth.Identi
 	return item, err
 }
 
+func (service Service) DeleteMilestone(ctx context.Context, identity auth.Identity, projectID, milestoneID string) error {
+	if identity.Kind != "session" {
+		return ErrHumanRequired
+	}
+	if err := service.Access.Authorize(ctx, identity, projectID, project.PermissionProgressManage); err != nil {
+		return err
+	}
+	err := service.Store.DeleteMilestone(ctx, projectID, milestoneID, identity.User.ID)
+	service.record(ctx, identity, "progress.milestone.deleted", "milestone", milestoneID, projectID, map[string]interface{}{"source": "human"}, err)
+	return err
+}
+
 func (service Service) CreateTask(ctx context.Context, identity auth.Identity, projectID string, input CreateTaskInput) (Task, error) {
 	if err := service.Access.Authorize(ctx, identity, projectID, project.PermissionProgressManage); err != nil {
 		return Task{}, err
 	}
-	source := "human"
 	if identity.Kind != "session" {
-		settings, err := service.Store.GetSettings(ctx, projectID)
-		if err != nil {
-			return Task{}, err
-		}
-		if !settings.AutoTaskChanges {
-			return Task{}, ErrProposalRequired
-		}
-		if strings.TrimSpace(input.SourceRunID) == "" {
-			return Task{}, ErrInvalid
-		}
-		source = "agent"
+		return Task{}, ErrProposalRequired
 	}
 	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" {
@@ -514,8 +524,8 @@ func (service Service) CreateTask(ctx context.Context, identity auth.Identity, p
 	if input.Status == "" {
 		input.Status = TaskTodo
 	}
-	item, err := service.Store.CreateTask(ctx, projectID, identity.User.ID, input, source)
-	service.record(ctx, identity, "progress.task.created", "task", item.ID, projectID, map[string]interface{}{"source": source, "source_run_id": input.SourceRunID}, err)
+	item, err := service.Store.CreateTask(ctx, projectID, identity.User.ID, input, "human")
+	service.record(ctx, identity, "progress.task.created", "task", item.ID, projectID, map[string]interface{}{"source": "human"}, err)
 	return item, err
 }
 
@@ -523,22 +533,11 @@ func (service Service) UpdateTask(ctx context.Context, identity auth.Identity, p
 	if err := service.Access.Authorize(ctx, identity, projectID, project.PermissionProgressManage); err != nil {
 		return Task{}, err
 	}
-	source := "human"
 	if identity.Kind != "session" {
-		settings, err := service.Store.GetSettings(ctx, projectID)
-		if err != nil {
-			return Task{}, err
-		}
-		if !settings.AutoTaskChanges {
-			return Task{}, ErrProposalRequired
-		}
-		if input.SourceRunID == nil || strings.TrimSpace(*input.SourceRunID) == "" {
-			return Task{}, ErrInvalid
-		}
-		source = "agent"
+		return Task{}, ErrProposalRequired
 	}
-	item, err := service.Store.UpdateTask(ctx, projectID, taskID, identity.User.ID, input, source)
-	metadata := map[string]interface{}{"source": source}
+	item, err := service.Store.UpdateTask(ctx, projectID, taskID, identity.User.ID, input, "human")
+	metadata := map[string]interface{}{"source": "human"}
 	if input.SourceRunID != nil {
 		metadata["source_run_id"] = *input.SourceRunID
 	}
@@ -644,6 +643,29 @@ func (service Service) ReviewProposal(ctx context.Context, identity auth.Identit
 	item, err := service.Store.ReviewProposal(ctx, projectID, proposalID, identity.User.ID, input)
 	service.record(ctx, identity, "progress.proposal.reviewed", "progress_proposal", proposalID, projectID, map[string]interface{}{"decision": input.Decision}, err)
 	return item, err
+}
+
+func (service Service) ReviewProposals(ctx context.Context, identity auth.Identity, projectID string, input BatchReviewProposalInput) ([]Proposal, error) {
+	if identity.Kind != "session" {
+		return nil, ErrHumanRequired
+	}
+	if err := service.Access.Authorize(ctx, identity, projectID, project.PermissionProgressManage); err != nil {
+		return nil, err
+	}
+	input.Decision = strings.TrimSpace(input.Decision)
+	if len(input.ProposalIDs) == 0 || len(input.ProposalIDs) > 100 || input.Decision != "accepted" && input.Decision != "rejected" {
+		return nil, ErrInvalid
+	}
+	seen := make(map[string]bool, len(input.ProposalIDs))
+	for _, id := range input.ProposalIDs {
+		if strings.TrimSpace(id) == "" || seen[id] {
+			return nil, ErrInvalid
+		}
+		seen[id] = true
+	}
+	items, err := service.Store.ReviewProposals(ctx, projectID, identity.User.ID, input)
+	service.record(ctx, identity, "progress.proposals.reviewed", "progress_proposal_batch", projectID, projectID, map[string]interface{}{"decision": input.Decision, "count": len(input.ProposalIDs)}, err)
+	return items, err
 }
 
 func (service Service) UpdateSettings(ctx context.Context, identity auth.Identity, projectID string, autoTaskChanges bool) (Settings, error) {
@@ -779,6 +801,10 @@ func ErrorCode(err error) string {
 		return "PROGRESS_NOT_FOUND"
 	case errors.Is(err, ErrForbidden):
 		return "FORBIDDEN"
+	case errors.Is(err, ErrEvaluationConfiguration):
+		return "PROGRESS_EVALUATOR_CONFIGURATION_INVALID"
+	case errors.Is(err, ErrEvaluationUnavailable):
+		return "PROGRESS_EVALUATOR_UNAVAILABLE"
 	default:
 		return "INVALID_PROGRESS_REQUEST"
 	}

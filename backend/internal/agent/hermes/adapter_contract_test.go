@@ -598,7 +598,8 @@ func TestRunAndJobMapping(t *testing.T) {
 		switch request.Method + " " + request.URL.Path {
 		case "POST /v1/runs":
 			body := decodeRequestMap(t, request)
-			if body["input"] != "analyze" || body["instructions"] != "project prompt" || body["session_id"] != "session-main" || body["model"] != "hermes-4" || body["provider"] != "nous" {
+			modelOptions, _ := body["model_options"].(map[string]any)
+			if body["input"] != "analyze" || body["instructions"] != "project prompt" || body["session_id"] != "session-main" || body["model"] != "hermes-4" || body["provider"] != "nous" || modelOptions["reasoning_effort"] != "high" {
 				t.Fatalf("unexpected run body: %#v", body)
 			}
 			response.WriteHeader(http.StatusAccepted)
@@ -642,7 +643,7 @@ func TestRunAndJobMapping(t *testing.T) {
 	adapter := runtimeAdapterForServer(t, server.URL, "")
 	ctx := context.Background()
 
-	started, err := adapter.StartRun(ctx, agent.StartRunRequest{Input: "analyze", Instructions: "project prompt", SessionRemoteID: "session-main", ConversationHistory: []agent.ConversationMessage{{Role: "user", Content: "earlier"}}, Model: "hermes-4", Provider: "nous"})
+	started, err := adapter.StartRun(ctx, agent.StartRunRequest{Input: "analyze", Instructions: "project prompt", SessionRemoteID: "session-main", ConversationHistory: []agent.ConversationMessage{{Role: "user", Content: "earlier"}}, Model: "hermes-4", Provider: "nous", ReasoningEffort: "high"})
 	if err != nil || started.RemoteID != "run-1" || started.Status != agent.RunQueued {
 		t.Fatalf("start: %#v %v", started, err)
 	}

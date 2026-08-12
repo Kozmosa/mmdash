@@ -212,6 +212,11 @@ describe("Agent BFF routes", () => {
       },
       {
         method: "POST" as const,
+        payload: { session_type: "progress", title: "Internal only" },
+        url: `/api/projects/${projectId}/agent-instances/${instanceId}/sessions`,
+      },
+      {
+        method: "POST" as const,
         payload: { reason: "r".repeat(501) },
         url: `/api/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/end`,
       },
@@ -352,8 +357,9 @@ describe("Agent BFF routes", () => {
 
   it("mirrors session, Run, and two-phase Token actions", async () => {
     const calls: { body?: unknown; method?: string; url: string }[] = [];
-    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(
-      async (input, options) => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, options) => {
         calls.push({
           body: options?.body ? JSON.parse(String(options.body)) : undefined,
           method: options?.method,
@@ -398,8 +404,7 @@ describe("Agent BFF routes", () => {
           });
         }
         return new Response(null, { status: 204 });
-      },
-    );
+      });
     const app = buildApp({
       config: testConfig,
       fetchImplementation,
@@ -429,7 +434,11 @@ describe("Agent BFF routes", () => {
       app.inject({
         headers: { cookie },
         method: "POST",
-        payload: { message: "Hello Hermes" },
+        payload: {
+          artifact_ids: ["00000000-0000-4000-8000-000000000091"],
+          message: "Hello Hermes",
+          reasoning_effort: "high",
+        },
         url: `/api/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs`,
       }),
       app.inject({
@@ -466,7 +475,11 @@ describe("Agent BFF routes", () => {
           url: `http://core.test/v1/projects/${projectId}/agent-instances/${instanceId}/sessions`,
         }),
         expect.objectContaining({
-          body: { message: "Hello Hermes" },
+          body: {
+            artifact_ids: ["00000000-0000-4000-8000-000000000091"],
+            message: "Hello Hermes",
+            reasoning_effort: "high",
+          },
           url: `http://core.test/v1/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs`,
         }),
         expect.objectContaining({
@@ -500,14 +513,14 @@ describe("Agent BFF routes", () => {
         });
       },
     });
-    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(
-      async (_input, options) => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_input, options) => {
         signal = options?.signal ?? null;
         return new Response(body, {
           headers: { "content-type": "text/event-stream" },
         });
-      },
-    );
+      });
     const app = buildApp({
       config: testConfig,
       fetchImplementation,
@@ -640,7 +653,7 @@ function credentialFixture() {
 function oneTimeCredential() {
   return {
     credential: { ...credentialFixture(), status: "pending" },
-    mcp_endpoint: "https://mcp.example.test/mcp",
+    mcp_endpoint: "https://mcp.example.test/mcp?mmdash_challenge=one-time",
     server_name: "mmdash",
     token: "mmdash_agent_plaintext_once",
   };

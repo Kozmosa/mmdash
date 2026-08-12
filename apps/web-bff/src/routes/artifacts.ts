@@ -9,6 +9,7 @@ const artifactKindSchema = z.enum([
   "experiment_result",
   "model_file",
   "article_build",
+  "agent",
   "other",
 ]);
 const publicArtifactKindSchema = z.enum(["problem", "attachment", "other"]);
@@ -17,6 +18,7 @@ const artifactSourceSchema = z.enum([
   "experiment",
   "model",
   "article",
+  "agent",
   "system",
 ]);
 const artifactStatusSchema = z.enum(["pending_upload", "available", "trashed"]);

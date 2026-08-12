@@ -155,6 +155,13 @@ func safeToolCalls(raw json.RawMessage) []agent.ToolCall {
 			}
 		}
 		if id != "" || name != "" {
+			// Tool calls embedded in Hermes' persisted message history have already
+			// produced their following tool/result messages. Some Hermes versions
+			// omit status or retain the creation-time "running" value forever.
+			// Reserve live running state for the Run SSE projection.
+			if status != "failed" {
+				status = "completed"
+			}
 			result = append(result, agent.ToolCall{RemoteID: id, Name: name, Status: status})
 		}
 	}

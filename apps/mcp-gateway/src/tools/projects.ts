@@ -112,7 +112,6 @@ function coreContext(context: ToolRegistrationContext, projectId?: string) {
   }
   return {
     accessToken: context.coreAccessToken,
-    gatewayAccessToken: context.coreGatewayAccessToken,
     projectId,
     requestId: context.requestId,
   };

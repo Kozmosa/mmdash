@@ -22,6 +22,7 @@ type Store interface {
 	CreateFirst(context.Context, Artifact, Version, UploadSession) error
 	CreateGit(context.Context, Artifact, Version, string) error
 	CreateVersion(context.Context, string, string, Version, UploadSession) (UploadSession, error)
+	AttachToAgentRun(context.Context, string, string, string, string, time.Time) (ChatAttachment, error)
 	FindBlob(context.Context, string, string, int64) (Blob, error)
 	GetArtifact(context.Context, string, string) (Artifact, error)
 	GetDetail(context.Context, string, string, bool) (Detail, error)
@@ -30,6 +31,7 @@ type Store interface {
 	GetVersion(context.Context, string, string, string) (Version, error)
 	List(context.Context, string, ListFilter) (Page, error)
 	ListVersions(context.Context, string, string) (VersionList, error)
+	ListAgentRunAttachments(context.Context, string, []string) ([]ChatAttachment, error)
 	Update(context.Context, string, string, UpdateInput, time.Time) (Detail, error)
 	MarkUploading(context.Context, string, time.Time) error
 	BeginConfirm(context.Context, string, time.Time, time.Time) (bool, error)

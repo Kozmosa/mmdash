@@ -17,7 +17,6 @@ describe("CoreClient", () => {
     const client = new CoreClient("http://core.test/", fetchImplementation);
 
     await client.checkExample({
-      gatewayAccessToken: "gateway-attestation-token",
       projectId: "project-1",
       requestId: "request-1",
       userId: "user-1",
@@ -33,9 +32,6 @@ describe("CoreClient", () => {
     const request = fetchImplementation.mock.calls[0]?.[1];
     const headers = new Headers(request?.headers);
     expect(headers.get("x-request-id")).toBe("request-1");
-    expect(headers.get("x-mmdash-gateway-authorization")).toBe(
-      "Bearer gateway-attestation-token",
-    );
     expect(headers.get("x-mmdash-project-id")).toBe("project-1");
     expect(headers.get("x-mmdash-user-id")).toBe("user-1");
   });
@@ -57,7 +53,7 @@ describe("CoreClient", () => {
     });
   });
 
-  it("records trusted pending Agent Token verification evidence", async () => {
+  it("records pending Agent Token challenge evidence with that Agent token", async () => {
     const evidence = {
       agent_instance_id: "11111111-1111-4111-8111-111111111111",
       evidence_id: "22222222-2222-4222-8222-222222222222",
@@ -75,13 +71,14 @@ describe("CoreClient", () => {
     );
     const client = new CoreClient("http://core.test", fetchImplementation);
     const context = {
-      accessToken: "trusted-gateway-api-token",
+      accessToken: "pending-agent-token",
       projectId: evidence.project_id,
       requestId: evidence.request_id,
       userId: "gateway-service",
     };
     const input = {
       agent_instance_id: evidence.agent_instance_id,
+      challenge: "mmdash_challenge_one-time-material",
       mcp_method: evidence.mcp_method,
       mcp_session_id: evidence.mcp_session_id,
       project_id: evidence.project_id,
@@ -287,6 +284,18 @@ describe("CoreClient", () => {
       context,
       "version-1",
     );
+    const agentUpload = {
+      filename: "agent-plot.png",
+      idempotency_key: "agent-upload-1",
+      mime_type: "image/png",
+      sha256: "b".repeat(64),
+      size_bytes: 64,
+    };
+    await client.initializeAgentArtifactUpload(
+      "project-1",
+      agentUpload,
+      context,
+    );
 
     expectRequest(fetchImplementation.mock.calls[0], {
       body: upload,
@@ -315,6 +324,12 @@ describe("CoreClient", () => {
       context,
       method: "POST",
       url: "http://core.test/v1/projects/project-1/artifacts/artifact-1/versions/version-1/download",
+    });
+    expectRequest(fetchImplementation.mock.calls[5], {
+      body: agentUpload,
+      context,
+      method: "POST",
+      url: "http://core.test/v1/projects/project-1/artifacts/agent-uploads",
     });
   });
 });

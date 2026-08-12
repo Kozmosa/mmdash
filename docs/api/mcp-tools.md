@@ -3,16 +3,18 @@
 Search this file by tool name, project scope, token kind, or contract. The
 machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 
-| Tool           | Purpose                                  | Project scoped | Token kinds | Input/output contract | Status               |
-| -------------- | ---------------------------------------- | -------------- | ----------- | --------------------- | -------------------- |
-| `project.list` | List projects visible to the identity    | No             | CLI, Agent  | `project.list.json`   | Stage 3 read         |
-| `project.get`  | Read one authorized Project              | Yes            | CLI, Agent  | `project.get.json`    | Stage 3 read         |
-| `data.list`    | List Data Hub object projections         | Yes            | CLI, Agent  | `data.list.json`      | Stage 1 read         |
-| `data.read`    | Read through the authoritative adapter   | Yes            | CLI, Agent  | `data.read.json`      | Stage 1 read         |
-| `context.promote` | Submit a pending Context Proposal     | Yes            | CLI, Agent  | `context.promote.json` | Stage 5 proposal    |
-| `progress.get` | Read Progress state and evaluation provenance | Yes       | CLI, Agent  | `progress.get.json`   | Stage 6 read         |
-| `progress.recalculate` | Schedule a versioned Progress evaluation | Yes   | CLI, Agent  | `progress.recalculate.json` | Stage 6 mutation |
-| `system.echo`  | Verify the complete MCP Gateway boundary | Yes            | CLI, Agent  | `system.echo.json`    | Foundation test tool |
+| Tool                   | Purpose                                              | Project scoped | Token kinds | Input/output contract       | Status                  |
+| ---------------------- | ---------------------------------------------------- | -------------- | ----------- | --------------------------- | ----------------------- |
+| `project.list`         | List projects visible to the identity                | No             | CLI, Agent  | `project.list.json`         | Stage 3 read            |
+| `project.get`          | Read one authorized Project                          | Yes            | CLI, Agent  | `project.get.json`          | Stage 3 read            |
+| `data.list`            | List Data Hub object projections                     | Yes            | CLI, Agent  | `data.list.json`            | Stage 1 read            |
+| `data.read`            | Read through the authoritative adapter               | Yes            | CLI, Agent  | `data.read.json`            | Stage 1 read            |
+| `context.promote`      | Submit a pending Context Proposal                    | Yes            | CLI, Agent  | `context.promote.json`      | Stage 5 proposal        |
+| `progress.get`         | Read Progress state and evaluation provenance        | Yes            | CLI, Agent  | `progress.get.json`         | Stage 6 read            |
+| `progress.recalculate` | Schedule a versioned Progress evaluation             | Yes            | CLI, Agent  | `progress.recalculate.json` | Stage 6 mutation        |
+| `artifact.read`        | Obtain a short-lived grant for one attached Artifact | Yes            | Agent       | `artifact.read.json`        | Agent attachment read   |
+| `artifact.upload`      | Upload an image/file as an Agent Artifact            | Yes            | Agent       | `artifact.upload.json`      | Agent Artifact mutation |
+| `system.echo`          | Verify the complete MCP Gateway boundary             | Yes            | CLI, Agent  | `system.echo.json`          | Foundation test tool    |
 
 ## Client and principal paths
 
@@ -39,11 +41,12 @@ development fixture only. `project.list` is the one account-scoped discovery
 tool; every other business tool requires an explicit `project_id` and current
 Core RBAC.
 
-For the product Agent path, Gateway forwards the Agent Token as the primary
-Core identity and separately attests the relay with the dedicated
-`MCP_CORE_ACCESS_TOKEN`. Direct Agent access is limited to `GET /v1/auth/me`;
-other Core `/v1` routes reject a missing, ordinary, or cross-Project
-attestation. Tool authorization is never inferred from an HTTP header.
+For the product Agent path, Gateway forwards the original Agent Token as the
+only Core credential. Gateway enforces the exact reviewed Tool grant and Core
+authenticates that same Agent identity before applying Project/domain RBAC.
+Core is private; the Caddy-exposed `/v1` user API terminates at Web BFF and
+rejects Agent credentials. Tool authorization is never inferred from an HTTP
+header.
 
 ## `project.list` and `project.get`
 
@@ -123,6 +126,40 @@ may request `manual` and may set `force=true` to bypass the configured minimum
 interval. The request is still project-scoped, debounced, input-versioned,
 audited, and subject to Core RBAC. Neither Tool can accept/reject a Proposal or
 remove a human stage/Task override.
+
+## `artifact.upload`
+
+`artifact.upload` is one reviewed product-Agent mutation; it is not a generic
+filesystem or base64 Tool. `begin` accepts filename, exact byte size,
+lowercase SHA-256, optional MIME/metadata, and a stable idempotency key. Core
+creates only `kind=agent`, `source=agent` and returns a bounded batch of
+short-lived direct multipart PUT grants. `parts` refreshes later batches,
+`complete` submits every part number plus provider ETag, and `abort` cancels an
+unfinished upload.
+
+Hermes performs the PUT requests directly against reachable MinIO/S3-compatible
+storage using the exact returned headers. Gateway and Core never buffer a
+complete part or file and MCP requests never contain file bytes. Upload state
+is bound to the exact Agent instance; a second Agent in the same Project cannot
+continue it. Local/Core-proxy transfer mode fails with
+`ARTIFACT_DIRECT_TRANSFER_REQUIRED` so remote clients are not handed a URL that
+only the deployment host can reach. Completed content appears through the
+normal Artifact library and Data Hub readers.
+
+For an mmdash-started Run, `begin` should include both local
+`agent_session_id` and `agent_run_id`. Core validates the pair and associates
+the completed output with that Run, allowing Web to show an image preview or
+file card in the transcript. The Run instructions require Hermes to use this
+capability proactively whenever a useful file or image is a deliverable.
+
+## `artifact.read`
+
+Read-only Agent Tool for a user-uploaded chat attachment. It accepts one
+Project-scoped Artifact ID plus an optional immutable Version ID and returns
+Core's short-lived authorized GET grant. Hermes downloads with the exact
+method and headers, and must not reveal the signed URL to the user. The Tool
+does not widen Project access: Gateway enforces the exact Agent grant and Core
+re-applies Artifact read authorization.
 
 ## `system.echo`
 

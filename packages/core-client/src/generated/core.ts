@@ -346,13 +346,11 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Record trusted MCP verification evidence for a pending Agent Token
-     * @description Internal callback used only by MCP Gateway after a pending product
-     *     Agent Token completes one successful `tools/list` request in a
-     *     protocol-negotiated MCP session. Requires the dedicated Gateway Core
-     *     API credential. Browser sessions, Agent Tokens, Box Tokens, ordinary
-     *     `/auth/me`, current `server/discover`, and legacy `initialize` cannot
-     *     create verification evidence on their own.
+     * Consume a pending Agent Token verification challenge
+     * @description After a pending product Agent Token completes one successful
+     *     `tools/list` request in a protocol-negotiated MCP session, the same
+     *     Agent identity consumes the one-time challenge embedded in its MCP
+     *     endpoint. Browser, API, and Box identities cannot consume it.
      */
     post: operations["auth.agent_tokens.verification.record"];
     delete?: never;
@@ -554,6 +552,25 @@ export interface paths {
     put?: never;
     /** Initialize the first immutable Version and its multipart upload */
     post: operations["artifact.uploads.initialize"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/agent-uploads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Initialize an Agent-owned immutable Artifact multipart upload */
+    post: operations["artifact.agentUploads.initialize"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1685,8 +1702,11 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Disable an Agent instance and revoke Project access
-     * @description Disables the local instance and credentials without deleting Hermes message history.
+     * Remove an Agent instance and revoke Project access
+     * @description Revokes every credential and removes the instance from the workspace.
+     *     Referential records and Hermes message history remain available to
+     *     Audit and retention processing. Repeating removal for a previously
+     *     disabled visible instance is supported.
      */
     delete: operations["agent.instances.disable"];
     options?: never;
@@ -2261,7 +2281,8 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete a human milestone */
+    delete: operations["progress.milestones.delete"];
     options?: never;
     head?: never;
     /**
@@ -2285,7 +2306,7 @@ export interface paths {
     put?: never;
     /**
      * Create a task
-     * @description Agent task changes are tagged with their source and obey the project automatic-change setting.
+     * @description Human sessions create tasks directly. Agents and automatic evaluations submit a Progress Proposal.
      */
     post: operations["progress.tasks.create"];
     delete?: never;
@@ -2447,6 +2468,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/progress/proposals/batch-review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Review a set of Progress Proposals atomically
+     * @description Human session only. Every proposal must still be pending and belong to the route Project; otherwise none are reviewed.
+     */
+    post: operations["progress.proposals.batch_review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/progress/settings": {
     parameters: {
       query?: never;
@@ -2456,14 +2499,20 @@ export interface paths {
       };
       cookie?: never;
     };
-    /** Read Progress automatic-change settings */
+    /**
+     * Read Progress automatic-change settings
+     * @description Reads the project-owned automatic evaluation settings. Periodic evaluation due times are calculated and claimed by mmdash Core; the selected Agent instance executes the resulting evaluation Run only.
+     */
     get: operations["progress.settings.get"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
-    /** Update Progress automatic-change settings */
+    /**
+     * Update Progress automatic-change settings
+     * @description Updates event and periodic evaluation policy owned by mmdash Core. A five-field Cron expression is evaluated in UTC by the Core scheduler; this operation does not create or update a Hermes Job.
+     */
     patch: operations["progress.settings.update"];
     trace?: never;
   };
@@ -3829,6 +3878,8 @@ export interface components {
       project_id: string;
       /** Format: uuid */
       agent_instance_id: string;
+      /** @description One-time challenge embedded in the pending MCP endpoint. */
+      challenge: string;
       /** @constant */
       mcp_method: "tools/list";
       mcp_session_id: string;
@@ -3963,6 +4014,7 @@ export interface components {
       | "experiment_result"
       | "model_file"
       | "article_build"
+      | "agent"
       | "other";
     /** @enum {string} */
     ArtifactErrorCode:
@@ -3989,7 +4041,7 @@ export interface components {
     ArtifactPublicKind: "problem" | "attachment" | "other";
     /** @enum {string} */
     ArtifactSource:
-      "user_upload" | "experiment" | "model" | "article" | "system";
+      "user_upload" | "experiment" | "model" | "article" | "agent" | "system";
     /** @enum {string} */
     ArtifactStatus:
       "pending_upload" | "verifying" | "available" | "failed" | "trashed";
@@ -4021,6 +4073,26 @@ export interface components {
       sha256: string;
       mime_type?: string;
       kind: components["schemas"]["ArtifactPublicKind"];
+      tags?: string[];
+      description?: string;
+      idempotency_key: string;
+    };
+    AgentArtifactInitializeUploadRequest: {
+      /**
+       * Format: uuid
+       * @description Local mmdash Agent Session provenance; must be paired with agent_run_id.
+       */
+      agent_session_id?: string;
+      /**
+       * Format: uuid
+       * @description Local mmdash Agent Run provenance; must belong to the authenticated Agent and agent_session_id.
+       */
+      agent_run_id?: string;
+      filename: string;
+      name?: string;
+      size_bytes: number;
+      sha256: string;
+      mime_type?: string;
       tags?: string[];
       description?: string;
       idempotency_key: string;
@@ -5287,8 +5359,9 @@ export interface components {
       title: string;
       description: string;
       /** @enum {string} */
-      status: "planned" | "in_progress" | "completed" | "cancelled";
+      status: "planned" | "in_progress" | "completed";
       critical: boolean;
+      target_has_time: boolean;
       /** Format: date-time */
       start_at?: string;
       /** Format: date-time */
@@ -5318,17 +5391,19 @@ export interface components {
       start_at?: string;
       /** Format: date-time */
       target_at?: string;
+      target_has_time?: boolean;
     };
     UpdateMilestoneRequest: {
       title?: string;
       description?: string;
       /** @enum {string} */
-      status?: "planned" | "in_progress" | "completed" | "cancelled";
+      status?: "planned" | "in_progress" | "completed";
       critical?: boolean;
       /** Format: date-time */
       start_at?: string;
       /** Format: date-time */
       target_at?: string;
+      target_has_time?: boolean;
     };
     Task: {
       /** Format: uuid */
@@ -5340,7 +5415,9 @@ export interface components {
       title: string;
       description: string;
       /** @enum {string} */
-      status: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      status: "todo" | "in_progress" | "blocked" | "done";
+      /** @enum {string} */
+      work_state?: "todo" | "in_progress" | "blocked";
       /** Format: uuid */
       assignee_id?: string;
       /** Format: date-time */
@@ -5383,7 +5460,7 @@ export interface components {
       title: string;
       description?: string;
       /** @enum {string} */
-      status?: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      status?: "todo" | "in_progress" | "blocked" | "done";
       /** Format: uuid */
       assignee_id?: string;
       /** Format: date-time */
@@ -5402,7 +5479,7 @@ export interface components {
       title?: string;
       description?: string;
       /** @enum {string} */
-      status?: "todo" | "in_progress" | "blocked" | "done" | "cancelled";
+      status?: "todo" | "in_progress" | "blocked" | "done";
       /** Format: uuid */
       assignee_id?: string;
       /** Format: date-time */
@@ -5483,7 +5560,12 @@ export interface components {
       project_id: string;
       /** @enum {string} */
       proposal_type:
-        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+        | "milestone.create"
+        | "milestone.update"
+        | "milestone.complete"
+        | "task.create"
+        | "task.update"
+        | "task.complete";
       /** Format: uuid */
       target_id?: string;
       title: string;
@@ -5514,7 +5596,12 @@ export interface components {
     CreateProgressProposalRequest: {
       /** @enum {string} */
       proposal_type:
-        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+        | "milestone.create"
+        | "milestone.update"
+        | "milestone.complete"
+        | "task.create"
+        | "task.update"
+        | "task.complete";
       /** Format: uuid */
       target_id?: string;
       title: string;
@@ -5529,26 +5616,48 @@ export interface components {
       decision: "accepted" | "rejected";
       note?: string;
     };
+    BatchReviewProgressProposalsRequest: {
+      proposal_ids: string[];
+      /** @enum {string} */
+      decision: "accepted" | "rejected";
+      note?: string;
+    };
     ProgressSettings: {
       /** Format: uuid */
       project_id: string;
       auto_task_changes: boolean;
       auto_tracking_enabled: boolean;
       event_triggers_enabled: boolean;
+      /** @description Whether mmdash Core schedules periodic Progress evaluations. */
       cron_enabled: boolean;
+      /** @description Five-field UTC Cron expression evaluated by mmdash Core. */
       cron_schedule: string;
       debounce_seconds: number;
       min_interval_seconds: number;
       /** @enum {string} */
+      reasoning_effort:
+        | "none"
+        | "minimal"
+        | "low"
+        | "medium"
+        | "high"
+        | "xhigh"
+        | "max"
+        | "ultra";
+      /** @enum {string} */
       evaluator_mode: "core_agent" | "mock";
       /** Format: uuid */
       agent_instance_id?: string;
-      cron_remote_job_id?: string;
-      /** @enum {string} */
-      cron_sync_status: "pending" | "syncing" | "ready" | "failed" | "disabled";
-      cron_error_code?: string;
-      /** Format: date-time */
-      cron_synced_at?: string;
+      /**
+       * Format: date-time
+       * @description Next periodic evaluation occurrence calculated by mmdash Core.
+       */
+      cron_next_run_at?: string;
+      /**
+       * Format: date-time
+       * @description Most recent occurrence scheduled by mmdash Core.
+       */
+      cron_last_scheduled_at?: string;
       /** Format: uuid */
       updated_by: string;
       /** Format: date-time */
@@ -5558,10 +5667,22 @@ export interface components {
       auto_task_changes: boolean;
       auto_tracking_enabled: boolean;
       event_triggers_enabled: boolean;
+      /** @description Whether mmdash Core should schedule periodic Progress evaluations. */
       cron_enabled: boolean;
+      /** @description Five-field UTC Cron expression evaluated by mmdash Core. */
       cron_schedule: string;
       debounce_seconds: number;
       min_interval_seconds: number;
+      /** @enum {string} */
+      reasoning_effort:
+        | "none"
+        | "minimal"
+        | "low"
+        | "medium"
+        | "high"
+        | "xhigh"
+        | "max"
+        | "ultra";
       /** Format: uuid */
       agent_instance_id?: string;
     };
@@ -5627,7 +5748,12 @@ export interface components {
       key: string;
       /** @enum {string} */
       proposal_type:
-        "milestone.create" | "milestone.update" | "task.create" | "task.update";
+        | "milestone.create"
+        | "milestone.update"
+        | "milestone.complete"
+        | "task.create"
+        | "task.update"
+        | "task.complete";
       /** Format: uuid */
       target_id?: string;
       title: string;
@@ -5635,6 +5761,12 @@ export interface components {
       changes: {
         [key: string]: unknown;
       };
+    };
+    ProgressEvaluationWorkStateUpdate: {
+      /** Format: uuid */
+      task_id: string;
+      /** @enum {string} */
+      state: "todo" | "in_progress" | "blocked";
     };
     ProgressEvaluationOutput: {
       stage: string;
@@ -5644,6 +5776,7 @@ export interface components {
       in_progress_items: string[];
       blockers: string[];
       risks: components["schemas"]["ProgressEvaluationRiskInput"][];
+      work_state_updates: components["schemas"]["ProgressEvaluationWorkStateUpdate"][];
       suggestions: components["schemas"]["ProgressEvaluationSuggestion"][];
       pending_questions: string[];
     };
@@ -5911,7 +6044,7 @@ export interface components {
     /** @enum {string} */
     AgentAdapterType: "hermes";
     /**
-     * @description Closed product Agent Tool scope. Experiment tools are project-scoped and use the same Core RBAC, audit, and frozen run-spec boundary.
+     * @description Closed product Agent Tool scope. Artifact tools use short-lived transfer grants, while Experiment tools are project-scoped and use the same Core RBAC, audit, and frozen run-spec boundary.
      * @enum {string}
      */
     AgentToolName:
@@ -5921,6 +6054,8 @@ export interface components {
       | "context.promote"
       | "progress.get"
       | "progress.recalculate"
+      | "artifact.upload"
+      | "artifact.read"
       | "experiment.create"
       | "experiment.run"
       | "experiment.status"
@@ -6014,7 +6149,9 @@ export interface components {
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -6049,7 +6186,9 @@ export interface components {
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -6124,14 +6263,16 @@ export interface components {
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
       /**
-       * @description Exact reviewed Stage 6 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @description Exact reviewed MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
        * @example [
        *       "project.get",
        *       "data.list",
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools: components["schemas"]["AgentToolName"][];
@@ -6151,14 +6292,16 @@ export interface components {
       cloudflare_access_client_id?: string;
       cloudflare_access_client_secret?: string;
       /**
-       * @description Exact reviewed Stage 6 MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
+       * @description Exact reviewed MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
        * @example [
        *       "project.get",
        *       "data.list",
        *       "data.read",
        *       "context.promote",
        *       "progress.get",
-       *       "progress.recalculate"
+       *       "progress.recalculate",
+       *       "artifact.upload",
+       *       "artifact.read"
        *     ]
        */
       allowed_tools?: components["schemas"]["AgentToolName"][];
@@ -6167,7 +6310,10 @@ export interface components {
       /** @description Opaque Agent Token returned exactly once in manual mode. */
       readonly token: string;
       credential: components["schemas"]["AgentCredential"];
-      /** Format: uri */
+      /**
+       * Format: uri
+       * @description MCP endpoint containing the pending credential's one-time verification challenge. The challenge is consumed by the first successful negotiated tools/list and has no authority afterward.
+       */
       mcp_endpoint: string;
       /** @description Recommended Hermes MCP server name. */
       server_name?: string;
@@ -6280,7 +6426,11 @@ export interface components {
     };
     CreateAgentSessionRequest: {
       title: string;
-      session_type: components["schemas"]["AgentSessionType"];
+      /**
+       * @description Human-created Agent conversations are always main Sessions.
+       * @constant
+       */
+      session_type: "main";
       default?: boolean;
     };
     UpdateAgentSessionRequest: {
@@ -6313,8 +6463,26 @@ export interface components {
       content: string;
       tool_call_id?: string;
       tool_calls?: components["schemas"]["AgentToolCall"][];
+      attachments?: components["schemas"]["AgentChatAttachment"][];
       /** Format: date-time */
       created_at?: string;
+    };
+    AgentChatAttachment: {
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      /** Format: uuid */
+      run_id: string;
+      /** @enum {string} */
+      direction: "input" | "output";
+      name: string;
+      filename: string;
+      mime_type: string;
+      /** Format: int64 */
+      size_bytes: number;
+      /** Format: date-time */
+      created_at: string;
     };
     AgentMessageList: {
       items: components["schemas"]["AgentMessage"][];
@@ -6357,6 +6525,20 @@ export interface components {
     };
     StartAgentRunRequest: {
       message: string;
+      artifact_ids?: string[];
+      /**
+       * @description Request-scoped Hermes reasoning intensity. Omit to use the runtime default.
+       * @enum {string}
+       */
+      reasoning_effort?:
+        | "none"
+        | "minimal"
+        | "low"
+        | "medium"
+        | "high"
+        | "xhigh"
+        | "max"
+        | "ultra";
     };
     ReplayAgentRunRequest: {
       message_id?: string;
@@ -6377,6 +6559,7 @@ export interface components {
       | "message.started"
       | "message.delta"
       | "message.completed"
+      | "reasoning.available"
       | "tool.progress"
       | "tool.started"
       | "tool.completed"
@@ -7378,6 +7561,35 @@ export interface operations {
           "application/json": components["schemas"]["ArtifactUploadSession"];
         };
       };
+      409: components["responses"]["Error"];
+      413: components["responses"]["Error"];
+    };
+  };
+  "artifact.agentUploads.initialize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgentArtifactInitializeUploadRequest"];
+      };
+    };
+    responses: {
+      /** @description Agent Artifact, pending Version, and upload session initialized. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactUploadSession"];
+        };
+      };
+      403: components["responses"]["Error"];
       409: components["responses"]["Error"];
       413: components["responses"]["Error"];
     };
@@ -9166,7 +9378,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Instance disabled and credentials revoked. */
+      /** @description Instance removed from the workspace and credentials revoked. */
       204: {
         headers: {
           [name: string]: unknown;
@@ -10030,6 +10242,27 @@ export interface operations {
       };
     };
   };
+  "progress.milestones.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        milestoneId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Milestone deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   "progress.milestones.update": {
     parameters: {
       query?: never;
@@ -10364,6 +10597,32 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProgressProposal"];
+        };
+      };
+    };
+  };
+  "progress.proposals.batch_review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BatchReviewProgressProposalsRequest"];
+      };
+    };
+    responses: {
+      /** @description Reviewed proposals in request order. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProgressProposalList"];
         };
       };
     };

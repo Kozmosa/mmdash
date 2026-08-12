@@ -104,13 +104,217 @@ Verification completed:
 
 # mmdash v0.1 Stage 7 integration handoff
 
-- Updated: 2026-08-10
-- Branch: `codex/stage-7-integration`
-- Base: `origin/main@f1df451`
+- Updated: 2026-08-11
+- Branch: `main`
+- Current delivery commit: `c88a4a0 feat(progress): harden automatic evaluation workflow`
 - Canonical migrations: continuous `000001` through
-  `000032_agent_progress_evaluation_source`
-- Delivery state: official Hermes API-alignment hardening and real-runtime
-  acceptance complete in the isolated worktree; branch ready for a Ready PR
+  `000040_progress_reasoning_effort`
+- Delivery state: Agent single-token authentication, private-Core boundary,
+  recoverable instance removal, full-screen workbench, and Agent Artifact
+  upload are integrated with the Progress human scheduling workbench and review
+  policy; the merged repository gate and Docker Compose smoke acceptance pass;
+  Project and per-Run instructions explicitly advertise Markdown/KaTeX support
+
+## 2026-08-11 Progress automatic evaluation hardening
+
+- Periodic Progress evaluation is now scheduled by Core/PostgreSQL rather than
+  Hermes Jobs. PostgreSQL owns due-time calculation, leases, retries, request
+  deduplication, and manual/automatic concurrency; Hermes only executes the
+  resulting Progress Session Run.
+- Manual evaluation is blocked while a real evaluation is queued or running.
+  A stale Progress evaluation whose backing Job has already reached
+  `succeeded`, `failed`, `cancelled`, or `timed_out` is reconciled to `failed`
+  before deduplication, so an orphan `running` row cannot block future manual
+  evaluation. This fixes the observed `nanako` record whose evaluation remained
+  `running` after its Job became `timed_out`.
+- A newly accepted manual request immediately renders the queue stage, polls
+  Progress each second until its Evaluation row appears, and shows
+  `Session 准备中` instead of reopening the previous completed Session. A
+  genuinely merged request explicitly says that no new evaluation was created.
+- The latest automatic evaluation exposes a lightweight read-only Session
+  dialog. Sent evaluation input is collapsed by default, SSE updates are
+  batched, Tool Calls and safe reasoning availability render inline, and the UI
+  explains that absence of `reasoning.available` does not prove the model did
+  not reason; hidden reasoning text remains unavailable.
+- Project Settings now persist `reasoning_effort` and pass it to Hermes through
+  `model_options.reasoning_effort`. The evaluator Prompt may consult current
+  project state through granted mmdash MCP read tools and must not create or
+  modify schedules without an explicit time; missing time becomes a pending
+  question instead of an invented arrangement.
+- Verification completed with Web TypeScript checks, focused Progress/Session
+  tests, Core Agent/Progress Go tests, generated-contract checks, and manual
+  browser confirmation of the queue and Session state transitions. A remaining
+  live issue exists: after clicking `立即评估`, the newly queued Progress
+  evaluation can still transition to `failed`. The queue-state/orphan-Job fixes
+  must not be treated as resolving this downstream evaluator failure; the next
+  investigation should capture the failed Evaluation error code, backing Job
+  status/result, Agent Run status, and Core/Worker logs for the same IDs before
+  changing retry behavior. Core Go changes require restarting the local
+  development launcher; PostgreSQL and MinIO volumes remain preserved.
+
+## 2026-08-11 Progress human workbench integration
+
+- The Progress page now exposes Calendar and TODO views. Calendar supports day
+  and cycling two/three/four-day ranges, fixed two-axis scrolling, current-time
+  positioning, a Milestone strip, optional timed Milestone duplication,
+  15-minute creation/move/resize snapping, overlap lanes, drag ghosts, live
+  resize geometry, and one detail drawer. TODO remains one waterfall; its
+  day-versus-period setting changes grouping depth without rewriting stored
+  time.
+- Human completion is independent from the automatic `todo`, `in_progress`,
+  and `blocked` assessment. Human completion renders a filled/faded card;
+  automatic completion remains an amber `task.complete` or
+  `milestone.complete` Proposal until explicitly accepted or rejected. Agent
+  creation and scheduling changes are likewise reviewable, including atomic
+  approve-all/reject-all, while work-state assessments apply directly.
+- Automatic evaluation uses a dedicated `session_type=progress` Agent Session.
+  The isolated-branch acceptance completed a real Hermes evaluation, left its
+  creation/scheduling suggestions pending until browser batch rejection, and
+  accepted a controlled completion Proposal through the card.
+- The branch's original `000033_progress_human_workbench` migration was
+  deliberately renumbered to `000037_progress_human_workbench` during merge;
+  Agent/Auth/Artifact already authoritatively own migrations `000033` through
+  `000036`. Its column, constraint, and index setup is re-entrant so a shared
+  development database that previously received the old unrecorded migration
+  body can still adopt the canonical `000037` record safely. The integration
+  test exercises up/down/up behavior.
+- Before integration, the Progress branch passed its Web, BFF, Worker, Go,
+  build, contract, API, and Caddy checks. Browser acceptance covered live
+  resize, drag preview, timed Milestone completion/reopen, optimistic rollback,
+  AI review, and Progress Agent selection. The merged repository is revalidated
+  separately below before delivery.
+- After integration, the repository gate passed with 123 Web tests, 55 Web BFF
+  tests, 37 MCP Gateway tests, all Go/Core/CLI tests, 36 Worker tests, all three
+  language builds, contract compatibility, and a 373-operation API catalog.
+  Caddy validation returned `Valid configuration` outside the process sandbox.
+  Docker Compose then applied canonical migration `000037` to the existing
+  shared database, brought every long-running service healthy, and passed the
+  full repository smoke including Worker, native CLI device login, local/remote
+  MCP, Audit, events, and Data Hub. Recent application logs contained no
+  panic/fatal/error entries; acceptance containers/network were removed with
+  `down` and volumes were preserved.
+
+## 2026-08-11 Agent workbench and Agent Artifact integration
+
+- Migration `000034_agent_instance_removal` adds `removed_at`. Deleting a
+  disabled or active instance now revokes its Grant/Tokens and removes it from
+  ordinary reads without destroying Session, Run, Audit, or Artifact history.
+- Human Session creation is `main`-only. Persisted `progress` and `experiment`
+  Sessions remain internal to automatic Progress evaluation and Experiment
+  result analysis and are filtered from the human workbench.
+- The Agent page is a viewport-filling ChatGPT-style workspace with collapsible
+  Session and context rails, on-demand new-Session naming, Session context
+  menus, an internally scrolling transcript, Enter-to-send/Shift+Enter newline,
+  in-composer stop, SSE reattachment, inline safe reasoning/Tool status, and
+  stale-history-safe terminal reconciliation. Below `1280px` the context drawer
+  starts collapsed so it cannot cover the composer. Create and fork now clear
+  the prior Session's transient Run/stream state through the same transition as
+  an explicit Session selection; this closes the live stale-Run/404 defect found
+  during browser acceptance.
+- A generic transport-level SSE `error` no longer marks the Run failed. The Web
+  client checks the authoritative Run, resumes from the last event ID with
+  bounded backoff while it remains active, and clears the reconnect notice when
+  output resumes. Agent-uploaded Artifact projections stay out of the transcript
+  until the Run settles and are then ordered at the Run terminal timestamp
+  instead of appearing inside its thinking/Tool chain. Persisted Hermes Tool
+  Calls with omitted/stale creation-time state now render as completed history,
+  while only the active Run may display `queued`/`running`.
+- Session projections expose `last_run_id`; returning to a Session therefore
+  queries and reattaches its still-running Run instead of losing the stop state
+  and new output. The composer also offers a persisted per-Agent reasoning
+  selector (`auto` plus Hermes' eight explicit levels), validated end to end and
+  forwarded as request-scoped `model_options.reasoning_effort`.
+- The selected Agent and Session now survive refresh through URL state. The
+  workspace navigation and per-Agent Session rail persist their collapsed state,
+  while two-second background projection polling keeps another tab on the same
+  Session current without competing with the active Run SSE stream.
+- Markdown rendering now safely supports fenced/inline Markdown plus `$...$`,
+  `$$...$$`, `\(...\)`, and `\[...\]` KaTeX without invalid paragraph
+  hydration markup.
+- Migration `000035_agent_artifact` adds `kind/source=agent` and exact
+  `agent_instance_id` upload ownership. New exact MCP Tool `artifact.upload`
+  initializes through a private Core Agent endpoint, returns only direct
+  object-storage multipart grants, and confirms size/SHA-256/ETags; no complete
+  part, file, or base64 crosses MCP Gateway or Core application memory.
+- Migration `000036_agent_chat_artifacts` binds uploaded immutable Artifact
+  Versions to the originating Agent Session/Run. The composer uploads user files
+  as `kind=attachment`; current attachments are explicit first-class Run inputs,
+  and a bounded same-Session attachment ledger lets later questions retrieve
+  earlier files through `artifact.read` without requiring the user to repeat an
+  instruction to open them. Agent-delivered files render as cards and images as
+  inline previews in persisted history.
+- The real `iamswlx486@gmail.com` test account passed browser acceptance without
+  recording its password or one-time Tokens: the disabled instance returned
+  `204` from the UI removal flow and disappeared; its active instance rotated
+  to the eight-Tool grant; Hermes Dashboard reported all eight exact Tools.
+  Live Runs created text and PNG files, called
+  `mcp__mmdash_project__artifact_upload`, completed direct PUT plus ETag/SHA-256
+  verification, and both objects appeared `available` in the Artifact library
+  with `kind=agent` and `source=agent`. The same browser run confirmed
+  no-refresh replies, inline Tool/reasoning state, Markdown/KaTeX, Enter versus
+  Shift+Enter, a successful `running -> stopping -> stopped` action, fixed page
+  height, and an internally scrolling transcript (`overscroll-behavior: contain`).
+  Follow-up acceptance proved proactive current-file inspection, retrieval of a
+  file attached to an earlier Run in the same Session, cross-tab convergence,
+  duplicate-final suppression, refresh-stable Session selection and rail states,
+  and a generated 86.9 KiB PNG appearing immediately as an inline image card.
+  Selecting that card opens the Artifact detail drawer in place without leaving
+  the Agent page; it no longer initiates a download directly from the chat.
+- The final post-acceptance repository gate passed: TypeScript lint and tests,
+  122 Web tests, 54 Web BFF tests, 37 MCP Gateway tests, all Go/Core/CLI tests,
+  36 Worker tests, TypeScript/Go/Python builds, contract compatibility, and the
+  371-operation API catalog. The sandbox denied spawning the local `caddy`
+  binary, so the identical Caddyfile check was rerun outside that process
+  sandbox and returned `Valid configuration`.
+- The final Docker Compose images built and all long-running services reached
+  healthy state. The repository smoke passed end to end, including browser API,
+  Core, Worker, native CLI device login, stdio/remote MCP, Audit, events, and
+  Data Hub. Core was bound only to host loopback through a temporary acceptance
+  override because the production Compose boundary intentionally leaves it
+  unpublished. Recent Core/Web BFF/MCP Gateway/Web logs contained no
+  panic/fatal/error entries; `docker compose down` removed the acceptance
+  containers and network without deleting PostgreSQL or MinIO volumes.
+
+## 2026-08-11 Agent single-token authentication and private Core
+
+The former Gateway-attestation design recorded below is historical and is now
+superseded. Product Agent Tokens and user Tokens use the same first-class Core
+authentication model; their difference is the Agent Token's narrower binding
+to one Agent instance, Project, and exact Tool grant.
+
+- MCP Gateway forwards the original inbound Agent Token to Core. The
+  `MCP_CORE_ACCESS_TOKEN`, `AUTH_AGENT_VERIFICATION_TOKEN_ID`, relay header,
+  Core guard middleware, and secondary-credential client fields were removed.
+- Each pending Agent Token receives an independent one-time challenge. Core
+  stores only its SHA-256 Hash; the one-time MCP endpoint carries the plaintext
+  challenge. After an initialized exact `tools/list`, Gateway calls Core with
+  the same pending Agent Token and challenge. Core verifies the exact
+  Token/Agent/Project identity, atomically consumes the challenge, and stores
+  first-write evidence before human or automatic activation.
+- Migration `000033_agent_token_challenge` revokes unrecoverable legacy
+  pending credentials, marks their rotations for safe reissue, removes
+  `verified_by_token_id`, and adds challenge/evidence constraints.
+- Production Compose no longer publishes Core on a host port, and Caddy never
+  proxies to Core. Public `/v1` traffic terminates at Web BFF, which forwards
+  the original user Session/API Token after identity introspection and rejects
+  Agent/service credentials. Explicit public auth, signed transfer, and signed
+  webhook operations remain available. The acceptance override alone exposes
+  Core on host loopback for test orchestration.
+- Manual UI copy now treats both the Agent Token and challenged MCP endpoint as
+  one-time secret material. Automatic Hermes management receives the same
+  challenged endpoint, so the pinned Dashboard `/test` flow deterministically
+  creates verification evidence through its negotiated `tools/list`.
+- Focused Core/Auth/Agent, MCP Gateway, Web BFF, Web, Core Client, contract, API
+  catalog, and smoke-script syntax checks pass. The final `pnpm check` also
+  passes completely: TypeScript, Go, Python, CLI, builds, contract
+  compatibility, the 368-operation API catalog, and Caddy validation.
+- Acceptance images for Core/migrations, Web, Web BFF, and MCP Gateway built
+  successfully. This workstation's Docker Compose v2.10.2 does not implement
+  the acceptance file's `!override` port reset, so startup retained the base
+  `5432` mapping and stopped at an existing host-port collision before
+  migrations or smoke ran. The task-owned acceptance containers/network were
+  removed with `down` and without `-v`; its volumes remain preserved. No
+  existing development stack was stopped.
 
 ## 2026-08-10 official Hermes API-alignment hardening
 
@@ -413,8 +617,8 @@ supporting lease/deduplication indexes.
 - `MMDASH_PROGRESS_EVALUATOR_MODE=core_agent` is the production default;
   `mock` is explicit deterministic development/acceptance behavior only.
 - Automatic tracking in `core_agent` mode requires an active Project Agent
-  instance. Cron synchronization uses the existing Hermes Jobs API and stores
-  only the remote Job ID/status in Progress settings.
+  instance. Cron due-time calculation, leases, retries, and request creation
+  are owned by mmdash Core/PostgreSQL; Hermes only executes each evaluation Run.
 - Hermes-facing behavior is contract/mock tested; a real Hermes environment
   remains the release-environment integration check.
 - PostgreSQL and MinIO acceptance volumes were preserved.

@@ -244,23 +244,19 @@ func (store PostgresStore) UpdateTrackingSettings(ctx context.Context, projectID
 				return ErrReferenceInvalid
 			}
 		}
-		cronStatus := "pending"
-		if !input.AutoTrackingEnabled && !input.CronEnabled {
-			cronStatus = "disabled"
-		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO progress_settings(project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,agent_instance_id,cron_sync_status,cron_retry_at,updated_by,updated_at)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,'')::uuid,$10,$11,$12,$11)
+			INSERT INTO progress_settings(project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,reasoning_effort,agent_instance_id,cron_next_run_at,cron_retry_at,updated_by,updated_at)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid,$11,NULL,$12,$13)
 			ON CONFLICT(project_id) DO UPDATE SET auto_task_changes=EXCLUDED.auto_task_changes,
 				auto_tracking_enabled=EXCLUDED.auto_tracking_enabled,event_triggers_enabled=EXCLUDED.event_triggers_enabled,
 				cron_enabled=EXCLUDED.cron_enabled,cron_schedule=EXCLUDED.cron_schedule,
 				debounce_seconds=EXCLUDED.debounce_seconds,min_interval_seconds=EXCLUDED.min_interval_seconds,
-				agent_instance_id=EXCLUDED.agent_instance_id,cron_sync_status=EXCLUDED.cron_sync_status,
-				cron_error_code='',cron_retry_at=EXCLUDED.cron_retry_at,cron_lease_owner='',cron_lease_expires_at=NULL,
+				reasoning_effort=EXCLUDED.reasoning_effort,agent_instance_id=EXCLUDED.agent_instance_id,cron_next_run_at=EXCLUDED.cron_next_run_at,
+				cron_retry_at=NULL,cron_lease_owner='',cron_lease_expires_at=NULL,
 				updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at
 		`, projectID, input.AutoTaskChanges, input.AutoTrackingEnabled, input.EventTriggersEnabled,
 			input.CronEnabled, input.CronSchedule, input.DebounceSeconds, input.MinIntervalSeconds,
-			input.AgentInstanceID, cronStatus, now, actorID); err != nil {
+			input.ReasoningEffort, input.AgentInstanceID, input.CronNextRunAt, actorID, now); err != nil {
 			return err
 		}
 		var err error
@@ -273,6 +269,7 @@ func (store PostgresStore) UpdateTrackingSettings(ctx context.Context, projectID
 			"auto_tracking_enabled": input.AutoTrackingEnabled, "event_triggers_enabled": input.EventTriggersEnabled,
 			"cron_enabled": input.CronEnabled, "cron_schedule": input.CronSchedule,
 			"debounce_seconds": input.DebounceSeconds, "min_interval_seconds": input.MinIntervalSeconds,
+			"reasoning_effort": input.ReasoningEffort,
 		}
 		if input.AgentInstanceID != "" {
 			settingsPayload["agent_instance_id"] = input.AgentInstanceID
@@ -290,6 +287,27 @@ func (store PostgresStore) ScheduleRequest(ctx context.Context, projectID, actor
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, projectID); err != nil {
 			return err
+		}
+		if err := store.reconcileTerminalEvaluationJobs(ctx, tx, projectID, store.now()); err != nil {
+			return err
+		}
+		if triggerKind == "manual" {
+			var requestID string
+			var createdAt time.Time
+			err := tx.QueryRowContext(ctx, `
+				SELECT request_id,created_at
+				FROM progress_evaluations
+				WHERE project_id=$1 AND status IN ('queued','running')
+				ORDER BY created_at DESC,evaluation_id DESC
+				LIMIT 1
+			`, projectID).Scan(&requestID, &createdAt)
+			if err == nil {
+				result = RecalculateResult{RequestID: requestID, Status: "pending", ScheduledFor: createdAt, Merged: true}
+				return nil
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
 		}
 		if trigger.SourceEventID != "" {
 			var requestID string
@@ -512,6 +530,7 @@ func (store PostgresStore) EvaluationContext(ctx context.Context, projectID stri
 		"cron_enabled":           settings.CronEnabled, "cron_schedule": settings.CronSchedule,
 		"debounce_seconds":     settings.DebounceSeconds,
 		"min_interval_seconds": settings.MinIntervalSeconds,
+		"reasoning_effort":     settings.ReasoningEffort,
 		"agent_instance_id":    settings.AgentInstanceID,
 		"evaluator_mode":       settings.EvaluatorMode,
 	}
@@ -544,8 +563,11 @@ func (store PostgresStore) FinalizeRequest(ctx context.Context, claim RequestCla
 		if status != "assembling" || leaseOwner != claim.LeaseOwner {
 			return ErrConflict
 		}
+		if err := store.reconcileTerminalEvaluationJobs(ctx, tx, claim.ProjectID, store.now()); err != nil {
+			return err
+		}
 		var existingID string
-		err := tx.QueryRowContext(ctx, `SELECT evaluation_id FROM progress_evaluations WHERE project_id=$1 AND input_version=$2 AND status IN ('queued','running','succeeded') ORDER BY created_at DESC LIMIT 1`, claim.ProjectID, inputVersion).Scan(&existingID)
+		err := tx.QueryRowContext(ctx, `SELECT evaluation_id FROM progress_evaluations WHERE project_id=$1 AND input_version=$2 AND (status IN ('queued','running') OR (status='succeeded' AND NOT $3)) ORDER BY created_at DESC LIMIT 1`, claim.ProjectID, inputVersion, claim.Force).Scan(&existingID)
 		if err == nil {
 			_, err = tx.ExecContext(ctx, `UPDATE progress_evaluation_requests SET status='merged',merged_into_evaluation_id=$2,lease_owner='',lease_expires_at=NULL,error_code='',updated_at=$3 WHERE request_id=$1`, claim.ID, existingID, store.now())
 			return err
@@ -574,14 +596,14 @@ func (store PostgresStore) FinalizeRequest(ctx context.Context, claim RequestCla
 		insert, err := tx.ExecContext(ctx, `
 			INSERT INTO progress_evaluations(evaluation_id,request_id,project_id,status,input_version,input_snapshot,source_event_ids,trigger_kind,agent_instance_id,evaluator_mode,requested_by,created_at,updated_at)
 			VALUES($1,$2,$3,'queued',$4,$5,$6,$7,NULLIF($8,'')::uuid,$9,$10,$11,$11)
-			ON CONFLICT(project_id,input_version) WHERE status IN ('queued','running','succeeded') DO NOTHING
+			ON CONFLICT(project_id,input_version) WHERE status IN ('queued','running') DO NOTHING
 		`, evaluationID, claim.ID, claim.ProjectID, inputVersion, encodedInput, encodedSources, claim.TriggerKind, settings.AgentInstanceID, store.evaluatorMode(), claim.ActorID, now)
 		if err != nil {
 			return err
 		}
 		inserted, _ := insert.RowsAffected()
 		if inserted == 0 {
-			if err := tx.QueryRowContext(ctx, `SELECT evaluation_id FROM progress_evaluations WHERE project_id=$1 AND input_version=$2 AND status IN ('queued','running','succeeded') ORDER BY created_at DESC LIMIT 1`, claim.ProjectID, inputVersion).Scan(&existingID); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT evaluation_id FROM progress_evaluations WHERE project_id=$1 AND input_version=$2 AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`, claim.ProjectID, inputVersion).Scan(&existingID); err != nil {
 				return err
 			}
 			_, err = tx.ExecContext(ctx, `UPDATE progress_evaluation_requests SET status='merged',merged_into_evaluation_id=$2,lease_owner='',lease_expires_at=NULL,updated_at=$3 WHERE request_id=$1`, claim.ID, existingID, now)
@@ -610,28 +632,63 @@ func (store PostgresStore) FinalizeRequest(ctx context.Context, claim RequestCla
 	return result, err
 }
 
+func (store PostgresStore) reconcileTerminalEvaluationJobs(
+	ctx context.Context,
+	tx transaction.Tx,
+	projectID string,
+	now time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE progress_evaluations AS evaluation
+		SET status='failed',
+		    attempts=job.attempts,
+		    error_code=CASE job.status
+		      WHEN 'timed_out' THEN 'PROGRESS_EVALUATION_JOB_TIMED_OUT'
+		      WHEN 'cancelled' THEN 'PROGRESS_EVALUATION_JOB_CANCELLED'
+		      WHEN 'failed' THEN 'PROGRESS_EVALUATION_JOB_FAILED'
+		      ELSE 'PROGRESS_EVALUATION_JOB_STATE_INCONSISTENT'
+		    END,
+		    error_message='Evaluation Job reached a terminal state before Progress finalized it',
+		    completed_at=COALESCE(job.finished_at,$2),
+		    updated_at=$2
+		FROM jobs AS job
+		WHERE evaluation.job_id=job.job_id
+		  AND evaluation.project_id=$1
+		  AND evaluation.status IN ('queued','running')
+		  AND job.status IN ('succeeded','failed','cancelled','timed_out')
+	`, projectID, now)
+	return err
+}
+
 func (store PostgresStore) ClaimCron(ctx context.Context, owner string, lease time.Duration) (*CronClaim, error) {
 	now := store.now()
 	var claim *CronClaim
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_settings SET cron_sync_status='failed',cron_error_code='CRON_LEASE_EXPIRED',cron_retry_at=$1,cron_lease_owner='',cron_lease_expires_at=NULL WHERE cron_sync_status='syncing' AND cron_lease_expires_at <= $1`, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_settings SET cron_retry_at=$1,cron_lease_owner='',cron_lease_expires_at=NULL WHERE cron_lease_owner<>'' AND cron_lease_expires_at <= $1`, now); err != nil {
 			return err
 		}
 		var item CronClaim
 		err := tx.QueryRowContext(ctx, `
-			SELECT project_id,COALESCE(agent_instance_id::text,''),cron_remote_job_id,cron_schedule,(auto_tracking_enabled AND cron_enabled)
-			FROM progress_settings
-			WHERE (cron_sync_status='pending' OR (cron_sync_status='failed' AND COALESCE(cron_retry_at,$1) <= $1))
-			  AND (agent_instance_id IS NOT NULL OR cron_remote_job_id <> '')
-			ORDER BY updated_at,project_id FOR UPDATE SKIP LOCKED LIMIT 1
-		`, now).Scan(&item.ProjectID, &item.AgentInstanceID, &item.RemoteJobID, &item.Schedule, &item.Enabled)
+			SELECT settings.project_id,
+			       COALESCE(instance.created_by::text,project_row.created_by::text),
+			       COALESCE(settings.cron_next_run_at,$1)
+			FROM progress_settings AS settings
+			JOIN projects AS project_row USING(project_id)
+			LEFT JOIN agent_instances AS instance USING(agent_instance_id)
+			WHERE settings.auto_tracking_enabled AND settings.cron_enabled
+			  AND (settings.cron_next_run_at IS NULL OR settings.cron_next_run_at <= $1)
+			  AND (settings.cron_retry_at IS NULL OR settings.cron_retry_at <= $1)
+			  AND settings.cron_lease_owner=''
+			ORDER BY settings.cron_next_run_at NULLS FIRST,settings.project_id
+			FOR UPDATE OF settings SKIP LOCKED LIMIT 1
+		`, now).Scan(&item.ProjectID, &item.ActorID, &item.ScheduledFor)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE progress_settings SET cron_sync_status='syncing',cron_lease_owner=$2,cron_lease_expires_at=$3 WHERE project_id=$1`, item.ProjectID, owner, now.Add(lease)); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE progress_settings SET cron_lease_owner=$2,cron_lease_expires_at=$3 WHERE project_id=$1`, item.ProjectID, owner, now.Add(lease)); err != nil {
 			return err
 		}
 		claim = &item
@@ -640,13 +697,17 @@ func (store PostgresStore) ClaimCron(ctx context.Context, owner string, lease ti
 	return claim, err
 }
 
-func (store PostgresStore) CompleteCron(ctx context.Context, projectID, owner, remoteJobID string) error {
+func (store PostgresStore) CompleteCron(ctx context.Context, projectID, owner string, scheduledFor time.Time) error {
 	now := store.now()
-	status := "ready"
-	if remoteJobID == "" {
-		status = "disabled"
+	var schedule string
+	if err := store.DB.QueryRowContext(ctx, `SELECT cron_schedule FROM progress_settings WHERE project_id=$1 AND cron_lease_owner=$2`, projectID, owner).Scan(&schedule); err != nil {
+		return err
 	}
-	result, err := store.DB.ExecContext(ctx, `UPDATE progress_settings SET cron_remote_job_id=$3,cron_sync_status=$4,cron_error_code='',cron_synced_at=$5,cron_retry_at=NULL,cron_lease_owner='',cron_lease_expires_at=NULL WHERE project_id=$1 AND cron_sync_status='syncing' AND cron_lease_owner=$2`, projectID, owner, remoteJobID, status, now)
+	next, err := nextCronOccurrence(schedule, now)
+	if err != nil {
+		return err
+	}
+	result, err := store.DB.ExecContext(ctx, `UPDATE progress_settings SET cron_last_scheduled_at=$3,cron_next_run_at=$4,cron_retry_at=NULL,cron_lease_owner='',cron_lease_expires_at=NULL WHERE project_id=$1 AND cron_lease_owner=$2`, projectID, owner, scheduledFor, next)
 	if err != nil {
 		return err
 	}
@@ -657,9 +718,9 @@ func (store PostgresStore) CompleteCron(ctx context.Context, projectID, owner, r
 	return nil
 }
 
-func (store PostgresStore) FailCron(ctx context.Context, projectID, owner, code string, retry time.Duration) error {
+func (store PostgresStore) FailCron(ctx context.Context, projectID, owner, _ string, retry time.Duration) error {
 	now := store.now()
-	result, err := store.DB.ExecContext(ctx, `UPDATE progress_settings SET cron_sync_status='failed',cron_error_code=$3,cron_retry_at=$4,cron_lease_owner='',cron_lease_expires_at=NULL WHERE project_id=$1 AND cron_sync_status='syncing' AND cron_lease_owner=$2`, projectID, owner, code, now.Add(retry))
+	result, err := store.DB.ExecContext(ctx, `UPDATE progress_settings SET cron_retry_at=$3,cron_lease_owner='',cron_lease_expires_at=NULL WHERE project_id=$1 AND cron_lease_owner=$2`, projectID, owner, now.Add(retry))
 	if err != nil {
 		return err
 	}
@@ -683,6 +744,36 @@ func (store PostgresStore) MarkEvaluationRunning(ctx context.Context, tx transac
 	return store.trackingAudit(ctx, tx, actorID, "system", projectID, "progress.evaluation.started", "progress-evaluation", evaluationID, "success", "", map[string]interface{}{"attempt": job.Attempts})
 }
 
+// SetEvaluationAgentProvenance publishes the Session and Run as soon as the
+// Agent runtime has accepted the evaluation. The final result remains owned by
+// CompleteEvaluation, but readers can attach to the live Run while it is in
+// progress.
+func (store PostgresStore) SetEvaluationAgentProvenance(
+	ctx context.Context,
+	evaluationID string,
+	agentInstanceID string,
+	agentSessionID string,
+	agentRunID string,
+) error {
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE progress_evaluations
+		SET agent_instance_id=$2,agent_session_id=$3,agent_run_id=$4,updated_at=$5
+		WHERE evaluation_id=$1 AND status='running'
+		  AND agent_instance_id=$2
+	`, evaluationID, agentInstanceID, agentSessionID, agentRunID, store.now())
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (store PostgresStore) CompleteEvaluation(ctx context.Context, tx transaction.Tx, job jobs.Job, result map[string]interface{}) error {
 	output, err := decodeEvaluationResult(result)
 	if err != nil {
@@ -701,12 +792,13 @@ func (store PostgresStore) CompleteEvaluation(ctx context.Context, tx transactio
 		agentInstanceID = value
 	}
 	now := store.now()
-	settings, err := store.getSettingsTx(ctx, tx, projectID)
-	if err != nil {
-		return err
+	for _, update := range output.WorkStateUpdates {
+		if err := store.applyEvaluationWorkState(ctx, tx, projectID, evaluationID, actorID, agentRunID, update, now); err != nil {
+			return err
+		}
 	}
 	for _, suggestion := range output.Suggestions {
-		if err := store.applyEvaluationSuggestion(ctx, tx, projectID, evaluationID, actorID, agentRunID, settings.AutoTaskChanges, suggestion, now); err != nil {
+		if err := store.applyEvaluationSuggestion(ctx, tx, projectID, evaluationID, actorID, agentRunID, suggestion, now); err != nil {
 			return err
 		}
 	}
@@ -776,28 +868,37 @@ func (store PostgresStore) FailEvaluation(ctx context.Context, tx transaction.Tx
 	return store.trackingAudit(ctx, tx, actorID, "system", projectID, "progress.evaluation.failed", "progress-evaluation", evaluationID, "error", failure.Code, map[string]interface{}{"attempts": job.Attempts})
 }
 
-func (store PostgresStore) applyEvaluationSuggestion(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, autoTasks bool, suggestion EvaluationSuggestion, now time.Time) error {
-	if strings.HasPrefix(suggestion.ProposalType, "milestone.") || !autoTasks {
-		return store.createEvaluationProposal(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
+func (store PostgresStore) applyEvaluationSuggestion(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, suggestion EvaluationSuggestion, now time.Time) error {
+	return store.createEvaluationProposal(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
+}
+
+func (store PostgresStore) applyEvaluationWorkState(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, update EvaluationWorkStateUpdate, now time.Time) error {
+	taskID, err := normalizeReferenceID(update.TaskID)
+	if err != nil || !validAutomaticWorkState(update.State) {
+		return ErrReferenceInvalid
 	}
-	switch suggestion.ProposalType {
-	case "task.create":
-		targetID, changes, err := store.validateProposalReferences(ctx, tx, projectID, suggestion.ProposalType, suggestion.TargetID, suggestion.Changes)
-		if err != nil {
-			return err
+	var title, currentStatus, currentWorkState string
+	if err := tx.QueryRowContext(ctx, `SELECT title,status,work_state FROM progress_tasks WHERE task_id=$1 AND project_id=$2 FOR UPDATE`, taskID, projectID).Scan(&title, &currentStatus, &currentWorkState); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrReferenceInvalid
 		}
-		suggestion.TargetID, suggestion.Changes = targetID, changes
-		return store.createEvaluationTask(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
-	case "task.update":
-		targetID, changes, err := store.validateProposalReferences(ctx, tx, projectID, suggestion.ProposalType, suggestion.TargetID, suggestion.Changes)
-		if err != nil {
-			return err
-		}
-		suggestion.TargetID, suggestion.Changes = targetID, changes
-		return store.updateEvaluationTask(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
-	default:
-		return store.createEvaluationProposal(ctx, tx, projectID, evaluationID, actorID, runID, suggestion, now)
+		return err
 	}
+	if currentWorkState == update.State {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE progress_tasks SET work_state=$3,status=CASE WHEN status='done' THEN status ELSE $3 END,source='agent',source_run_id=$4,source_evaluation_id=$5,updated_by=$6,updated_at=$7 WHERE task_id=$1 AND project_id=$2`, taskID, projectID, update.State, runID, evaluationID, actorID, now); err != nil {
+		return err
+	}
+	eventStatus := currentStatus
+	if eventStatus != string(TaskDone) {
+		eventStatus = update.State
+	}
+	metadata := map[string]interface{}{"source": "agent", "source_run_id": runID, "source_evaluation_id": evaluationID, "previous_work_state": currentWorkState, "work_state": update.State, "automatic_work_state": true}
+	if err := store.progressEvent(ctx, tx, "progress.task.updated", projectID, actorID, taskID, "progress_task", title, eventStatus, metadata); err != nil {
+		return err
+	}
+	return store.trackingAudit(ctx, tx, actorID, "system", projectID, "progress.task.updated", "progress-task", taskID, "success", "", metadata)
 }
 
 func (store PostgresStore) createEvaluationProposal(ctx context.Context, tx transaction.Tx, projectID, evaluationID, actorID, runID string, suggestion EvaluationSuggestion, now time.Time) error {
@@ -1106,7 +1207,7 @@ func (store PostgresStore) trackingAudit(ctx context.Context, tx transaction.Tx,
 }
 
 func defaultSettings(projectID string) Settings {
-	return Settings{ProjectID: projectID, AutoTaskChanges: true, EventTriggersEnabled: true, CronSchedule: "0 */6 * * *", DebounceSeconds: 60, MinIntervalSeconds: 300, CronSyncStatus: "pending"}
+	return Settings{ProjectID: projectID, AutoTaskChanges: true, EventTriggersEnabled: true, CronSchedule: "0 */6 * * *", DebounceSeconds: 60, MinIntervalSeconds: 300, ReasoningEffort: "medium"}
 }
 
 func (store PostgresStore) evaluatorMode() string {
@@ -1165,14 +1266,13 @@ func scanStageOverride(scan scanFunc) (StageOverride, error) {
 func settingsScanTargets(item *Settings) []interface{} {
 	return []interface{}{&item.ProjectID, &item.AutoTaskChanges, &item.AutoTrackingEnabled,
 		&item.EventTriggersEnabled, &item.CronEnabled, &item.CronSchedule,
-		&item.DebounceSeconds, &item.MinIntervalSeconds, &item.AgentInstanceID,
-		&item.CronRemoteJobID, &item.CronSyncStatus, &item.CronErrorCode,
-		&item.CronSyncedAt, &item.UpdatedBy, &item.UpdatedAt}
+		&item.DebounceSeconds, &item.MinIntervalSeconds, &item.ReasoningEffort, &item.AgentInstanceID,
+		&item.CronNextRunAt, &item.CronLastScheduledAt, &item.UpdatedBy, &item.UpdatedAt}
 }
 
-const settingsSelect = `SELECT project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,COALESCE(agent_instance_id::text,''),cron_remote_job_id,cron_sync_status,cron_error_code,cron_synced_at,updated_by,updated_at FROM progress_settings`
+const settingsSelect = `SELECT project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,reasoning_effort,COALESCE(agent_instance_id::text,''),cron_next_run_at,cron_last_scheduled_at,updated_by,updated_at FROM progress_settings`
 const stageOverrideSelect = `SELECT override_id,project_id,stage,summary,note,active,created_by,created_at,COALESCE(cleared_by::text,''),cleared_at FROM progress_stage_overrides`
-const evaluationSelect = `SELECT evaluation.evaluation_id,evaluation.request_id,evaluation.project_id,COALESCE(evaluation.job_id::text,''),evaluation.status,evaluation.input_version,evaluation.input_snapshot,evaluation.output_snapshot,evaluation.detected_stage,evaluation.summary,evaluation.changes_since_last,evaluation.completed_items,evaluation.in_progress_items,evaluation.blockers,evaluation.pending_questions,evaluation.source_event_ids,evaluation.trigger_kind,COALESCE(evaluation.agent_instance_id::text,''),COALESCE(evaluation.agent_session_id::text,''),COALESCE(evaluation.agent_run_id::text,''),evaluation.evaluator_mode,evaluation.attempts,evaluation.error_code,evaluation.error_message,evaluation.requested_by,evaluation.created_at,evaluation.started_at,evaluation.completed_at,evaluation.updated_at FROM progress_evaluations AS evaluation `
+const evaluationSelect = `SELECT evaluation.evaluation_id,evaluation.request_id,evaluation.project_id,COALESCE(evaluation.job_id::text,''),evaluation.status,evaluation.input_version,evaluation.input_snapshot,evaluation.output_snapshot,evaluation.detected_stage,evaluation.summary,evaluation.changes_since_last,evaluation.completed_items,evaluation.in_progress_items,evaluation.blockers,evaluation.pending_questions,evaluation.source_event_ids,evaluation.trigger_kind,COALESCE(evaluation.agent_instance_id::text,progress_session.agent_instance_id::text,''),COALESCE(evaluation.agent_session_id::text,progress_run.session_id::text,''),COALESCE(evaluation.agent_run_id::text,progress_run.run_id::text,''),evaluation.evaluator_mode,evaluation.attempts,evaluation.error_code,evaluation.error_message,evaluation.requested_by,evaluation.created_at,evaluation.started_at,evaluation.completed_at,evaluation.updated_at FROM progress_evaluations AS evaluation LEFT JOIN LATERAL (SELECT run_id,session_id FROM agent_runs WHERE source_evaluation_id=evaluation.evaluation_id ORDER BY created_at DESC,run_id DESC LIMIT 1) AS progress_run ON true LEFT JOIN agent_sessions AS progress_session ON progress_session.session_id=progress_run.session_id `
 
 func trackingPostgresError(err error) error {
 	var postgresError *pgconn.PgError

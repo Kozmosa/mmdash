@@ -7,11 +7,10 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/metrics"
 )
 
-// TrackingProcessor reconciles desired Hermes Cron jobs and moves debounced
-// requests into the shared PostgreSQL Job Queue. It never evaluates or mutates
-// Progress-owned records outside the Progress service boundary.
+// TrackingProcessor schedules due mmdash Cron evaluations and moves debounced
+// requests into the shared PostgreSQL Job Queue. Hermes executes an evaluation
+// Run only after mmdash has created the authoritative request and Job.
 type TrackingProcessor struct {
-	Agent      AgentRuntime
 	Facts      EvaluationFactsProvider
 	Lease      time.Duration
 	Metrics    *metrics.Registry
@@ -27,7 +26,7 @@ func (processor TrackingProcessor) Run(ctx context.Context, onError func(error))
 		poll = time.Second
 	}
 	for {
-		if err := processor.ReconcileCronOnce(ctx); err != nil && onError != nil {
+		if err := processor.ScheduleCronOnce(ctx); err != nil && onError != nil {
 			onError(err)
 		}
 		if err := processor.DispatchOnce(ctx); err != nil && onError != nil {
@@ -79,28 +78,28 @@ func (processor TrackingProcessor) DispatchOnce(ctx context.Context) error {
 	return nil
 }
 
-func (processor TrackingProcessor) ReconcileCronOnce(ctx context.Context) error {
-	if processor.Agent == nil {
-		return nil
-	}
+func (processor TrackingProcessor) ScheduleCronOnce(ctx context.Context) error {
 	claim, err := processor.Store.ClaimCron(ctx, processor.Owner, processor.lease())
 	if err != nil || claim == nil {
 		return err
 	}
-	result, err := processor.Agent.ReconcileProgressCron(
-		ctx, claim.ProjectID, claim.AgentInstanceID, claim.RemoteJobID,
-		claim.Schedule, claim.Enabled,
+	_, err = processor.Store.ScheduleRequest(
+		ctx, claim.ProjectID, claim.ActorID, "system", "cron", false,
+		EvaluationTrigger{
+			TriggerType: "cron", OccurredAt: claim.ScheduledFor,
+			Payload: map[string]interface{}{"scheduler": "mmdash"},
+		},
 	)
 	if err != nil {
 		_ = processor.Store.FailCron(ctx, claim.ProjectID, processor.Owner,
-			"HERMES_CRON_SYNC_FAILED", processor.retryDelay())
+			"MMDASH_CRON_SCHEDULE_FAILED", processor.retryDelay())
 		processor.observe("cron_failed")
 		return err
 	}
-	if err := processor.Store.CompleteCron(ctx, claim.ProjectID, processor.Owner, result.RemoteJobID); err != nil {
+	if err := processor.Store.CompleteCron(ctx, claim.ProjectID, processor.Owner, claim.ScheduledFor); err != nil {
 		return err
 	}
-	processor.observe("cron_synced")
+	processor.observe("cron_scheduled")
 	return nil
 }
 

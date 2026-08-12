@@ -48,6 +48,7 @@ type Store interface {
 	CompleteRunApproval(context.Context, string, string, string, time.Time) (RunRecord, error)
 	FailRunReservation(context.Context, string, string, string, time.Time) error
 	GetRun(context.Context, string, string) (RunRecord, error)
+	ListRuns(context.Context, string) ([]RunRecord, error)
 	RecordRunApproval(context.Context, string, string, time.Time) (RunRecord, error)
 	ReleaseRunApprovalClaim(context.Context, string, string, string, time.Time) (RunRecord, error)
 	ReserveRun(context.Context, RunRecord) (RunRecord, error)
@@ -256,7 +257,7 @@ func (store PostgresStore) CreateInstance(
 
 func (store PostgresStore) ListInstances(ctx context.Context, projectID string) ([]Instance, error) {
 	rows, err := store.DB.QueryContext(ctx, instanceSelect+`
-		WHERE grant_row.project_id = $1
+		WHERE grant_row.project_id = $1 AND instance.removed_at IS NULL
 		ORDER BY instance.created_at, instance.agent_instance_id
 	`, projectID)
 	if err != nil {
@@ -277,6 +278,7 @@ func (store PostgresStore) ListInstances(ctx context.Context, projectID string) 
 func (store PostgresStore) GetInstance(ctx context.Context, projectID, instanceID string) (Instance, error) {
 	item, err := scanInstance(store.DB.QueryRowContext(ctx, instanceSelect+`
 		WHERE grant_row.project_id = $1 AND instance.agent_instance_id = $2
+		  AND instance.removed_at IS NULL
 	`, projectID, instanceID).Scan)
 	return item, mapNotFound(err)
 }
@@ -347,11 +349,12 @@ func (store PostgresStore) DisableInstance(
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		result, err := tx.ExecContext(ctx, `
 			UPDATE agent_instances
-			SET status='disabled', disabled_at=$3, updated_at=$3, version=version+1
+			SET status='disabled', disabled_at=COALESCE(disabled_at,$3),
+				removed_at=$3, updated_at=$3, version=version+1
 			WHERE agent_instance_id=$2 AND EXISTS (
 				SELECT 1 FROM agent_project_grants
 				WHERE project_id=$1 AND agent_instance_id=$2
-			) AND status <> 'disabled'
+			) AND removed_at IS NULL
 		`, projectID, instanceID, now)
 		if err := requireAffected(result, err); err != nil {
 			return err
@@ -775,6 +778,26 @@ func (store PostgresStore) GetRun(ctx context.Context, sessionID, runID string) 
 		item.PendingApprovalIDs = append(item.PendingApprovalIDs, approvalID)
 	}
 	return item, approvalRows.Err()
+}
+
+func (store PostgresStore) ListRuns(ctx context.Context, sessionID string) ([]RunRecord, error) {
+	rows, err := store.DB.QueryContext(ctx, runSelect+`
+		WHERE session_id=$1 ORDER BY created_at,run_id
+	`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RunRecord{}
+	for rows.Next() {
+		item, err := scanRun(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		item.ToolCalls = []ToolCallRecord{}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (store PostgresStore) RecordRunApproval(
@@ -1373,7 +1396,14 @@ const sessionSelect = `
 	       remote_session_id, session_type, title, status,
 	       COALESCE(parent_session_id::text,''), COALESCE(end_reason,''),
 	       created_by, created_at, updated_at, ended_at,
-	       last_message_at, last_run_at, version
+	       last_message_at, last_run_at,
+	       COALESCE((
+	         SELECT candidate.run_id::text
+	         FROM agent_runs AS candidate
+	         WHERE candidate.session_id = agent_sessions.session_id
+	         ORDER BY candidate.created_at DESC, candidate.run_id DESC
+	         LIMIT 1
+	       ), ''), version
 	FROM agent_sessions
 `
 
@@ -1459,7 +1489,7 @@ func scanSession(scan scanFunc) (SessionRecord, error) {
 		&item.RemoteSessionID, &item.SessionType, &item.Title, &item.Status,
 		&item.ParentSessionID, &item.EndReason, &item.CreatedBy, &item.CreatedAt,
 		&item.UpdatedAt, &item.EndedAt, &item.LastMessageAt, &item.LastRunAt,
-		&item.Version)
+		&item.LastRunID, &item.Version)
 	return item, err
 }
 

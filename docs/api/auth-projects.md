@@ -62,10 +62,12 @@ holder of the Hermes Agent Token.
 The Gateway authenticates a pending product Token through `auth.me`, but that
 authentication alone is not verification. After a protocol-negotiated MCP
 Session successfully performs `tools/list`, the Gateway records durable
-evidence through `auth.agent_tokens.verification.record`. Core accepts that
-callback only from the specifically configured admin API Token ID; an ordinary
-admin API Token, browser Session, product Agent Token, `auth.me` request,
-current `server/discover`, or legacy `initialize` cannot create evidence.
+evidence through `auth.agent_tokens.verification.record` using the same pending
+Agent Token and the single-use challenge embedded in its one-time MCP endpoint.
+Core accepts only the exact pending Token/Agent/Project binding and atomically
+consumes the stored challenge Hash. An admin API Token, browser Session,
+`auth.me` request, current `server/discover`, or legacy `initialize` cannot
+create evidence by itself.
 Activation then atomically promotes the
 pending Token and revokes its predecessor. Any verification or transaction
 failure leaves the old Token active.

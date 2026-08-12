@@ -8,6 +8,7 @@ import { NotificationSettingsPanel } from "@/features/notification/notification-
 import { RepoSettingsPanel } from "@/features/repo/repo-settings-panel";
 import { ModelSettingsPanel } from "@/features/model/model-settings-panel";
 import { AgentSettingsPanel } from "@/features/agent/agent-settings-panel";
+import { ProgressSettingsPanel } from "@/features/progress/progress-settings-panel";
 
 export default function SettingsPage() {
   return (
@@ -29,11 +30,18 @@ export default function SettingsPage() {
       <RepoSettingsPanel />
       <ModelSettingsPanel />
       <AgentSettingsPanel />
+      <ProgressSettingsPanel />
       <NotificationSettingsPanel />
       <SettingsSlotGrid
         slots={settingsSlots
           .list()
-          .filter((slot) => slot.id !== "repo" && slot.id !== "model" && slot.id !== "agent")}
+          .filter(
+            (slot) =>
+              slot.id !== "repo" &&
+              slot.id !== "model" &&
+              slot.id !== "agent" &&
+              slot.id !== "progress",
+          )}
       />
       <MemberManagement />
       <section
