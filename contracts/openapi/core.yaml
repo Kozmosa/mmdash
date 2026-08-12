@@ -440,14 +440,12 @@ paths:
       - $ref: "#/components/parameters/AgentTokenId"
     post:
       tags: [Auth]
-      summary: Record trusted MCP verification evidence for a pending Agent Token
+      summary: Consume a pending Agent Token verification challenge
       description: |
-        Internal callback used only by MCP Gateway after a pending product
-        Agent Token completes one successful `tools/list` request in a
-        protocol-negotiated MCP session. Requires the dedicated Gateway Core
-        API credential. Browser sessions, Agent Tokens, Box Tokens, ordinary
-        `/auth/me`, current `server/discover`, and legacy `initialize` cannot
-        create verification evidence on their own.
+        After a pending product Agent Token completes one successful
+        `tools/list` request in a protocol-negotiated MCP session, the same
+        Agent identity consumes the one-time challenge embedded in its MCP
+        endpoint. Browser, API, and Box identities cannot consume it.
       operationId: auth.agent_tokens.verification.record
       requestBody:
         required: true
@@ -709,6 +707,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ArtifactUploadSession"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/agent-uploads:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Artifact, Agent]
+      summary: Initialize an Agent-owned immutable Artifact multipart upload
+      operationId: artifact.agentUploads.initialize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentArtifactInitializeUploadRequest"
+      responses:
+        "201":
+          description: Agent Artifact, pending Version, and upload session initialized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactUploadSession"
+        "403":
+          $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
         "413":
@@ -2040,12 +2064,16 @@ paths:
           $ref: "#/components/responses/Error"
     delete:
       tags: [Agent]
-      summary: Disable an Agent instance and revoke Project access
-      description: Disables the local instance and credentials without deleting Hermes message history.
+      summary: Remove an Agent instance and revoke Project access
+      description: |
+        Revokes every credential and removes the instance from the workspace.
+        Referential records and Hermes message history remain available to
+        Audit and retention processing. Repeating removal for a previously
+        disabled visible instance is supported.
       operationId: agent.instances.disable
       responses:
         "204":
-          description: Instance disabled and credentials revoked.
+          description: Instance removed from the workspace and credentials revoked.
         "403":
           $ref: "#/components/responses/Error"
         "404":
@@ -2775,6 +2803,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Milestone"
+    delete:
+      tags: [Progress]
+      summary: Delete a human milestone
+      operationId: progress.milestones.delete
+      responses:
+        "204": { description: Milestone deleted. }
   /v1/projects/{projectId}/progress/tasks:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -2792,7 +2826,7 @@ paths:
     post:
       tags: [Progress]
       summary: Create a task
-      description: Agent task changes are tagged with their source and obey the project automatic-change setting.
+      description: Human sessions create tasks directly. Agents and automatic evaluations submit a Progress Proposal.
       operationId: progress.tasks.create
       requestBody:
         required: true
@@ -2989,12 +3023,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProgressProposal"
+  /v1/projects/{projectId}/progress/proposals/batch-review:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Progress]
+      summary: Review a set of Progress Proposals atomically
+      description: Human session only. Every proposal must still be pending and belong to the route Project; otherwise none are reviewed.
+      operationId: progress.proposals.batch_review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchReviewProgressProposalsRequest"
+      responses:
+        "200":
+          description: Reviewed proposals in request order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressProposalList"
   /v1/projects/{projectId}/progress/settings:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
       tags: [Progress]
       summary: Read Progress automatic-change settings
+      description: >-
+        Reads the project-owned automatic evaluation settings. Periodic
+        evaluation due times are calculated and claimed by mmdash Core; the
+        selected Agent instance executes the resulting evaluation Run only.
       operationId: progress.settings.get
       responses:
         "200":
@@ -3006,6 +3065,10 @@ paths:
     patch:
       tags: [Progress]
       summary: Update Progress automatic-change settings
+      description: >-
+        Updates event and periodic evaluation policy owned by mmdash Core. A
+        five-field Cron expression is evaluated in UTC by the Core scheduler;
+        this operation does not create or update a Hermes Job.
       operationId: progress.settings.update
       requestBody:
         required: true
@@ -3213,7 +3276,10 @@ paths:
       summary: Revoke and remove the Project Notion OAuth authorization
       operationId: model.notion.oauth.disconnect
       responses:
-        "204": { description: Local authorization removed; existing immutable Snapshots are retained. }
+        "204":
+          {
+            description: Local authorization removed; existing immutable Snapshots are retained.,
+          }
   /v1/model-notion/oauth/callback:
     post:
       tags: [Model]
@@ -4943,7 +5009,7 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 12
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
@@ -5020,7 +5086,14 @@ components:
       type: object
       additionalProperties: false
       required:
-        [project_id, agent_instance_id, mcp_method, mcp_session_id, request_id]
+        [
+          project_id,
+          agent_instance_id,
+          challenge,
+          mcp_method,
+          mcp_session_id,
+          request_id,
+        ]
       properties:
         project_id:
           type: string
@@ -5028,6 +5101,13 @@ components:
         agent_instance_id:
           type: string
           format: uuid
+        challenge:
+          type: string
+          minLength: 32
+          maxLength: 200
+          pattern: "^mmdash_challenge_[A-Za-z0-9_-]+$"
+          writeOnly: true
+          description: One-time challenge embedded in the pending MCP endpoint.
         mcp_method:
           type: string
           const: tools/list
@@ -5315,6 +5395,7 @@ components:
           experiment_result,
           model_file,
           article_build,
+          agent,
           other,
         ]
     ArtifactErrorCode:
@@ -5346,7 +5427,7 @@ components:
       enum: [problem, attachment, other]
     ArtifactSource:
       type: string
-      enum: [user_upload, experiment, model, article, system]
+      enum: [user_upload, experiment, model, article, agent, system]
     ArtifactStatus:
       type: string
       enum: [pending_upload, verifying, available, failed, trashed]
@@ -5400,6 +5481,52 @@ components:
           maxLength: 255
         kind:
           $ref: "#/components/schemas/ArtifactPublicKind"
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        description:
+          type: string
+          maxLength: 4000
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+    AgentArtifactInitializeUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, size_bytes, sha256, idempotency_key]
+      properties:
+        agent_session_id:
+          type: string
+          format: uuid
+          description: Local mmdash Agent Session provenance; must be paired with agent_run_id.
+        agent_run_id:
+          type: string
+          format: uuid
+          description: Local mmdash Agent Run provenance; must belong to the authenticated Agent and agent_session_id.
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        size_bytes:
+          type: integer
+          minimum: 0
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        mime_type:
+          type: string
+          minLength: 1
+          maxLength: 255
         tags:
           type: array
           maxItems: 32
@@ -7544,7 +7671,8 @@ components:
     ModelOverview:
       type: object
       additionalProperties: false
-      required: [project_id, generated_at, configured, discovered_pages, questions]
+      required:
+        [project_id, generated_at, configured, discovered_pages, questions]
       properties:
         project_id: { type: string, format: uuid }
         generated_at: { type: string, format: date-time }
@@ -7574,7 +7702,8 @@ components:
       properties:
         root_page_url: { type: string, format: uri, maxLength: 2048 }
         auto_sync_enabled: { type: boolean }
-        auto_sync_interval_seconds: { type: integer, minimum: 60, maximum: 86400 }
+        auto_sync_interval_seconds:
+          { type: integer, minimum: 60, maximum: 86400 }
     NotionOAuthAuthorization:
       type: object
       additionalProperties: false
@@ -7601,7 +7730,19 @@ components:
       type: object
       additionalProperties: false
       required:
-        [source_id, project_id, notion_root_page_id, notion_root_page_url, notion_root_title, auto_sync_enabled, auto_sync_interval_seconds, sync_status, discovered_page_count, created_at, updated_at]
+        [
+          source_id,
+          project_id,
+          notion_root_page_id,
+          notion_root_page_url,
+          notion_root_title,
+          auto_sync_enabled,
+          auto_sync_interval_seconds,
+          sync_status,
+          discovered_page_count,
+          created_at,
+          updated_at,
+        ]
       properties:
         source_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -7609,7 +7750,8 @@ components:
         notion_root_page_url: { type: string, format: uri }
         notion_root_title: { type: string, maxLength: 255 }
         auto_sync_enabled: { type: boolean }
-        auto_sync_interval_seconds: { type: integer, minimum: 60, maximum: 86400 }
+        auto_sync_interval_seconds:
+          { type: integer, minimum: 60, maximum: 86400 }
         next_sync_at: { type: string, format: date-time }
         countdown_seconds: { type: integer, minimum: 0 }
         last_sync_id: { type: string, format: uuid }
@@ -7638,7 +7780,21 @@ components:
       type: object
       additionalProperties: false
       required:
-        [question_id, project_id, code, title, notion_page_id, notion_page_url, position, snapshot_count, sync_status, created_by, updated_by, created_at, updated_at]
+        [
+          question_id,
+          project_id,
+          code,
+          title,
+          notion_page_id,
+          notion_page_url,
+          position,
+          snapshot_count,
+          sync_status,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         question_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -7696,11 +7852,32 @@ components:
         position: { type: integer, minimum: 0 }
     ModelSyncStatus:
       type: string
-      enum: [idle, queued, running, succeeded, unchanged, failed, cancelled, timed_out]
+      enum:
+        [
+          idle,
+          queued,
+          running,
+          succeeded,
+          unchanged,
+          failed,
+          cancelled,
+          timed_out,
+        ]
     ModelSync:
       type: object
       additionalProperties: false
-      required: [sync_id, project_id, scope, trigger, status, job_id, requested_by, requested_at, updated_at]
+      required:
+        [
+          sync_id,
+          project_id,
+          scope,
+          trigger,
+          status,
+          job_id,
+          requested_by,
+          requested_at,
+          updated_at,
+        ]
       properties:
         sync_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -7774,7 +7951,8 @@ components:
     ModelSnapshotAsset:
       type: object
       additionalProperties: false
-      required: [source_block_id, artifact_id, artifact_version_id, filename, mime_type]
+      required:
+        [source_block_id, artifact_id, artifact_version_id, filename, mime_type]
       properties:
         source_block_id: { type: string }
         artifact_id: { type: string, format: uuid }
@@ -7784,7 +7962,19 @@ components:
     ModelSnapshotSummary:
       type: object
       additionalProperties: false
-      required: [snapshot_id, question_id, title, content_hash, summary, tags, captured_at, triggered_by, created_at, metadata_updated_at]
+      required:
+        [
+          snapshot_id,
+          question_id,
+          title,
+          content_hash,
+          summary,
+          tags,
+          captured_at,
+          triggered_by,
+          created_at,
+          metadata_updated_at,
+        ]
       properties:
         snapshot_id: { type: string, format: uuid }
         question_id: { type: string, format: uuid }
@@ -7806,7 +7996,17 @@ components:
         - $ref: "#/components/schemas/ModelSnapshotSummary"
         - type: object
           additionalProperties: false
-          required: [project_id, notion_page_id, notion_page_url, outline, blocks, content_markdown, content_text, assets]
+          required:
+            [
+              project_id,
+              notion_page_id,
+              notion_page_url,
+              outline,
+              blocks,
+              content_markdown,
+              content_text,
+              assets,
+            ]
           properties:
             project_id: { type: string, format: uuid }
             notion_page_id: { type: string, format: uuid }
@@ -7862,7 +8062,8 @@ components:
     ModelDiff:
       type: object
       additionalProperties: false
-      required: [question_id, from_snapshot_id, to_snapshot_id, granularity, blocks]
+      required:
+        [question_id, from_snapshot_id, to_snapshot_id, granularity, blocks]
       properties:
         question_id: { type: string, format: uuid }
         from_snapshot_id: { type: string, format: uuid }
@@ -7977,6 +8178,7 @@ components:
           description,
           status,
           critical,
+          target_has_time,
           source,
           created_by,
           updated_by,
@@ -7988,9 +8190,9 @@ components:
         project_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [planned, in_progress, completed, cancelled] }
+        status: { type: string, enum: [planned, in_progress, completed] }
         critical: { type: boolean }
+        target_has_time: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time }
@@ -8017,6 +8219,7 @@ components:
         critical: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
+        target_has_time: { type: boolean }
     UpdateMilestoneRequest:
       type: object
       additionalProperties: false
@@ -8024,11 +8227,11 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [planned, in_progress, completed, cancelled] }
+        status: { type: string, enum: [planned, in_progress, completed] }
         critical: { type: boolean }
         start_at: { type: string, format: date-time }
         target_at: { type: string, format: date-time }
+        target_has_time: { type: boolean }
     Task:
       type: object
       additionalProperties: false
@@ -8053,8 +8256,8 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
+        work_state: { type: string, enum: [todo, in_progress, blocked] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
@@ -8067,7 +8270,16 @@ components:
           items:
             type: string
             enum:
-              [milestone_id, title, description, status, assignee_id, start_at, due_at, related_object_ids]
+              [
+                milestone_id,
+                title,
+                description,
+                status,
+                assignee_id,
+                start_at,
+                due_at,
+                related_object_ids,
+              ]
         related_object_ids:
           { type: array, items: { type: string, format: uuid } }
         created_by: { type: string, format: uuid }
@@ -8088,8 +8300,7 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
@@ -8106,8 +8317,7 @@ components:
         milestone_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: string, maxLength: 10000 }
-        status:
-          { type: string, enum: [todo, in_progress, blocked, done, cancelled] }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
         assignee_id: { type: string, format: uuid }
         start_at: { type: string, format: date-time }
         due_at: { type: string, format: date-time }
@@ -8222,7 +8432,14 @@ components:
           {
             type: string,
             enum:
-              [milestone.create, milestone.update, task.create, task.update],
+              [
+                milestone.create,
+                milestone.update,
+                milestone.complete,
+                task.create,
+                task.update,
+                task.complete,
+              ],
           }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
@@ -8256,7 +8473,14 @@ components:
           {
             type: string,
             enum:
-              [milestone.create, milestone.update, task.create, task.update],
+              [
+                milestone.create,
+                milestone.update,
+                milestone.complete,
+                task.create,
+                task.update,
+                task.complete,
+              ],
           }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
@@ -8268,6 +8492,19 @@ components:
       additionalProperties: false
       required: [decision]
       properties:
+        decision: { type: string, enum: [accepted, rejected] }
+        note: { type: string, maxLength: 4000 }
+    BatchReviewProgressProposalsRequest:
+      type: object
+      additionalProperties: false
+      required: [proposal_ids, decision]
+      properties:
+        proposal_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
         decision: { type: string, enum: [accepted, rejected] }
         note: { type: string, maxLength: 4000 }
     ProgressSettings:
@@ -8283,7 +8520,7 @@ components:
           cron_schedule,
           debounce_seconds,
           min_interval_seconds,
-          cron_sync_status,
+          reasoning_effort,
           evaluator_mode,
           updated_by,
           updated_at,
@@ -8293,17 +8530,29 @@ components:
         auto_task_changes: { type: boolean }
         auto_tracking_enabled: { type: boolean }
         event_triggers_enabled: { type: boolean }
-        cron_enabled: { type: boolean }
-        cron_schedule: { type: string, minLength: 1, maxLength: 100 }
+        cron_enabled:
+          type: boolean
+          description: Whether mmdash Core schedules periodic Progress evaluations.
+        cron_schedule:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Five-field UTC Cron expression evaluated by mmdash Core.
         debounce_seconds: { type: integer, minimum: 0, maximum: 3600 }
         min_interval_seconds: { type: integer, minimum: 0, maximum: 86400 }
+        reasoning_effort:
+          type: string
+          enum: [none, minimal, low, medium, high, xhigh, max, ultra]
         evaluator_mode: { type: string, enum: [core_agent, mock] }
         agent_instance_id: { type: string, format: uuid }
-        cron_remote_job_id: { type: string }
-        cron_sync_status:
-          { type: string, enum: [pending, syncing, ready, failed, disabled] }
-        cron_error_code: { type: string }
-        cron_synced_at: { type: string, format: date-time }
+        cron_next_run_at:
+          type: string
+          format: date-time
+          description: Next periodic evaluation occurrence calculated by mmdash Core.
+        cron_last_scheduled_at:
+          type: string
+          format: date-time
+          description: Most recent occurrence scheduled by mmdash Core.
         updated_by: { type: string, format: uuid }
         updated_at: { type: string, format: date-time }
     UpdateProgressSettingsRequest:
@@ -8318,21 +8567,43 @@ components:
           cron_schedule,
           debounce_seconds,
           min_interval_seconds,
+          reasoning_effort,
         ]
       properties:
         auto_task_changes: { type: boolean }
         auto_tracking_enabled: { type: boolean }
         event_triggers_enabled: { type: boolean }
-        cron_enabled: { type: boolean }
-        cron_schedule: { type: string, minLength: 1, maxLength: 100 }
+        cron_enabled:
+          type: boolean
+          description: Whether mmdash Core should schedule periodic Progress evaluations.
+        cron_schedule:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Five-field UTC Cron expression evaluated by mmdash Core.
         debounce_seconds: { type: integer, minimum: 0, maximum: 3600 }
         min_interval_seconds: { type: integer, minimum: 0, maximum: 86400 }
+        reasoning_effort:
+          type: string
+          enum: [none, minimal, low, medium, high, xhigh, max, ultra]
         agent_instance_id: { type: string, format: uuid }
     ProgressTrackerState:
       type: object
       additionalProperties: false
       required:
-        [project_id, detected_stage, effective_stage, stage_overridden, summary, changes_since_last, completed_items, in_progress_items, blockers, pending_questions, updated_at]
+        [
+          project_id,
+          detected_stage,
+          effective_stage,
+          stage_overridden,
+          summary,
+          changes_since_last,
+          completed_items,
+          in_progress_items,
+          blockers,
+          pending_questions,
+          updated_at,
+        ]
       properties:
         project_id: { type: string, format: uuid }
         last_evaluation_id: { type: string, format: uuid }
@@ -8363,7 +8634,18 @@ components:
     ProgressRisk:
       type: object
       additionalProperties: false
-      required: [risk_id, evaluation_id, project_id, risk_key, title, severity, status, detail, created_at]
+      required:
+        [
+          risk_id,
+          evaluation_id,
+          project_id,
+          risk_key,
+          title,
+          severity,
+          status,
+          detail,
+          created_at,
+        ]
       properties:
         risk_id: { type: string, format: uuid }
         evaluation_id: { type: string, format: uuid }
@@ -8390,15 +8672,45 @@ components:
       properties:
         key: { type: string, minLength: 1 }
         proposal_type:
-          { type: string, enum: [milestone.create, milestone.update, task.create, task.update] }
+          {
+            type: string,
+            enum:
+              [
+                milestone.create,
+                milestone.update,
+                milestone.complete,
+                task.create,
+                task.update,
+                task.complete,
+              ],
+          }
         target_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 255 }
         rationale: { type: string }
         changes: { type: object, additionalProperties: true }
+    ProgressEvaluationWorkStateUpdate:
+      type: object
+      additionalProperties: false
+      required: [task_id, state]
+      properties:
+        task_id: { type: string, format: uuid }
+        state: { type: string, enum: [todo, in_progress, blocked] }
     ProgressEvaluationOutput:
       type: object
       additionalProperties: false
-      required: [stage, summary, changes_since_last, completed_items, in_progress_items, blockers, risks, suggestions, pending_questions]
+      required:
+        [
+          stage,
+          summary,
+          changes_since_last,
+          completed_items,
+          in_progress_items,
+          blockers,
+          risks,
+          work_state_updates,
+          suggestions,
+          pending_questions,
+        ]
       properties:
         stage: { type: string, minLength: 1, maxLength: 100 }
         summary: { type: string, minLength: 1, maxLength: 10000 }
@@ -8407,15 +8719,53 @@ components:
         in_progress_items: { type: array, items: { type: string } }
         blockers: { type: array, items: { type: string } }
         risks:
-          { type: array, items: { $ref: "#/components/schemas/ProgressEvaluationRiskInput" } }
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ProgressEvaluationRiskInput" },
+          }
+        work_state_updates:
+          {
+            type: array,
+            items:
+              {
+                $ref: "#/components/schemas/ProgressEvaluationWorkStateUpdate",
+              },
+          }
         suggestions:
-          { type: array, items: { $ref: "#/components/schemas/ProgressEvaluationSuggestion" } }
+          {
+            type: array,
+            items:
+              { $ref: "#/components/schemas/ProgressEvaluationSuggestion" },
+          }
         pending_questions: { type: array, items: { type: string } }
     ProgressEvaluation:
       type: object
       additionalProperties: false
       required:
-        [evaluation_id, request_id, project_id, status, input_version, input_snapshot, detected_stage, summary, changes_since_last, completed_items, in_progress_items, blockers, pending_questions, source_event_ids, trigger_kind, evaluator_mode, attempts, requested_by, created_at, updated_at, triggers, risks]
+        [
+          evaluation_id,
+          request_id,
+          project_id,
+          status,
+          input_version,
+          input_snapshot,
+          detected_stage,
+          summary,
+          changes_since_last,
+          completed_items,
+          in_progress_items,
+          blockers,
+          pending_questions,
+          source_event_ids,
+          trigger_kind,
+          evaluator_mode,
+          attempts,
+          requested_by,
+          created_at,
+          updated_at,
+          triggers,
+          risks,
+        ]
       properties:
         evaluation_id: { type: string, format: uuid }
         request_id: { type: string, format: uuid }
@@ -8447,14 +8797,22 @@ components:
         completed_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         triggers:
-          { type: array, items: { $ref: "#/components/schemas/ProgressEvaluationTrigger" } }
-        risks: { type: array, items: { $ref: "#/components/schemas/ProgressRisk" } }
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ProgressEvaluationTrigger" },
+          }
+        risks:
+          { type: array, items: { $ref: "#/components/schemas/ProgressRisk" } }
     ProgressEvaluationPage:
       type: object
       additionalProperties: false
       required: [items, has_more]
       properties:
-        items: { type: array, items: { $ref: "#/components/schemas/ProgressEvaluation" } }
+        items:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ProgressEvaluation" },
+          }
         has_more: { type: boolean }
         next_cursor: { type: string }
     RecalculateProgressRequest:
@@ -8484,7 +8842,17 @@ components:
     ProgressStageOverride:
       type: object
       additionalProperties: false
-      required: [override_id, project_id, stage, summary, note, active, created_by, created_at]
+      required:
+        [
+          override_id,
+          project_id,
+          stage,
+          summary,
+          note,
+          active,
+          created_by,
+          created_at,
+        ]
       properties:
         override_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -8730,14 +9098,17 @@ components:
           context.promote,
           progress.get,
           progress.recalculate,
+          artifact.upload,
+          artifact.read,
           experiment.create,
           experiment.run,
           experiment.status,
           result.get,
         ]
       description: >-
-        Closed product Agent Tool scope. Experiment tools are project-scoped
-        and use the same Core RBAC, audit, and frozen run-spec boundary.
+        Closed product Agent Tool scope. Artifact tools use short-lived
+        transfer grants, while Experiment tools are project-scoped and use
+        the same Core RBAC, audit, and frozen run-spec boundary.
     AgentManagementMode:
       type: string
       enum: [manual, auto]
@@ -8762,7 +9133,15 @@ components:
     AgentRunStatus:
       type: string
       enum:
-        [queued, running, waiting_for_approval, stopping, completed, failed, stopped]
+        [
+          queued,
+          running,
+          waiting_for_approval,
+          stopping,
+          completed,
+          failed,
+          stopped,
+        ]
     AgentRunSource:
       type: string
       enum: [message, regenerate, rerun, progress_evaluation]
@@ -8822,7 +9201,19 @@ components:
       properties:
         kind:
           type: string
-          enum: [runtime, authentication, capabilities, sessions, messages, sse, runs, jobs, management, project_access]
+          enum:
+            [
+              runtime,
+              authentication,
+              capabilities,
+              sessions,
+              messages,
+              sse,
+              runs,
+              jobs,
+              management,
+              project_access,
+            ]
         status:
           type: string
           enum: [passed, failed, unsupported, not_configured]
@@ -8840,7 +9231,16 @@ components:
       type: object
       additionalProperties: false
       required:
-        [grant_id, agent_instance_id, project_id, status, allowed_tools, version, created_at, updated_at]
+        [
+          grant_id,
+          agent_instance_id,
+          project_id,
+          status,
+          allowed_tools,
+          version,
+          created_at,
+          updated_at,
+        ]
       properties:
         grant_id: { type: string, format: uuid }
         agent_instance_id: { type: string, format: uuid }
@@ -8851,11 +9251,21 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 12
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
+          example:
+            [
+              project.get,
+              data.list,
+              data.read,
+              context.promote,
+              progress.get,
+              progress.recalculate,
+              artifact.upload,
+              artifact.read,
+            ]
         project_access_status:
           $ref: "#/components/schemas/AgentProjectAccessStatus"
         default_session_id: { type: string, format: uuid }
@@ -8885,11 +9295,21 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 12
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
+          example:
+            [
+              project.get,
+              data.list,
+              data.read,
+              context.promote,
+              progress.get,
+              progress.recalculate,
+              artifact.upload,
+              artifact.read,
+            ]
         status:
           $ref: "#/components/schemas/AgentTokenStatus"
         replaces_token_id: { type: string, format: uuid }
@@ -8984,7 +9404,13 @@ components:
       type: object
       additionalProperties: false
       required:
-        [display_name, management_mode, runtime_url, hermes_api_key, allowed_tools]
+        [
+          display_name,
+          management_mode,
+          runtime_url,
+          hermes_api_key,
+          allowed_tools,
+        ]
       properties:
         display_name:
           type: string
@@ -9037,13 +9463,23 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 12
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
+          example:
+            [
+              project.get,
+              data.list,
+              data.read,
+              context.promote,
+              progress.get,
+              progress.recalculate,
+              artifact.upload,
+              artifact.read,
+            ]
           description: >-
-            Exact reviewed Stage 6 MCP Tool names; product Agent grants do not
+            Exact reviewed MCP Tool names; product Agent grants do not
             accept wildcards or tools outside the closed Agent scope.
     UpdateAgentInstanceRequest:
       type: object
@@ -9099,13 +9535,23 @@ components:
         allowed_tools:
           type: array
           minItems: 1
-          maxItems: 6
+          maxItems: 12
           uniqueItems: true
           items:
             $ref: "#/components/schemas/AgentToolName"
-          example: [project.get, data.list, data.read, context.promote, progress.get, progress.recalculate]
+          example:
+            [
+              project.get,
+              data.list,
+              data.read,
+              context.promote,
+              progress.get,
+              progress.recalculate,
+              artifact.upload,
+              artifact.read,
+            ]
           description: >-
-            Exact reviewed Stage 6 MCP Tool names; product Agent grants do not
+            Exact reviewed MCP Tool names; product Agent grants do not
             accept wildcards or tools outside the closed Agent scope.
     OneTimeAgentToken:
       type: object
@@ -9122,6 +9568,10 @@ components:
         mcp_endpoint:
           type: string
           format: uri
+          description: >-
+            MCP endpoint containing the pending credential's one-time
+            verification challenge. The challenge is consumed by the first
+            successful negotiated tools/list and has no authority afterward.
         server_name:
           type: string
           description: Recommended Hermes MCP server name.
@@ -9189,7 +9639,15 @@ components:
           $ref: "#/components/schemas/AgentCredential"
         rotation_status:
           type: string
-          enum: [awaiting_user, configuring, verifying, completed, failed, cancelled]
+          enum:
+            [
+              awaiting_user,
+              configuring,
+              verifying,
+              completed,
+              failed,
+              cancelled,
+            ]
         old_credential_remains_active:
           type: boolean
         one_time_credential:
@@ -9221,7 +9679,14 @@ components:
       type: object
       additionalProperties: false
       required:
-        [agent_instance_id, project_id, default_prompt, effective_prompt, custom, version]
+        [
+          agent_instance_id,
+          project_id,
+          default_prompt,
+          effective_prompt,
+          custom,
+          version,
+        ]
       properties:
         agent_instance_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -9295,7 +9760,9 @@ components:
           minLength: 1
           maxLength: 255
         session_type:
-          $ref: "#/components/schemas/AgentSessionType"
+          type: string
+          const: main
+          description: Human-created Agent conversations are always main Sessions.
         default: { type: boolean }
     UpdateAgentSessionRequest:
       type: object
@@ -9358,6 +9825,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AgentToolCall"
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentChatAttachment"
+        created_at: { type: string, format: date-time }
+    AgentChatAttachment:
+      type: object
+      additionalProperties: false
+      required:
+        - artifact_id
+        - version_id
+        - run_id
+        - direction
+        - name
+        - filename
+        - mime_type
+        - size_bytes
+        - created_at
+      properties:
+        artifact_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid }
+        direction: { type: string, enum: [input, output] }
+        name: { type: string }
+        filename: { type: string }
+        mime_type: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
         created_at: { type: string, format: date-time }
     AgentMessageList:
       type: object
@@ -9429,6 +9923,15 @@ components:
           type: string
           minLength: 1
           maxLength: 100000
+        artifact_ids:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        reasoning_effort:
+          type: string
+          description: Request-scoped Hermes reasoning intensity. Omit to use the runtime default.
+          enum: [none, minimal, low, medium, high, xhigh, max, ultra]
     ReplayAgentRunRequest:
       type: object
       additionalProperties: false
@@ -9465,6 +9968,7 @@ components:
         - message.started
         - message.delta
         - message.completed
+        - reasoning.available
         - tool.progress
         - tool.started
         - tool.completed

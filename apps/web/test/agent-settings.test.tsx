@@ -249,7 +249,7 @@ function credentialFixture() {
 function oneTimeCredential() {
   return {
     credential: { ...credentialFixture(), id: "token-2", status: "pending" },
-    mcp_endpoint: "https://mcp.example.test/mcp",
+    mcp_endpoint: "https://mcp.example.test/mcp?mmdash_challenge=one-time",
     server_name: "mmdash",
     token: "mmdash_agent_plaintext_once",
   };

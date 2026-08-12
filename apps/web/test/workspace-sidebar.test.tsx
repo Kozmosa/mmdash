@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceSidebar } from "@/components/layout/workspace-sidebar";
@@ -10,11 +10,27 @@ vi.mock("next/navigation", () => ({
 
 describe("workspace sidebar", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     useWorkspaceStore.setState({ sidebarOpen: false });
   });
 
   afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
     useWorkspaceStore.setState({ sidebarOpen: true });
+  });
+
+  it("restores the collapsed navigation after a remount", async () => {
+    window.localStorage.setItem("mmdash.workspace.sidebar-open", "false");
+    useWorkspaceStore.setState({ sidebarOpen: true });
+
+    render(<WorkspaceSidebar projectId="project-1" />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "展开导航" }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("reveals the expand control over the logo when collapsed", () => {

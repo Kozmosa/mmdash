@@ -15,11 +15,8 @@
 # the Agent Connectors only because this stack runs inside a private Compose
 # network; production deployments keep the secure defaults.
 #
-# The Agent verification callback needs a dedicated Core admin API token:
-# create one after the first start (POST /v1/auth/tokens, kind=api, name for
-# gateway attestation), then restart core and mcp-gateway with
-# AUTH_AGENT_VERIFICATION_TOKEN_ID=<token id> and
-# MCP_CORE_ACCESS_TOKEN=<token plaintext> before running agent-smoke.mjs.
+# Acceptance publishes Core only on host loopback for test orchestration. The
+# production Compose file does not publish Core and Caddy never routes to it.
 
 name: mmdash-acceptance
 

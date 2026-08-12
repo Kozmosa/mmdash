@@ -143,6 +143,11 @@ type EvaluationSuggestion struct {
 	Changes      map[string]interface{} `json:"changes"`
 }
 
+type EvaluationWorkStateUpdate struct {
+	TaskID string `json:"task_id"`
+	State  string `json:"state"`
+}
+
 type EvaluationRisk struct {
 	Key      string `json:"key"`
 	Title    string `json:"title"`
@@ -151,15 +156,16 @@ type EvaluationRisk struct {
 }
 
 type EvaluationOutput struct {
-	Stage            string                 `json:"stage"`
-	Summary          string                 `json:"summary"`
-	ChangesSinceLast []string               `json:"changes_since_last"`
-	CompletedItems   []string               `json:"completed_items"`
-	InProgressItems  []string               `json:"in_progress_items"`
-	Blockers         []string               `json:"blockers"`
-	Risks            []EvaluationRisk       `json:"risks"`
-	Suggestions      []EvaluationSuggestion `json:"suggestions"`
-	PendingQuestions []string               `json:"pending_questions"`
+	Stage            string                      `json:"stage"`
+	Summary          string                      `json:"summary"`
+	ChangesSinceLast []string                    `json:"changes_since_last"`
+	CompletedItems   []string                    `json:"completed_items"`
+	InProgressItems  []string                    `json:"in_progress_items"`
+	Blockers         []string                    `json:"blockers"`
+	Risks            []EvaluationRisk            `json:"risks"`
+	WorkStateUpdates []EvaluationWorkStateUpdate `json:"work_state_updates"`
+	Suggestions      []EvaluationSuggestion      `json:"suggestions"`
+	PendingQuestions []string                    `json:"pending_questions"`
 }
 
 type EvaluationPage struct {
@@ -183,7 +189,9 @@ type UpdateTrackingSettingsInput struct {
 	CronSchedule         string
 	DebounceSeconds      int
 	MinIntervalSeconds   int
+	ReasoningEffort      string
 	AgentInstanceID      string
+	CronNextRunAt        *time.Time
 }
 
 type RequestClaim struct {
@@ -198,11 +206,9 @@ type RequestClaim struct {
 }
 
 type CronClaim struct {
-	ProjectID       string
-	AgentInstanceID string
-	RemoteJobID     string
-	Schedule        string
-	Enabled         bool
+	ProjectID    string
+	ActorID      string
+	ScheduledFor time.Time
 }
 
 type AgentExecution struct {
@@ -212,9 +218,7 @@ type AgentExecution struct {
 	AgentRunID      string `json:"agent_run_id"`
 }
 
-type CronResult struct {
-	RemoteJobID string
-}
+type AgentExecutionStarted func(AgentExecution) error
 
 type TrackingStore interface {
 	GetState(context.Context, string) (TrackerState, error)
@@ -234,9 +238,10 @@ type TrackingStore interface {
 	EvaluationContext(context.Context, string) (map[string]interface{}, error)
 	FinalizeRequest(context.Context, RequestClaim, map[string]interface{}, string) (*Evaluation, error)
 	ClaimCron(context.Context, string, time.Duration) (*CronClaim, error)
-	CompleteCron(context.Context, string, string, string) error
+	CompleteCron(context.Context, string, string, time.Time) error
 	FailCron(context.Context, string, string, string, time.Duration) error
 	MarkEvaluationRunning(context.Context, transaction.Tx, jobs.Job) error
+	SetEvaluationAgentProvenance(context.Context, string, string, string, string) error
 	CompleteEvaluation(context.Context, transaction.Tx, jobs.Job, map[string]interface{}) error
 	FailEvaluation(context.Context, transaction.Tx, jobs.Job, jobs.Failure) error
 }
@@ -246,8 +251,7 @@ type EvaluationFactsProvider interface {
 }
 
 type AgentRuntime interface {
-	EvaluateProgress(context.Context, string, string, string, map[string]interface{}) (AgentExecution, error)
-	ReconcileProgressCron(context.Context, string, string, string, string, bool) (CronResult, error)
+	EvaluateProgress(context.Context, string, string, string, map[string]interface{}, AgentExecutionStarted) (AgentExecution, error)
 }
 
 type JobAccess interface {
@@ -386,10 +390,22 @@ func (service Service) UpdateTrackingSettings(ctx context.Context, caller auth.I
 	}
 	input.CronSchedule = strings.TrimSpace(input.CronSchedule)
 	input.AgentInstanceID = strings.TrimSpace(input.AgentInstanceID)
+	input.ReasoningEffort = strings.TrimSpace(input.ReasoningEffort)
+	if input.ReasoningEffort == "" {
+		input.ReasoningEffort = "medium"
+	}
 	if input.DebounceSeconds < 0 || input.DebounceSeconds > 3600 || input.MinIntervalSeconds < 0 || input.MinIntervalSeconds > 86400 ||
-		(input.CronEnabled && (!validCron(input.CronSchedule) || input.AgentInstanceID == "")) ||
+		!validProgressReasoningEffort(input.ReasoningEffort) ||
+		(input.CronEnabled && input.AgentInstanceID == "") ||
 		(input.AutoTrackingEnabled && input.AgentInstanceID == "" && service.evaluatorMode() != "mock") {
 		return Settings{}, ErrInvalid
+	}
+	if input.CronEnabled {
+		next, err := nextCronOccurrence(input.CronSchedule, service.now())
+		if err != nil {
+			return Settings{}, ErrInvalid
+		}
+		input.CronNextRunAt = &next
 	}
 	item, err := service.Tracking.UpdateTrackingSettings(ctx, projectID, caller.User.ID, input)
 	item.EvaluatorMode = service.evaluatorMode()
@@ -400,6 +416,15 @@ func (service Service) UpdateTrackingSettings(ctx context.Context, caller auth.I
 		}, err)
 	}
 	return item, err
+}
+
+func validProgressReasoningEffort(value string) bool {
+	switch value {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra":
+		return true
+	default:
+		return false
+	}
 }
 
 func (service Service) ExecuteWorkerEvaluation(ctx context.Context, caller auth.Identity, jobID string) (AgentExecution, error) {
@@ -420,7 +445,22 @@ func (service Service) ExecuteWorkerEvaluation(ctx context.Context, caller auth.
 	if evaluation.Status != "running" || evaluation.AgentInstanceID == "" {
 		return AgentExecution{}, ErrConflict
 	}
-	return service.Agent.EvaluateProgress(ctx, evaluation.ProjectID, evaluation.AgentInstanceID, evaluation.ID, evaluation.InputSnapshot)
+	return service.Agent.EvaluateProgress(
+		ctx,
+		evaluation.ProjectID,
+		evaluation.AgentInstanceID,
+		evaluation.ID,
+		evaluation.InputSnapshot,
+		func(execution AgentExecution) error {
+			return service.Tracking.SetEvaluationAgentProvenance(
+				ctx,
+				evaluation.ID,
+				execution.AgentInstanceID,
+				execution.AgentSessionID,
+				execution.AgentRunID,
+			)
+		},
+	)
 }
 
 func (service Service) WorkerEvaluationInput(ctx context.Context, caller auth.Identity, jobID string) (Evaluation, error) {
@@ -479,11 +519,14 @@ func decodeEvaluationResult(result map[string]interface{}) (EvaluationOutput, er
 	if err := json.Unmarshal(encoded, &output); err != nil {
 		return EvaluationOutput{}, ErrInvalidEvaluationOutput
 	}
+	if output.WorkStateUpdates == nil {
+		return EvaluationOutput{}, ErrInvalidEvaluationOutput
+	}
 	output.Stage = strings.TrimSpace(output.Stage)
 	output.Summary = strings.TrimSpace(output.Summary)
 	if output.Stage == "" || len(output.Stage) > 100 || output.Summary == "" || len(output.Summary) > 10000 ||
 		len(output.ChangesSinceLast) > 200 || len(output.CompletedItems) > 200 || len(output.InProgressItems) > 200 ||
-		len(output.Blockers) > 200 || len(output.PendingQuestions) > 200 || len(output.Risks) > 100 || len(output.Suggestions) > 100 {
+		len(output.Blockers) > 200 || len(output.PendingQuestions) > 200 || len(output.Risks) > 100 || len(output.WorkStateUpdates) > 200 || len(output.Suggestions) > 100 {
 		return EvaluationOutput{}, ErrInvalidEvaluationOutput
 	}
 	for index := range output.Risks {
@@ -492,6 +535,15 @@ func decodeEvaluationResult(result map[string]interface{}) (EvaluationOutput, er
 		if risk.Key == "" || risk.Title == "" || !validRiskSeverity(risk.Severity) {
 			return EvaluationOutput{}, ErrInvalidEvaluationOutput
 		}
+	}
+	seenTasks := map[string]bool{}
+	for index := range output.WorkStateUpdates {
+		update := &output.WorkStateUpdates[index]
+		update.TaskID, update.State = strings.TrimSpace(update.TaskID), strings.TrimSpace(update.State)
+		if update.TaskID == "" || seenTasks[update.TaskID] || !validAutomaticWorkState(update.State) {
+			return EvaluationOutput{}, ErrInvalidEvaluationOutput
+		}
+		seenTasks[update.TaskID] = true
 	}
 	seen := map[string]bool{}
 	for index := range output.Suggestions {
@@ -510,10 +562,17 @@ func decodeEvaluationResult(result map[string]interface{}) (EvaluationOutput, er
 	if output.Risks == nil {
 		output.Risks = []EvaluationRisk{}
 	}
+	if output.WorkStateUpdates == nil {
+		output.WorkStateUpdates = []EvaluationWorkStateUpdate{}
+	}
 	if output.Suggestions == nil {
 		output.Suggestions = []EvaluationSuggestion{}
 	}
 	return output, nil
+}
+
+func validAutomaticWorkState(value string) bool {
+	return value == string(TaskTodo) || value == string(TaskInProgress) || value == string(TaskBlocked)
 }
 
 func canonicalInputVersion(input map[string]interface{}) (string, error) {
@@ -541,8 +600,8 @@ func validRiskSeverity(value string) bool {
 }
 
 func validCron(value string) bool {
-	parts := strings.Fields(value)
-	return len(parts) == 5 && len(value) <= 100
+	_, err := parseCron(value)
+	return err == nil
 }
 
 func stringMapValue(values map[string]interface{}, key string) string {
@@ -581,6 +640,7 @@ func trackingAudit(ctx context.Context, recorder audit.Recorder, tx transaction.
 }
 
 var (
+	ErrEvaluationConfiguration = fmt.Errorf("progress evaluator configuration invalid")
 	ErrEvaluationUnavailable   = fmt.Errorf("progress evaluator unavailable")
 	ErrInvalidEvaluationOutput = fmt.Errorf("invalid progress evaluation output")
 )

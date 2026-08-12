@@ -59,7 +59,7 @@ func TestStreamChatNormalizesNamedHermesEventsAndDoesNotForwardLastEventID(t *te
 	}
 	wantTypes := []agent.EventType{
 		agent.EventHeartbeat, agent.EventRunStarted, agent.EventMessageStarted, agent.EventMessageDelta,
-		agent.EventToolStarted, agent.EventToolCompleted, agent.EventToolProgress,
+		agent.EventToolStarted, agent.EventToolCompleted, agent.EventReasoningAvailable,
 		agent.EventMessageCompleted, agent.EventRunCompleted, agent.EventDone,
 	}
 	if len(events) != len(wantTypes) {
@@ -111,7 +111,7 @@ func TestStreamRunNormalizesUnnamedEventsAndDoesNotForwardLastEventID(t *testing
 	if !errors.Is(err, stop) {
 		t.Fatalf("expected callback error, got %v", err)
 	}
-	if len(events) != 2 || events[0].Type != agent.EventToolProgress || events[0].Status != "reasoning_available" || events[0].Text != "" || events[1].Type != agent.EventApprovalRequested || len(events[1].Approval.Choices) != 4 {
+	if len(events) != 2 || events[0].Type != agent.EventReasoningAvailable || events[0].Status != "reasoning_available" || events[0].Text != "" || events[1].Type != agent.EventApprovalRequested || len(events[1].Approval.Choices) != 4 {
 		t.Fatalf("unexpected normalized events: %#v", events)
 	}
 	if events[1].Approval.RemoteID == "" {

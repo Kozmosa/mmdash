@@ -182,6 +182,41 @@ def test_core_completion_failure_preserves_safe_error_code() -> None:
     )
 
 
+def test_core_configuration_rejection_is_not_retried() -> None:
+    registry = HandlerRegistry()
+
+    def reject_configuration(_context: object, _payload: object) -> dict[str, Any]:
+        raise JobAPIError(
+            "PROGRESS_EVALUATOR_CONFIGURATION_INVALID",
+            "Progress evaluator configuration is invalid",
+            422,
+        )
+
+    registry.register("progress.evaluate", reject_configuration)
+    client = FakeClient(
+        {"id": "job-progress", "job_type": "progress.evaluate", "payload": {}}
+    )
+    runtime = WorkerRuntime(
+        client,
+        registry,
+        worker_id="worker-1",
+        version="0.1.0",
+        lease_seconds=10,
+        poll_seconds=0,
+    )
+
+    assert asyncio.run(runtime.run_once()) is True
+    assert client.calls[-1] == (
+        "fail",
+        "job-progress",
+        "worker-1",
+        "PROGRESS_EVALUATOR_CONFIGURATION_INVALID",
+        "Progress evaluator configuration is invalid",
+        False,
+        0,
+    )
+
+
 def test_empty_poll_reports_no_work_without_dispatch() -> None:
     client = FakeClient(None)
     runtime = WorkerRuntime(

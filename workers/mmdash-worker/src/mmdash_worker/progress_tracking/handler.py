@@ -88,6 +88,7 @@ def _validate_output(value: Any) -> dict[str, Any]:
         "in_progress_items",
         "blockers",
         "risks",
+        "work_state_updates",
         "suggestions",
         "pending_questions",
     }
@@ -105,12 +106,16 @@ def _validate_output(value: Any) -> dict[str, Any]:
         "pending_questions": _string_list(value, "pending_questions", 200),
     }
     risks = value.get("risks")
+    work_state_updates = value.get("work_state_updates")
     suggestions = value.get("suggestions")
     if not isinstance(risks, list) or len(risks) > 100:
         raise HandlerError("PROGRESS_INVALID_OUTPUT", "Progress risks are invalid")
     if not isinstance(suggestions, list) or len(suggestions) > 100:
         raise HandlerError("PROGRESS_INVALID_OUTPUT", "Progress suggestions are invalid")
+    if not isinstance(work_state_updates, list) or len(work_state_updates) > 200:
+        raise HandlerError("PROGRESS_INVALID_OUTPUT", "Progress work states are invalid")
     result["risks"] = [_risk(item) for item in risks]
+    result["work_state_updates"] = [_work_state_update(item) for item in work_state_updates]
     result["suggestions"] = [_suggestion(item) for item in suggestions]
     return result
 
@@ -134,8 +139,10 @@ def _suggestion(value: Any) -> dict[str, Any]:
     if proposal_type not in {
         "milestone.create",
         "milestone.update",
+        "milestone.complete",
         "task.create",
         "task.update",
+        "task.complete",
     }:
         raise HandlerError("PROGRESS_INVALID_OUTPUT", "Progress suggestion type is invalid")
     changes = item.get("changes")
@@ -156,6 +163,16 @@ def _suggestion(value: Any) -> dict[str, Any]:
     return result
 
 
+def _work_state_update(value: Any) -> dict[str, str]:
+    item = _mapping(value)
+    if set(item) != {"task_id", "state"}:
+        raise HandlerError("PROGRESS_INVALID_OUTPUT", "Progress work state fields are invalid")
+    state = _required_string(item, "state")
+    if state not in {"todo", "in_progress", "blocked"}:
+        raise HandlerError("PROGRESS_INVALID_OUTPUT", "Progress work state is invalid")
+    return {"task_id": _required_string(item, "task_id"), "state": state}
+
+
 def _mock_output(evaluation: Mapping[str, Any]) -> dict[str, Any]:
     snapshot = _mapping(evaluation.get("input_snapshot"))
     progress = _mapping(snapshot.get("progress"))
@@ -170,7 +187,7 @@ def _mock_output(evaluation: Mapping[str, Any]) -> dict[str, Any]:
     blockers = [_label(item) for item in tasks if item.get("status") == "blocked"]
     if not tasks and not milestones:
         stage = "planning"
-    elif tasks and all(item.get("status") in {"done", "cancelled"} for item in tasks):
+    elif tasks and all(item.get("status") == "done" for item in tasks):
         stage = "review"
     else:
         stage = "execution"
@@ -211,6 +228,7 @@ def _mock_output(evaluation: Mapping[str, Any]) -> dict[str, Any]:
             "in_progress_items": active,
             "blockers": blockers,
             "risks": risks,
+            "work_state_updates": [],
             "suggestions": suggestions,
             "pending_questions": [],
         }

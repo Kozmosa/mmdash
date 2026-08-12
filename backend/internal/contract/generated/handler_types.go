@@ -62,6 +62,7 @@ func (request CreateTokenRequest) Validate() error {
 type RecordAgentTokenVerificationRequest struct {
 	ProjectID       string `json:"project_id"`
 	AgentInstanceID string `json:"agent_instance_id"`
+	Challenge       string `json:"challenge"`
 	McpMethod       string `json:"mcp_method"`
 	McpSessionID    string `json:"mcp_session_id"`
 	RequestID       string `json:"request_id"`
@@ -74,6 +75,18 @@ func (request RecordAgentTokenVerificationRequest) Validate() error {
 	}
 	if request.AgentInstanceID == "" {
 		return fmt.Errorf("agent_instance_id is required")
+	}
+	if request.Challenge == "" {
+		return fmt.Errorf("challenge is required")
+	}
+	if len(request.Challenge) < 32 {
+		return fmt.Errorf("challenge is too short")
+	}
+	if len(request.Challenge) > 200 {
+		return fmt.Errorf("challenge is too long")
+	}
+	if matched, err := regexp.MatchString("^mmdash_challenge_[A-Za-z0-9_-]+$", request.Challenge); err != nil || !matched {
+		return fmt.Errorf("challenge has an invalid format")
 	}
 	if request.McpMethod == "" {
 		return fmt.Errorf("mcp_method is required")
@@ -565,11 +578,12 @@ func (request ReviewContextProposalRequest) Validate() error {
 
 // CreateMilestoneRequest is generated from the Core request-body schema.
 type CreateMilestoneRequest struct {
-	Title       string     `json:"title"`
-	Description *string    `json:"description,omitempty"`
-	Critical    *bool      `json:"critical,omitempty"`
-	StartAt     *time.Time `json:"start_at,omitempty"`
-	TargetAt    *time.Time `json:"target_at,omitempty"`
+	Title         string     `json:"title"`
+	Description   *string    `json:"description,omitempty"`
+	Critical      *bool      `json:"critical,omitempty"`
+	StartAt       *time.Time `json:"start_at,omitempty"`
+	TargetAt      *time.Time `json:"target_at,omitempty"`
+	TargetHasTime *bool      `json:"target_has_time,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -593,17 +607,18 @@ func (request CreateMilestoneRequest) Validate() error {
 
 // UpdateMilestoneRequest is generated from the Core request-body schema.
 type UpdateMilestoneRequest struct {
-	Title       *string    `json:"title,omitempty"`
-	Description *string    `json:"description,omitempty"`
-	Status      *string    `json:"status,omitempty"`
-	Critical    *bool      `json:"critical,omitempty"`
-	StartAt     *time.Time `json:"start_at,omitempty"`
-	TargetAt    *time.Time `json:"target_at,omitempty"`
+	Title         *string    `json:"title,omitempty"`
+	Description   *string    `json:"description,omitempty"`
+	Status        *string    `json:"status,omitempty"`
+	Critical      *bool      `json:"critical,omitempty"`
+	StartAt       *time.Time `json:"start_at,omitempty"`
+	TargetAt      *time.Time `json:"target_at,omitempty"`
+	TargetHasTime *bool      `json:"target_has_time,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request UpdateMilestoneRequest) Validate() error {
-	if request.Title == nil && request.Description == nil && request.Status == nil && request.Critical == nil && request.StartAt == nil && request.TargetAt == nil {
+	if request.Title == nil && request.Description == nil && request.Status == nil && request.Critical == nil && request.StartAt == nil && request.TargetAt == nil && request.TargetHasTime == nil {
 		return fmt.Errorf("at least one field is required")
 	}
 	if request.Title != nil {
@@ -620,7 +635,7 @@ func (request UpdateMilestoneRequest) Validate() error {
 		}
 	}
 	if request.Status != nil {
-		if *request.Status != "planned" && *request.Status != "in_progress" && *request.Status != "completed" && *request.Status != "cancelled" {
+		if *request.Status != "planned" && *request.Status != "in_progress" && *request.Status != "completed" {
 			return fmt.Errorf("status has an unsupported value")
 		}
 	}
@@ -659,7 +674,7 @@ func (request CreateTaskRequest) Validate() error {
 		}
 	}
 	if request.Status != nil {
-		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" && *request.Status != "cancelled" {
+		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" {
 			return fmt.Errorf("status has an unsupported value")
 		}
 	}
@@ -708,7 +723,7 @@ func (request UpdateTaskRequest) Validate() error {
 		}
 	}
 	if request.Status != nil {
-		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" && *request.Status != "cancelled" {
+		if *request.Status != "todo" && *request.Status != "in_progress" && *request.Status != "blocked" && *request.Status != "done" {
 			return fmt.Errorf("status has an unsupported value")
 		}
 	}
@@ -779,7 +794,7 @@ func (request CreateProgressProposalRequest) Validate() error {
 	if request.ProposalType == "" {
 		return fmt.Errorf("proposal_type is required")
 	}
-	if request.ProposalType != "milestone.create" && request.ProposalType != "milestone.update" && request.ProposalType != "task.create" && request.ProposalType != "task.update" {
+	if request.ProposalType != "milestone.create" && request.ProposalType != "milestone.update" && request.ProposalType != "milestone.complete" && request.ProposalType != "task.create" && request.ProposalType != "task.update" && request.ProposalType != "task.complete" {
 		return fmt.Errorf("proposal_type has an unsupported value")
 	}
 	if request.Title == "" {
@@ -829,6 +844,38 @@ func (request ReviewProgressProposalRequest) Validate() error {
 	return nil
 }
 
+// BatchReviewProgressProposalsRequest is generated from the Core request-body schema.
+type BatchReviewProgressProposalsRequest struct {
+	ProposalIDs []string `json:"proposal_ids"`
+	Decision    string   `json:"decision"`
+	Note        *string  `json:"note,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request BatchReviewProgressProposalsRequest) Validate() error {
+	if request.ProposalIDs == nil {
+		return fmt.Errorf("proposal_ids is required")
+	}
+	if len(request.ProposalIDs) > 100 {
+		return fmt.Errorf("proposal_ids has too many items")
+	}
+	if len(request.ProposalIDs) < 1 {
+		return fmt.Errorf("proposal_ids has too few items")
+	}
+	if request.Decision == "" {
+		return fmt.Errorf("decision is required")
+	}
+	if request.Decision != "accepted" && request.Decision != "rejected" {
+		return fmt.Errorf("decision has an unsupported value")
+	}
+	if request.Note != nil {
+		if len(*request.Note) > 4000 {
+			return fmt.Errorf("note is too long")
+		}
+	}
+	return nil
+}
+
 // UpdateProgressSettingsRequest is generated from the Core request-body schema.
 type UpdateProgressSettingsRequest struct {
 	AutoTaskChanges      bool    `json:"auto_task_changes"`
@@ -838,6 +885,7 @@ type UpdateProgressSettingsRequest struct {
 	CronSchedule         string  `json:"cron_schedule"`
 	DebounceSeconds      int64   `json:"debounce_seconds"`
 	MinIntervalSeconds   int64   `json:"min_interval_seconds"`
+	ReasoningEffort      string  `json:"reasoning_effort"`
 	AgentInstanceID      *string `json:"agent_instance_id,omitempty"`
 }
 
@@ -863,6 +911,12 @@ func (request UpdateProgressSettingsRequest) Validate() error {
 	}
 	if request.MinIntervalSeconds > 86400 {
 		return fmt.Errorf("min_interval_seconds exceeds its maximum")
+	}
+	if request.ReasoningEffort == "" {
+		return fmt.Errorf("reasoning_effort is required")
+	}
+	if request.ReasoningEffort != "none" && request.ReasoningEffort != "minimal" && request.ReasoningEffort != "low" && request.ReasoningEffort != "medium" && request.ReasoningEffort != "high" && request.ReasoningEffort != "xhigh" && request.ReasoningEffort != "max" && request.ReasoningEffort != "ultra" {
+		return fmt.Errorf("reasoning_effort has an unsupported value")
 	}
 	return nil
 }
@@ -1019,7 +1073,7 @@ func (request CreateAgentInstanceRequest) Validate() error {
 	if request.AllowedTools == nil {
 		return fmt.Errorf("allowed_tools is required")
 	}
-	if len(request.AllowedTools) > 6 {
+	if len(request.AllowedTools) > 12 {
 		return fmt.Errorf("allowed_tools has too many items")
 	}
 	if len(request.AllowedTools) < 1 {
@@ -1123,7 +1177,7 @@ func (request UpdateAgentInstanceRequest) Validate() error {
 		}
 	}
 	if request.AllowedTools != nil {
-		if len(*request.AllowedTools) > 6 {
+		if len(*request.AllowedTools) > 12 {
 			return fmt.Errorf("allowed_tools has too many items")
 		}
 		if len(*request.AllowedTools) < 1 {
@@ -1208,7 +1262,7 @@ func (request CreateAgentSessionRequest) Validate() error {
 	if request.SessionType == "" {
 		return fmt.Errorf("session_type is required")
 	}
-	if request.SessionType != "main" && request.SessionType != "progress" && request.SessionType != "experiment" {
+	if request.SessionType != "main" {
 		return fmt.Errorf("session_type has an unsupported value")
 	}
 	return nil
@@ -1269,7 +1323,9 @@ func (request ForkAgentSessionRequest) Validate() error {
 
 // StartAgentRunRequest is generated from the Core request-body schema.
 type StartAgentRunRequest struct {
-	Message string `json:"message"`
+	Message         string    `json:"message"`
+	ArtifactIDs     *[]string `json:"artifact_ids,omitempty"`
+	ReasoningEffort *string   `json:"reasoning_effort,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -1282,6 +1338,16 @@ func (request StartAgentRunRequest) Validate() error {
 	}
 	if len(request.Message) > 100000 {
 		return fmt.Errorf("message is too long")
+	}
+	if request.ArtifactIDs != nil {
+		if len(*request.ArtifactIDs) > 10 {
+			return fmt.Errorf("artifact_ids has too many items")
+		}
+	}
+	if request.ReasoningEffort != nil {
+		if *request.ReasoningEffort != "none" && *request.ReasoningEffort != "minimal" && *request.ReasoningEffort != "low" && *request.ReasoningEffort != "medium" && *request.ReasoningEffort != "high" && *request.ReasoningEffort != "xhigh" && *request.ReasoningEffort != "max" && *request.ReasoningEffort != "ultra" {
+			return fmt.Errorf("reasoning_effort has an unsupported value")
+		}
 	}
 	return nil
 }
@@ -1672,6 +1738,78 @@ func (request ArtifactInitializeUploadRequest) Validate() error {
 	}
 	if request.Kind != "problem" && request.Kind != "attachment" && request.Kind != "other" {
 		return fmt.Errorf("kind has an unsupported value")
+	}
+	if request.Tags != nil {
+		if len(*request.Tags) > 32 {
+			return fmt.Errorf("tags has too many items")
+		}
+	}
+	if request.Description != nil {
+		if len(*request.Description) > 4000 {
+			return fmt.Errorf("description is too long")
+		}
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// AgentArtifactInitializeUploadRequest is generated from the Core request-body schema.
+type AgentArtifactInitializeUploadRequest struct {
+	AgentSessionID *string   `json:"agent_session_id,omitempty"`
+	AgentRunID     *string   `json:"agent_run_id,omitempty"`
+	Filename       string    `json:"filename"`
+	Name           *string   `json:"name,omitempty"`
+	SizeBytes      int64     `json:"size_bytes"`
+	Sha256         string    `json:"sha256"`
+	MimeType       *string   `json:"mime_type,omitempty"`
+	Tags           *[]string `json:"tags,omitempty"`
+	Description    *string   `json:"description,omitempty"`
+	IdempotencyKey string    `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request AgentArtifactInitializeUploadRequest) Validate() error {
+	if request.Filename == "" {
+		return fmt.Errorf("filename is required")
+	}
+	if len(request.Filename) < 1 {
+		return fmt.Errorf("filename is too short")
+	}
+	if len(request.Filename) > 255 {
+		return fmt.Errorf("filename is too long")
+	}
+	if request.Name != nil {
+		if len(*request.Name) < 1 {
+			return fmt.Errorf("name is too short")
+		}
+		if len(*request.Name) > 255 {
+			return fmt.Errorf("name is too long")
+		}
+	}
+	if request.SizeBytes < 0 {
+		return fmt.Errorf("size_bytes is below its minimum")
+	}
+	if request.Sha256 == "" {
+		return fmt.Errorf("sha256 is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{64}$", request.Sha256); err != nil || !matched {
+		return fmt.Errorf("sha256 has an invalid format")
+	}
+	if request.MimeType != nil {
+		if len(*request.MimeType) < 1 {
+			return fmt.Errorf("mime_type is too short")
+		}
+		if len(*request.MimeType) > 255 {
+			return fmt.Errorf("mime_type is too long")
+		}
 	}
 	if request.Tags != nil {
 		if len(*request.Tags) > 32 {

@@ -17,9 +17,11 @@ storage decision is [ADR 0002](../adr/0002-artifact-multipart-storage.md).
 - Updating content creates a new Version. Restoring an old Version creates a
   new Version rather than changing history.
 - `kind` is a fixed system enum. Public Stage 2 uploads allow `problem`,
-  `attachment`, and `other`.
+  `attachment`, and `other`. An authenticated product Agent may create only
+  `agent` through the dedicated private Agent-upload operation.
 - `source` is a fixed system enum and cannot be forged by ordinary upload
-  callers. Public uploads use `user_upload`.
+  callers. Public uploads use `user_upload`; dedicated Agent uploads use
+  `agent`.
 - `tags[]` are user-defined and normalized by Core.
 - Object content is deduplicated only within one Project by SHA-256 and size.
   API responses never reveal whether another Project contains the same bytes.
@@ -28,7 +30,7 @@ storage decision is [ADR 0002](../adr/0002-artifact-multipart-storage.md).
 
 ## Multipart upload
 
-1. The browser incrementally computes SHA-256 and initializes an upload with a
+1. The browser or Agent runtime incrementally computes SHA-256 and initializes an upload with a
    filename, size, MIME hint, kind, tags, idempotency key, and optional existing
    Artifact ID through the version-upload route.
 2. Core checks Project RBAC and system limits, creates the pending immutable
@@ -50,6 +52,36 @@ storage decision is [ADR 0002](../adr/0002-artifact-multipart-storage.md).
 
 Provider multipart ETags are completion tokens, not content hashes. A complete
 part or file must never be buffered in BFF or Core memory.
+
+## Agent image and file uploads
+
+`POST /v1/projects/{projectId}/artifacts/agent-uploads` is a private-Core
+operation authenticated by the same Agent Token received by MCP Gateway. It
+does not accept a caller-controlled `kind`; Core always creates
+`kind=agent`, `source=agent`. The upload session records both the issuing user
+in the existing `created_by` field and the exact `agent_instance_id`, so another
+Agent instance cannot sign, complete, or abort it.
+
+Hermes reaches this operation only through the exact `artifact.upload` MCP
+grant. File bytes never traverse MCP JSON or Gateway: Hermes PUTs exact parts
+to the returned MinIO/S3 grants and reports ETags to `complete`. Deployments
+used by a remote Hermes must configure an object-storage endpoint reachable by
+that runtime. A Local/Core proxy transfer is rejected by the Tool instead of
+returning an unusable URL. Browser upload and metadata-edit routes continue to
+reject `agent`, so a user cannot forge Agent provenance.
+
+When `begin` includes an `agent_session_id` and `agent_run_id`, both are
+required. Core verifies that the Run belongs to that Session, Agent instance,
+and Project, then creates an immutable `output -> agent_run` relation when the
+first Version becomes available. The Agent transcript derives its inline file
+cards and image previews from these relations rather than parsing provider
+paths or assistant prose.
+
+The browser chat composer reuses the public multipart API with
+`kind=attachment`, `source=user_upload`. Starting a Run binds each selected
+available Artifact Version through an `attachment -> agent_run` relation.
+Hermes can inspect those bytes only via exact-scope `artifact.read`, which
+reuses Core's normal Artifact RBAC and short-lived download-grant operation.
 
 ## Retention, trash, and versions
 

@@ -9,8 +9,6 @@ const requiredFragments = [
   "path /mcp /mcp/*",
   "reverse_proxy mcp-gateway:3002",
   "path /v1/*",
-  "path /box /box/*",
-  "reverse_proxy core:8080",
   "reverse_proxy web:3000",
   "request_body {",
   "flush_interval -1",
@@ -26,6 +24,17 @@ const missing = requiredFragments.filter(
 
 if (missing.length > 0) {
   console.error(`Caddyfile is missing: ${missing.join(", ")}`);
+  process.exit(1);
+}
+
+const forbiddenFragments = ["path /box /box/*", "reverse_proxy core:8080"];
+const exposedCoreFragments = forbiddenFragments.filter((fragment) =>
+  contents.includes(fragment),
+);
+if (exposedCoreFragments.length > 0) {
+  console.error(
+    `Caddyfile must keep Core private; found: ${exposedCoreFragments.join(", ")}`,
+  );
   process.exit(1);
 }
 

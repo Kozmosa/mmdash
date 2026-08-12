@@ -70,9 +70,17 @@ func TestPostgresProgressTrackingDebounceDedupAndLeaseRecovery(t *testing.T) {
 		t.Fatalf("read queued evaluation Job: job=%#v err=%v", job, err)
 	}
 
+	activeManual, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "session", "manual", true, EvaluationTrigger{TriggerType: "manual", OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{}})
+	if err != nil || !activeManual.Merged || activeManual.RequestID != evaluation.RequestID {
+		t.Fatalf("reuse active manual evaluation: result=%#v err=%v", activeManual, err)
+	}
+	if _, err := fixture.db.ExecContext(fixture.ctx, `UPDATE progress_evaluations SET status='succeeded' WHERE evaluation_id=$1`, evaluation.ID); err != nil {
+		t.Fatal(err)
+	}
+
 	duplicate, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "session", "manual", false, EvaluationTrigger{TriggerType: "manual", OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{}})
 	if err != nil || duplicate.Merged {
-		t.Fatalf("schedule duplicate input request: result=%#v err=%v", duplicate, err)
+		t.Fatalf("schedule unchanged non-forced input request: result=%#v err=%v", duplicate, err)
 	}
 	duplicateClaim, err := fixture.store.ClaimRequest(fixture.ctx, "core-c", time.Minute)
 	if err != nil || duplicateClaim == nil {
@@ -85,6 +93,68 @@ func TestPostgresProgressTrackingDebounceDedupAndLeaseRecovery(t *testing.T) {
 	var status, mergedInto string
 	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT status,COALESCE(merged_into_evaluation_id::text,'') FROM progress_evaluation_requests WHERE request_id=$1`, duplicate.RequestID).Scan(&status, &mergedInto); err != nil || status != "merged" || mergedInto != evaluation.ID {
 		t.Fatalf("deduplicated request state: status=%q merged_into=%q err=%v", status, mergedInto, err)
+	}
+
+	forced, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "session", "manual", true, EvaluationTrigger{TriggerType: "manual", OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{}})
+	if err != nil || forced.Merged {
+		t.Fatalf("schedule forced manual evaluation: result=%#v err=%v", forced, err)
+	}
+	forcedClaim, err := fixture.store.ClaimRequest(fixture.ctx, "core-d", time.Minute)
+	if err != nil || forcedClaim == nil {
+		t.Fatalf("claim forced manual evaluation: claim=%#v err=%v", forcedClaim, err)
+	}
+	forcedEvaluation, err := fixture.store.FinalizeRequest(fixture.ctx, *forcedClaim, input, version)
+	if err != nil || forcedEvaluation == nil || forcedEvaluation.ID == evaluation.ID {
+		t.Fatalf("force identical input into a new evaluation: evaluation=%#v err=%v", forcedEvaluation, err)
+	}
+	if _, err := fixture.db.ExecContext(fixture.ctx, `UPDATE jobs SET status='timed_out',finished_at=$2,updated_at=$2 WHERE job_id=$1`, forcedEvaluation.JobID, fixture.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	afterTimeout, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "session", "manual", true, EvaluationTrigger{TriggerType: "manual", OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{}})
+	if err != nil || afterTimeout.Merged {
+		t.Fatalf("terminal Job must not block a new manual evaluation: result=%#v err=%v", afterTimeout, err)
+	}
+	var reconciledStatus, reconciledCode string
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT status,error_code FROM progress_evaluations WHERE evaluation_id=$1`, forcedEvaluation.ID).Scan(&reconciledStatus, &reconciledCode); err != nil || reconciledStatus != "failed" || reconciledCode != "PROGRESS_EVALUATION_JOB_TIMED_OUT" {
+		t.Fatalf("terminal Job reconciliation: status=%q code=%q err=%v", reconciledStatus, reconciledCode, err)
+	}
+}
+
+func TestPostgresProgressLocalCronSchedulesEvaluationRequest(t *testing.T) {
+	fixture := newTrackingPostgresFixture(t)
+	if _, err := fixture.db.ExecContext(fixture.ctx, `
+		UPDATE progress_settings
+		SET auto_tracking_enabled=true,cron_enabled=true,
+		    cron_schedule='*/15 * * * *',cron_next_run_at=$2
+		WHERE project_id=$1
+	`, fixture.projectID, fixture.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	processor := TrackingProcessor{
+		Owner: "core-local-cron", Store: fixture.store,
+		Lease: time.Minute, RetryDelay: time.Minute,
+	}
+	if err := processor.ScheduleCronOnce(fixture.ctx); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := fixture.store.GetSettings(fixture.ctx, fixture.projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantNext := time.Date(2026, time.August, 10, 2, 15, 0, 0, time.UTC)
+	if settings.CronLastScheduledAt == nil || !settings.CronLastScheduledAt.Equal(fixture.clock.Now()) ||
+		settings.CronNextRunAt == nil || !settings.CronNextRunAt.Equal(wantNext) {
+		t.Fatalf("local cron state not advanced: %#v", settings)
+	}
+	var requestCount, triggerCount int
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_evaluation_requests WHERE project_id=$1 AND trigger_kind='cron'`, fixture.projectID).Scan(&requestCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_evaluation_triggers WHERE project_id=$1 AND trigger_type='cron' AND payload->>'scheduler'='mmdash'`, fixture.projectID).Scan(&triggerCount); err != nil {
+		t.Fatal(err)
+	}
+	if requestCount != 1 || triggerCount != 1 {
+		t.Fatalf("local cron request evidence missing: requests=%d triggers=%d", requestCount, triggerCount)
 	}
 }
 
@@ -116,10 +186,14 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 			"completed_items": []string{}, "in_progress_items": []string{"task"}, "blockers": []string{},
 			"pending_questions": []string{"Confirm deadline"},
 			"risks":             []interface{}{map[string]interface{}{"key": "deadline", "title": "Deadline risk", "severity": "high", "detail": "Schedule is tight"}},
+			"work_state_updates": []interface{}{
+				map[string]interface{}{"task_id": task.ID, "state": TaskInProgress},
+			},
 			"suggestions": []interface{}{
 				map[string]interface{}{"key": "milestone", "proposal_type": "milestone.create", "title": "Final review", "rationale": "Needed", "changes": map[string]interface{}{"title": "Final review", "critical": true}},
 				map[string]interface{}{"key": "task-create", "proposal_type": "task.create", "title": "Generated task", "rationale": "Observed work", "changes": map[string]interface{}{"title": "Generated task", "status": TaskTodo}},
-				map[string]interface{}{"key": "task", "proposal_type": "task.update", "target_id": task.ID, "title": "Update task", "rationale": "Progress observed", "changes": map[string]interface{}{"title": "Agent title", "status": TaskDone}},
+				map[string]interface{}{"key": "task", "proposal_type": "task.update", "target_id": task.ID, "title": "Update task", "rationale": "Progress observed", "changes": map[string]interface{}{"title": "Agent title"}},
+				map[string]interface{}{"key": "task-complete", "proposal_type": "task.complete", "target_id": task.ID, "title": "Mark task complete", "rationale": "Completion evidence observed", "changes": map[string]interface{}{}},
 			},
 		},
 	}
@@ -132,12 +206,17 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 		t.Fatalf("complete evaluation: %v", err)
 	}
 	updated, err := fixture.store.GetTask(fixture.ctx, fixture.projectID, task.ID)
-	if err != nil || updated.Title != humanTitle || updated.Status != TaskDone || updated.SourceEvaluationID != evaluation.ID || len(updated.ManualOverrideFields) != 1 || updated.ManualOverrideFields[0] != "title" {
-		t.Fatalf("automatic task boundary: task=%#v err=%v", updated, err)
+	if err != nil || updated.Title != humanTitle || updated.Status != TaskInProgress || updated.SourceEvaluationID != evaluation.ID || len(updated.ManualOverrideFields) != 1 || updated.ManualOverrideFields[0] != "title" {
+		t.Fatalf("automatic work-state boundary: task=%#v err=%v", updated, err)
 	}
 	proposals, err := fixture.store.ListProposals(fixture.ctx, fixture.projectID)
-	if err != nil || len(proposals) != 1 || proposals[0].ProposalType != "milestone.create" || proposals[0].SourceEvaluationID != evaluation.ID || proposals[0].Status != "pending" {
-		t.Fatalf("milestone proposal boundary: proposals=%#v err=%v", proposals, err)
+	if err != nil || len(proposals) != 4 {
+		t.Fatalf("review proposal boundary: proposals=%#v err=%v", proposals, err)
+	}
+	for _, proposal := range proposals {
+		if proposal.SourceEvaluationID != evaluation.ID || proposal.Status != "pending" {
+			t.Fatalf("evaluation suggestion bypassed review: proposal=%#v", proposal)
+		}
 	}
 	state, err := fixture.store.GetState(fixture.ctx, fixture.projectID)
 	if err != nil || state.DetectedStage != "execution" || state.EffectiveStage != "review" || !state.StageOverridden || state.Summary != "Human review stage" {
@@ -165,21 +244,27 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 	for _, expected := range []struct {
 		action     string
 		payloadKey string
+		count      int
 	}{
-		{action: "progress.evaluation.started", payloadKey: "resource_id"},
-		{action: "progress.task.created", payloadKey: "source_evaluation_id"},
-		{action: "progress.task.updated", payloadKey: "source_evaluation_id"},
-		{action: "progress.proposal.created", payloadKey: "source_evaluation_id"},
-		{action: "progress.risk.detected", payloadKey: "evaluation_id"},
-		{action: "progress.evaluation.completed", payloadKey: "resource_id"},
+		{action: "progress.evaluation.started", payloadKey: "resource_id", count: 1},
+		{action: "progress.proposal.created", payloadKey: "source_evaluation_id", count: 4},
+		{action: "progress.risk.detected", payloadKey: "evaluation_id", count: 1},
+		{action: "progress.evaluation.completed", payloadKey: "resource_id", count: 1},
 	} {
 		var count int
-		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM audit_events WHERE project_id=$1 AND action=$2`, fixture.projectID, expected.action).Scan(&count); err != nil || count != 1 {
+		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM audit_events WHERE project_id=$1 AND action=$2`, fixture.projectID, expected.action).Scan(&count); err != nil || count != expected.count {
 			t.Fatalf("automatic mutation audit %s: count=%d err=%v", expected.action, count, err)
 		}
-		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM system_outbox WHERE project_id=$1 AND event_type=$2 AND payload->>$3=$4`, fixture.projectID, expected.action, expected.payloadKey, evaluation.ID).Scan(&count); err != nil || count != 1 {
+		if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM system_outbox WHERE project_id=$1 AND event_type=$2 AND payload->>$3=$4`, fixture.projectID, expected.action, expected.payloadKey, evaluation.ID).Scan(&count); err != nil || count != expected.count {
 			t.Fatalf("automatic mutation outbox %s: count=%d err=%v", expected.action, count, err)
 		}
+	}
+	var workStateAudit, workStateEvent int
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM audit_events WHERE project_id=$1 AND action='progress.task.updated'`, fixture.projectID).Scan(&workStateAudit); err != nil || workStateAudit != 1 {
+		t.Fatalf("automatic work-state audit: count=%d err=%v", workStateAudit, err)
+	}
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM system_outbox WHERE project_id=$1 AND event_type='progress.task.updated' AND payload->>'source_evaluation_id'=$2`, fixture.projectID, evaluation.ID).Scan(&workStateEvent); err != nil || workStateEvent != 1 {
+		t.Fatalf("automatic work-state event: count=%d err=%v", workStateEvent, err)
 	}
 	converged := fixture.queueEvaluation(t, map[string]interface{}{"version": "convergence"})
 	convergedJob, err := fixture.jobs.Get(fixture.ctx, converged.JobID)
@@ -196,8 +281,8 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 		t.Fatalf("complete converged evaluation: %v", err)
 	}
 	var automaticTasks, repeatedMutations int
-	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_tasks WHERE project_id=$1 AND source_key='task-create'`, fixture.projectID).Scan(&automaticTasks); err != nil || automaticTasks != 1 {
-		t.Fatalf("automatic task source-key convergence: count=%d err=%v", automaticTasks, err)
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_tasks WHERE project_id=$1 AND source_key='task-create'`, fixture.projectID).Scan(&automaticTasks); err != nil || automaticTasks != 0 {
+		t.Fatalf("evaluation created a task without review: count=%d err=%v", automaticTasks, err)
 	}
 	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM progress_proposals WHERE project_id=$1 AND source_key='milestone' AND status='pending'`, fixture.projectID).Scan(&automaticTasks); err != nil || automaticTasks != 1 {
 		t.Fatalf("automatic proposal convergence: count=%d err=%v", automaticTasks, err)
@@ -208,7 +293,7 @@ func TestPostgresProgressTrackingCompletionBoundariesOverridesAndRetry(t *testin
 
 	invalid := EvaluationSuggestion{Key: "cross-project", ProposalType: "task.create", Title: "Invalid", Changes: map[string]interface{}{"title": "Invalid", "assignee_id": fixture.generator.MustNew()}}
 	err = fixture.store.Transaction.Within(fixture.ctx, nil, func(tx transaction.Tx) error {
-		return fixture.store.applyEvaluationSuggestion(fixture.ctx, tx, fixture.projectID, evaluation.ID, fixture.userID, "", true, invalid, fixture.clock.Now())
+		return fixture.store.applyEvaluationSuggestion(fixture.ctx, tx, fixture.projectID, evaluation.ID, fixture.userID, "", invalid, fixture.clock.Now())
 	})
 	if !errors.Is(err, ErrReferenceInvalid) {
 		t.Fatalf("invalid automatic task reference returned %v", err)
@@ -325,7 +410,7 @@ func newTrackingPostgresFixture(t *testing.T) trackingPostgresFixture {
 	if _, err := db.ExecContext(ctx, `INSERT INTO project_members(project_id,user_id,role,created_at,updated_at) VALUES($1,$2,'owner',$3,$3)`, projectID, userID, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO progress_settings(project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,cron_sync_status,updated_by,updated_at) VALUES($1,true,true,true,false,'0 */6 * * *',60,0,'disabled',$2,$3)`, projectID, userID, now); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO progress_settings(project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,updated_by,updated_at) VALUES($1,true,true,true,false,'0 */6 * * *',60,0,$2,$3)`, projectID, userID, now); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

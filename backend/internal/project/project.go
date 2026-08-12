@@ -195,9 +195,11 @@ var permissionsByRole = map[Role][]Permission{
 	RoleAgent: {
 		PermissionRead,
 		PermissionDataRead,
+		PermissionModelRead,
 		PermissionContextPropose,
 		PermissionRepoRead,
 		PermissionArtifactRead,
+		PermissionArtifactUpload,
 		PermissionArtifactDownload,
 		PermissionProgressRead,
 		PermissionProgressEvaluate,
@@ -763,11 +765,17 @@ func agentToolAllowsPermission(identity auth.Identity, permission Permission) bo
 		requiredTools = []string{"project.get"}
 	case PermissionDataRead:
 		requiredTools = []string{"data.list", "data.read"}
+	case PermissionModelRead:
+		// Model objects are exposed through the Data Hub's data.read adapter;
+		// there is no separate MCP model-read tool to grant.
+		requiredTools = []string{"data.read"}
 	case PermissionContextPropose:
 		requiredTools = []string{"context.promote"}
+	case PermissionArtifactUpload:
+		requiredTools = []string{"artifact.upload"}
 	case PermissionRepoRead, PermissionArtifactRead,
 		PermissionArtifactDownload:
-		requiredTools = []string{"data.read"}
+		requiredTools = []string{"data.read", "artifact.read"}
 	case PermissionProgressRead:
 		requiredTools = []string{"data.read", "progress.get"}
 	case PermissionProgressEvaluate:

@@ -6,12 +6,12 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -82,27 +82,27 @@ type Token struct {
 // Project grant, and reviewed set of MCP tools. The opaque secret is never
 // persisted or returned after issuance.
 type AgentToken struct {
-	ActivatedAt     *time.Time                      `json:"activated_at,omitempty"`
-	AgentInstanceID string                          `json:"agent_instance_id"`
-	AllowedTools    []string                        `json:"allowed_tools"`
-	CreatedAt       time.Time                       `json:"created_at"`
-	ExpiresAt       *time.Time                      `json:"expires_at,omitempty"`
-	GrantID         string                          `json:"grant_id"`
-	ID              string                          `json:"id"`
-	IssuedBy        string                          `json:"issued_by"`
-	LastUsedAt      *time.Time                      `json:"last_used_at,omitempty"`
-	Name            string                          `json:"name"`
-	ProjectID       string                          `json:"project_id"`
-	ReplacesTokenID string                          `json:"replaces_token_id,omitempty"`
-	RevokedAt       *time.Time                      `json:"revoked_at,omitempty"`
-	Status          string                          `json:"status"`
-	TokenHash       string                          `json:"-"`
-	Verification    *AgentTokenVerificationEvidence `json:"-"`
+	ActivatedAt               *time.Time                      `json:"activated_at,omitempty"`
+	AgentInstanceID           string                          `json:"agent_instance_id"`
+	AllowedTools              []string                        `json:"allowed_tools"`
+	CreatedAt                 time.Time                       `json:"created_at"`
+	ExpiresAt                 *time.Time                      `json:"expires_at,omitempty"`
+	GrantID                   string                          `json:"grant_id"`
+	ID                        string                          `json:"id"`
+	IssuedBy                  string                          `json:"issued_by"`
+	LastUsedAt                *time.Time                      `json:"last_used_at,omitempty"`
+	Name                      string                          `json:"name"`
+	ProjectID                 string                          `json:"project_id"`
+	ReplacesTokenID           string                          `json:"replaces_token_id,omitempty"`
+	RevokedAt                 *time.Time                      `json:"revoked_at,omitempty"`
+	Status                    string                          `json:"status"`
+	TokenHash                 string                          `json:"-"`
+	Verification              *AgentTokenVerificationEvidence `json:"-"`
+	VerificationChallengeHash string                          `json:"-"`
 }
 
 const (
-	AgentGatewayAuthorizationHeader = "X-Mmdash-Gateway-Authorization"
-	AgentTokenVerificationMethod    = "tools/list"
+	AgentTokenVerificationMethod = "tools/list"
 )
 
 // AgentTokenVerificationEvidence is durable proof that MCP Gateway observed a
@@ -110,21 +110,22 @@ const (
 // pending credential. Ordinary authentication, current server/discover, and
 // legacy initialize never create this evidence on their own.
 type AgentTokenVerificationEvidence struct {
-	AgentInstanceID   string    `json:"agent_instance_id"`
-	EvidenceID        string    `json:"evidence_id"`
-	MCPSessionID      string    `json:"mcp_session_id"`
-	ProjectID         string    `json:"project_id"`
-	RequestID         string    `json:"request_id"`
-	TokenID           string    `json:"token_id"`
-	MCPMethod         string    `json:"mcp_method"`
-	VerifiedAt        time.Time `json:"verified_at"`
-	VerifiedByTokenID string    `json:"-"`
+	AgentInstanceID string    `json:"agent_instance_id"`
+	ChallengeHash   string    `json:"-"`
+	EvidenceID      string    `json:"evidence_id"`
+	MCPSessionID    string    `json:"mcp_session_id"`
+	ProjectID       string    `json:"project_id"`
+	RequestID       string    `json:"request_id"`
+	TokenID         string    `json:"token_id"`
+	MCPMethod       string    `json:"mcp_method"`
+	VerifiedAt      time.Time `json:"verified_at"`
 }
 
-// RecordAgentTokenVerificationInput is supplied only by the trusted MCP
-// Gateway callback after tools/list succeeds in a protocol-negotiated session.
+// RecordAgentTokenVerificationInput is supplied by MCP Gateway after tools/list
+// succeeds in a protocol-negotiated session authenticated by the same Token.
 type RecordAgentTokenVerificationInput struct {
 	AgentInstanceID string
+	Challenge       string
 	MCPSessionID    string
 	ProjectID       string
 	RequestID       string
@@ -206,8 +207,9 @@ type IssuedToken struct {
 
 // IssuedAgentToken returns the opaque Agent secret exactly once.
 type IssuedAgentToken struct {
-	Secret string     `json:"token"`
-	Token  AgentToken `json:"credential"`
+	Challenge string     `json:"verification_challenge"`
+	Secret    string     `json:"token"`
+	Token     AgentToken `json:"credential"`
 }
 
 // IssueAgentTokenInput is supplied by the Agent domain after it has created a
@@ -314,19 +316,18 @@ type ProjectTokenAuthorizer interface {
 
 // Service contains credential policy and token cryptography.
 type Service struct {
-	AccessTokenTTL           time.Duration
-	AgentVerificationTokenID string
-	Clock                    clock.Clock
-	DeviceAuthorizationTTL   time.Duration
-	DevicePollInterval       time.Duration
-	DeviceVerificationURI    string
-	Generator                identity.Generator
-	JWTSecret                []byte
-	Invitations              InvitationService
-	Policy                   RegistrationPolicy
-	ProjectTokens            ProjectTokenAuthorizer
-	SessionTTL               time.Duration
-	Store                    Store
+	AccessTokenTTL         time.Duration
+	Clock                  clock.Clock
+	DeviceAuthorizationTTL time.Duration
+	DevicePollInterval     time.Duration
+	DeviceVerificationURI  string
+	Generator              identity.Generator
+	JWTSecret              []byte
+	Invitations            InvitationService
+	Policy                 RegistrationPolicy
+	ProjectTokens          ProjectTokenAuthorizer
+	SessionTTL             time.Duration
+	Store                  Store
 }
 
 // Register creates an active account and immediately creates a session.
@@ -391,6 +392,9 @@ func (service Service) Register(ctx context.Context, input RegisterInput) (Login
 
 // UpdateProfile changes display name or email after credential verification.
 func (service Service) UpdateProfile(ctx context.Context, identity Identity, input UpdateProfileInput) (User, error) {
+	if identity.Kind != "session" && identity.Kind != "api" {
+		return User{}, ErrForbidden
+	}
 	user, passwordHash, err := service.Store.FindUserByEmail(ctx, identity.User.Email)
 	if err != nil {
 		return User{}, err
@@ -418,6 +422,9 @@ func (service Service) UpdateProfile(ctx context.Context, identity Identity, inp
 
 // ChangePassword verifies the old password and revokes other sessions.
 func (service Service) ChangePassword(ctx context.Context, identity Identity, currentPassword string, newPassword string) error {
+	if identity.Kind != "session" && identity.Kind != "api" {
+		return ErrForbidden
+	}
 	if len(newPassword) < 8 {
 		return ErrInvalid
 	}
@@ -724,6 +731,7 @@ func (service Service) Authenticate(ctx context.Context, authorization string) (
 		Kind:             "agent",
 		ProjectID:        agentToken.ProjectID,
 		TokenID:          agentToken.ID,
+		User:             User{ID: agentToken.IssuedBy},
 	}
 	requestctx.SetActor(ctx, identity.AgentInstanceID, identity.Kind)
 	requestctx.SetProject(ctx, identity.ProjectID)
@@ -731,67 +739,6 @@ func (service Service) Authenticate(ctx context.Context, authorization string) (
 		_ = agentStore.TouchAgentToken(ctx, agentToken.ID, now)
 	}
 	return identity, nil
-}
-
-// AuthorizeAgentRequest requires a second, dedicated Gateway-to-Core
-// credential for product Agent requests outside the identity introspection
-// endpoint. The Agent Token remains the primary identity used by domain RBAC,
-// exact Tool checks, request context, and Audit. The secondary credential is
-// only an attestation that the request passed through the trusted MCP Gateway.
-func (service Service) AuthorizeAgentRequest(
-	ctx context.Context,
-	method string,
-	path string,
-	authorization string,
-	gatewayAuthorization string,
-) error {
-	identity, err := service.Authenticate(ctx, authorization)
-	if err != nil || identity.Kind != "agent" {
-		// Authentication and its public error mapping remain owned by the
-		// destination handler. This guard only adds the Agent relay invariant.
-		return nil
-	}
-	if method == http.MethodGet && path == "/v1/auth/me" {
-		return nil
-	}
-	return service.authorizeAgentGatewayCredential(
-		ctx, gatewayAuthorization, identity.ProjectID,
-	)
-}
-
-func (service Service) authorizeAgentGatewayCredential(
-	ctx context.Context,
-	authorization string,
-	projectID string,
-) error {
-	secret, ok := bearerSecret(authorization)
-	if !ok || strings.Count(secret, ".") == 2 {
-		return ErrForbidden
-	}
-	token, user, err := service.Store.FindToken(
-		ctx, hashToken(secret), service.Clock.Now().UTC(),
-	)
-	if err != nil {
-		return ErrForbidden
-	}
-	return service.authorizeAgentGatewayIdentity(Identity{
-		Kind: token.Kind, ProjectID: token.ProjectID, TokenID: token.ID, User: user,
-	}, projectID)
-}
-
-func (service Service) authorizeAgentGatewayIdentity(
-	identity Identity,
-	projectID string,
-) error {
-	trustedTokenID := strings.TrimSpace(service.AgentVerificationTokenID)
-	if trustedTokenID == "" || identity.Kind != "api" ||
-		identity.TokenID != trustedTokenID || identity.User.SystemRole != "admin" {
-		return ErrForbidden
-	}
-	if identity.ProjectID != "" && identity.ProjectID != projectID {
-		return ErrForbidden
-	}
-	return nil
 }
 
 // Logout revokes the current browser session.
@@ -896,28 +843,33 @@ func (service Service) IssueAgentToken(
 	if err != nil {
 		return IssuedAgentToken{}, err
 	}
+	challenge, err := randomSecret("mmdash_challenge_")
+	if err != nil {
+		return IssuedAgentToken{}, err
+	}
 	now := service.Clock.Now().UTC()
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(now) {
 		return IssuedAgentToken{}, ErrInvalid
 	}
 	token := AgentToken{
-		AgentInstanceID: input.AgentInstanceID,
-		AllowedTools:    tools,
-		CreatedAt:       now,
-		ExpiresAt:       input.ExpiresAt,
-		GrantID:         input.GrantID,
-		ID:              tokenID,
-		IssuedBy:        identity.User.ID,
-		Name:            input.Name,
-		ProjectID:       input.ProjectID,
-		ReplacesTokenID: strings.TrimSpace(input.ReplacesTokenID),
-		Status:          "pending",
-		TokenHash:       hashToken(secret),
+		AgentInstanceID:           input.AgentInstanceID,
+		AllowedTools:              tools,
+		CreatedAt:                 now,
+		ExpiresAt:                 input.ExpiresAt,
+		GrantID:                   input.GrantID,
+		ID:                        tokenID,
+		IssuedBy:                  identity.User.ID,
+		Name:                      input.Name,
+		ProjectID:                 input.ProjectID,
+		ReplacesTokenID:           strings.TrimSpace(input.ReplacesTokenID),
+		Status:                    "pending",
+		TokenHash:                 hashToken(secret),
+		VerificationChallengeHash: hashToken(challenge),
 	}
 	if err := store.CreateAgentToken(ctx, token); err != nil {
 		return IssuedAgentToken{}, fmt.Errorf("create agent token: %w", err)
 	}
-	return IssuedAgentToken{Secret: secret, Token: token}, nil
+	return IssuedAgentToken{Challenge: challenge, Secret: secret, Token: token}, nil
 }
 
 // ActivateAgentToken atomically activates the verified pending token and, when
@@ -955,9 +907,7 @@ func (service Service) ActivateAgentToken(
 		(token.ExpiresAt != nil && !token.ExpiresAt.After(now)) {
 		return AgentToken{}, ErrConflict
 	}
-	if !hasTrustedAgentTokenVerification(
-		token, strings.TrimSpace(service.AgentVerificationTokenID),
-	) {
+	if !hasAgentTokenVerification(token) {
 		return AgentToken{}, ErrConflict
 	}
 	return store.ActivateAgentToken(
@@ -966,10 +916,8 @@ func (service Service) ActivateAgentToken(
 	)
 }
 
-// RecordAgentTokenVerification persists trusted proof from MCP Gateway. The
-// dedicated Gateway Core API credential is intentionally distinct from the
-// pending Agent Token being verified; browser, Agent, and Box identities are
-// never accepted here.
+// RecordAgentTokenVerification consumes the one-time challenge belonging to
+// the authenticated pending Agent Token after a negotiated MCP tools/list.
 func (service Service) RecordAgentTokenVerification(
 	ctx context.Context,
 	identity Identity,
@@ -978,16 +926,17 @@ func (service Service) RecordAgentTokenVerification(
 ) (AgentTokenVerificationEvidence, error) {
 	tokenID = strings.TrimSpace(tokenID)
 	input.AgentInstanceID = strings.TrimSpace(input.AgentInstanceID)
+	input.Challenge = strings.TrimSpace(input.Challenge)
 	input.MCPSessionID = strings.TrimSpace(input.MCPSessionID)
 	input.ProjectID = strings.TrimSpace(input.ProjectID)
 	input.RequestID = strings.TrimSpace(input.RequestID)
 	input.MCPMethod = strings.TrimSpace(input.MCPMethod)
-	if err := service.authorizeAgentGatewayIdentity(
-		identity, input.ProjectID,
-	); err != nil {
+	if identity.Kind != "agent" || identity.CredentialStatus != "pending" ||
+		identity.TokenID != tokenID || identity.AgentInstanceID != input.AgentInstanceID ||
+		identity.ProjectID != input.ProjectID {
 		return AgentTokenVerificationEvidence{}, ErrForbidden
 	}
-	if tokenID == "" || input.AgentInstanceID == "" || input.ProjectID == "" ||
+	if tokenID == "" || input.AgentInstanceID == "" || input.ProjectID == "" || input.Challenge == "" ||
 		input.MCPSessionID == "" || input.RequestID == "" ||
 		input.MCPMethod != AgentTokenVerificationMethod ||
 		len(input.MCPSessionID) > 200 || len(input.RequestID) > 200 {
@@ -1010,20 +959,24 @@ func (service Service) RecordAgentTokenVerification(
 	if token.Verification != nil {
 		return *token.Verification, nil
 	}
+	if token.VerificationChallengeHash == "" ||
+		subtle.ConstantTimeCompare([]byte(token.VerificationChallengeHash), []byte(hashToken(input.Challenge))) != 1 {
+		return AgentTokenVerificationEvidence{}, ErrForbidden
+	}
 	evidenceID, err := service.Generator.New()
 	if err != nil {
 		return AgentTokenVerificationEvidence{}, err
 	}
 	return store.MarkAgentTokenVerified(ctx, AgentTokenVerificationEvidence{
-		AgentInstanceID:   input.AgentInstanceID,
-		EvidenceID:        evidenceID,
-		MCPSessionID:      input.MCPSessionID,
-		ProjectID:         input.ProjectID,
-		RequestID:         input.RequestID,
-		TokenID:           tokenID,
-		MCPMethod:         input.MCPMethod,
-		VerifiedAt:        now,
-		VerifiedByTokenID: identity.TokenID,
+		AgentInstanceID: input.AgentInstanceID,
+		ChallengeHash:   hashToken(input.Challenge),
+		EvidenceID:      evidenceID,
+		MCPSessionID:    input.MCPSessionID,
+		ProjectID:       input.ProjectID,
+		RequestID:       input.RequestID,
+		TokenID:         tokenID,
+		MCPMethod:       input.MCPMethod,
+		VerifiedAt:      now,
 	})
 }
 
@@ -1117,15 +1070,14 @@ func normalizeAllowedTools(values []string) ([]string, error) {
 	return tools, nil
 }
 
-func hasTrustedAgentTokenVerification(token AgentToken, trustedTokenID string) bool {
+func hasAgentTokenVerification(token AgentToken) bool {
 	evidence := token.Verification
-	return trustedTokenID != "" && evidence != nil &&
+	return evidence != nil &&
 		evidence.EvidenceID != "" &&
 		evidence.MCPMethod == AgentTokenVerificationMethod &&
 		evidence.MCPSessionID != "" && evidence.RequestID != "" &&
 		evidence.AgentInstanceID == token.AgentInstanceID &&
 		evidence.ProjectID == token.ProjectID && evidence.TokenID == token.ID &&
-		evidence.VerifiedByTokenID == trustedTokenID &&
 		!evidence.VerifiedAt.Before(token.CreatedAt)
 }
 

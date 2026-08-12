@@ -25,6 +25,7 @@ describe("Progress automatic tracking routes", () => {
       debounce_seconds: 60,
       event_triggers_enabled: true,
       min_interval_seconds: 300,
+      reasoning_effort: "high",
     };
 
     const response = await app.inject({ headers: { cookie }, method: "PATCH", payload, url: `/api/projects/${projectId}/progress/settings` });
@@ -67,5 +68,24 @@ describe("Progress automatic tracking routes", () => {
     expect(clear.statusCode).toBe(200);
     expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toEqual({ note: "Human review", stage: "review", summary: "Ready for review" });
     expect(fetchImplementation.mock.calls[1]?.[1]?.method).toBe("DELETE");
+  });
+
+  it("validates and forwards one atomic batch Proposal decision", async () => {
+    const proposalIds = [evaluationId, "00000000-0000-4000-8000-000000000003"];
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
+    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const response = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      payload: { decision: "rejected", proposal_ids: proposalIds },
+      url: `/api/projects/${projectId}/progress/proposals/batch-review`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe(`http://core.test/v1/projects/${projectId}/progress/proposals/batch-review`);
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toEqual({ decision: "rejected", proposal_ids: proposalIds });
   });
 });

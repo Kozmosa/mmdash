@@ -44,6 +44,8 @@ var DefaultAllowedTools = []string{
 	"context.promote",
 	"progress.get",
 	"progress.recalculate",
+	"artifact.upload",
+	"artifact.read",
 	"experiment.create",
 	"experiment.run",
 	"experiment.status",
@@ -114,6 +116,7 @@ type SessionRecord struct {
 	ID              string     `json:"session_id"`
 	LastMessageAt   *time.Time `json:"last_message_at,omitempty"`
 	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
+	LastRunID       string     `json:"last_run_id,omitempty"`
 	ParentSessionID string     `json:"parent_session_id,omitempty"`
 	ProjectID       string     `json:"project_id"`
 	RemoteSessionID string     `json:"remote_session_id"`
@@ -217,8 +220,22 @@ type CreateSessionInput struct {
 }
 
 type StartRunInput struct {
-	Input        string
-	Instructions string
+	ArtifactIDs     []string
+	Input           string
+	Instructions    string
+	ReasoningEffort string
+}
+
+type ChatAttachment struct {
+	ArtifactID string    `json:"artifact_id"`
+	VersionID  string    `json:"version_id"`
+	RunID      string    `json:"run_id"`
+	Direction  string    `json:"direction"`
+	Name       string    `json:"name"`
+	Filename   string    `json:"filename"`
+	MIMEType   string    `json:"mime_type"`
+	SizeBytes  int64     `json:"size_bytes"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // OneTimeTokenMaterial is returned only for manual initial configuration or

@@ -42,6 +42,7 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	userID := generator.MustNew()
 	viewerID := generator.MustNew()
 	projectID := generator.MustNew()
+	agentInstanceID := generator.MustNew()
 	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO auth_users(
@@ -68,6 +69,15 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		  ($1,$4,'viewer',$3,$3)
 	`, projectID, userID, now, viewerID); err != nil {
 		t.Fatalf("insert project: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO agent_instances(
+			agent_instance_id,adapter_type,display_name,management_mode,
+			runtime_url,status,created_by,created_at,updated_at
+		) VALUES($1,'hermes','Artifact Agent','manual',
+			'http://127.0.0.1:8642','active',$2,$3,$3)
+	`, agentInstanceID, userID, now); err != nil {
+		t.Fatalf("insert Agent instance: %v", err)
 	}
 	repositoryID := generator.MustNew()
 	if _, err := db.ExecContext(ctx, `
@@ -111,6 +121,11 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		)
 		_, _ = tx.ExecContext(
 			context.Background(),
+			`DELETE FROM agent_instances WHERE agent_instance_id=$1`,
+			agentInstanceID,
+		)
+		_, _ = tx.ExecContext(
+			context.Background(),
 			`DELETE FROM projects WHERE project_id=$1`,
 			projectID,
 		)
@@ -125,7 +140,8 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	})
 
 	projectService := &project.Service{
-		Store: project.PostgresStore{DB: db},
+		AgentGrants: artifactAgentGrantResolver{},
+		Store:       project.PostgresStore{DB: db},
 	}
 	store := PostgresStore{
 		DB: db, Generator: generator,
@@ -148,6 +164,14 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	}
 	viewer := auth.Identity{
 		Kind: "session", User: auth.User{ID: viewerID},
+	}
+	agentIdentity := auth.Identity{
+		AgentInstanceID:  agentInstanceID,
+		AllowedTools:     []string{"artifact.upload"},
+		CredentialStatus: "active",
+		Kind:             "agent",
+		ProjectID:        projectID,
+		User:             auth.User{ID: userID},
 	}
 
 	contents := make([]byte, 6*1024*1024)
@@ -270,6 +294,52 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	if err != nil || deduplicated.UploadMode != "deduplicated" ||
 		deduplicated.Status != UploadCompleted {
 		t.Fatalf("project-local deduplication: %#v, %v", deduplicated, err)
+	}
+
+	agentContents := []byte("Agent-generated plot bytes")
+	agentInput := InitializeUploadInput{
+		Filename: "agent-plot.png", Name: "Agent plot",
+		SizeBytes: int64(len(agentContents)), SHA256: digest(agentContents),
+		MIMEType: "image/png", Kind: KindAgent,
+		Tags: []string{"agent-output"}, IdempotencyKey: "agent-artifact-1",
+	}
+	if _, err := service.Initialize(ctx, owner, projectID, agentInput); !errors.Is(
+		err, ErrKindInvalid,
+	) {
+		t.Fatalf("human forged Agent Artifact kind: %v", err)
+	}
+	agentUpload, err := service.Initialize(ctx, agentIdentity, projectID, agentInput)
+	if err != nil {
+		t.Fatalf("initialize Agent Artifact: %v", err)
+	}
+	otherAgent := agentIdentity
+	otherAgent.AgentInstanceID = generator.MustNew()
+	if _, err := service.SignParts(
+		ctx, otherAgent, projectID, agentUpload.UploadID, []int{1},
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("another Agent instance continued upload: %v", err)
+	}
+	agentGrants, err := service.SignParts(
+		ctx, agentIdentity, projectID, agentUpload.UploadID, []int{1},
+	)
+	if err != nil {
+		t.Fatalf("sign Agent Artifact part: %v", err)
+	}
+	agentPart := uploadGrantedPart(t, service, agentGrants.Items[0], agentContents)
+	agentDetail, created, err := service.Confirm(
+		ctx, agentIdentity, projectID, agentUpload.UploadID,
+		[]ConfirmPart{{PartNumber: 1, ETag: agentPart.ETag}},
+	)
+	if err != nil || !created || agentDetail.Artifact.Kind != KindAgent ||
+		agentDetail.Artifact.Source != SourceAgent {
+		t.Fatalf("complete Agent Artifact: %#v, created=%v, err=%v", agentDetail, created, err)
+	}
+	var storedAgentInstanceID string
+	if err := db.QueryRowContext(ctx, `
+		SELECT agent_instance_id FROM artifact_uploads WHERE upload_id=$1
+	`, agentUpload.UploadID).Scan(&storedAgentInstanceID); err != nil ||
+		storedAgentInstanceID != agentInstanceID {
+		t.Fatalf("Agent upload provenance: %q, %v", storedAgentInstanceID, err)
 	}
 
 	versionUpload, err := service.InitializeVersion(
@@ -516,6 +586,16 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 			t.Fatalf("expected at least %d %s events, got %d", minimum, eventType, count)
 		}
 	}
+}
+
+type artifactAgentGrantResolver struct{}
+
+func (artifactAgentGrantResolver) ResolveAgentRole(
+	context.Context,
+	string,
+	string,
+) (project.Role, error) {
+	return project.RoleAgent, nil
 }
 
 func makeResultArchive(t *testing.T, experimentID string, contents []byte) []byte {

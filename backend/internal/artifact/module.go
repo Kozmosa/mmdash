@@ -67,6 +67,11 @@ func (module Module) handleProjectResource(
 	case "uploads":
 		module.handleUploads(response, request, identity, projectID, remaining[1:])
 		return
+	case "agent-uploads":
+		module.handleAgentUploadInitialize(
+			response, request, identity, projectID, remaining[1:],
+		)
+		return
 	default:
 		module.handleArtifact(
 			response, request, identity, projectID, remaining[0], remaining[1:],
@@ -74,6 +79,42 @@ func (module Module) handleProjectResource(
 		return
 	}
 	writeArtifactError(response, request, ErrNotFound)
+}
+
+func (module Module) handleAgentUploadInitialize(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+	segments []string,
+) {
+	if len(segments) != 0 {
+		writeArtifactError(response, request, ErrNotFound)
+		return
+	}
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	var body contract.AgentArtifactInitializeUploadRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	upload, err := module.Service.Initialize(
+		request.Context(), identity, projectID, InitializeUploadInput{
+			AgentSessionID: optionalString(body.AgentSessionID),
+			AgentRunID:     optionalString(body.AgentRunID),
+			Filename:       body.Filename, Name: optionalString(body.Name),
+			SizeBytes: body.SizeBytes, SHA256: body.Sha256,
+			MIMEType: optionalString(body.MimeType), Kind: KindAgent,
+			Tags: optionalStrings(body.Tags), Description: body.Description,
+			IdempotencyKey: body.IdempotencyKey,
+		},
+	)
+	if err != nil {
+		writeArtifactError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusCreated, upload)
 }
 
 func (module Module) handleCollection(

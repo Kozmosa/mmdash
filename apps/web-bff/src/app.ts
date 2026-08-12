@@ -12,6 +12,7 @@ import { type BffConfig, loadConfig } from "./config.js";
 import { registerProjectContext } from "./context/project-context.js";
 import { registerErrorHandler } from "./errors/error-handler.js";
 import { registerHttpStreamRoutes } from "./proxy/http-streams.js";
+import { registerPublicCoreApiProxy } from "./proxy/public-core-api.js";
 import { registerWebSocketRoutes } from "./proxy/websocket.js";
 import { registerExampleRoutes } from "./routes/example.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
@@ -93,6 +94,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerNotificationRoutes(app, coreClient);
   registerPageRoutes(app, coreClient, pageRegistry);
   registerHttpStreamRoutes(app, coreClient);
+  registerPublicCoreApiProxy(app, coreClient);
   app.register(async function websocketRoutesScope(scopedApp) {
     registerWebSocketRoutes(scopedApp, coreClient);
   });

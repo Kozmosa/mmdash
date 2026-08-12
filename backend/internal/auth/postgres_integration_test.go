@@ -36,7 +36,6 @@ func TestPostgresAgentTokenVerificationAndAtomicActivation(t *testing.T) {
 	otherProjectID := generator.MustNew()
 	agentInstanceID := generator.MustNew()
 	grantID := generator.MustNew()
-	gatewayTokenID := generator.MustNew()
 	oldTokenID := generator.MustNew()
 	pendingTokenID := generator.MustNew()
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -74,17 +73,9 @@ func TestPostgresAgentTokenVerificationAndAtomicActivation(t *testing.T) {
 	`, grantID, agentInstanceID, projectID, userID, now); err != nil {
 		t.Fatalf("insert agent grant: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, `
-		INSERT INTO auth_tokens(
-			token_id,user_id,kind,name,token_hash,created_at
-		) VALUES($1,$2,'api','Agent verification Gateway',$3,$4)
-	`, gatewayTokenID, userID, strings.Repeat("a", 64), now); err != nil {
-		t.Fatalf("insert Gateway token: %v", err)
-	}
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM auth_agent_tokens WHERE grant_id=$1`, grantID)
-		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM auth_tokens WHERE token_id=$1`, gatewayTokenID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_project_grants WHERE grant_id=$1`, grantID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM agent_instances WHERE agent_instance_id=$1`, agentInstanceID)
 		_, _ = db.ExecContext(cleanupCtx, `DELETE FROM projects WHERE project_id IN ($1,$2)`, projectID, otherProjectID)
@@ -110,17 +101,18 @@ func TestPostgresAgentTokenVerificationAndAtomicActivation(t *testing.T) {
 		TokenHash:       strings.Repeat("b", 64),
 	}
 	pendingToken := AgentToken{
-		AgentInstanceID: agentInstanceID,
-		AllowedTools:    []string{"project.get"},
-		CreatedAt:       now,
-		GrantID:         grantID,
-		ID:              pendingTokenID,
-		IssuedBy:        userID,
-		Name:            "Pending Agent Token",
-		ProjectID:       projectID,
-		ReplacesTokenID: oldTokenID,
-		Status:          "pending",
-		TokenHash:       strings.Repeat("c", 64),
+		AgentInstanceID:           agentInstanceID,
+		AllowedTools:              []string{"project.get"},
+		CreatedAt:                 now,
+		GrantID:                   grantID,
+		ID:                        pendingTokenID,
+		IssuedBy:                  userID,
+		Name:                      "Pending Agent Token",
+		ProjectID:                 projectID,
+		ReplacesTokenID:           oldTokenID,
+		Status:                    "pending",
+		TokenHash:                 strings.Repeat("c", 64),
+		VerificationChallengeHash: strings.Repeat("e", 64),
 	}
 	if err := store.CreateAgentToken(ctx, oldToken); err != nil {
 		t.Fatalf("create old token: %v", err)
@@ -145,15 +137,15 @@ func TestPostgresAgentTokenVerificationAndAtomicActivation(t *testing.T) {
 	assertPostgresAgentTokenStatus(t, ctx, db, pendingTokenID, "pending")
 
 	evidence := AgentTokenVerificationEvidence{
-		AgentInstanceID:   agentInstanceID,
-		EvidenceID:        generator.MustNew(),
-		MCPMethod:         AgentTokenVerificationMethod,
-		MCPSessionID:      "mcp-session-integration",
-		ProjectID:         projectID,
-		RequestID:         "request-integration",
-		TokenID:           pendingTokenID,
-		VerifiedAt:        now.Add(30 * time.Second),
-		VerifiedByTokenID: gatewayTokenID,
+		AgentInstanceID: agentInstanceID,
+		ChallengeHash:   pendingToken.VerificationChallengeHash,
+		EvidenceID:      generator.MustNew(),
+		MCPMethod:       AgentTokenVerificationMethod,
+		MCPSessionID:    "mcp-session-integration",
+		ProjectID:       projectID,
+		RequestID:       "request-integration",
+		TokenID:         pendingTokenID,
+		VerifiedAt:      now.Add(30 * time.Second),
 	}
 	storedEvidence, err := store.MarkAgentTokenVerified(ctx, evidence)
 	if err != nil {

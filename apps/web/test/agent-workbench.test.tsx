@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   approveRun: vi.fn(),
+  downloadArtifact: vi.fn(),
   continueSession: vi.fn(),
   createSession: vi.fn(),
   endSession: vi.fn(),
@@ -22,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   listContextProposals: vi.fn(),
   listMessages: vi.fn(),
   listSessions: vi.fn(),
+  multipartOptions: [] as unknown[],
+  multipartStart: vi.fn(),
   regenerateRun: vi.fn(),
   renameSession: vi.fn(),
   rerunRun: vi.fn(),
@@ -74,6 +77,40 @@ vi.mock("@/features/agent/context-proposal-api", () => ({
   },
 }));
 
+vi.mock("@/features/artifact/artifact-api", () => ({
+  artifactApi: { download: mocks.downloadArtifact },
+}));
+
+vi.mock("@/features/artifact/artifact-detail-drawer", () => ({
+  ArtifactDetailDrawer: ({ artifactId }: { artifactId?: string }) =>
+    artifactId ? (
+      <div aria-label="Artifact 详情测试" role="dialog">
+        {artifactId}
+      </div>
+    ) : null,
+}));
+
+vi.mock("@/features/artifact/multipart-upload", () => ({
+  MultipartUploadTask: class {
+    constructor(options: unknown) {
+      mocks.multipartOptions.push(options);
+    }
+
+    cancel() {
+      return Promise.resolve();
+    }
+
+    start() {
+      return mocks.multipartStart();
+    }
+
+    subscribe(listener: (snapshot: { progress: number }) => void) {
+      listener({ progress: 0 });
+      return () => undefined;
+    }
+  },
+}));
+
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
@@ -83,10 +120,48 @@ import { AgentWorkbench } from "@/features/agent/agent-workbench";
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  window.localStorage.clear();
+  window.history.replaceState({}, "", "/");
   mocks.projectRole.value = "owner";
+  mocks.multipartOptions.length = 0;
 });
 
 describe("Agent workbench", () => {
+  it("restores the selected Session from the URL and the collapsed Session list", async () => {
+    const defaultSession = sessionFixture();
+    const rememberedSession = sessionFixture({
+      default: false,
+      remote_session_id: "hermes-session-2",
+      session_id: "session-2",
+      title: "Remembered Session",
+    });
+    prepareQueries(defaultSession);
+    mocks.listSessions.mockResolvedValue({
+      items: [defaultSession, rememberedSession],
+    });
+    window.localStorage.setItem(
+      "mmdash.agent.session-sidebar.project-1.instance-1",
+      "false",
+    );
+    window.history.replaceState(
+      {},
+      "",
+      "/projects/project-1/agent?agent=instance-1&session=session-2",
+    );
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    expect(
+      await screen.findByRole("heading", { name: "Remembered Session" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "展开会话列表" }),
+    ).toBeInTheDocument();
+    expect(new URL(window.location.href).searchParams.get("session")).toBe(
+      "session-2",
+    );
+  });
+
   it("renders history, streams replies and Tool Calls, and responds to approval", async () => {
     const session = sessionFixture();
     const launch = { run: runFixture({ status: "running" }), session };
@@ -158,7 +233,7 @@ describe("Agent workbench", () => {
       ),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "停止" }));
+    fireEvent.click(screen.getByRole("button", { name: "停止输出" }));
     await waitFor(() =>
       expect(mocks.stopRun).toHaveBeenCalledWith(
         "project-1",
@@ -381,7 +456,7 @@ describe("Agent workbench", () => {
     await sendMessage("切换 Session");
 
     expect(await screen.findByText("Agent 请求工具审批")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Secondary/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Secondary active" }));
     await waitFor(() =>
       expect(screen.queryByText("Agent 请求工具审批")).not.toBeInTheDocument(),
     );
@@ -466,7 +541,12 @@ describe("Agent workbench", () => {
     render(<AgentWorkbench />, { wrapper: Providers });
 
     await screen.findByRole("button", { name: "重新生成" });
-    const continueButton = screen.getByRole("button", { name: "继续" });
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: /^Main .*ended/ }),
+    );
+    const continueButton = await screen.findByRole("menuitem", {
+      name: "继续",
+    });
     expect(continueButton).toBeEnabled();
     fireEvent.click(continueButton);
     await waitFor(() =>
@@ -476,7 +556,7 @@ describe("Agent workbench", () => {
         "session-1",
       ),
     );
-    await screen.findByRole("button", { name: "结束" });
+    await screen.findByRole("button", { name: "打开 Main 会话菜单" });
 
     const regenerate = screen.getByRole("button", { name: "重新生成" });
     fireEvent.click(regenerate);
@@ -580,6 +660,511 @@ describe("Agent workbench", () => {
     await waitFor(() =>
       expect(screen.queryByText("误差来源结论")).not.toBeInTheDocument(),
     );
+  });
+
+  it("shows only main Sessions and creates a main Session from the on-demand form", async () => {
+    const main = sessionFixture();
+    const second = sessionFixture({
+      default: false,
+      session_id: "session-2",
+      title: "Second",
+    });
+    const internal = sessionFixture({
+      default: false,
+      session_id: "session-progress",
+      session_type: "progress",
+      title: "Internal progress",
+    });
+    prepareQueries(main);
+    mocks.listSessions.mockResolvedValue({ items: [main, internal] });
+    mocks.createSession.mockResolvedValue(second);
+    mocks.startRun
+      .mockResolvedValueOnce({
+        run: runFixture({ status: "running" }),
+        session: main,
+      })
+      .mockResolvedValueOnce({
+        run: runFixture({ run_id: "run-2", status: "running" }),
+        session: second,
+      });
+    mocks.streamAgentRun.mockImplementation(() => new Promise(() => {}));
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    await screen.findByText("历史消息");
+    expect(screen.queryByText("Internal progress")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("新 Session 名称")).not.toBeInTheDocument();
+
+    await sendMessage("旧 Session 中正在运行");
+    await screen.findByRole("button", { name: "停止输出" });
+
+    fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
+    fireEvent.change(screen.getByLabelText("新 Session 名称"), {
+      target: { value: "Second" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+
+    await waitFor(() =>
+      expect(mocks.createSession).toHaveBeenCalledWith(
+        "project-1",
+        "instance-1",
+        { default: false, session_type: "main", title: "Second" },
+      ),
+    );
+    await screen.findByRole("heading", { name: "Second" });
+    expect(
+      screen.queryByRole("button", { name: "停止输出" }),
+    ).not.toBeInTheDocument();
+
+    const composer = screen.getByLabelText("发给 Hermes 的消息");
+    fireEvent.change(composer, { target: { value: "新 Session 消息" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    await waitFor(() =>
+      expect(mocks.startRun).toHaveBeenLastCalledWith(
+        "project-1",
+        "instance-1",
+        "session-2",
+        "新 Session 消息",
+      ),
+    );
+  });
+
+  it("sends with Enter, preserves Shift+Enter, and collapses auxiliary panels", async () => {
+    const session = sessionFixture();
+    prepareQueries(session);
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    mocks.streamAgentRun.mockResolvedValue("event-final");
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    await screen.findByText("历史消息");
+    const composer = screen.getByLabelText("发给 Hermes 的消息");
+    fireEvent.change(composer, { target: { value: "第一行\n第二行" } });
+    fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
+    expect(mocks.startRun).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(composer, { key: "Enter" });
+    await waitFor(() =>
+      expect(mocks.startRun).toHaveBeenCalledWith(
+        "project-1",
+        "instance-1",
+        "session-1",
+        "第一行\n第二行",
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "收起会话列表" }));
+    expect(
+      screen.getByRole("button", { name: "展开会话列表" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "关闭项目上下文" })[0]!,
+    );
+    expect(
+      screen.getByRole("button", { name: "打开项目上下文" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reattaches to a running Run and renders safe reasoning, tools, and the final reply without a refresh", async () => {
+    const session = sessionFixture({ last_run_id: "run-1" });
+    prepareQueries(session);
+    mocks.getRun.mockResolvedValue(runFixture({ status: "running" }));
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(streamEvent("reasoning.available"));
+      await onEvent(
+        streamEvent("tool.progress", {
+          tool_call: {
+            name: "project.get",
+            status: "completed",
+            tool_call_id: "tool-resumed",
+          },
+        }),
+      );
+      await onEvent(
+        streamEvent("message.completed", {
+          delta: "恢复连接后的最终回答",
+          message_id: "message-resumed",
+        }),
+      );
+      await onEvent(
+        streamEvent("run.completed", {
+          run: runFixture({ status: "completed" }),
+        }),
+      );
+      return "event-run.completed";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    await waitFor(() => expect(mocks.streamAgentRun).toHaveBeenCalled());
+    expect(await screen.findByText("恢复连接后的最终回答")).toBeInTheDocument();
+    expect(screen.queryByText("正在思考…")).toBeNull();
+    expect(screen.getAllByText("project.get").length).toBeGreaterThan(0);
+    expect(mocks.startRun).not.toHaveBeenCalled();
+    expect(mocks.streamAgentRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instanceId: "instance-1",
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+      expect.any(Function),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("reconnects an unexpectedly ended stream while the Run keeps producing output", async () => {
+    const session = sessionFixture({ last_run_id: "run-1" });
+    prepareQueries(session);
+    mocks.getRun.mockResolvedValue(runFixture({ status: "running" }));
+    let connection = 0;
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      connection += 1;
+      if (connection === 1) {
+        await onEvent(
+          streamEvent("error", {
+            safe_error_message: "The Agent event stream ended unexpectedly",
+          }),
+        );
+        return "event-error";
+      }
+      await onEvent(
+        streamEvent("message.completed", {
+          delta: "重连后继续收到最终回答",
+          message_id: "message-after-reconnect",
+        }),
+      );
+      await onEvent(
+        streamEvent("run.completed", {
+          run: runFixture({ status: "completed" }),
+        }),
+      );
+      return "event-run.completed";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    expect(
+      await screen.findByText("重连后继续收到最终回答"),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(mocks.streamAgentRun).toHaveBeenCalledTimes(2));
+    expect(
+      screen.queryByText("The Agent event stream ended unexpectedly"),
+    ).toBeNull();
+    expect(screen.queryByText("回复流暂时中断，正在自动重连…")).toBeNull();
+  });
+
+  it("shows persisted Agent files inline and suppresses duplicated streamed final output", async () => {
+    const session = sessionFixture({ last_run_id: "run-1" });
+    prepareQueries(session);
+    mocks.listMessages.mockResolvedValue({
+      items: [
+        {
+          attachments: [
+            {
+              artifact_id: "artifact-1",
+              created_at: "2026-08-11T00:00:00Z",
+              direction: "output",
+              filename: "heart.png",
+              mime_type: "image/png",
+              name: "心形曲线",
+              run_id: "run-1",
+              size_bytes: 50547,
+              version_id: "version-1",
+            },
+          ],
+          content: "",
+          message_id: "mmdash-artifacts-run-1-output",
+          role: "assistant",
+          tool_calls: [],
+        },
+        {
+          content: "唯一最终回答",
+          message_id: "message-final",
+          role: "assistant",
+          tool_calls: [
+            {
+              name: "artifact.upload",
+              status: "completed",
+              tool_call_id: "tool-upload",
+            },
+          ],
+        },
+        {
+          content: "   ",
+          message_id: "empty-assistant-projection",
+          role: "assistant",
+          tool_calls: [],
+        },
+        {
+          content: "唯一最终回答",
+          message_id: "message-final-duplicate",
+          role: "assistant",
+          tool_calls: [
+            {
+              name: "artifact.upload",
+              status: "completed",
+              tool_call_id: "tool-upload",
+            },
+          ],
+        },
+      ],
+    });
+    mocks.downloadArtifact.mockResolvedValue({
+      transfer: { url: "https://object.test/heart.png" },
+    });
+    mocks.getRun.mockResolvedValue(runFixture({ status: "completed" }));
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(
+        streamEvent("tool.progress", {
+          tool_call: {
+            name: "artifact.upload",
+            status: "completed",
+            tool_call_id: "tool-upload",
+          },
+        }),
+      );
+      await onEvent(
+        streamEvent("message.completed", {
+          delta: "唯一最终回答",
+          message_id: "message-final",
+        }),
+      );
+      await onEvent(
+        streamEvent("run.completed", {
+          run: runFixture({ status: "completed" }),
+        }),
+      );
+      return "event-run.completed";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    expect(await screen.findByAltText("心形曲线")).toHaveAttribute(
+      "src",
+      "https://object.test/heart.png",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "打开 Artifact 详情：心形曲线" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Artifact 详情测试" }),
+    ).toHaveTextContent("artifact-1");
+    expect(window.location.pathname).toBe("/");
+    await waitFor(() =>
+      expect(screen.getAllByText("唯一最终回答")).toHaveLength(1),
+    );
+    expect(screen.getAllByText("artifact.upload")).toHaveLength(1);
+    expect(mocks.downloadArtifact).toHaveBeenCalledWith(
+      "project-1",
+      "artifact-1",
+      "version-1",
+    );
+  });
+
+  it("does not place output attachments in the active thinking chain", async () => {
+    const session = sessionFixture({ last_run_id: "run-1" });
+    prepareQueries(session);
+    mocks.listMessages.mockResolvedValue({
+      items: [
+        {
+          attachments: [
+            {
+              artifact_id: "artifact-active",
+              created_at: "2026-08-11T00:00:00Z",
+              direction: "output",
+              filename: "chart.png",
+              mime_type: "image/png",
+              name: "生成中的图",
+              run_id: "run-1",
+              size_bytes: 128,
+              version_id: "version-active",
+            },
+          ],
+          content: "",
+          message_id: "mmdash-artifacts-run-1-output",
+          role: "assistant",
+          tool_calls: [],
+        },
+      ],
+    });
+    mocks.downloadArtifact.mockResolvedValue({
+      transfer: { url: "https://object.test/chart.png" },
+    });
+    mocks.getRun.mockResolvedValue(runFixture({ status: "running" }));
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(streamEvent("reasoning.available"));
+      return "event-running";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    await waitFor(() => expect(mocks.streamAgentRun).toHaveBeenCalled());
+    expect(screen.queryByAltText("生成中的图")).toBeNull();
+  });
+
+  it("persists the selected reasoning effort and sends it with the Run", async () => {
+    const session = sessionFixture();
+    prepareQueries(session);
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(
+        streamEvent("run.completed", {
+          run: runFixture({ status: "completed" }),
+        }),
+      );
+      return "event-run.completed";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+    await screen.findByText("历史消息");
+    fireEvent.change(screen.getByLabelText("思考强度"), {
+      target: { value: "xhigh" },
+    });
+    await sendMessage("深度分析");
+
+    expect(mocks.startRun).toHaveBeenCalledWith(
+      "project-1",
+      "instance-1",
+      "session-1",
+      "深度分析",
+      [],
+      "xhigh",
+    );
+    expect(
+      window.localStorage.getItem(
+        "mmdash.agent.reasoning-effort.project-1.instance-1",
+      ),
+    ).toBe("xhigh");
+  });
+
+  it("recovers a running Run after switching away from and back to its Session", async () => {
+    const runningSession = sessionFixture({ last_run_id: "run-1" });
+    const secondary = sessionFixture({
+      default: false,
+      remote_session_id: "hermes-session-2",
+      session_id: "session-2",
+      title: "Secondary",
+    });
+    prepareQueries(runningSession);
+    mocks.listSessions.mockResolvedValue({ items: [runningSession, secondary] });
+    mocks.getRun.mockResolvedValue(runFixture({ status: "running" }));
+    mocks.streamAgentRun.mockResolvedValue("event-running");
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+    await waitFor(() => expect(mocks.streamAgentRun).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "停止输出" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Secondary active" }));
+    await waitFor(() =>
+      expect(new URL(window.location.href).searchParams.get("session")).toBe(
+        "session-2",
+      ),
+    );
+    const streamCallsBeforeReturn = mocks.streamAgentRun.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: /^Main .*active/ }));
+
+    await waitFor(() =>
+      expect(mocks.streamAgentRun.mock.calls.length).toBeGreaterThan(
+        streamCallsBeforeReturn,
+      ),
+    );
+    expect(screen.getByRole("button", { name: "停止输出" })).toBeInTheDocument();
+    expect(mocks.getRun).toHaveBeenCalledWith(
+      "project-1",
+      "instance-1",
+      "session-1",
+      "run-1",
+    );
+  });
+
+  it("merges repeated cumulative stream deltas without duplicating text", async () => {
+    const session = sessionFixture({ last_run_id: "run-1" });
+    prepareQueries(session);
+    mocks.listMessages.mockResolvedValue({ items: [] });
+    mocks.getRun.mockResolvedValue(runFixture({ status: "running" }));
+    mocks.streamAgentRun.mockImplementation(async (_input, onEvent) => {
+      await onEvent(
+        streamEvent("message.started", { message_id: "message-repeated" }),
+      );
+      await onEvent(
+        streamEvent("message.delta", {
+          delta: "流式回答只有一份",
+          message_id: "message-repeated",
+        }),
+      );
+      await onEvent(
+        streamEvent("message.delta", {
+          delta: "流式回答只有一份",
+          message_id: "message-repeated",
+        }),
+      );
+      await onEvent(
+        streamEvent("run.completed", {
+          run: runFixture({ status: "completed" }),
+        }),
+      );
+      return "event-run.completed";
+    });
+
+    render(<AgentWorkbench />, { wrapper: Providers });
+
+    expect(await screen.findByText("流式回答只有一份")).toBeInTheDocument();
+    expect(screen.queryByText("流式回答只有一份流式回答只有一份")).toBeNull();
+  });
+
+  it("uploads composer files as Artifacts and binds them to the next Run", async () => {
+    const session = sessionFixture();
+    prepareQueries(session);
+    mocks.multipartStart.mockResolvedValue({
+      artifact: { artifact_id: "artifact-input-1" },
+      current_version: { version_id: "version-input-1" },
+    });
+    mocks.startRun.mockResolvedValue({
+      run: runFixture({ status: "running" }),
+      session,
+    });
+    mocks.streamAgentRun.mockResolvedValue("event-final");
+
+    const rendered = render(<AgentWorkbench />, { wrapper: Providers });
+    await screen.findByText("历史消息");
+    const input =
+      rendered.container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    const file = new File(["attachment-memory-cobalt"], "memory.txt", {
+      type: "text/plain",
+    });
+    fireEvent.change(input!, { target: { files: [file] } });
+
+    expect(await screen.findByText("memory.txt")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.multipartStart).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText("发给 Hermes 的消息"), {
+      target: { value: "读取附件" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() =>
+      expect(mocks.startRun).toHaveBeenCalledWith(
+        "project-1",
+        "instance-1",
+        "session-1",
+        "读取附件",
+        ["artifact-input-1"],
+      ),
+    );
+    expect(mocks.multipartOptions).toEqual([
+      expect.objectContaining({
+        file,
+        kind: "attachment",
+        projectId: "project-1",
+        tags: ["agent-chat"],
+      }),
+    ]);
   });
 
   it("does not request Context Proposals for a viewer without review permission", async () => {

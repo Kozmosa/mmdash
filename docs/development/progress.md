@@ -66,13 +66,24 @@ rejected.
 Migration `000028_progress_auto_tracking` owns:
 
 - project settings for automatic/event/Cron tracking, debounce, minimum
-  interval, selected Agent, and recoverable Hermes Cron reconciliation;
+  interval, selected Agent, and recoverable local scheduling leases;
 - debounced request and trigger history, including unique source-event replay
   protection and recoverable assembly leases;
 - immutable evaluation input/output snapshots, SHA-256 input versions,
   attempts, safe failures, Agent Session/Run provenance, risks, and history;
 - detected/effective tracker state and append-only human stage overrides;
 - automatic Task/Proposal provenance and stable suggestion keys.
+
+Migration `000037_progress_human_workbench` removes the cancelled Task and
+Milestone domain states, adds Milestone date-versus-time precision, persists a
+Task `work_state` independently from human completion, and adds explicit
+`task.complete`/`milestone.complete` Proposal types plus an index for pending
+evaluation review.
+
+Migration `000038_progress_local_cron` moves periodic evaluation scheduling
+fully into mmdash. It replaces Hermes remote Job synchronization fields with
+the next/last local schedule timestamps while retaining PostgreSQL lease and
+retry state for multi-Core safety.
 
 The request and Cron claim paths use `FOR UPDATE SKIP LOCKED`. Project-level
 PostgreSQL advisory transaction locks serialize concurrent scheduling and
@@ -105,16 +116,28 @@ contracts, persists a `progress` Session and Run with
 `source=progress_evaluation` plus a dedicated `source_evaluation_id`, and
 returns the normalized JSON output. The parent-Run `source_run_id` foreign key
 is never overloaded with an evaluation ID. No new or guessed Hermes API is
-introduced. Hermes Cron reconciliation uses the existing
-Jobs API and requires an active selected Agent.
+introduced. Core owns Cron due-time calculation, PostgreSQL leases, retries,
+and evaluation request creation. Hermes owns only the resulting evaluation
+Run and requires an active selected Agent.
+
+The remote Progress Session uses a deterministic Project-and-Agent-scoped ID
+and a collision-safe title. Core adopts that exact remote Session after a
+local persistence interruption instead of creating duplicates. Once Hermes
+accepts a Run, Core persists its Agent Session/Run provenance immediately so
+the Progress UI can attach a read-only live Session view before the evaluation
+finishes. Runtime configuration rejections are returned as non-retryable
+`PROGRESS_EVALUATOR_CONFIGURATION_INVALID`; transient runtime failures remain
+`PROGRESS_EVALUATOR_UNAVAILABLE` and may be retried by the Job Queue.
 
 `mock` is an explicit deterministic local/acceptance mode. It derives planning,
 execution, or review from current Tasks and emits blocked-task risks without a
 Hermes dependency. Event and manual evaluation work without an Agent in mock
-mode; Hermes Cron remains disabled unless a real active Agent is selected.
+mode; scheduled `core_agent` evaluation remains disabled unless a real active
+Agent is selected.
 
 The Worker validates an exact bounded output shape: stage, summary, changes,
-completed/in-progress/blocked items, risks, suggestions, and pending questions.
+completed/in-progress/blocked report items, risks, automatic `work_state_updates`,
+reviewable suggestions, and pending questions.
 Invalid JSON, unknown fields, invalid suggestion/reference types, oversized
 output, provider failures, and exhausted retries become safe evaluation failure
 codes/history. A human may retry only a terminal failed evaluation. Job lease,
@@ -128,14 +151,16 @@ Core Job Queue.
 - A Milestone is never directly mutated by an Agent/API/Box identity. Such a
   caller submits `progress.proposals.create`; human review applies an accepted
   Proposal through the Progress service transaction.
-- Agents may create or update ordinary Tasks only when `auto_task_changes` is
-  enabled. The service requires a non-empty `source_run_id` for those changes.
-- Stage 6 evaluation suggestions always pass through the same Progress-owned
-  validation transaction. Ordinary Task creates/updates auto-apply only when
-  `auto_task_changes=true`; every Milestone create/update always becomes a
-  pending Proposal.
-- With `auto_task_changes=false`, ordinary automatic Task changes return
-  `PROGRESS_PROPOSAL_REQUIRED` and must use a Proposal.
+- Agents never directly create, reschedule, or complete Tasks or Milestones.
+  Every such evaluation result is a pending Proposal even when the legacy
+  `auto_task_changes` setting is true. Direct non-session Task mutations return
+  `PROGRESS_PROPOSAL_REQUIRED`.
+- `todo`, `in_progress`, and `blocked` are automatic work-state assessments and
+  apply without review. They are persisted in Task `work_state`; if a Task is
+  human-completed, the assessment is retained without reopening it.
+- `task.complete` and `milestone.complete` are completion suggestions, not
+  completion facts. They become authoritative only after an individual or
+  atomic batch human acceptance; rejection leaves the target incomplete.
 - A human edit records the changed Task fields in `manual_override_fields`.
   Later evaluations may update only unprotected fields; a human edit also
   clears the current `source_evaluation_id` while preserving history.
@@ -179,7 +204,6 @@ Registry: the Reminder Type remains default-on in Inbox, while the Project Rule
 can only opt into Feishu or Generic Webhook delivery. Progress never owns or
 changes a user's Inbox preference.
 
-
 Migration `000022_notification_invitation_outcomes` adds the durable
 Invitation lifecycle serialization row used by both invitation creation and
 terminal outcome consumers, so out-of-order or concurrent delivery cannot
@@ -192,38 +216,61 @@ processor logs never include Reminder note content.
 
 ## Reminder processor configuration
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s` | Idle scan interval |
-| `PROGRESS_REMINDER_BATCH_SIZE` | `20` | Maximum rows claimed per scan |
-| `PROGRESS_REMINDER_LEASE` | `30s` | Recoverable processing lease |
-| `PROGRESS_REMINDER_RETRY_DELAY` | `2s` | Delay after an event-write failure |
-| `PROGRESS_TRACKING_POLL_INTERVAL` | `1s` | Idle request/Cron reconciliation scan interval |
-| `PROGRESS_TRACKING_LEASE` | `2m` | Recoverable assembly/Cron claim lease |
-| `PROGRESS_TRACKING_RETRY_DELAY` | `30s` | Retry delay after input assembly, queue, or Cron sync failure |
-| `MMDASH_PROGRESS_EVALUATOR_MODE` | `core_agent` | `core_agent` or deterministic `mock` evaluator |
+| Variable                          | Default      | Meaning                                                       |
+| --------------------------------- | ------------ | ------------------------------------------------------------- |
+| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`         | Idle scan interval                                            |
+| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`         | Maximum rows claimed per scan                                 |
+| `PROGRESS_REMINDER_LEASE`         | `30s`        | Recoverable processing lease                                  |
+| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`         | Delay after an event-write failure                            |
+| `PROGRESS_TRACKING_POLL_INTERVAL` | `1s`         | Idle request/local Cron due scan interval                      |
+| `PROGRESS_TRACKING_LEASE`         | `2m`         | Recoverable assembly/Cron claim lease                         |
+| `PROGRESS_TRACKING_RETRY_DELAY`   | `30s`        | Retry after input assembly, queue, or local scheduling failure |
+| `MMDASH_PROGRESS_EVALUATOR_MODE`  | `core_agent` | `core_agent` or deterministic `mock` evaluator                |
 
 ## HTTP and views
 
 Core operations are under `/v1/projects/{projectId}/progress`; the browser-safe
 one-to-one BFF routes are under `/api/projects/{projectId}/progress`.
-`apps/web/src/app/projects/[projectId]/progress/page.tsx` renders the same Core
-aggregate as board, list, Gantt, today/overdue/blocked, reminder, and Proposal
-review views. Stage 6 adds detected/effective stage and summary, manual
-recalculation, evaluation history/detail and provenance, risks/failure retry,
-stage override controls, and automatic/event/Cron/TODO settings with Agent and
-Cron reconciliation status. Project Home uses the same aggregate for real
-Milestone/open-Task counts plus the effective stage and summary.
+The project Settings page owns the automatic evaluation, event trigger,
+periodic schedule, and automatic TODO controls. Enabling a periodic schedule
+stores the policy and next due time in mmdash; it never starts Hermes Cron or
+creates a Hermes Job. When an occurrence becomes due, Core creates the
+evaluation request and the selected Agent executes its Run.
+
+`apps/web/src/app/projects/[projectId]/progress/page.tsx` renders one human
+workbench with two views. Calendar supports day and cycling two/three/four-day
+layouts, 15-minute drag/resize snapping, overlapping cards, a Milestone strip,
+timed Milestone duplication in the grid, a centered current-time line, and a
+detail drawer. Pointer movement renders a translucent drag ghost; top/bottom
+resize changes the card geometry and time label continuously before the snapped
+mutation is submitted. Completion, completion-Proposal review, drag, and resize
+mutations update the local aggregate optimistically and roll back on failure,
+so the normal interaction is not gated on a network round trip. Both copies of
+a timed Milestone expose the same completion/review control.
+
+TODO renders one waterfall with either date-only headings or date plus
+morning/afternoon/evening/night headings. Calendar places the information rail
+below; TODO places it to the right. The rail contains the latest report,
+blockers, evaluation lifecycle, next eligible tracking time, today's open
+count, the selected Progress Agent, manual evaluation, and atomic
+approve/reject-all actions. Raw snapshots, hashes, Cron diagnostics, and
+low-level Agent settings are not part of the normal Progress workspace.
+The latest evaluation also exposes `查看 Session`. It opens a read-only dialog
+using the same streamed message, reasoning, Tool Call, Markdown, and attachment
+presentation as the mmdash Agent workbench. Core publishes the Agent Session
+and Run provenance as soon as execution starts, so every manual, event-driven,
+or periodic automatic evaluation can be followed while it is running; the
+viewer cannot send messages from this dialog.
 
 ## Data Hub and MCP
 
 The following object types are projected and have authoritative readers:
 
-| Object type         | Owner    |
-| ------------------- | -------- |
-| `milestone`         | Progress |
-| `task`              | Progress |
-| `progress_proposal` | Progress |
+| Object type           | Owner    |
+| --------------------- | -------- |
+| `milestone`           | Progress |
+| `task`                | Progress |
+| `progress_proposal`   | Progress |
 | `progress_evaluation` | Progress |
 | `progress_risk`       | Progress |
 

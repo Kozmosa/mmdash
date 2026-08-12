@@ -1,9 +1,13 @@
 export type ProgressTask = {
   task_id: string;
+  project_id: string;
   title: string;
   description: string;
-  status: string;
+  status: "todo" | "in_progress" | "blocked" | "done";
+  work_state: "todo" | "in_progress" | "blocked";
+  start_at?: string;
   due_at?: string;
+  completed_at?: string;
   source: string;
   source_run_id?: string;
   source_evaluation_id?: string;
@@ -12,16 +16,22 @@ export type ProgressTask = {
 
 export type ProgressMilestone = {
   milestone_id: string;
+  project_id: string;
   title: string;
   description: string;
-  status: string;
+  status: "planned" | "in_progress" | "completed";
   critical: boolean;
+  start_at?: string;
   target_at?: string;
+  target_has_time: boolean;
+  completed_at?: string;
+  source: string;
 };
 
 export type ProgressProposal = {
   proposal_id: string;
   proposal_type: string;
+  target_id?: string;
   title: string;
   rationale: string;
   changes: Record<string, unknown>;
@@ -29,6 +39,7 @@ export type ProgressProposal = {
   source: string;
   source_run_id?: string;
   source_evaluation_id?: string;
+  reviewed_at?: string;
   created_at: string;
 };
 
@@ -41,12 +52,12 @@ export type ProgressSettings = {
   cron_schedule: string;
   debounce_seconds: number;
   min_interval_seconds: number;
+  reasoning_effort:
+    "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
   evaluator_mode: "core_agent" | "mock";
   agent_instance_id?: string;
-  cron_remote_job_id?: string;
-  cron_sync_status: "pending" | "syncing" | "ready" | "failed" | "disabled";
-  cron_error_code?: string;
-  cron_synced_at?: string;
+  cron_next_run_at?: string;
+  cron_last_scheduled_at?: string;
   updated_by: string;
   updated_at: string;
 };
@@ -130,14 +141,25 @@ export type ProgressAggregate = {
   overdue: ProgressTask[];
   blocked: ProgressTask[];
   proposals: ProgressProposal[];
-  reminders: { reminder_id: string; note: string; status: string; remind_at: string }[];
+  reminders: {
+    reminder_id: string;
+    note: string;
+    status: string;
+    remind_at: string;
+  }[];
   board: {
     todo: ProgressTask[];
     in_progress: ProgressTask[];
     blocked: ProgressTask[];
     done: ProgressTask[];
   };
-  gantt: { id: string; kind: string; title: string; target_at?: string; status: string }[];
+  gantt: {
+    id: string;
+    kind: string;
+    title: string;
+    target_at?: string;
+    status: string;
+  }[];
   settings: ProgressSettings;
   tracking: ProgressTrackerState;
   latest_evaluation?: ProgressEvaluation;

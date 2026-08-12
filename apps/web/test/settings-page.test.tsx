@@ -2,7 +2,11 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/providers/project-provider", () => ({
-  useCurrentProject: () => ({ id: "00000000-0000-4000-8000-000000000001", name: "Settings Project", role: "owner" }),
+  useCurrentProject: () => ({
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Settings Project",
+    role: "owner",
+  }),
 }));
 vi.mock("@/features/agent/agent-settings-panel", () => ({
   AgentSettingsPanel: () => (
@@ -21,6 +25,13 @@ vi.mock("@/features/notification/notification-settings-panel", () => ({
 vi.mock("@/features/repo/repo-settings-panel", () => ({
   RepoSettingsPanel: () => <section>Repo 设置面板</section>,
 }));
+vi.mock("@/features/progress/progress-settings-panel", () => ({
+  ProgressSettingsPanel: () => (
+    <section data-testid="progress-settings-panel">
+      Progress 自动评估设置
+    </section>
+  ),
+}));
 vi.mock("@/features/settings/registered-settings-panel", () => ({
   RegisteredSettingsPanel: () => null,
 }));
@@ -31,14 +42,17 @@ import { settingsSlots } from "@/features/settings/registry";
 afterEach(cleanup);
 
 describe("Project settings page", () => {
-  it("renders the implemented Agent panel without its stale placeholder", () => {
+  it("renders implemented Agent and Progress panels without stale placeholders", () => {
     render(<SettingsPage />);
 
     expect(screen.getByTestId("agent-settings-panel")).toBeInTheDocument();
     expect(
       screen.queryByText("等待 agent 模块注册设置面板"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText(/自动进度跟踪/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("progress-settings-panel")).toBeInTheDocument();
+    expect(
+      screen.queryByText("等待 progress 模块注册设置面板"),
+    ).not.toBeInTheDocument();
     expect(
       settingsSlots.list().find((slot) => slot.id === "agent")?.description,
     ).toBe("Hermes、Session 与 Agent Token");

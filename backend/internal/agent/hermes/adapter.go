@@ -492,6 +492,9 @@ func (adapter *Adapter) StartRun(ctx context.Context, request agent.StartRunRequ
 	if request.Provider != "" {
 		body["provider"] = request.Provider
 	}
+	if request.ReasoningEffort != "" {
+		body["model_options"] = map[string]any{"reasoning_effort": request.ReasoningEffort}
+	}
 	var response struct {
 		RunID  string `json:"run_id"`
 		Status string `json:"status"`

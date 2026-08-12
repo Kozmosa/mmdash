@@ -5,566 +5,531 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProgressPage from "@/app/projects/[projectId]/progress/page";
+import { localDayKey } from "@/features/progress/calendar-time";
+import type { ProgressAggregate } from "@/features/progress/types";
 
 const mocks = vi.hoisted(() => ({
-  project: {
-    id: "project-1",
-    name: "Modeling Team",
-    role: "owner" as
-      "agent" | "box" | "editor" | "maintainer" | "owner" | "viewer",
-  },
+  project: { id: "project-1", name: "Nanako", role: "owner" as const },
   request: vi.fn(),
 }));
 
 vi.mock("@/components/providers/project-provider", () => ({
   useCurrentProject: () => mocks.project,
 }));
-
-vi.mock("@/lib/api-client", () => ({
-  apiClient: { request: mocks.request },
+vi.mock("@/lib/api-client", () => ({ apiClient: { request: mocks.request } }));
+vi.mock("@/features/agent/agent-session-dialog", () => ({
+  AgentSessionDialog: ({ open }: { open: boolean }) =>
+    open ? (
+      <div aria-label="自动进度评估 Session" role="dialog">
+        只读评估输出
+      </div>
+    ) : null,
 }));
 
-const progress = {
+function isoToday(hour: number, minute = 0) {
+  const value = new Date();
+  value.setHours(hour, minute, 0, 0);
+  return value.toISOString();
+}
+
+const completeProposal = {
+  changes: {},
+  created_at: isoToday(7),
+  proposal_id: "00000000-0000-4000-8000-000000000041",
+  proposal_type: "task.complete",
+  rationale: "已发现交付物和验证记录",
+  source: "system",
+  source_evaluation_id: "00000000-0000-4000-8000-000000000051",
+  status: "pending",
+  target_id: "00000000-0000-4000-8000-000000000021",
+  title: "确认整理参数已完成",
+};
+
+const progress: ProgressAggregate = {
   blocked: [],
   board: { blocked: [], done: [], in_progress: [], todo: [] },
   gantt: [],
+  latest_evaluation: {
+    agent_instance_id: "00000000-0000-4000-8000-000000000061",
+    agent_run_id: "00000000-0000-4000-8000-000000000063",
+    agent_session_id: "00000000-0000-4000-8000-000000000062",
+    attempts: 1,
+    blockers: [],
+    changes_since_last: [],
+    completed_items: ["整理参数"],
+    created_at: isoToday(7),
+    detected_stage: "execution",
+    evaluation_id: "00000000-0000-4000-8000-000000000051",
+    evaluator_mode: "core_agent",
+    in_progress_items: [],
+    input_snapshot: {},
+    input_version: "a".repeat(64),
+    pending_questions: [],
+    project_id: "project-1",
+    request_id: "00000000-0000-4000-8000-000000000052",
+    requested_by: "00000000-0000-4000-8000-000000000001",
+    risks: [],
+    source_event_ids: [],
+    status: "succeeded",
+    summary: "已完成一次评估",
+    trigger_kind: "manual",
+    triggers: [],
+    updated_at: isoToday(7),
+  },
   milestones: [
     {
       critical: true,
-      description: "",
+      description: "冻结输入",
       milestone_id: "00000000-0000-4000-8000-000000000011",
+      project_id: "project-1",
+      source: "human",
       status: "planned",
+      target_at: isoToday(13),
+      target_has_time: true,
       title: "模型冻结",
     },
   ],
   overdue: [],
-  proposals: [],
+  proposals: [completeProposal],
+  reminders: [],
   settings: {
-    auto_task_changes: true,
-    auto_tracking_enabled: false,
+    auto_task_changes: false,
+    auto_tracking_enabled: true,
     cron_enabled: false,
     cron_schedule: "0 */6 * * *",
-    cron_sync_status: "disabled",
     debounce_seconds: 60,
     evaluator_mode: "core_agent",
     event_triggers_enabled: true,
     min_interval_seconds: 300,
+    reasoning_effort: "medium" as const,
+    agent_instance_id: undefined,
     project_id: "project-1",
-    updated_at: "2026-08-10T00:00:00Z",
+    updated_at: isoToday(7),
     updated_by: "00000000-0000-4000-8000-000000000001",
   },
-  reminders: [
-    {
-      note: "现有提醒",
-      remind_at: "2031-01-01T00:00:00.000Z",
-      reminder_id: "00000000-0000-4000-8000-000000000031",
-      status: "pending",
-    },
-  ],
   tasks: [
     {
-      description: "",
+      description: "收拢建模参数",
+      due_at: isoToday(11),
+      manual_override_fields: [],
+      project_id: "project-1",
       source: "human",
-      status: "todo",
+      start_at: isoToday(9),
+      status: "in_progress",
+      work_state: "in_progress",
       task_id: "00000000-0000-4000-8000-000000000021",
       title: "整理参数",
     },
   ],
   today: [],
   tracking: {
-    blockers: [],
+    blockers: ["等待算力"],
     changes_since_last: [],
-    completed_items: [],
-    detected_stage: "planning",
-    effective_stage: "planning",
+    completed_items: ["整理参数"],
+    detected_stage: "execution",
+    effective_stage: "execution",
     in_progress_items: [],
+    last_evaluated_at: isoToday(7),
     pending_questions: [],
     project_id: "project-1",
     stage_overridden: false,
-    summary: "等待首轮自动评估。",
-    updated_at: "2026-08-10T00:00:00Z",
+    summary: "评估完成，等待确认。",
+    updated_at: isoToday(7),
   },
 };
 
-const failedEvaluation = {
-  attempts: 3,
-  blockers: [],
-  changes_since_last: [],
-  completed_items: [],
-  created_at: "2026-08-10T01:00:00Z",
-  detected_stage: "planning",
-  error_code: "PROGRESS_EVALUATION_FAILED",
-  error_message: "safe failure",
-  evaluation_id: "00000000-0000-4000-8000-000000000041",
-  evaluator_mode: "mock",
-  in_progress_items: [],
-  input_snapshot: { facts_schema_version: 1 },
-  input_version: "a".repeat(64),
-  pending_questions: [],
-  project_id: "project-1",
-  request_id: "00000000-0000-4000-8000-000000000042",
-  requested_by: "00000000-0000-4000-8000-000000000001",
-  risks: [
-    {
-      created_at: "2026-08-10T01:00:00Z",
-      detail: "blocked",
-      evaluation_id: "00000000-0000-4000-8000-000000000041",
-      project_id: "project-1",
-      risk_id: "00000000-0000-4000-8000-000000000043",
-      risk_key: "blocked",
-      severity: "high",
-      status: "open",
-      title: "Blocked task",
-    },
-  ],
-  source_event_ids: [],
-  status: "failed",
-  summary: "",
-  trigger_kind: "event",
-  triggers: [
-    {
-      occurred_at: "2026-08-10T01:00:00Z",
-      payload: {},
-      source_event_type: "repo.commit.created",
-      trigger_id: "00000000-0000-4000-8000-000000000044",
-      trigger_type: "repo.commit.created",
-    },
-  ],
-  updated_at: "2026-08-10T01:00:00Z",
-};
-
-function renderProgress(role: typeof mocks.project.role = "owner") {
-  mocks.project.role = role;
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      mutations: { retry: false },
-      queries: { retry: false, staleTime: 30_000 },
-    },
+function renderPage() {
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
-  const invalidate = vi.spyOn(queryClient, "invalidateQueries");
   render(<ProgressPage />, {
     wrapper: ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
     ),
   });
-  return { invalidate };
 }
 
-function useSuccessfulRequests() {
+function useRequests(
+  response: ProgressAggregate = progress,
+  recalculateResult = {
+    merged: false,
+    request_id: "00000000-0000-4000-8000-000000000071",
+    scheduled_for: isoToday(8),
+    status: "pending",
+  },
+) {
   mocks.request.mockImplementation(
     (path: string, options?: { method?: string }) => {
-      if (path === "/projects/project-1/progress" && !options)
-        return Promise.resolve(progress);
-      if (
-        path === "/projects/project-1/progress/evaluations?limit=20" &&
-        !options
-      )
-        return Promise.resolve({ has_more: false, items: [] });
+      if (path === "/projects/project-1/progress" && !options?.method)
+        return Promise.resolve(response);
       if (path === "/projects/project-1/agent-instances" && !options)
-        return Promise.resolve({ items: [] });
+        return Promise.resolve({
+          items: [
+            {
+              agent_instance_id: "00000000-0000-4000-8000-000000000061",
+              display_name: "Hermes",
+              grant: { status: "active" },
+              status: "active",
+            },
+          ],
+        });
       if (
-        path === "/projects/project-1/progress/reminders" &&
+        path === "/projects/project-1/progress/recalculate" &&
         options?.method === "POST"
-      ) {
-        return Promise.resolve({ reminder_id: "created-reminder" });
-      }
+      )
+        return Promise.resolve(recalculateResult);
+      if (options?.method) return Promise.resolve({ status: "ok" });
       return Promise.reject(new Error(`Unexpected request: ${path}`));
     },
   );
 }
 
-function reminderPost() {
-  return mocks.request.mock.calls.find(
-    ([path, options]) =>
-      path === "/projects/project-1/progress/reminders" &&
-      options?.method === "POST",
-  );
-}
-
-describe("Progress reminder creation", () => {
+describe("Progress human workbench", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
-    mocks.project.role = "owner";
   });
 
-  it("creates a Task reminder with local datetime converted to ISO and refreshes related queries", async () => {
-    useSuccessfulRequests();
-    const { invalidate } = renderProgress();
-    await screen.findByRole("option", { name: "整理参数" });
-
-    fireEvent.change(screen.getByLabelText("提醒目标"), {
-      target: { value: progress.tasks[0].task_id },
-    });
-    const localDateTime = "2030-01-02T12:30";
-    fireEvent.change(screen.getByLabelText("提醒时间"), {
-      target: { value: localDateTime },
-    });
-    fireEvent.change(screen.getByLabelText("提醒备注"), {
-      target: { value: "检查实验输入" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "创建提醒" }));
-
-    await waitFor(() => expect(reminderPost()).toBeDefined());
-    expect(reminderPost()?.[1]).toEqual({
-      body: {
-        note: "检查实验输入",
-        remind_at: new Date(localDateTime).toISOString(),
-        task_id: progress.tasks[0].task_id,
-      },
-      method: "POST",
-    });
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "提醒已创建，列表已刷新。",
-    );
-    expect(screen.getByLabelText("提醒目标")).toHaveValue("");
-    expect(screen.getByLabelText("提醒时间")).toHaveValue("");
-    expect(screen.getByLabelText("提醒备注")).toHaveValue("");
-    await waitFor(() => {
-      expect(invalidate).toHaveBeenCalledWith({
-        queryKey: ["progress", "project-1"],
-      });
-      expect(invalidate).toHaveBeenCalledWith({
-        queryKey: ["project-home", "project-1"],
-      });
-      expect(
-        mocks.request.mock.calls.filter(
-          ([path]) => path === "/projects/project-1/progress",
-        ),
-      ).toHaveLength(2);
-    });
-  });
-
-  it("switches targets mutually and creates a Milestone reminder without a Task field", async () => {
-    useSuccessfulRequests();
-    renderProgress("maintainer");
-    await screen.findByRole("option", { name: "整理参数" });
-    fireEvent.change(screen.getByLabelText("提醒目标"), {
-      target: { value: progress.tasks[0].task_id },
-    });
-
-    fireEvent.click(screen.getByLabelText("目标类型：Milestone"));
-    expect(screen.getByLabelText("提醒目标")).toHaveValue("");
+  it("starts in Calendar and cycles the repeated multi-day button", async () => {
+    useRequests();
+    renderPage();
     expect(
-      screen.queryByRole("option", { name: "整理参数" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("option", { name: "模型冻结" }),
+      await screen.findByRole("region", { name: "进度日历" }),
     ).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("提醒目标"), {
-      target: { value: progress.milestones[0].milestone_id },
+    const multi = screen.getByRole("button", {
+      name: "重复点击切换双日、三日、四日",
     });
-    const alreadyDueLocalTime = "2020-02-03T04:05";
-    fireEvent.change(screen.getByLabelText("提醒时间"), {
-      target: { value: alreadyDueLocalTime },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "创建提醒" }));
-
-    await waitFor(() => expect(reminderPost()).toBeDefined());
-    expect(reminderPost()?.[1]).toEqual({
-      body: {
-        milestone_id: progress.milestones[0].milestone_id,
-        remind_at: new Date(alreadyDueLocalTime).toISOString(),
-      },
-      method: "POST",
-    });
-    expect(reminderPost()?.[1].body).not.toHaveProperty("task_id");
+    expect(multi).toHaveTextContent("双日");
+    fireEvent.click(multi);
+    expect(multi).toHaveTextContent("三日");
+    fireEvent.click(multi);
+    expect(multi).toHaveTextContent("四日");
+    fireEvent.click(multi);
+    expect(multi).toHaveTextContent("双日");
   });
 
-  it("enforces target, datetime, and note boundaries before sending", async () => {
-    useSuccessfulRequests();
-    renderProgress("editor");
-    await screen.findByRole("option", { name: "整理参数" });
-    const submit = screen.getByRole("button", { name: "创建提醒" });
-    expect(submit).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText("提醒目标"), {
-      target: { value: progress.tasks[0].task_id },
+  it("shows AI completion as a yellow review state and accepts it from the task card", async () => {
+    useRequests();
+    renderPage();
+    const accept = await screen.findByRole("button", {
+      name: "认可 整理参数 已完成",
     });
-    expect(submit).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("提醒时间"), {
-      target: { value: "2030-01-02T12:30" },
-    });
-    expect(submit).toBeEnabled();
-    fireEvent.change(screen.getByLabelText("提醒备注"), {
-      target: { value: "x".repeat(2_001) },
-    });
-    expect(submit).toBeDisabled();
-    expect(reminderPost()).toBeUndefined();
+    expect(accept.closest("article")).toHaveAttribute(
+      "data-progress-status",
+      "ai-complete",
+    );
+    fireEvent.click(accept);
+    await waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith(
+        "/projects/project-1/progress/proposals/00000000-0000-4000-8000-000000000041/review",
+        { body: { decision: "accepted" }, method: "POST" },
+      ),
+    );
+    expect(screen.getByText("进行中")).toBeInTheDocument();
   });
 
-  it("prevents duplicate submission and shows a stable error without response details", async () => {
-    let rejectReminder: (reason: Error) => void = () => undefined;
-    const pendingReminder = new Promise((_, reject) => {
-      rejectReminder = reject;
+  it("opens creation from a double-click and uses the 15-minute calendar position", async () => {
+    useRequests();
+    renderPage();
+    const day = await screen.findByTestId(
+      `calendar-day-${localDayKey(new Date())}`,
+    );
+    fireEvent.doubleClick(day, { clientY: 91 });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("新建安排")).toBeInTheDocument();
+    expect(screen.getByLabelText("标题")).toBeInTheDocument();
+  });
+
+  it("renders completion controls for a timed milestone in both the node strip and time grid", async () => {
+    useRequests();
+    renderPage();
+    const controls = await screen.findAllByRole("button", {
+      name: "将 模型冻结 标为完成",
     });
+    expect(controls).toHaveLength(2);
+    expect(
+      controls.some((control) =>
+        control.closest(
+          `[data-testid="calendar-day-${localDayKey(new Date())}"]`,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("stretches the task card live while resizing and snaps to 15 minutes", async () => {
+    useRequests();
+    renderPage();
+    const task = await screen.findByTestId(
+      "calendar-task-00000000-0000-4000-8000-000000000021",
+    );
+    expect(task).toHaveStyle({ height: "144px" });
+    fireEvent(
+      screen.getByRole("button", { name: "调整 整理参数 结束时间" }),
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY: 100,
+      }),
+    );
+    await screen.findByTestId("calendar-resize-preview");
+    fireEvent(
+      window,
+      new MouseEvent("pointermove", {
+        bubbles: true,
+        clientX: 100,
+        clientY: 118,
+      }),
+    );
+    await waitFor(() => expect(task).toHaveStyle({ height: "162px" }));
+    expect(task).toHaveTextContent("09:00–11:15");
+    fireEvent(
+      window,
+      new MouseEvent("pointerup", {
+        bubbles: true,
+        clientX: 100,
+        clientY: 118,
+      }),
+    );
+  });
+
+  it("shows a translucent task ghost that follows pointer movement", async () => {
+    useRequests();
+    renderPage();
+    const task = await screen.findByTestId(
+      "calendar-task-00000000-0000-4000-8000-000000000021",
+    );
+    const movable = task.querySelector<HTMLElement>(".cursor-grab");
+    expect(movable).not.toBeNull();
+    fireEvent(
+      movable!,
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 100,
+        clientY: 100,
+      }),
+    );
+    const hint = await screen.findByText("松开以放置 · 15 分钟吸附");
+    fireEvent(
+      window,
+      new MouseEvent("pointermove", {
+        bubbles: true,
+        clientX: 140,
+        clientY: 180,
+      }),
+    );
+    await waitFor(() =>
+      expect(hint.parentElement).toHaveStyle({ left: "152px", top: "192px" }),
+    );
+    expect(hint.parentElement).toHaveClass("opacity-70");
+    expect(task).toHaveClass("opacity-30");
+    fireEvent(
+      window,
+      new MouseEvent("pointerup", {
+        bubbles: true,
+        clientX: 140,
+        clientY: 180,
+      }),
+    );
+  });
+
+  it("updates human completion immediately while the server request is still pending", async () => {
+    useRequests();
     mocks.request.mockImplementation(
       (path: string, options?: { method?: string }) => {
-        if (path === "/projects/project-1/progress" && !options)
+        if (path === "/projects/project-1/progress" && !options?.method)
           return Promise.resolve(progress);
-        if (
-          path === "/projects/project-1/progress/reminders" &&
-          options?.method === "POST"
-        )
-          return pendingReminder;
-        return Promise.reject(new Error(`Unexpected request: ${path}`));
-      },
-    );
-    renderProgress();
-    await screen.findByRole("option", { name: "整理参数" });
-    fireEvent.change(screen.getByLabelText("提醒目标"), {
-      target: { value: progress.tasks[0].task_id },
-    });
-    fireEvent.change(screen.getByLabelText("提醒时间"), {
-      target: { value: "2030-01-02T12:30" },
-    });
-    const submit = screen.getByRole("button", { name: "创建提醒" });
-    fireEvent.click(submit);
-    fireEvent.click(submit);
-    await waitFor(() =>
-      expect(
-        mocks.request.mock.calls.filter(
-          ([path, options]) =>
-            path === "/projects/project-1/progress/reminders" &&
-            options?.method === "POST",
-        ),
-      ).toHaveLength(1),
-    );
-
-    rejectReminder(new Error("raw provider response with secret-token"));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("创建提醒失败，请稍后重试。");
-    expect(alert).not.toHaveTextContent("secret-token");
-  });
-
-  it.each(["viewer", "agent", "box"] as const)(
-    "hides human mutation controls from %s roles",
-    async (role) => {
-      useSuccessfulRequests();
-      renderProgress(role);
-      await screen.findByText("现有提醒");
-      expect(
-        screen.queryByRole("button", { name: "创建提醒" }),
-      ).not.toBeInTheDocument();
-      expect(screen.queryByText("建立关键节点")).not.toBeInTheDocument();
-      expect(screen.queryByText("建立任务")).not.toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: "触发事件" }),
-      ).not.toBeInTheDocument();
-      expect(
-        mocks.request.mock.calls.some(
-          ([, options]) => options?.method === "POST",
-        ),
-      ).toBe(false);
-    },
-  );
-});
-
-describe("Progress gantt timeline", () => {
-  afterEach(() => {
-    cleanup();
-    vi.clearAllMocks();
-    mocks.project.role = "owner";
-  });
-
-  it("renders bars at their real shared date offsets and widths", async () => {
-    const gantt = [
-      {
-        id: "00000000-0000-4000-8000-000000000041",
-        kind: "milestone",
-        status: "planned",
-        title: "模型冻结",
-        start_at: "2030-01-01T00:00:00Z",
-        target_at: "2030-01-11T00:00:00Z",
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000042",
-        kind: "task",
-        status: "in_progress",
-        title: "整理参数",
-        start_at: "2030-01-06T00:00:00Z",
-        target_at: "2030-01-21T00:00:00Z",
-      },
-    ];
-    mocks.request.mockImplementation(
-      (path: string, options?: { method?: string }) => {
-        if (path === "/projects/project-1/progress" && !options)
-          return Promise.resolve({ ...progress, gantt });
-        return Promise.reject(new Error(`Unexpected request: ${path}`));
-      },
-    );
-
-    renderProgress();
-    await screen.findByText("现有提醒");
-    fireEvent.click(screen.getByRole("button", { name: "甘特" }));
-
-    expect(screen.getByTestId("gantt-range")).toHaveTextContent(
-      "2030-01-01 — 2030-01-21",
-    );
-    expect(
-      screen.getByTestId("gantt-bar-00000000-0000-4000-8000-000000000041"),
-    ).toHaveStyle({ left: "0%", width: "50%" });
-    expect(
-      screen.getByTestId("gantt-bar-00000000-0000-4000-8000-000000000042"),
-    ).toHaveStyle({ left: "25%", width: "75%" });
-    expect(
-      screen.getByTestId("gantt-item-00000000-0000-4000-8000-000000000041"),
-    ).toHaveTextContent("milestone · planned");
-    expect(
-      screen.getByTestId("gantt-item-00000000-0000-4000-8000-000000000042"),
-    ).toHaveTextContent("task · in_progress");
-    expect(screen.getAllByTestId("gantt-tick")).toHaveLength(5);
-  });
-
-  it("shows the safe empty state when all timeline dates are missing", async () => {
-    mocks.request.mockImplementation(
-      (path: string, options?: { method?: string }) => {
-        if (path === "/projects/project-1/progress" && !options) {
-          return Promise.resolve({
-            ...progress,
-            gantt: [
-              {
-                id: "00000000-0000-4000-8000-000000000043",
-                kind: "task",
-                status: "todo",
-                title: "未安排",
-              },
-            ],
-          });
-        }
-        return Promise.reject(new Error(`Unexpected request: ${path}`));
-      },
-    );
-
-    renderProgress();
-    await screen.findByText("现有提醒");
-    fireEvent.click(screen.getByRole("button", { name: "甘特" }));
-
-    expect(screen.getByText("暂无时间安排")).toBeInTheDocument();
-    expect(screen.queryByTestId("gantt-timeline")).not.toBeInTheDocument();
-  });
-});
-
-describe("Progress automatic tracking", () => {
-  afterEach(() => {
-    cleanup();
-    mocks.request.mockReset();
-    mocks.project.role = "owner";
-  });
-
-  function useTrackingRequests() {
-    mocks.request.mockImplementation(
-      (
-        path: string,
-        options?: { body?: Record<string, unknown>; method?: string },
-      ) => {
-        if (path === "/projects/project-1/progress" && !options)
-          return Promise.resolve({
-            ...progress,
-            latest_evaluation: failedEvaluation,
-          });
-        if (
-          path === "/projects/project-1/progress/evaluations?limit=20" &&
-          !options
-        )
-          return Promise.resolve({
-            has_more: false,
-            items: [failedEvaluation],
-          });
         if (path === "/projects/project-1/agent-instances" && !options)
-          return Promise.resolve({
-            items: [
-              {
-                agent_instance_id: "00000000-0000-4000-8000-000000000051",
-                display_name: "Hermes Progress",
-                grant: { status: "active" },
-                status: "active",
-              },
-            ],
-          });
+          return Promise.resolve({ items: [] });
         if (
-          options?.method === "POST" ||
-          options?.method === "PATCH" ||
-          options?.method === "DELETE"
+          path.endsWith("/milestones/00000000-0000-4000-8000-000000000011") &&
+          options?.method === "PATCH"
         )
-          return Promise.resolve({ status: "pending" });
+          return new Promise(() => undefined);
+        if (options?.method) return Promise.resolve({ status: "ok" });
         return Promise.reject(new Error(`Unexpected request: ${path}`));
       },
     );
-  }
-
-  it("shows provenance, schedules a recalculation and retries a failed evaluation", async () => {
-    useTrackingRequests();
-    renderProgress();
-
-    expect(await screen.findByText("自动进度跟踪")).toBeInTheDocument();
-    expect(screen.getByText("PROGRESS_EVALUATION_FAILED")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "重新评估进度" }));
-    await waitFor(() =>
-      expect(mocks.request).toHaveBeenCalledWith(
-        "/projects/project-1/progress/recalculate",
-        { body: { force: false, trigger_kind: "manual" }, method: "POST" },
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "重试评估" }));
-    await waitFor(() =>
-      expect(mocks.request).toHaveBeenCalledWith(
-        "/projects/project-1/progress/evaluations/00000000-0000-4000-8000-000000000041/retry",
-        { method: "POST" },
-      ),
-    );
-    expect(screen.getByText(/repo.commit.created/)).toBeInTheDocument();
-    expect(screen.getByText(/HIGH · Blocked task/)).toBeInTheDocument();
+    renderPage();
+    const controls = await screen.findAllByRole("button", {
+      name: "将 模型冻结 标为完成",
+    });
+    fireEvent.click(controls[0]!);
+    expect(
+      await screen.findAllByRole("button", { name: "将 模型冻结 标为未完成" }),
+    ).toHaveLength(2);
   });
 
-  it("saves a human stage override and Agent-backed tracking settings", async () => {
-    useTrackingRequests();
-    renderProgress();
-    await screen.findByText("自动跟踪设置");
+  it("switches to the single TODO stream and exposes period-depth headings", async () => {
+    useRequests();
+    renderPage();
+    await screen.findByRole("region", { name: "进度日历" });
+    fireEvent.click(screen.getByRole("button", { name: "TODO" }));
+    expect(
+      screen.getByRole("region", { name: "TODO 时间流" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "上午/下午/夜晚/半夜" }),
+    );
+    expect(screen.getAllByText("上午").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("半夜").length).toBeGreaterThan(0);
+  });
 
-    fireEvent.change(screen.getByLabelText("覆盖阶段"), {
-      target: { value: "review" },
-    });
-    fireEvent.change(screen.getByLabelText("覆盖摘要"), {
-      target: { value: "Ready for review" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存覆盖" }));
+  it("batch-approves all actionable suggestions from the information rail", async () => {
+    useRequests();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "全部批准" }));
     await waitFor(() =>
       expect(mocks.request).toHaveBeenCalledWith(
-        "/projects/project-1/progress/stage-override",
+        "/projects/project-1/progress/proposals/batch-review",
         {
           body: {
-            note: undefined,
-            stage: "review",
-            summary: "Ready for review",
+            decision: "accepted",
+            proposal_ids: [completeProposal.proposal_id],
           },
           method: "POST",
         },
       ),
     );
+  });
 
-    fireEvent.click(screen.getByLabelText("启用自动跟踪"));
-    fireEvent.change(screen.getByLabelText("Progress Agent"), {
-      target: { value: "00000000-0000-4000-8000-000000000051" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+  it("requires and persists the Progress Agent used by manual evaluation", async () => {
+    useRequests();
+    renderPage();
+    const trigger = await screen.findByRole("button", { name: "立即评估" });
+    expect(trigger).toBeDisabled();
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Progress Agent" }),
+      { target: { value: "00000000-0000-4000-8000-000000000061" } },
+    );
     await waitFor(() =>
       expect(mocks.request).toHaveBeenCalledWith(
         "/projects/project-1/progress/settings",
         {
           body: expect.objectContaining({
-            agent_instance_id: "00000000-0000-4000-8000-000000000051",
-            auto_tracking_enabled: true,
+            agent_instance_id: "00000000-0000-4000-8000-000000000061",
           }),
           method: "PATCH",
         },
       ),
     );
+  });
+
+  it("shows a completed terminal stage instead of leaving work-state application active", async () => {
+    useRequests({
+      ...progress,
+      proposals: [],
+      settings: {
+        ...progress.settings,
+        agent_instance_id: "00000000-0000-4000-8000-000000000061",
+      },
+    });
+    renderPage();
+
+    const stages = await screen.findByLabelText("评估进度");
+    expect(within(stages).getByText("应用工作状态")).toHaveClass(
+      "bg-emerald-50",
+    );
+    expect(within(stages).getByText("已完成")).toHaveClass("bg-emerald-50");
+  });
+
+  it("blocks another manual evaluation while the latest one is active", async () => {
+    useRequests({
+      ...progress,
+      latest_evaluation: {
+        ...progress.latest_evaluation!,
+        status: "running",
+      },
+      proposals: [],
+      settings: {
+        ...progress.settings,
+        agent_instance_id: "00000000-0000-4000-8000-000000000061",
+      },
+    });
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", { name: "正在评估" }),
+    ).toBeDisabled();
+  });
+
+  it("forces a fresh manual evaluation and locks the button immediately", async () => {
+    useRequests({
+      ...progress,
+      proposals: [],
+      settings: {
+        ...progress.settings,
+        agent_instance_id: "00000000-0000-4000-8000-000000000061",
+      },
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "立即评估" }));
+    await waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith(
+        "/projects/project-1/progress/recalculate",
+        {
+          body: { force: true, trigger_kind: "manual" },
+          method: "POST",
+        },
+      ),
+    );
+    expect(screen.getByRole("button", { name: "评估排队中" })).toBeDisabled();
+    expect(
+      within(screen.getByLabelText("评估进度")).getByText("已排队"),
+    ).toHaveClass("bg-primary/10");
+    expect(
+      screen.getByRole("button", { name: "Session 准备中" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("已成功创建评估请求，正在等待入队。"),
+    ).toBeInTheDocument();
+  });
+
+  it("clearly reports when no new evaluation was created", async () => {
+    useRequests(
+      {
+        ...progress,
+        proposals: [],
+        settings: {
+          ...progress.settings,
+          agent_instance_id: "00000000-0000-4000-8000-000000000061",
+        },
+      },
+      {
+        merged: true,
+        request_id: progress.latest_evaluation!.request_id,
+        scheduled_for: isoToday(7),
+        status: "pending",
+      },
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "立即评估" }));
+    expect(
+      await screen.findByText(
+        "未创建新的评估：已有评估正在排队或执行。完成后可再次点击立即评估。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "立即评估" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "查看 Session" })).toBeEnabled();
+  });
+
+  it("opens the latest automatic evaluation Session as a read-only dialog", async () => {
+    useRequests();
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "查看 Session" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "自动进度评估 Session" }),
+    ).toHaveTextContent("只读评估输出");
   });
 });

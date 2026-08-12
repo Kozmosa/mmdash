@@ -2,7 +2,6 @@ import type { components } from "./generated/core.js";
 
 export type CoreRequestContext = {
   accessToken?: string;
-  gatewayAccessToken?: string;
   projectId?: string;
   requestId: string;
   userId?: string;
@@ -847,6 +846,18 @@ export class CoreClient {
     );
   }
 
+  async initializeAgentArtifactUpload(
+    projectId: string,
+    input: components["schemas"]["AgentArtifactInitializeUploadRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactUploadSession"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/agent-uploads`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
   async initializeArtifactVersionUpload(
     projectId: string,
     artifactId: string,
@@ -1223,6 +1234,18 @@ export class CoreClient {
     );
   }
 
+  async deleteProgressMilestone(
+    projectId: string,
+    milestoneId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/milestones/${encodeURIComponent(milestoneId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
   async listProgressTasks(projectId: string, context: CoreRequestContext) {
     return this.request<components["schemas"]["TaskList"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/tasks`,
@@ -1363,6 +1386,18 @@ export class CoreClient {
   ) {
     return this.request<components["schemas"]["ProgressProposal"]>(
       `/v1/projects/${encodeURIComponent(projectId)}/progress/proposals/${encodeURIComponent(proposalId)}/review`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async batchReviewProgressProposals(
+    projectId: string,
+    input: components["schemas"]["BatchReviewProgressProposalsRequest"],
+    context: CoreRequestContext,
+  ) {
+    return this.request<components["schemas"]["ProgressProposalList"]>(
+      `/v1/projects/${encodeURIComponent(projectId)}/progress/proposals/batch-review`,
       { body: input, method: "POST" },
       context,
     );
@@ -1857,12 +1892,6 @@ export class CoreClient {
     headers.set("x-request-id", context.requestId);
     if (context.accessToken) {
       headers.set("authorization", `Bearer ${context.accessToken}`);
-    }
-    if (context.gatewayAccessToken) {
-      headers.set(
-        "x-mmdash-gateway-authorization",
-        `Bearer ${context.gatewayAccessToken}`,
-      );
     }
     if (context.projectId) {
       headers.set("x-mmdash-project-id", context.projectId);

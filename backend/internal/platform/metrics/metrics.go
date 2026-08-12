@@ -321,7 +321,7 @@ func (registry *Registry) ObserveProgressEvaluation(outcome string) {
 	outcome = boundedLabel(outcome, map[string]bool{
 		"assembly_failed": true,
 		"cron_failed":     true,
-		"cron_synced":     true,
+		"cron_scheduled":  true,
 		"merged":          true,
 		"queue_failed":    true,
 		"queued":          true,

@@ -185,13 +185,13 @@ export function AgentSettingsPanel() {
   const disable = useMutation({
     mutationFn: () =>
       agentApi.disableInstance(project.id, selected!.agent_instance_id),
-    onError: showError("Agent 实例停用失败"),
+    onError: showError("Agent 实例删除失败"),
     onSuccess: async () => {
       setSelectedId(null);
       setCreating(false);
       setForm(emptyForm);
       await refreshInstances();
-      toast.success("Agent 实例已停用，关联 Token 已撤销");
+      toast.success("Agent 实例已从工作区删除，关联 Token 已撤销");
     },
   });
 
@@ -307,7 +307,7 @@ export function AgentSettingsPanel() {
               if (
                 selected &&
                 window.confirm(
-                  `停用 ${selected.display_name}？所有 Agent Token 将立即撤销。`,
+                  `删除 ${selected.display_name}？所有 Agent Token 将立即撤销；历史会话仅按审计和留存策略保留。`,
                 )
               ) {
                 disable.mutate();
@@ -711,7 +711,7 @@ function AgentConnectionStatus({
             variant="ghost"
           >
             <Trash2 aria-hidden="true" className="size-3" />
-            停用实例并撤销 Token
+            删除实例并撤销 Token
           </Button>
         ) : null}
       </CardContent>
@@ -835,9 +835,9 @@ function OneTimeTokenDialog({
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <CardTitle id="one-time-token-title">一次性 Agent Token</CardTitle>
+              <CardTitle id="one-time-token-title">一次性 Hermes MCP 凭据</CardTitle>
               <CardDescription className="mt-2">
-                这是唯一一次显示明文。关闭对话框或刷新后无法再次读取；请把它写入 Hermes，而不是 CLI。
+                Agent Token 和带单次验证 challenge 的 MCP 地址只显示一次。关闭或刷新后无法再次读取；请把两者写入 Hermes，而不是 CLI。
               </CardDescription>
             </div>
             <Button aria-label="关闭一次性 Token" onClick={onClose} size="icon" variant="ghost">
@@ -847,8 +847,9 @@ function OneTimeTokenDialog({
         </CardHeader>
         <CardContent className="space-y-4">
           <OneTimeValue
-            label="MCP Gateway 地址"
+            label="一次性 MCP 地址"
             onCopy={() => copy(credential.mcp_endpoint, "MCP 地址")}
+            secret
             value={credential.mcp_endpoint}
           />
           <OneTimeValue
