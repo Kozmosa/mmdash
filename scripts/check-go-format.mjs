@@ -4,6 +4,7 @@ import path from "node:path";
 
 const files = [
   ...(await goFiles("backend")),
+  ...(await goFiles("box")),
   ...(await goFiles("clients/cli")),
 ].sort();
 const unformatted = [];

@@ -85,6 +85,20 @@ For `repo_file`, the returned content remains pinned to the full commit SHA
 stored in the projection. Binary, oversized, LFS, symlink, and submodule
 objects return safe metadata rather than editable text.
 
+## Stage 8 Experiment tools
+
+`experiment.create` accepts a Project ID, full Commit SHA, supported fixed
+entrypoint, frozen parameters/environment/inputs, runtime, limits, and an
+idempotency key. `experiment.run` queues the frozen request exactly once.
+`experiment.status` reads the authoritative lifecycle and resource state, and
+`result.get` returns the primary `artifact.zip` Artifact pointer and validated
+manifest summary. All four tools use the existing Agent Tool allowlist,
+Project scope, Core RBAC, request correlation, and required MCP audit path.
+
+Result bytes are not returned through MCP. Agents use the Artifact boundary or
+the Data Hub `result_bundle` projection for authorized metadata and previews.
+Failed experiments retain logs but never expose a successful result pointer.
+
 ## `context.promote`
 
 `context.promote` submits a title, explicit content, context type, optional

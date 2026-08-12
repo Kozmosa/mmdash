@@ -28,6 +28,10 @@ export const reviewedAgentTools = [
   "progress.recalculate",
   "artifact.upload",
   "artifact.read",
+  "experiment.create",
+  "experiment.run",
+  "experiment.status",
+  "result.get",
 ] as const;
 
 export const agentApi = {

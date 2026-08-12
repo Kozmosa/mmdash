@@ -72,12 +72,13 @@ const toolNameSchema = z.enum([
   "progress.recalculate",
   "artifact.upload",
   "artifact.read",
+  "experiment.create",
+  "experiment.run",
+  "experiment.status",
+  "result.get",
 ]);
-const allowedToolsSchema = z
-  .array(toolNameSchema)
-  .min(1)
-  .max(8)
-  .superRefine((tools, context) => {
+const allowedToolsSchema = z.array(toolNameSchema).min(1).max(12).superRefine(
+  (tools, context) => {
     if (new Set(tools).size !== tools.length) {
       context.addIssue({
         code: "custom",

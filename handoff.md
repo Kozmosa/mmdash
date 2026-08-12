@@ -1,3 +1,107 @@
+# mmdash v0.1 Stage 8 Experiment / Box / Sandbox handoff
+
+- Updated: 2026-08-11
+- Branch: `codex/stage-8-experiment-box-sandbox`
+- Worktree: `/data/yile.chen/code/mmdash-stage8`
+- Base: local `2fe2c05` (`fix(repo): stabilize maintenance git identity`)
+- Draft PR: <https://github.com/Kozmosa/mmdash/pull/35>; keep Draft and do not
+  merge it.
+- Remote note: a fresh fetch on 2026-08-11 confirmed
+  `imouup/main == origin/main == 9282b4e`; the `imouup` remote has no newer
+  Stage 8 fix to integrate. Before the final push, the PR head contained the
+  six committed Stage 8 changes through `4b076fb`; the verified follow-up
+  commit described in this handoff advances that same branch.
+- Migration: `000033_stage8_box_experiment`
+- Delivery state: Stage 8 implementation, Local Docker terminal acceptance,
+  and the complete `Core -> registered Box Gateway -> E2B` hosted acceptance
+  are complete. The PR remains Draft only because the user explicitly forbids
+  merging it, not because an E2B or Box terminal workflow is outstanding.
+
+## Stage 8 implementation snapshot
+
+Implemented in this worktree:
+
+- Core Experiment lifecycle, frozen `run_spec`, PostgreSQL task queue,
+  lease/timeout/cancel/recovery paths, Audit, Outbox, and Data Hub projections.
+- Core Box registration, scoped token use, heartbeat/offline state, binding,
+  task lease/status/log/result/artifact boundaries, permission checks, and a
+  formal revoke lifecycle that unbinds the Box, records Audit/Outbox, and asks
+  Auth to revoke the project-scoped Box credential.
+- Artifact-side `artifact.zip` stream staging with manifest, path, symlink,
+  zip-slip, file count, uncompressed size, file hash, and declared-size checks.
+- Independent Go 1.26 Box Gateway, commit-marker workspace pinning, restart
+  state, Local Docker runtime, official-protocol E2B adapter, and Sandbox
+  artifact packaging.
+- Web/BFF, MCP Gateway, CLI, Worker handlers, contracts, event schemas,
+  endpoint catalog, Stage 8 development guides, optional Compose Box profile,
+  and opt-in Stage 8 smoke flow.
+
+Verification completed:
+
+- `pnpm contracts:generate`, `pnpm contracts:check`, `pnpm api:check`, and the
+  complete `pnpm check` passed.
+- `go test -race ./box/...` passed with the permanent E2B Platform
+  REST/Envd Connect mock, including secure routing, transfer, logs, metrics,
+  timeout, cancellation, malformed-create reconciliation, redaction, and
+  cleanup. Focused Auth, Box Control, Experiment, Data Hub, Audit, and Core
+  tests also passed against the real isolated PostgreSQL database.
+- The current isolated Compose project is `mmdash-stage8-terminal`: Web
+  `13100`, BFF `13101`, MCP `13102`, Core `18180`, PostgreSQL `15442`, and
+  MinIO `19100/19101`. Current Core was rebuilt after the final SQL, Audit,
+  maintenance, retry, Local Docker, artifact, and Box revoke changes; all six
+  long-running services were healthy.
+- Repo-backed Local Docker terminal smoke passed with Experiment
+  `80022a50-338c-42e0-8d73-308620372abb` and Artifact
+  `c3e40bb3-4743-4cba-badf-13d0de7d6a66`.
+- Repo-backed hosted E2B terminal smoke passed with Experiment
+  `0f37dbf1-0835-450a-ad98-c08e8ac95299` and Artifact
+  `46abae4e-0543-476b-aaf2-4c5b9a1da3b4`. A direct official
+  `/v2/sandboxes` query after cleanup returned zero active sandboxes.
+- Both successful terminal smokes automatically revoked their Box node and
+  credential. The acceptance database finished with zero active Stage 8 Box,
+  Box Token, bootstrap Token, or Worker smoke Token. Ten older Box credentials
+  and eleven older Worker smoke credentials from failed development runs were
+  retired through product APIs before the final reruns.
+- Recent Compose logs had no panic/fatal/error, `invalid audit input`, bad
+  connection, or E2B credential-pattern match. Native CLI MCP login was
+  skipped in the final terminal smokes only because this headless workstation
+  has no unlocked Linux Secret Service keyring; CLI build and tests passed in
+  `pnpm check`.
+- The repository-requested `.localscripts/dev.ps1` entry point is absent in
+  this checkout and was not claimed as used. Compose acceptance uses
+  `up -d --build` and ordinary `down`, never `down -v`.
+- After the final health, log, provider, and credential-leak checks, the
+  `mmdash-stage8-terminal` project was stopped with ordinary `down`. Its
+  PostgreSQL, MinIO, Artifact, and Repo volumes remain preserved.
+
+## Known limits and acceptance evidence
+
+- The E2B adapter follows the official JavaScript SDK `2.38.3` source at
+  `cfd4bedd90558f12ddbf80763d90bcd3332423fe`: Platform REST create/detail/
+  metrics/delete, Envd Connect JSON and `/files`, secure access headers,
+  direct argv, dynamic custom-domain routing, and unconditional cleanup.
+- Paid hosted acceptance passed success/log/file/artifact collection, a
+  two-second timeout, active cancellation, and final sandbox count returning
+  to zero. The full production-shaped Core/Box/E2B success path was rerun after
+  the final Gateway, Experiment, Audit, Local Docker, artifact, and lifecycle
+  fixes. The credential was not written to source, docs, handoff, logs, or the
+  PR. The dashboard API Key ID/Project ID is not sent by the API client.
+- The hosted `base` Template exposed one CPU, 512 MiB memory, and 10 GiB disk.
+  Live acceptance therefore requests 512 MiB. Production checks each created
+  sandbox's actual CPU/memory/disk capacity against the frozen request; Box
+  deployment limits should be configured conservatively for all enabled
+  runtimes.
+- The default Box workspace mode consumes a Repo-owned detached checkout and
+  requires a matching `.mmdash-commit` marker. It intentionally does not run
+  Git or accept long-lived Git credentials.
+- The optional Compose Box profile requires a Core-issued registration token,
+  a populated read-only workspace volume, and explicit Docker socket privilege
+  for Local Docker.
+- Local Docker acceptance used the already cached `python:3.12-slim` image.
+  An initial rerun with uncached `python:3.12-alpine` failed at Docker image
+  pull because Docker Hub timed out; the Experiment correctly recorded
+  `NON_ZERO_EXIT`, and the failed run still revoked its Box and credential.
+
 # mmdash v0.1 Stage 7 integration handoff
 
 - Updated: 2026-08-11
