@@ -69,6 +69,8 @@ tags:
     description: Runtime-independent Agent instances, project grants, sessions, Runs, prompts, and credential lifecycle.
   - name: Notification
     description: User Inbox, project notification routing, and safe delivery diagnostics.
+  - name: Article
+    description: Collaborative Markdown drafts, immutable commits/builds/templates/releases, and Zotero references.
   - name: Observability
     description: Service metrics and diagnostic metadata.
 paths:
@@ -4235,6 +4237,385 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ArtifactPointer" }
+  /v1/projects/{projectId}/article:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: Read the Article workspace aggregate
+      operationId: article.get
+      responses:
+        "200":
+          description: Article aggregate.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleAggregate" } } }
+  /v1/projects/{projectId}/article/draft:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: Read the authoritative collaborative draft snapshot
+      operationId: article.draft.get
+      responses:
+        "200":
+          description: Collaborative draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleDraft" } } }
+  /v1/projects/{projectId}/article/draft/flush:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    post:
+      tags: [Article]
+      summary: Persist one CAS-protected Yjs snapshot and derived Markdown projection
+      operationId: article.draft.flush
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PersistArticleDraftRequest" } } }
+      responses:
+        "200":
+          description: Persisted draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleDraft" } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/patches:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List Article AI patches
+      operationId: article.patches.list
+      responses:
+        "200":
+          description: Patch list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePatchList" } } }
+    post:
+      tags: [Article]
+      summary: Propose an AI patch without mutating the draft
+      operationId: article.patches.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticlePatchRequest" } } }
+      responses:
+        "201":
+          description: Proposed patch.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePatch" } } }
+  /v1/projects/{projectId}/article/patches/{patchId}/review:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: patchId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Article]
+      summary: Accept or reject a patch as a provenance-bearing collaboration transaction
+      operationId: article.patches.review
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReviewArticlePatchRequest" } } }
+      responses:
+        "200":
+          description: Reviewed patch.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePatch" } } }
+  /v1/projects/{projectId}/article/references:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List pinned Article references
+      operationId: article.references.list
+      responses:
+        "200":
+          description: Reference list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleReferenceList" } } }
+    post:
+      tags: [Article]
+      summary: Pin a versioned Problem, Model Snapshot, Experiment Result, or Artifact
+      operationId: article.references.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleReferenceRequest" } } }
+      responses:
+        "201":
+          description: Pinned reference.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleReference" } } }
+  /v1/projects/{projectId}/article/references/{referenceId}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: referenceId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [Article]
+      summary: Remove a draft reference pin
+      operationId: article.references.delete
+      responses: { "204": { description: Reference removed. } }
+  /v1/projects/{projectId}/article/commits:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List Article commits
+      operationId: article.commits.list
+      responses:
+        "200":
+          description: Commit list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleCommitList" } } }
+    post:
+      tags: [Article]
+      summary: Commit one exact flushed draft revision through Repo ArticleWorkspace
+      operationId: article.commits.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleCommitRequest" } } }
+      responses:
+        "201":
+          description: Article commit.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleCommit" } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/commits/{commitId}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: commitId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Article]
+      summary: Read one Article commit and its builds/releases
+      operationId: article.commits.get
+      responses:
+        "200":
+          description: Article commit detail.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleCommitDetail" } } }
+  /v1/projects/{projectId}/article/commits/{commitId}/restore:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: commitId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Article]
+      summary: Restore historical Markdown as a new collaborative draft revision
+      operationId: article.commits.restore
+      responses:
+        "200":
+          description: New draft revision.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleDraft" } } }
+  /v1/projects/{projectId}/article/builds:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List formal and latest preview builds
+      operationId: article.builds.list
+      responses:
+        "200":
+          description: Build list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuildList" } } }
+    post:
+      tags: [Article]
+      summary: Queue a formal commit-bound Article build
+      operationId: article.builds.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleBuildRequest" } } }
+      responses:
+        "202":
+          description: Queued formal build.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+  /v1/projects/{projectId}/article/preview-builds:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    post:
+      tags: [Article]
+      summary: Queue a latest-only preview for one persisted draft revision
+      operationId: article.preview_builds.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticlePreviewBuildRequest" } } }
+      responses:
+        "202":
+          description: Queued preview.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+  /v1/projects/{projectId}/article/builds/{buildId}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: buildId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Article]
+      summary: Read a build and immutable output Artifact versions
+      operationId: article.builds.get
+      responses:
+        "200":
+          description: Build detail.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+  /v1/projects/{projectId}/article/builds/{buildId}/retry:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: buildId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Article]
+      summary: Retry a failed build as a new immutable attempt
+      operationId: article.builds.retry
+      responses:
+        "202":
+          description: Queued retry build.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+  /v1/projects/{projectId}/article/publications:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    post:
+      tags: [Article]
+      summary: Orchestrate Commit then Build then immutable Release
+      operationId: article.publications.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticlePublicationRequest" } } }
+      responses:
+        "202":
+          description: Publication orchestration.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePublication" } } }
+  /v1/projects/{projectId}/article/publications/{publicationId}/retry:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: publicationId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Article]
+      summary: Retry the Build phase without duplicating the Commit or Release
+      operationId: article.publications.retry
+      responses:
+        "202":
+          description: Retried publication.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePublication" } } }
+  /v1/projects/{projectId}/article/releases:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List immutable Article releases
+      operationId: article.releases.list
+      responses:
+        "200":
+          description: Release list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleReleaseList" } } }
+    post:
+      tags: [Article]
+      summary: Create an immutable Release from a successful formal build
+      operationId: article.releases.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleReleaseRequest" } } }
+      responses:
+        "201":
+          description: Immutable release.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleRelease" } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/releases/{releaseId}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: releaseId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Article]
+      summary: Read one immutable Release and output manifest
+      operationId: article.releases.get
+      responses:
+        "200":
+          description: Immutable release.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleRelease" } } }
+  /v1/projects/{projectId}/article/templates:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List registered validated template Artifact versions
+      operationId: article.templates.list
+      responses:
+        "200":
+          description: Template list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleTemplateList" } } }
+    post:
+      tags: [Article]
+      summary: Validate and register one immutable template Artifact version
+      operationId: article.templates.create
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RegisterArticleTemplateRequest" } } }
+      responses:
+        "202":
+          description: Template validation registration.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleTemplate" } } }
+  /v1/projects/{projectId}/article/zotero:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: Read redacted read-only Zotero binding
+      operationId: article.zotero.get
+      responses:
+        "200":
+          description: Zotero binding.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleZoteroBinding" } } }
+    put:
+      tags: [Article]
+      summary: Bind a read-only Zotero library and encrypted API key
+      operationId: article.zotero.update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateArticleZoteroBindingRequest" } } }
+      responses:
+        "200":
+          description: Redacted Zotero binding.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleZoteroBinding" } } }
+    delete:
+      tags: [Article]
+      summary: Remove the project Zotero binding and secret
+      operationId: article.zotero.delete
+      responses: { "204": { description: Binding removed. } }
+  /v1/projects/{projectId}/article/zotero/search:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+    get:
+      tags: [Article]
+      summary: Search the configured Zotero library by author, title, or keyword
+      operationId: article.zotero.search
+      responses:
+        "200":
+          description: Zotero search results.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ZoteroItemList" } } }
+  /v1/projects/{projectId}/artifacts/{artifactId}/description:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { $ref: "#/components/parameters/ArtifactId" }
+    post:
+      tags: [Article, Artifact, Model]
+      summary: Request a non-blocking semantic description and recommended usage
+      operationId: article.artifacts.describe
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArtifactSemanticDescriptionInput" }
+      responses:
+        "202":
+          description: Description request accepted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArtifactSemanticDescriptionJob" } } }
+  /v1/internal/artifact-semantic-jobs/{jobId}/execute:
+    parameters: [{ $ref: "#/components/parameters/JobId" }]
+    post:
+      tags: [Article, Artifact, Jobs]
+      summary: Execute a claimed Artifact semantic-description Job through the Core Agent capability
+      operationId: article.artifact_semantic_jobs.execute
+      responses:
+        "200":
+          description: Strict semantic fields and Agent provenance for Job completion.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArtifactSemanticDescriptionResult" } } }
+  /v1/internal/article-build-jobs/{jobId}/input:
+    parameters: [{ $ref: "#/components/parameters/JobId" }]
+    get:
+      tags: [Article, Jobs]
+      summary: Get Job-scoped Article build input and signed immutable input transfers
+      operationId: article.build_jobs.input.get
+      responses:
+        "200":
+          description: Job-scoped build input.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuildJobInput" } } }
+  /v1/internal/article-build-jobs/{jobId}/outputs/{role}:
+    parameters:
+      - { $ref: "#/components/parameters/JobId" }
+      - { name: role, in: path, required: true, schema: { $ref: "#/components/schemas/ArticleBuildOutputRole" } }
+    post:
+      tags: [Article, Artifact, Jobs]
+      summary: Stream one verified build output through Core into Artifact
+      operationId: article.build_jobs.outputs.upload
+      parameters:
+        - { name: X-Mmdash-Artifact-SHA256, in: header, required: true, schema: { type: string, pattern: "^[0-9a-f]{64}$" } }
+        - { name: X-Mmdash-Filename, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+        - { name: Content-Type, in: header, required: true, schema: { type: string, minLength: 3, maxLength: 255 } }
+        - { name: Content-Length, in: header, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      responses:
+        "201":
+          description: Archived output pointer.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuildOutput" } } }
 components:
   securitySchemes:
     bearerAuth:
@@ -4524,6 +4905,462 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    PersistArticleDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, yjs_update, state_vector, tiptap_json, actor_kind, provenance]
+      properties:
+        expected_revision: { type: integer, format: int64, minimum: 0 }
+        yjs_update: { type: string, minLength: 1, maxLength: 16777216, description: Base64-encoded Yjs document update. }
+        state_vector: { type: string, minLength: 1, maxLength: 1048576, description: Base64-encoded Yjs state vector. }
+        tiptap_json: { type: object, additionalProperties: true }
+        actor_kind: { type: string, enum: [human, ai, restore] }
+        provenance: { type: object, additionalProperties: true }
+    CreateArticlePatchRequest:
+      type: object
+      additionalProperties: false
+      required: [base_revision, patch, rationale, provenance]
+      properties:
+        base_revision: { type: integer, format: int64, minimum: 0 }
+        patch: { type: object, additionalProperties: true }
+        rationale: { type: string, minLength: 1, maxLength: 4000 }
+        provenance: { type: object, additionalProperties: true }
+    ReviewArticlePatchRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [accepted, rejected] }
+        yjs_update: { type: string, minLength: 1, maxLength: 16777216 }
+        state_vector: { type: string, minLength: 1, maxLength: 1048576 }
+        tiptap_json: { type: object, additionalProperties: true }
+        expected_revision: { type: integer, format: int64, minimum: 0 }
+    CreateArticleReferenceRequest:
+      type: object
+      additionalProperties: false
+      required: [reference_type, source_object_id, source_version_id, title]
+      properties:
+        reference_type: { type: string, enum: [problem, model_snapshot, experiment_result, artifact, zotero] }
+        source_object_id: { type: string, minLength: 1, maxLength: 255 }
+        source_version_id: { type: string, minLength: 1, maxLength: 255 }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        citation_key: { type: string, pattern: "^[A-Za-z][A-Za-z0-9_:+.-]{0,99}$" }
+        metadata: { type: object, additionalProperties: true }
+    CreateArticleCommitRequest:
+      type: object
+      additionalProperties: false
+      required: [draft_revision, message]
+      properties:
+        draft_revision: { type: integer, format: int64, minimum: 1 }
+        message: { type: string, minLength: 1, maxLength: 500 }
+    CreateArticleBuildRequest:
+      type: object
+      additionalProperties: false
+      required: [commit_id, template_id, engine, bibliography_tool, idempotency_key]
+      properties:
+        commit_id: { type: string, format: uuid }
+        template_id: { type: string, format: uuid }
+        engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
+        bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
+        idempotency_key: { type: string, minLength: 1, maxLength: 200 }
+    CreateArticlePreviewBuildRequest:
+      type: object
+      additionalProperties: false
+      required: [draft_revision, template_id, engine, bibliography_tool]
+      properties:
+        draft_revision: { type: integer, format: int64, minimum: 1 }
+        template_id: { type: string, format: uuid }
+        engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
+        bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
+    CreateArticleReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [commit_id, build_id, tag, title, notes]
+      properties:
+        commit_id: { type: string, format: uuid }
+        build_id: { type: string, format: uuid }
+        tag: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        notes: { type: string, maxLength: 10000 }
+    CreateArticlePublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [draft_revision, message, template_id, engine, bibliography_tool, tag, title, notes, idempotency_key]
+      properties:
+        draft_revision: { type: integer, format: int64, minimum: 1 }
+        message: { type: string, minLength: 1, maxLength: 500 }
+        template_id: { type: string, format: uuid }
+        engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
+        bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
+        tag: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        notes: { type: string, maxLength: 10000 }
+        idempotency_key: { type: string, minLength: 1, maxLength: 200 }
+    RegisterArticleTemplateRequest:
+      type: object
+      additionalProperties: false
+      required: [artifact_id, version_id, manifest]
+      properties:
+        artifact_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        manifest: { $ref: "#/components/schemas/ArticleTemplateManifest" }
+    UpdateArticleZoteroBindingRequest:
+      type: object
+      additionalProperties: false
+      required: [library_type, library_id, api_key]
+      properties:
+        library_type: { type: string, enum: [user, group] }
+        library_id: { type: string, minLength: 1, maxLength: 100 }
+        collection_key: { type: string, maxLength: 100 }
+        api_key: { type: string, minLength: 1, maxLength: 1000, writeOnly: true }
+    ArticleTemplateManifest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, name, version, entrypoint, output, content_target, bibliography_target, engine, bibliography_tool]
+      properties:
+        schema_version: { type: string, const: "1.0" }
+        name: { type: string }
+        version: { type: string }
+        entrypoint: { type: string }
+        output: { type: string }
+        content_target: { type: string }
+        bibliography_target: { type: string }
+        engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
+        bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
+    ArticleBlock:
+      type: object
+      additionalProperties: false
+      required: [block_id, node_type, ordinal, text, attrs, tag, provenance, updated_at]
+      properties:
+        block_id: { type: string, format: uuid }
+        node_type: { type: string }
+        ordinal: { type: integer, minimum: 0 }
+        text: { type: string }
+        attrs: { type: object, additionalProperties: true }
+        tag: { type: string, enum: [ai_draft, human_draft, ai_revision, human_revision, reviewed] }
+        provenance: { type: object, additionalProperties: true }
+        updated_at: { type: string, format: date-time }
+    ArticleDraft:
+      type: object
+      additionalProperties: false
+      required: [project_id, draft_revision, yjs_update, state_vector, tiptap_json, markdown, blocks, sync_status, updated_at]
+      properties:
+        project_id: { type: string, format: uuid }
+        draft_revision: { type: integer, format: int64, minimum: 0 }
+        yjs_update: { type: string }
+        state_vector: { type: string }
+        tiptap_json: { type: object, additionalProperties: true }
+        markdown: { type: string }
+        blocks: { type: array, items: { $ref: "#/components/schemas/ArticleBlock" } }
+        sync_status: { type: string, enum: [synced, syncing, offline, failed] }
+        updated_at: { type: string, format: date-time }
+    ArticlePatch:
+      type: object
+      additionalProperties: false
+      required: [patch_id, project_id, base_revision, status, patch, rationale, provenance, created_by, created_at, updated_at]
+      properties:
+        patch_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        base_revision: { type: integer, format: int64 }
+        accepted_revision: { type: integer, format: int64 }
+        status: { type: string, enum: [proposed, accepted, rejected] }
+        patch: { type: object, additionalProperties: true }
+        rationale: { type: string }
+        provenance: { type: object, additionalProperties: true }
+        created_by: { type: string }
+        reviewed_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ArticlePatchList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticlePatch" } } }
+    ArticleReference:
+      type: object
+      additionalProperties: false
+      required: [reference_id, project_id, reference_type, source_object_id, source_version_id, title, metadata, created_by, created_at]
+      properties:
+        reference_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        reference_type: { type: string, enum: [problem, model_snapshot, experiment_result, artifact, zotero] }
+        source_object_id: { type: string }
+        source_version_id: { type: string }
+        title: { type: string }
+        citation_key: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+    ArticleReferenceList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleReference" } } }
+    ArticleCommit:
+      type: object
+      additionalProperties: false
+      required: [commit_id, project_id, commit_sha, draft_revision, state_vector, manuscript_sha256, message, created_by, created_at]
+      properties:
+        commit_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        commit_sha: { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        draft_revision: { type: integer, format: int64, minimum: 1 }
+        state_vector: { type: string }
+        manuscript_sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        message: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+    ArticleCommitList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleCommit" } } }
+    ArticleCommitDetail:
+      type: object
+      additionalProperties: false
+      required: [commit, builds, releases]
+      properties:
+        commit: { $ref: "#/components/schemas/ArticleCommit" }
+        builds: { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } }
+        releases: { type: array, items: { $ref: "#/components/schemas/ArticleRelease" } }
+    ArticleTemplate:
+      type: object
+      additionalProperties: false
+      required: [template_id, project_id, artifact_id, version_id, manifest, status, created_by, created_at, updated_at]
+      properties:
+        template_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        artifact_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        manifest: { $ref: "#/components/schemas/ArticleTemplateManifest" }
+        status: { type: string, enum: [validating, ready, rejected] }
+        error_code: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ArticleTemplateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleTemplate" } } }
+    ArticleBuildOutputRole:
+      type: string
+      enum: [pdf, tex_source, source_zip, build_report, log, synctex]
+    ArticleBuildOutput:
+      type: object
+      additionalProperties: false
+      required: [role, artifact_id, version_id, filename, mime_type, sha256, size_bytes]
+      properties:
+        role: { $ref: "#/components/schemas/ArticleBuildOutputRole" }
+        artifact_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        filename: { type: string }
+        mime_type: { type: string }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size_bytes: { type: integer, format: int64, minimum: 1 }
+    ArticleBuild:
+      type: object
+      additionalProperties: false
+      required: [build_id, project_id, build_kind, status, template_id, template_artifact_id, template_version_id, engine, bibliography_tool, outputs, created_by, created_at, updated_at]
+      properties:
+        build_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        build_kind: { type: string, enum: [preview, formal, template_test] }
+        status: { type: string, enum: [queued, running, succeeded, failed, superseded] }
+        draft_revision: { type: integer, format: int64 }
+        commit_id: { type: string, format: uuid }
+        commit_sha: { type: string }
+        job_id: { type: string, format: uuid }
+        template_id: { type: string, format: uuid }
+        template_artifact_id: { type: string, format: uuid }
+        template_version_id: { type: string, format: uuid }
+        engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
+        bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
+        toolchain: { type: object, additionalProperties: true }
+        outputs: { type: array, items: { $ref: "#/components/schemas/ArticleBuildOutput" } }
+        error_code: { type: string }
+        error_message: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    ArticleBuildList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } } }
+    ArticleRelease:
+      type: object
+      additionalProperties: false
+      required: [release_id, project_id, commit_id, commit_sha, build_id, tag, title, notes, template_version_id, engine, toolchain, outputs, created_by, created_at]
+      properties:
+        release_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        commit_id: { type: string, format: uuid }
+        commit_sha: { type: string }
+        build_id: { type: string, format: uuid }
+        tag: { type: string }
+        title: { type: string }
+        notes: { type: string }
+        template_version_id: { type: string, format: uuid }
+        engine: { type: string }
+        toolchain: { type: object, additionalProperties: true }
+        outputs: { type: array, items: { $ref: "#/components/schemas/ArticleBuildOutput" } }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+    ArticleReleaseList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleRelease" } } }
+    ArticlePublication:
+      type: object
+      additionalProperties: false
+      required: [publication_id, project_id, commit_id, build_id, status, tag, title, notes, created_by, created_at, updated_at]
+      properties:
+        publication_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        commit_id: { type: string, format: uuid }
+        build_id: { type: string, format: uuid }
+        release_id: { type: string, format: uuid }
+        status: { type: string, enum: [building, released, failed] }
+        tag: { type: string }
+        title: { type: string }
+        notes: { type: string }
+        error_code: { type: string }
+        created_by: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ArticleZoteroBinding:
+      type: object
+      additionalProperties: false
+      required: [project_id, library_type, library_id, api_key_configured, read_only]
+      properties:
+        project_id: { type: string, format: uuid }
+        library_type: { type: string, enum: [user, group] }
+        library_id: { type: string }
+        collection_key: { type: string }
+        api_key_configured: { type: boolean }
+        read_only: { type: boolean, const: true }
+    ZoteroItem:
+      type: object
+      additionalProperties: false
+      required: [item_key, version, citation_key, title, authors, item_type, raw]
+      properties:
+        item_key: { type: string }
+        version: { type: integer, format: int64, minimum: 0 }
+        citation_key: { type: string }
+        title: { type: string }
+        authors: { type: array, items: { type: string } }
+        item_type: { type: string }
+        year: { type: string }
+        doi: { type: string }
+        raw: { type: object, additionalProperties: true }
+    ZoteroItemList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties: { items: { type: array, items: { $ref: "#/components/schemas/ZoteroItem" } } }
+    ArticleAggregate:
+      type: object
+      additionalProperties: false
+      required: [draft, references, commits, builds, releases, templates, unreviewed_blocks, section_completion]
+      properties:
+        draft: { $ref: "#/components/schemas/ArticleDraft" }
+        references: { type: array, items: { $ref: "#/components/schemas/ArticleReference" } }
+        commits: { type: array, items: { $ref: "#/components/schemas/ArticleCommit" } }
+        builds: { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } }
+        releases: { type: array, items: { $ref: "#/components/schemas/ArticleRelease" } }
+        templates: { type: array, items: { $ref: "#/components/schemas/ArticleTemplate" } }
+        unreviewed_blocks: { type: integer, minimum: 0 }
+        section_completion: { type: number, minimum: 0, maximum: 1 }
+    ArtifactSemanticDescriptionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        agent_instance_id:
+          type: string
+          format: uuid
+          description: Optional active Project Agent instance. When omitted, Core selects the first active instance deterministically.
+    ArtifactSemanticDescriptionJob:
+      type: object
+      additionalProperties: false
+      required: [job_id, project_id, artifact_id, version_id, status]
+      properties:
+        job_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        artifact_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled, timed_out] }
+    ArtifactSemanticDescriptionResult:
+      type: object
+      additionalProperties: false
+      required: [description, recommended_usage, agent_session_id, agent_run_id]
+      properties:
+        description: { type: string, minLength: 1, maxLength: 20000 }
+        recommended_usage:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items: { type: string, minLength: 1, maxLength: 500 }
+        agent_session_id: { type: string, format: uuid }
+        agent_run_id: { type: string, format: uuid }
+    ArticleBuildJobInput:
+      type: object
+      additionalProperties: false
+      required: [build_id, project_id, build_kind, manuscript, references_bib, article_manifest, template, engine, bibliography_tool, limits, toolchain]
+      properties:
+        build_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        build_kind: { type: string, enum: [preview, formal, template_test] }
+        manuscript: { type: string, maxLength: 5000000 }
+        references_bib: { type: string, maxLength: 5000000 }
+        article_manifest: { type: object, additionalProperties: true }
+        template:
+          type: object
+          additionalProperties: false
+          required: [artifact_id, version_id, manifest, transfer]
+          properties:
+            artifact_id: { type: string, format: uuid }
+            version_id: { type: string, format: uuid }
+            manifest: { $ref: "#/components/schemas/ArticleTemplateManifest" }
+            transfer: { $ref: "#/components/schemas/ArtifactTransferGrant" }
+        resources:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [artifact_id, version_id, title, filename, mime_type, size_bytes, sha256, transfer]
+            properties:
+              artifact_id: { type: string, format: uuid }
+              version_id: { type: string, format: uuid }
+              title: { type: string, minLength: 1, maxLength: 255 }
+              filename: { type: string, minLength: 1, maxLength: 255 }
+              mime_type: { type: string, minLength: 3, maxLength: 255 }
+              size_bytes: { type: integer, format: int64, minimum: 1, maximum: 536870912 }
+              sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+              transfer: { $ref: "#/components/schemas/ArtifactTransferGrant" }
+        engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
+        bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
+        limits:
+          type: object
+          additionalProperties: false
+          required: [timeout_seconds, memory_bytes, disk_bytes, output_bytes, network]
+          properties:
+            timeout_seconds: { type: integer, minimum: 1, maximum: 600 }
+            memory_bytes: { type: integer, format: int64, minimum: 134217728, maximum: 2147483648 }
+            disk_bytes: { type: integer, format: int64, minimum: 134217728, maximum: 4294967296 }
+            output_bytes: { type: integer, format: int64, minimum: 1, maximum: 536870912 }
+            network: { type: string, const: none }
+        toolchain:
+          type: object
+          additionalProperties: false
+          required: [pandoc, latexmk, texlive]
+          properties:
+            pandoc: { type: string, const: "pandoc 2.17.1.1" }
+            latexmk: { type: string, const: "Version 4.79" }
+            texlive: { type: string, const: "TeX Live 2022/Debian" }
     ExperimentStatus:
       type: string
       enum: [created, queued, preparing, running, succeeded, failed, canceled, archived]

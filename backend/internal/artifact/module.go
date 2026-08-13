@@ -28,6 +28,10 @@ func (module Module) RegisterRoutes(mux *http.ServeMux) {
 		"/v1/internal/artifact-preview-jobs/",
 		module.handlePreviewJobTransfer,
 	)
+	mux.HandleFunc(
+		"/v1/internal/artifact-semantic-jobs/",
+		module.handleSemanticJobExecute,
+	)
 }
 
 // ProjectHandler is mounted by Project so the shared /v1/projects/ subtree
@@ -300,6 +304,20 @@ func (module Module) handleArtifact(
 		return
 	}
 	switch segments[0] {
+	case "description":
+		if len(segments) == 1 && httpx.RequireMethod(response, request, http.MethodPost) {
+			var body semanticDescriptionRequest
+			if request.ContentLength != 0 && !httpx.DecodeJSON(response, request, &body) {
+				return
+			}
+			job, err := module.Service.RequestSemanticDescription(request.Context(), identity, projectID, artifactID, SemanticDescriptionInput{AgentInstanceID: body.AgentInstanceID})
+			if err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			httpx.WriteJSON(response, http.StatusAccepted, job)
+		}
+		return
 	case "download":
 		if len(segments) == 1 {
 			module.handleDownload(
@@ -579,6 +597,28 @@ func (module Module) handlePreviewJobTransfer(
 	httpx.WriteJSON(response, http.StatusCreated, grant)
 }
 
+func (module Module) handleSemanticJobExecute(response http.ResponseWriter, request *http.Request) {
+	if !httpx.RequireMethod(response, request, http.MethodPost) {
+		return
+	}
+	identity, ok := module.identity(response, request)
+	if !ok {
+		return
+	}
+	segments := strings.Split(strings.Trim(strings.TrimPrefix(request.URL.Path, "/v1/internal/artifact-semantic-jobs/"), "/"), "/")
+	if len(segments) != 2 || segments[0] == "" || segments[1] != "execute" {
+		writeArtifactError(response, request, ErrNotFound)
+		return
+	}
+	result, err := module.Service.ExecuteSemanticDescription(request.Context(), identity, segments[0])
+	if err != nil {
+		writeArtifactError(response, request, err)
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSON(response, http.StatusOK, result)
+}
+
 func (module Module) identity(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -621,6 +661,10 @@ type updateRequest struct {
 	Kind        *string         `json:"kind,omitempty"`
 	Tags        *[]string       `json:"tags,omitempty"`
 	Description json.RawMessage `json:"description,omitempty"`
+}
+
+type semanticDescriptionRequest struct {
+	AgentInstanceID string `json:"agent_instance_id,omitempty"`
 }
 
 func (body updateRequest) Validate() error {
@@ -718,7 +762,7 @@ func writeArtifactError(
 			"ARTIFACT_TAG_INVALID", "ARTIFACT_MIME_NOT_ALLOWED",
 			"ARTIFACT_PART_INVALID":
 			status = http.StatusBadRequest
-		case "ARTIFACT_STORAGE_UNAVAILABLE":
+		case "ARTIFACT_STORAGE_UNAVAILABLE", "ARTIFACT_SEMANTIC_UNAVAILABLE":
 			status = http.StatusServiceUnavailable
 		}
 		httpx.WriteError(response, request, apperror.New(

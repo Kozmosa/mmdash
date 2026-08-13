@@ -45,6 +45,7 @@ func TestRunnerReconcilesLegacyMigrationNamesWithoutReexecution(t *testing.T) {
 		"000029_model_stage7.up.sql":               "000022_model_stage7.up.sql",
 		"000030_model_notion_oauth.up.sql":         "000023_model_notion_oauth.up.sql",
 		"000031_notification_routing_model.up.sql": "000024_notification_routing_model.up.sql",
+		"000041_stage8_box_experiment.up.sql":      "000033_stage8_box_experiment.up.sql",
 	}
 	seedMigrations(t, db, directory, names, overrides)
 	insertMigrationSentinel(t, db, "legacy-upgrade")

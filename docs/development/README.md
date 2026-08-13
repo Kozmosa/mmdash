@@ -129,6 +129,7 @@ layer only when their module documentation explains why.
 - [Stage 7 Model](model.md)
 - [Stage 8 Experiment](experiment.md)
 - [Stage 8 Box Gateway and Sandbox](box.md)
+- [Stage 9 Article](article.md)
 
 
 - [Stage 5 Agent sessions](agent.md)

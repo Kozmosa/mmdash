@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/article.patch.proposed.schema.json",
+  "title": "article.patch.proposed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["patch_id", "base_revision", "status"],
+  "properties": {
+    "patch_id": { "type": "string", "format": "uuid" },
+    "base_revision": { "type": "integer", "minimum": 0 },
+    "status": { "const": "proposed" }
+  }
+}

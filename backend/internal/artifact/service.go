@@ -55,6 +55,9 @@ type Service struct {
 	Generator             IDGenerator
 	Git                   GitContentReader
 	Jobs                  PreviewJobAccess
+	SemanticJobs          SemanticJobAccess
+	SemanticModel         SemanticDescriptionModel
+	SemanticStore         SemanticDescriptionStore
 	MaxPreviewOutputBytes int64
 	MaxUploadBytes        int64
 	Metrics               MetricRecorder

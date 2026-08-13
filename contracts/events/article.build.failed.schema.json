@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/article.build.failed.schema.json",
+  "title": "article.build.failed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["build_id", "build_kind", "status", "error_code"],
+  "properties": {
+    "build_id": { "type": "string", "format": "uuid" },
+    "build_kind": { "enum": ["preview", "formal", "template_test"] },
+    "commit_id": { "type": "string", "format": "uuid" },
+    "draft_revision": { "type": "integer", "minimum": 1 },
+    "error_code": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "status": { "const": "failed" }
+  }
+}

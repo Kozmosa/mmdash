@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/article.build.queued.schema.json",
+  "title": "article.build.queued payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["build_id", "build_kind", "job_id", "template_version_id", "status"],
+  "properties": {
+    "build_id": { "type": "string", "format": "uuid" },
+    "build_kind": { "enum": ["preview", "formal", "template_test"] },
+    "job_id": { "type": "string", "format": "uuid" },
+    "commit_id": { "type": "string", "format": "uuid" },
+    "draft_revision": { "type": "integer", "minimum": 1 },
+    "template_version_id": { "type": "string", "format": "uuid" },
+    "status": { "const": "queued" }
+  }
+}

@@ -2533,3 +2533,450 @@ func (request RunExperimentRequest) Validate() error {
 	}
 	return nil
 }
+
+// PersistArticleDraftRequest is generated from the Core request-body schema.
+type PersistArticleDraftRequest struct {
+	ExpectedRevision int64                  `json:"expected_revision"`
+	YjsUpdate        string                 `json:"yjs_update"`
+	StateVector      string                 `json:"state_vector"`
+	TiptapJson       map[string]interface{} `json:"tiptap_json"`
+	ActorKind        string                 `json:"actor_kind"`
+	Provenance       map[string]interface{} `json:"provenance"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request PersistArticleDraftRequest) Validate() error {
+	if request.ExpectedRevision < 0 {
+		return fmt.Errorf("expected_revision is below its minimum")
+	}
+	if request.YjsUpdate == "" {
+		return fmt.Errorf("yjs_update is required")
+	}
+	if len(request.YjsUpdate) < 1 {
+		return fmt.Errorf("yjs_update is too short")
+	}
+	if len(request.YjsUpdate) > 16777216 {
+		return fmt.Errorf("yjs_update is too long")
+	}
+	if request.StateVector == "" {
+		return fmt.Errorf("state_vector is required")
+	}
+	if len(request.StateVector) < 1 {
+		return fmt.Errorf("state_vector is too short")
+	}
+	if len(request.StateVector) > 1048576 {
+		return fmt.Errorf("state_vector is too long")
+	}
+	if request.TiptapJson == nil {
+		return fmt.Errorf("tiptap_json is required")
+	}
+	if request.ActorKind == "" {
+		return fmt.Errorf("actor_kind is required")
+	}
+	if request.ActorKind != "human" && request.ActorKind != "ai" && request.ActorKind != "restore" {
+		return fmt.Errorf("actor_kind has an unsupported value")
+	}
+	if request.Provenance == nil {
+		return fmt.Errorf("provenance is required")
+	}
+	return nil
+}
+
+// CreateArticlePatchRequest is generated from the Core request-body schema.
+type CreateArticlePatchRequest struct {
+	BaseRevision int64                  `json:"base_revision"`
+	Patch        map[string]interface{} `json:"patch"`
+	Rationale    string                 `json:"rationale"`
+	Provenance   map[string]interface{} `json:"provenance"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticlePatchRequest) Validate() error {
+	if request.BaseRevision < 0 {
+		return fmt.Errorf("base_revision is below its minimum")
+	}
+	if request.Patch == nil {
+		return fmt.Errorf("patch is required")
+	}
+	if request.Rationale == "" {
+		return fmt.Errorf("rationale is required")
+	}
+	if len(request.Rationale) < 1 {
+		return fmt.Errorf("rationale is too short")
+	}
+	if len(request.Rationale) > 4000 {
+		return fmt.Errorf("rationale is too long")
+	}
+	if request.Provenance == nil {
+		return fmt.Errorf("provenance is required")
+	}
+	return nil
+}
+
+// ReviewArticlePatchRequest is generated from the Core request-body schema.
+type ReviewArticlePatchRequest struct {
+	Decision         string                  `json:"decision"`
+	YjsUpdate        *string                 `json:"yjs_update,omitempty"`
+	StateVector      *string                 `json:"state_vector,omitempty"`
+	TiptapJson       *map[string]interface{} `json:"tiptap_json,omitempty"`
+	ExpectedRevision *int64                  `json:"expected_revision,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ReviewArticlePatchRequest) Validate() error {
+	if request.Decision == "" {
+		return fmt.Errorf("decision is required")
+	}
+	if request.Decision != "accepted" && request.Decision != "rejected" {
+		return fmt.Errorf("decision has an unsupported value")
+	}
+	if request.YjsUpdate != nil {
+		if len(*request.YjsUpdate) < 1 {
+			return fmt.Errorf("yjs_update is too short")
+		}
+		if len(*request.YjsUpdate) > 16777216 {
+			return fmt.Errorf("yjs_update is too long")
+		}
+	}
+	if request.StateVector != nil {
+		if len(*request.StateVector) < 1 {
+			return fmt.Errorf("state_vector is too short")
+		}
+		if len(*request.StateVector) > 1048576 {
+			return fmt.Errorf("state_vector is too long")
+		}
+	}
+	if request.ExpectedRevision != nil {
+		if *request.ExpectedRevision < 0 {
+			return fmt.Errorf("expected_revision is below its minimum")
+		}
+	}
+	return nil
+}
+
+// CreateArticleReferenceRequest is generated from the Core request-body schema.
+type CreateArticleReferenceRequest struct {
+	ReferenceType   string                  `json:"reference_type"`
+	SourceObjectID  string                  `json:"source_object_id"`
+	SourceVersionID string                  `json:"source_version_id"`
+	Title           string                  `json:"title"`
+	CitationKey     *string                 `json:"citation_key,omitempty"`
+	Metadata        *map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticleReferenceRequest) Validate() error {
+	if request.ReferenceType == "" {
+		return fmt.Errorf("reference_type is required")
+	}
+	if request.ReferenceType != "problem" && request.ReferenceType != "model_snapshot" && request.ReferenceType != "experiment_result" && request.ReferenceType != "artifact" && request.ReferenceType != "zotero" {
+		return fmt.Errorf("reference_type has an unsupported value")
+	}
+	if request.SourceObjectID == "" {
+		return fmt.Errorf("source_object_id is required")
+	}
+	if len(request.SourceObjectID) < 1 {
+		return fmt.Errorf("source_object_id is too short")
+	}
+	if len(request.SourceObjectID) > 255 {
+		return fmt.Errorf("source_object_id is too long")
+	}
+	if request.SourceVersionID == "" {
+		return fmt.Errorf("source_version_id is required")
+	}
+	if len(request.SourceVersionID) < 1 {
+		return fmt.Errorf("source_version_id is too short")
+	}
+	if len(request.SourceVersionID) > 255 {
+		return fmt.Errorf("source_version_id is too long")
+	}
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 500 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.CitationKey != nil {
+		if matched, err := regexp.MatchString("^[A-Za-z][A-Za-z0-9_:+.-]{0,99}$", *request.CitationKey); err != nil || !matched {
+			return fmt.Errorf("citation_key has an invalid format")
+		}
+	}
+	return nil
+}
+
+// CreateArticleCommitRequest is generated from the Core request-body schema.
+type CreateArticleCommitRequest struct {
+	DraftRevision int64  `json:"draft_revision"`
+	Message       string `json:"message"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticleCommitRequest) Validate() error {
+	if request.DraftRevision < 1 {
+		return fmt.Errorf("draft_revision is below its minimum")
+	}
+	if request.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if len(request.Message) < 1 {
+		return fmt.Errorf("message is too short")
+	}
+	if len(request.Message) > 500 {
+		return fmt.Errorf("message is too long")
+	}
+	return nil
+}
+
+// CreateArticleBuildRequest is generated from the Core request-body schema.
+type CreateArticleBuildRequest struct {
+	CommitID         string `json:"commit_id"`
+	TemplateID       string `json:"template_id"`
+	Engine           string `json:"engine"`
+	BibliographyTool string `json:"bibliography_tool"`
+	IdempotencyKey   string `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticleBuildRequest) Validate() error {
+	if request.CommitID == "" {
+		return fmt.Errorf("commit_id is required")
+	}
+	if request.TemplateID == "" {
+		return fmt.Errorf("template_id is required")
+	}
+	if request.Engine == "" {
+		return fmt.Errorf("engine is required")
+	}
+	if request.Engine != "auto" && request.Engine != "pdflatex" && request.Engine != "xelatex" && request.Engine != "lualatex" {
+		return fmt.Errorf("engine has an unsupported value")
+	}
+	if request.BibliographyTool == "" {
+		return fmt.Errorf("bibliography_tool is required")
+	}
+	if request.BibliographyTool != "auto" && request.BibliographyTool != "bibtex" && request.BibliographyTool != "biber" && request.BibliographyTool != "none" {
+		return fmt.Errorf("bibliography_tool has an unsupported value")
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// CreateArticlePreviewBuildRequest is generated from the Core request-body schema.
+type CreateArticlePreviewBuildRequest struct {
+	DraftRevision    int64  `json:"draft_revision"`
+	TemplateID       string `json:"template_id"`
+	Engine           string `json:"engine"`
+	BibliographyTool string `json:"bibliography_tool"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticlePreviewBuildRequest) Validate() error {
+	if request.DraftRevision < 1 {
+		return fmt.Errorf("draft_revision is below its minimum")
+	}
+	if request.TemplateID == "" {
+		return fmt.Errorf("template_id is required")
+	}
+	if request.Engine == "" {
+		return fmt.Errorf("engine is required")
+	}
+	if request.Engine != "auto" && request.Engine != "pdflatex" && request.Engine != "xelatex" && request.Engine != "lualatex" {
+		return fmt.Errorf("engine has an unsupported value")
+	}
+	if request.BibliographyTool == "" {
+		return fmt.Errorf("bibliography_tool is required")
+	}
+	if request.BibliographyTool != "auto" && request.BibliographyTool != "bibtex" && request.BibliographyTool != "biber" && request.BibliographyTool != "none" {
+		return fmt.Errorf("bibliography_tool has an unsupported value")
+	}
+	return nil
+}
+
+// CreateArticleReleaseRequest is generated from the Core request-body schema.
+type CreateArticleReleaseRequest struct {
+	CommitID string `json:"commit_id"`
+	BuildID  string `json:"build_id"`
+	Tag      string `json:"tag"`
+	Title    string `json:"title"`
+	Notes    string `json:"notes"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticleReleaseRequest) Validate() error {
+	if request.CommitID == "" {
+		return fmt.Errorf("commit_id is required")
+	}
+	if request.BuildID == "" {
+		return fmt.Errorf("build_id is required")
+	}
+	if request.Tag == "" {
+		return fmt.Errorf("tag is required")
+	}
+	if matched, err := regexp.MatchString("^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", request.Tag); err != nil || !matched {
+		return fmt.Errorf("tag has an invalid format")
+	}
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.Notes == "" {
+		return fmt.Errorf("notes is required")
+	}
+	if len(request.Notes) > 10000 {
+		return fmt.Errorf("notes is too long")
+	}
+	return nil
+}
+
+// CreateArticlePublicationRequest is generated from the Core request-body schema.
+type CreateArticlePublicationRequest struct {
+	DraftRevision    int64  `json:"draft_revision"`
+	Message          string `json:"message"`
+	TemplateID       string `json:"template_id"`
+	Engine           string `json:"engine"`
+	BibliographyTool string `json:"bibliography_tool"`
+	Tag              string `json:"tag"`
+	Title            string `json:"title"`
+	Notes            string `json:"notes"`
+	IdempotencyKey   string `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticlePublicationRequest) Validate() error {
+	if request.DraftRevision < 1 {
+		return fmt.Errorf("draft_revision is below its minimum")
+	}
+	if request.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if len(request.Message) < 1 {
+		return fmt.Errorf("message is too short")
+	}
+	if len(request.Message) > 500 {
+		return fmt.Errorf("message is too long")
+	}
+	if request.TemplateID == "" {
+		return fmt.Errorf("template_id is required")
+	}
+	if request.Engine == "" {
+		return fmt.Errorf("engine is required")
+	}
+	if request.Engine != "auto" && request.Engine != "pdflatex" && request.Engine != "xelatex" && request.Engine != "lualatex" {
+		return fmt.Errorf("engine has an unsupported value")
+	}
+	if request.BibliographyTool == "" {
+		return fmt.Errorf("bibliography_tool is required")
+	}
+	if request.BibliographyTool != "auto" && request.BibliographyTool != "bibtex" && request.BibliographyTool != "biber" && request.BibliographyTool != "none" {
+		return fmt.Errorf("bibliography_tool has an unsupported value")
+	}
+	if request.Tag == "" {
+		return fmt.Errorf("tag is required")
+	}
+	if matched, err := regexp.MatchString("^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", request.Tag); err != nil || !matched {
+		return fmt.Errorf("tag has an invalid format")
+	}
+	if request.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if len(request.Title) < 1 {
+		return fmt.Errorf("title is too short")
+	}
+	if len(request.Title) > 255 {
+		return fmt.Errorf("title is too long")
+	}
+	if request.Notes == "" {
+		return fmt.Errorf("notes is required")
+	}
+	if len(request.Notes) > 10000 {
+		return fmt.Errorf("notes is too long")
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// RegisterArticleTemplateRequest is generated from the Core request-body schema.
+type RegisterArticleTemplateRequest struct {
+	ArtifactID string                 `json:"artifact_id"`
+	VersionID  string                 `json:"version_id"`
+	Manifest   map[string]interface{} `json:"manifest"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RegisterArticleTemplateRequest) Validate() error {
+	if request.ArtifactID == "" {
+		return fmt.Errorf("artifact_id is required")
+	}
+	if request.VersionID == "" {
+		return fmt.Errorf("version_id is required")
+	}
+	if request.Manifest == nil {
+		return fmt.Errorf("manifest is required")
+	}
+	return nil
+}
+
+// UpdateArticleZoteroBindingRequest is generated from the Core request-body schema.
+type UpdateArticleZoteroBindingRequest struct {
+	LibraryType   string  `json:"library_type"`
+	LibraryID     string  `json:"library_id"`
+	CollectionKey *string `json:"collection_key,omitempty"`
+	APIKey        string  `json:"api_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateArticleZoteroBindingRequest) Validate() error {
+	if request.LibraryType == "" {
+		return fmt.Errorf("library_type is required")
+	}
+	if request.LibraryType != "user" && request.LibraryType != "group" {
+		return fmt.Errorf("library_type has an unsupported value")
+	}
+	if request.LibraryID == "" {
+		return fmt.Errorf("library_id is required")
+	}
+	if len(request.LibraryID) < 1 {
+		return fmt.Errorf("library_id is too short")
+	}
+	if len(request.LibraryID) > 100 {
+		return fmt.Errorf("library_id is too long")
+	}
+	if request.CollectionKey != nil {
+		if len(*request.CollectionKey) > 100 {
+			return fmt.Errorf("collection_key is too long")
+		}
+	}
+	if request.APIKey == "" {
+		return fmt.Errorf("api_key is required")
+	}
+	if len(request.APIKey) < 1 {
+		return fmt.Errorf("api_key is too short")
+	}
+	if len(request.APIKey) > 1000 {
+		return fmt.Errorf("api_key is too long")
+	}
+	return nil
+}

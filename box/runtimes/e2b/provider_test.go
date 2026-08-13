@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -323,6 +324,9 @@ func TestProviderClientRunsOfficialLifecycleAndCollectsOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("run.py", filepath.Join(workspace, "run-link.py")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("Windows developer-mode symlink privilege is unavailable: %v", err)
+		}
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(workspace, ".git"), 0o700); err != nil {

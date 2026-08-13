@@ -29,6 +29,8 @@ import { registerSettingsRoutes } from "./routes/settings.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
 import { registerAgentRoutes } from "./routes/agent.js";
 import { registerExperimentRoutes } from "./routes/experiments.js";
+import { ArticleCollaboration, registerArticleCollaboration } from "./article/collaboration.js";
+import { registerArticleRoutes } from "./routes/article.js";
 
 export type BuildAppOptions = {
   config?: BffConfig;
@@ -63,7 +65,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       socket.close(1011, "WebSocket proxy failed");
     },
     options: {
-      maxPayload: 1024 * 1024,
+      maxPayload: 4 * 1024 * 1024,
     },
   });
   registerBrowserAuth(app, coreClient, config);
@@ -84,6 +86,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerArtifactRoutes(app, coreClient);
   registerAgentRoutes(app, coreClient);
   registerExperimentRoutes(app, coreClient);
+  const articleCollaboration = new ArticleCollaboration(coreClient);
+  app.register(async function articleCollaborationScope(scopedApp) {
+    registerArticleCollaboration(scopedApp, coreClient, articleCollaboration);
+  });
+  registerArticleRoutes(app, coreClient, articleCollaboration);
   registerContextProposalRoutes(app, coreClient);
   registerProjectRoutes(app, coreClient);
   registerProgressRoutes(app, coreClient);
