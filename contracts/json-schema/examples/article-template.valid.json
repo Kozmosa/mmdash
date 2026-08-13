@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "name": "mmdash-default-article",
+  "version": "1.0.0",
+  "entrypoint": "main.tex",
+  "output": "paper.pdf",
+  "content_target": "sections/generated-content.tex",
+  "bibliography_target": "references.bib",
+  "engine": "auto",
+  "bibliography_tool": "auto"
+}

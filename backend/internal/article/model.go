@@ -1,0 +1,263 @@
+// Package article owns collaborative Markdown authoring, immutable Git commits,
+// deterministic document builds, and human-reviewed releases.
+package article
+
+import (
+	"errors"
+	"time"
+)
+
+var (
+	ErrConflict    = errors.New("article state conflict")
+	ErrForbidden   = errors.New("article access forbidden")
+	ErrInvalid     = errors.New("invalid article request")
+	ErrNotFound    = errors.New("article object not found")
+	ErrNotReady    = errors.New("article object is not ready")
+	ErrSuperseded  = errors.New("article preview was superseded")
+	ErrUnavailable = errors.New("article integration unavailable")
+)
+
+const (
+	BuildFormal       = "formal"
+	BuildPreview      = "preview"
+	BuildTemplateTest = "template_test"
+	BuildQueued       = "queued"
+	BuildRunning      = "running"
+	BuildSucceeded    = "succeeded"
+	BuildFailed       = "failed"
+	BuildSuperseded   = "superseded"
+)
+
+type Block struct {
+	Attrs      map[string]interface{} `json:"attrs"`
+	BlockID    string                 `json:"block_id"`
+	NodeType   string                 `json:"node_type"`
+	Ordinal    int                    `json:"ordinal"`
+	Provenance map[string]interface{} `json:"provenance"`
+	Tag        string                 `json:"tag"`
+	Text       string                 `json:"text"`
+	UpdatedAt  time.Time              `json:"updated_at"`
+}
+
+type Draft struct {
+	Blocks        []Block                `json:"blocks"`
+	DraftRevision int64                  `json:"draft_revision"`
+	Markdown      string                 `json:"markdown"`
+	ProjectID     string                 `json:"project_id"`
+	StateVector   string                 `json:"state_vector"`
+	SyncStatus    string                 `json:"sync_status"`
+	TiptapJSON    map[string]interface{} `json:"tiptap_json"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+	YjsUpdate     string                 `json:"yjs_update"`
+	ReferencesBIB string                 `json:"-"`
+	Manifest      map[string]interface{} `json:"-"`
+	ActorKind     string                 `json:"-"`
+	Provenance    map[string]interface{} `json:"-"`
+}
+
+type PersistDraftInput struct {
+	ActorKind        string
+	ExpectedRevision int64
+	Provenance       map[string]interface{}
+	StateVector      string
+	TiptapJSON       map[string]interface{}
+	YjsUpdate        string
+}
+
+type Patch struct {
+	AcceptedRevision *int64                 `json:"accepted_revision,omitempty"`
+	BaseRevision     int64                  `json:"base_revision"`
+	CreatedAt        time.Time              `json:"created_at"`
+	CreatedBy        string                 `json:"created_by"`
+	Patch            map[string]interface{} `json:"patch"`
+	PatchID          string                 `json:"patch_id"`
+	ProjectID        string                 `json:"project_id"`
+	Provenance       map[string]interface{} `json:"provenance"`
+	Rationale        string                 `json:"rationale"`
+	ReviewedBy       string                 `json:"reviewed_by,omitempty"`
+	Status           string                 `json:"status"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+}
+
+type Reference struct {
+	CitationKey     string                 `json:"citation_key,omitempty"`
+	CreatedAt       time.Time              `json:"created_at"`
+	CreatedBy       string                 `json:"created_by"`
+	Metadata        map[string]interface{} `json:"metadata"`
+	ProjectID       string                 `json:"project_id"`
+	ReferenceID     string                 `json:"reference_id"`
+	ReferenceType   string                 `json:"reference_type"`
+	SourceObjectID  string                 `json:"source_object_id"`
+	SourceVersionID string                 `json:"source_version_id"`
+	Title           string                 `json:"title"`
+}
+
+type Commit struct {
+	CommitID          string                 `json:"commit_id"`
+	CommitSHA         string                 `json:"commit_sha"`
+	CreatedAt         time.Time              `json:"created_at"`
+	CreatedBy         string                 `json:"created_by"`
+	DraftRevision     int64                  `json:"draft_revision"`
+	ManuscriptSHA256  string                 `json:"manuscript_sha256"`
+	Message           string                 `json:"message"`
+	ProjectID         string                 `json:"project_id"`
+	StateVector       string                 `json:"state_vector"`
+	TiptapJSON        map[string]interface{} `json:"-"`
+	YjsUpdate         string                 `json:"-"`
+	PreviousCommitSHA string                 `json:"-"`
+	ReferencesSHA256  string                 `json:"-"`
+	ManifestSHA256    string                 `json:"-"`
+	FrozenReferences  []Reference            `json:"-"`
+}
+
+type TemplateManifest struct {
+	BibliographyTarget string `json:"bibliography_target"`
+	BibliographyTool   string `json:"bibliography_tool"`
+	ContentTarget      string `json:"content_target"`
+	Engine             string `json:"engine"`
+	Entrypoint         string `json:"entrypoint"`
+	Name               string `json:"name"`
+	Output             string `json:"output"`
+	SchemaVersion      string `json:"schema_version"`
+	Version            string `json:"version"`
+}
+
+type Template struct {
+	ArtifactID  string           `json:"artifact_id"`
+	CreatedAt   time.Time        `json:"created_at"`
+	CreatedBy   string           `json:"created_by"`
+	ErrorCode   string           `json:"error_code,omitempty"`
+	Manifest    TemplateManifest `json:"manifest"`
+	ProjectID   string           `json:"project_id"`
+	Status      string           `json:"status"`
+	TemplateID  string           `json:"template_id"`
+	UpdatedAt   time.Time        `json:"updated_at"`
+	VersionID   string           `json:"version_id"`
+	TestBuildID string           `json:"-"`
+}
+
+type BuildOutput struct {
+	ArtifactID string `json:"artifact_id"`
+	Filename   string `json:"filename"`
+	MIMEType   string `json:"mime_type"`
+	Role       string `json:"role"`
+	SHA256     string `json:"sha256"`
+	SizeBytes  int64  `json:"size_bytes"`
+	VersionID  string `json:"version_id"`
+}
+
+type Build struct {
+	BibliographyTool   string                 `json:"bibliography_tool"`
+	BuildID            string                 `json:"build_id"`
+	BuildKind          string                 `json:"build_kind"`
+	CommitID           string                 `json:"commit_id,omitempty"`
+	CommitSHA          string                 `json:"commit_sha,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	CreatedBy          string                 `json:"created_by"`
+	DraftRevision      *int64                 `json:"draft_revision,omitempty"`
+	Engine             string                 `json:"engine"`
+	ErrorCode          string                 `json:"error_code,omitempty"`
+	ErrorMessage       string                 `json:"error_message,omitempty"`
+	FinishedAt         *time.Time             `json:"finished_at,omitempty"`
+	JobID              string                 `json:"job_id,omitempty"`
+	Outputs            []BuildOutput          `json:"outputs"`
+	ProjectID          string                 `json:"project_id"`
+	Status             string                 `json:"status"`
+	TemplateArtifactID string                 `json:"template_artifact_id"`
+	TemplateID         string                 `json:"template_id"`
+	TemplateVersionID  string                 `json:"template_version_id"`
+	Toolchain          map[string]interface{} `json:"toolchain"`
+	UpdatedAt          time.Time              `json:"updated_at"`
+	IdempotencyKey     string                 `json:"-"`
+}
+
+type Release struct {
+	BuildID           string                 `json:"build_id"`
+	CommitID          string                 `json:"commit_id"`
+	CommitSHA         string                 `json:"commit_sha"`
+	CreatedAt         time.Time              `json:"created_at"`
+	CreatedBy         string                 `json:"created_by"`
+	Engine            string                 `json:"engine"`
+	Notes             string                 `json:"notes"`
+	Outputs           []BuildOutput          `json:"outputs"`
+	ProjectID         string                 `json:"project_id"`
+	ReleaseID         string                 `json:"release_id"`
+	Tag               string                 `json:"tag"`
+	TemplateVersionID string                 `json:"template_version_id"`
+	Title             string                 `json:"title"`
+	Toolchain         map[string]interface{} `json:"toolchain"`
+}
+
+type Publication struct {
+	BuildID        string    `json:"build_id"`
+	CommitID       string    `json:"commit_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	CreatedBy      string    `json:"created_by"`
+	ErrorCode      string    `json:"error_code,omitempty"`
+	Notes          string    `json:"notes"`
+	ProjectID      string    `json:"project_id"`
+	PublicationID  string    `json:"publication_id"`
+	ReleaseID      string    `json:"release_id,omitempty"`
+	Status         string    `json:"status"`
+	Tag            string    `json:"tag"`
+	Title          string    `json:"title"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	IdempotencyKey string    `json:"-"`
+}
+
+type ZoteroBinding struct {
+	APIKeyConfigured bool   `json:"api_key_configured"`
+	CollectionKey    string `json:"collection_key,omitempty"`
+	LibraryID        string `json:"library_id"`
+	LibraryType      string `json:"library_type"`
+	ProjectID        string `json:"project_id"`
+	ReadOnly         bool   `json:"read_only"`
+}
+
+type ZoteroItem struct {
+	Authors     []string               `json:"authors"`
+	CitationKey string                 `json:"citation_key"`
+	DOI         string                 `json:"doi,omitempty"`
+	ItemKey     string                 `json:"item_key"`
+	ItemType    string                 `json:"item_type"`
+	Raw         map[string]interface{} `json:"raw"`
+	Title       string                 `json:"title"`
+	Version     int64                  `json:"version"`
+	Year        string                 `json:"year,omitempty"`
+}
+
+type Aggregate struct {
+	Builds            []Build     `json:"builds"`
+	Commits           []Commit    `json:"commits"`
+	Draft             Draft       `json:"draft"`
+	References        []Reference `json:"references"`
+	Releases          []Release   `json:"releases"`
+	SectionCompletion float64     `json:"section_completion"`
+	Templates         []Template  `json:"templates"`
+	UnreviewedBlocks  int         `json:"unreviewed_blocks"`
+}
+
+type CommitDetail struct {
+	Builds   []Build   `json:"builds"`
+	Commit   Commit    `json:"commit"`
+	Releases []Release `json:"releases"`
+}
+
+type Page[T any] struct {
+	Items []T `json:"items"`
+}
+
+type BuildJobInput struct {
+	ArticleManifest  map[string]interface{}   `json:"article_manifest"`
+	BibliographyTool string                   `json:"bibliography_tool"`
+	BuildID          string                   `json:"build_id"`
+	BuildKind        string                   `json:"build_kind"`
+	Engine           string                   `json:"engine"`
+	Limits           map[string]interface{}   `json:"limits"`
+	Manuscript       string                   `json:"manuscript"`
+	ProjectID        string                   `json:"project_id"`
+	ReferencesBIB    string                   `json:"references_bib"`
+	Resources        []map[string]interface{} `json:"resources,omitempty"`
+	Template         map[string]interface{}   `json:"template"`
+	Toolchain        map[string]interface{}   `json:"toolchain"`
+}

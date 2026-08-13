@@ -11,3 +11,8 @@ instead of copying these definitions.
 Stage 8 freezes `run_spec.schema.json`, `manifest.schema.json`, and the Box
 capability/resource definitions in `box.schema.json`. `manifest.json` is the
 only result manifest name; `result_manifest.json` is not a supported alias.
+
+Stage 9 freezes `article-template.schema.json`. A Template Registry entry
+always references one immutable Artifact Version; an arbitrary Overleaf ZIP is
+not a formal template until conversion, schema validation, security checks,
+and a test build succeed.

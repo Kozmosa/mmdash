@@ -1,3 +1,114 @@
+# mmdash v0.1 Stage 9 Article handoff
+
+- Updated: 2026-08-13
+- Branch: `codex/stage-9-article`
+- Base: `origin/main@ac23ccf471ad`
+- Canonical migrations: continuous `000001` through
+  `000042_article_module`; Stage 8 is now
+  `000041_stage8_box_experiment` with an explicit compatibility alias for the
+  pre-merge `000033_stage8_box_experiment` filename.
+- Delivery state: the complete Article vertical slice and real container
+  acceptance are complete. The branch is ready for a non-draft PR and human
+  review; do not merge it without that review.
+
+## 2026-08-13 Stage 9 Article
+
+Article is a Core-owned Markdown-first publishing module. It adds PostgreSQL
+authority, Web/BFF collaboration, immutable Git checkpoints, Artifact-backed
+build inputs/outputs, a fixed Worker toolchain, Data Hub projections,
+Agent-assisted semantic insertions, Zotero reference freezing, and human-only
+Release publication without creating a parallel repository, file table, job
+queue, or provider path.
+
+### Delivered workflow
+
+- The Article page has Write, History, Templates, and Zotero workspaces. Write
+  uses a two-column Tiptap/Yjs editor with a collapsible/resizable source panel,
+  Reference/Artifact/Zotero/PDF tabs, Problem/Model/Experiment source filters,
+  autosave/offline state, fixed-reference insertion, reviewed Agent patches,
+  Ctrl+S flush, commit-only, and Commit -> Build -> Release actions.
+- Web BFF hosts project-scoped Hocuspocus-compatible WebSocket rooms while Core
+  remains authoritative. It enforces browser authentication, Project roles,
+  Viewer read-only behavior, 32 connections per Project, 4 MiB messages,
+  bounded pre-auth buffering, compare-and-swap flush retries, and a flush
+  barrier before commit, preview, or publication.
+- Core persists Draft revisions, Yjs state, canonical Tiptap JSON, blocks,
+  fixed references, patch proposals, commits, builds, publications, templates,
+  Zotero bindings, and immutable releases. Commits freeze exact collaborative
+  state and write through Repo to the Article branch; restoring a commit
+  restores that exact state. A failed build retains its commit and publication
+  record for explicit retry.
+- Formal builds pin one commit, template Artifact Version, every referenced
+  Artifact Version, checksums, engine, bibliography tool, exact toolchain, and
+  resource limits. Preview is latest-only; one commit can own multiple builds;
+  a Release points to one successful build and is rejected by a database
+  trigger if updated.
+- Worker accepts only job-scoped transfer grants, validates ZIP paths/counts/
+  expansion, rejects scripts and executable entries, rewrites only canonical
+  `mmdash://artifact/.../versions/...` resources, invokes tools with argument
+  arrays and no shell escape, applies CPU/memory/file/process/disk/output/time
+  limits, sanitizes logs, and emits PDF, TeX, reproducible source ZIP, report,
+  log, and SyncTeX Artifact Versions.
+- Release history exposes immutable source/PDF/report/SyncTeX downloads and a
+  three-column source tree, read-only source, and fixed PDF view. Parsed
+  SyncTeX supports source-to-PDF and PDF-position-to-source navigation.
+- Templates use `article-template.schema.json`, immutable Artifact Versions,
+  registration validation, real test builds, stable error codes, and a secure
+  Overleaf ZIP import/conversion wizard. The Worker image pins
+  `python:3.12.11-slim-bookworm`, Pandoc 2.17.1.1, latexmk 4.79, biber 2.18,
+  and TeX Live 2022/Debian.
+- Zotero is a read-only Project binding with encrypted API credentials. Added
+  references freeze item version and metadata. Artifact semantic description
+  is a durable Core Job and deterministic Article Agent session; the Worker
+  never calls a model provider directly.
+- Article events flow through Outbox into Notification, Home/Progress, and Data
+  Hub projections. OpenAPI, generated clients, event schemas, endpoint/event
+  catalogs, ADRs, security notes, template specification, and the Article
+  component guide are current.
+
+### Verification evidence
+
+- `pnpm check` passed on 2026-08-13: TypeScript/Go/Python lint, 134 Web tests,
+  62 Web BFF tests including two real concurrent WebSocket clients and Viewer
+  read-only behavior, 37 MCP Gateway tests, all Go backend/box/CLI tests, 44
+  Worker tests, all production builds, contract compatibility, API catalog
+  coverage for 477 operations across 16 contracts, and Caddyfile validation.
+- Windows without developer-mode symlink privilege explicitly skips two
+  symlink-construction assertions. The complete Go suite was also run in the
+  official Linux Go 1.26 container, where both assertions executed and every
+  backend/box/CLI package passed.
+- Real PostgreSQL tests passed for the complete fresh 42-migration catalog,
+  legacy filename reconciliation, partial/coexisting states, recent down/up,
+  concurrent same-tag Release serialization, and database-enforced Release
+  immutability.
+- `docker compose -f deploy/compose/compose.yaml up -d --build` succeeded and
+  `pnpm smoke` passed with Docker Worker mode, native Go CLI, MCP, Audit, Job,
+  and Data Hub coverage. The initial start exposed the duplicate Stage 8
+  migration number already present on `origin/main`; the canonical renumbering
+  and legacy alias above fixed both fresh and existing development databases.
+- `pnpm smoke:article-worker` passed in a `--network none` Worker container
+  using a real template, Markdown manuscript, BibTeX database, and fixed PNG
+  Artifact. It produced a 41,106-byte PDF and 94,827-byte reproducible source
+  ZIP, ran BibTeX, and verified PDF/source/report/log/SyncTeX/TeX outputs plus
+  frozen image content and checksums. Reported tool versions matched all four
+  pinned contracts.
+- All long-running Compose services were healthy. Recent logs contained no
+  panic/fatal/error or credential-leak markers. Acceptance ended with ordinary
+  `docker compose down`, never `down -v`; PostgreSQL, MinIO, Artifact, and Repo
+  volumes remain preserved.
+
+### Operational notes
+
+- Article builds require a registered template in `ready` state and a Worker
+  image matching the exact toolchain strings carried in the Job input. Drift
+  fails with `ARTICLE_TOOLCHAIN_MISMATCH` before template execution.
+- The standard repository smoke verifies transport with `system.test`;
+  `pnpm smoke:article-worker` is the real network-isolated Article compilation
+  acceptance and should remain part of Stage 9 release verification.
+- Core Go changes require restarting the local development environment. Local
+  bootstrap defaults remain `admin@mmdash.local` / `mmdash-local-admin` unless
+  `.env` overrides the documented variables.
+
 # mmdash v0.1 Stage 8 Experiment / Box / Sandbox handoff
 
 - Updated: 2026-08-11
@@ -11,7 +122,7 @@
   Stage 8 fix to integrate. Before the final push, the PR head contained the
   six committed Stage 8 changes through `4b076fb`; the verified follow-up
   commit described in this handoff advances that same branch.
-- Migration: `000033_stage8_box_experiment`
+- Migration: `000041_stage8_box_experiment` (with the pre-merge `000033_stage8_box_experiment` compatibility alias)
 - Delivery state: Stage 8 implementation, Local Docker terminal acceptance,
   and the complete `Core -> registered Box Gateway -> E2B` hosted acceptance
   are complete. The PR remains Draft only because the user explicitly forbids

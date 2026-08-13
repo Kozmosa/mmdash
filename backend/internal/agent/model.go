@@ -24,6 +24,7 @@ const (
 	SessionMain       = "main"
 	SessionProgress   = "progress"
 	SessionExperiment = "experiment"
+	SessionArticle    = "article"
 
 	SessionActive = "active"
 	SessionEnded  = "ended"

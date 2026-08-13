@@ -1,0 +1,156 @@
+package artifact
+
+import (
+	"context"
+	"io"
+	"os"
+	"strings"
+)
+
+// ArticleTemplateGrant returns a job-scoped immutable template transfer. The
+// Worker receives neither a storage provider handle nor a reusable browser
+// credential.
+func (service Service) ArticleTemplateGrant(ctx context.Context, projectID, artifactID, versionID string) (map[string]interface{}, error) {
+	grant, err := service.ArticleResourceGrant(ctx, projectID, artifactID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"method": grant["method"], "url": grant["url"],
+		"headers": grant["headers"], "expires_at": grant["expires_at"],
+	}, nil
+}
+
+// ArticleResourceGrant returns an immutable, job-scoped input transfer for a
+// template, figure, table, or attachment pinned by Article. The signed grant
+// contains no reusable provider credential.
+func (service Service) ArticleResourceGrant(ctx context.Context, projectID, artifactID, versionID string) (map[string]interface{}, error) {
+	detail, err := service.Store.GetDetail(ctx, projectID, artifactID, false)
+	if err != nil {
+		return nil, err
+	}
+	if detail.Artifact.Status != StatusAvailable {
+		return nil, ErrNotAvailable
+	}
+	version, err := service.Store.GetVersion(ctx, projectID, artifactID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	if version.Status != StatusAvailable || version.StorageClass != "object" {
+		return nil, ErrNotAvailable
+	}
+	var transfer TransferGrant
+	if service.Storage.Backend() == "local" {
+		signer := service.WorkerSigner
+		if signer == nil {
+			return nil, ErrNotAvailable
+		}
+		transfer, err = signer.Sign(TransferClaims{Kind: transferDownload, ProjectID: projectID, ArtifactID: artifactID, VersionID: versionID, SizeBytes: version.SizeBytes}, service.now(), service.transferTTL())
+	} else {
+		transfer, err = service.downloadTransfer(ctx, version)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"method": transfer.Method, "url": transfer.URL, "headers": transfer.Headers,
+		"expires_at": transfer.ExpiresAt, "filename": version.Filename,
+		"mime_type": version.MIMEType, "size_bytes": version.SizeBytes,
+		"sha256": version.SHA256,
+	}, nil
+}
+
+// ArchiveArticleBuildOutput streams one immutable build output through the
+// Artifact verification/promotion boundary. Article stores only the returned
+// stable Artifact and Version identifiers.
+func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID, buildID, createdBy, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+	expectedSHA = strings.ToLower(strings.TrimSpace(expectedSHA))
+	if projectID == "" || buildID == "" || createdBy == "" || role == "" || filename == "" || mimeType == "" || expectedSize < 1 || expectedSize > service.MaxUploadBytes || !sha256Pattern.MatchString(expectedSHA) {
+		return "", "", ErrInvalid
+	}
+	temporary, err := stageResultInput(input, expectedSize, expectedSHA)
+	if err != nil {
+		return "", "", err
+	}
+	defer os.Remove(temporary)
+	temporaryFile, err := os.Open(temporary)
+	if err != nil {
+		return "", "", err
+	}
+	defer temporaryFile.Close()
+	plan, err := CalculateMultipartPlan(expectedSize, service.MultipartPartBytes, service.MaxUploadBytes)
+	if err != nil {
+		return "", "", err
+	}
+	artifactID, err := service.Generator.New()
+	if err != nil {
+		return "", "", err
+	}
+	versionID, err := service.Generator.New()
+	if err != nil {
+		return "", "", err
+	}
+	uploadID, err := service.Generator.New()
+	if err != nil {
+		return "", "", err
+	}
+	now := service.now()
+	sourceID := buildID
+	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindArticleBuild, Source: SourceArticle, SourceObjectID: &sourceID, Tags: []string{"article-build", role}, Name: filename, RecommendedUsage: []string{role}, CurrentVersionID: &versionID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
+	version := Version{ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1, StorageClass: "object", Filename: filename, SHA256: expectedSHA, MIMEType: mimeType, SizeBytes: expectedSize, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now}
+	upload, _, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, filename, mimeType, expectedSHA, expectedSize, "article-build:"+buildID+":"+role, plan)
+	if err != nil {
+		return "", "", err
+	}
+	if upload.Status == UploadCompleted {
+		return artifactID, versionID, nil
+	}
+	if err := service.Store.CreateFirst(ctx, artifact, version, upload); err != nil {
+		return "", "", err
+	}
+	provider := providerHandle(upload)
+	parts := make([]CompletedPart, 0, plan.PartCount)
+	var copied int64
+	for partNumber := 1; partNumber <= plan.PartCount; partNumber++ {
+		size, err := plan.PartSize(partNumber)
+		if err != nil {
+			return "", "", err
+		}
+		part, err := service.Storage.PutPart(ctx, provider, partNumber, io.LimitReader(temporaryFile, size), size)
+		if err != nil {
+			return "", "", service.storageError(err)
+		}
+		copied += part.SizeBytes
+		parts = append(parts, part)
+	}
+	if copied != expectedSize {
+		return "", "", ErrSizeMismatch
+	}
+	if err := service.Store.UpsertParts(ctx, upload.ID, completedToUploadParts(parts, now)); err != nil {
+		return "", "", err
+	}
+	if err := service.Store.MarkUploading(ctx, upload.ID, now); err != nil {
+		return "", "", err
+	}
+	if _, err := service.Storage.CompleteMultipart(ctx, provider, parts); err != nil {
+		return "", "", service.storageError(err)
+	}
+	if err := service.Store.SetUploadStatus(ctx, upload.ID, UploadVerifying, "", now); err != nil {
+		return "", "", err
+	}
+	contentKey := ContentObjectKey(projectID, expectedSHA)
+	if err := service.verifyObject(ctx, upload.StagingKey, expectedSize, expectedSHA); err != nil {
+		return "", "", err
+	}
+	if err := service.promoteVerified(ctx, upload, contentKey); err != nil {
+		return "", "", err
+	}
+	blobID, err := service.Generator.New()
+	if err != nil {
+		return "", "", err
+	}
+	if _, err = service.Store.FinalizeUpload(ctx, upload, Blob{ID: blobID, ProjectID: projectID, SHA256: expectedSHA, SizeBytes: expectedSize, Backend: service.Storage.Backend(), ObjectKey: contentKey}, service.now()); err != nil {
+		return "", "", err
+	}
+	return artifactID, versionID, nil
+}

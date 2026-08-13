@@ -473,6 +473,10 @@ func (service Service) PrepareComplete(
 	job jobs.Job,
 	result map[string]interface{},
 ) error {
+	if job.JobType == semanticDescriptionJobType {
+		_, err := parseSemanticResult(result)
+		return err
+	}
 	if job.JobType != previewJobType {
 		return nil
 	}
@@ -522,6 +526,9 @@ func (service Service) CompleteInTransaction(
 	job jobs.Job,
 	result map[string]interface{},
 ) error {
+	if job.JobType == semanticDescriptionJobType {
+		return service.completeSemanticDescription(ctx, tx, job, result)
+	}
 	if job.JobType != previewJobType {
 		return nil
 	}

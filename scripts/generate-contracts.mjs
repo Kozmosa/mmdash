@@ -126,6 +126,17 @@ function renderGoHandlerTypes(document) {
     "BoxTaskResultRequest",
     "CreateExperimentRequest",
     "RunExperimentRequest",
+    "PersistArticleDraftRequest",
+    "CreateArticlePatchRequest",
+    "ReviewArticlePatchRequest",
+    "CreateArticleReferenceRequest",
+    "CreateArticleCommitRequest",
+    "CreateArticleBuildRequest",
+    "CreateArticlePreviewBuildRequest",
+    "CreateArticleReleaseRequest",
+    "CreateArticlePublicationRequest",
+    "RegisterArticleTemplateRequest",
+    "UpdateArticleZoteroBindingRequest",
   ];
   const schemas = document.components?.schemas ?? {};
   const blocks = names.map((name) => {

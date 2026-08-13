@@ -34,6 +34,9 @@ var legacyMigrationAliases = map[string][]string{
 		"000023_notification_routing_model.up.sql",
 		"000024_notification_routing_model.up.sql",
 	},
+	"000041_stage8_box_experiment.up.sql": {
+		"000033_stage8_box_experiment.up.sql",
+	},
 }
 
 // EventLogger records applied migrations.
