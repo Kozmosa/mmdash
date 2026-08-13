@@ -1,5 +1,44 @@
 # API endpoint catalog
 
+Stage 9 Article operations:
+
+- Core collaborative source and review: `article.get`, `article.draft.get`,
+  `article.draft.flush`, `article.patches.list`, `article.patches.create`,
+  `article.patches.review`, `article.references.list`,
+  `article.references.create`, and `article.references.delete`.
+- Core immutable history: `article.commits.list`, `article.commits.create`,
+  `article.commits.get`, `article.commits.restore`, `article.builds.list`,
+  `article.builds.create`, `article.preview_builds.create`,
+  `article.builds.get`, `article.builds.retry`, `article.releases.list`,
+  `article.releases.create`, and `article.releases.get`.
+- Core publication, templates, Zotero, and Worker boundary:
+  `article.publications.create`, `article.publications.retry`,
+  `article.templates.list`, `article.templates.create`, `article.zotero.get`,
+  `article.zotero.update`, `article.zotero.delete`, `article.zotero.search`,
+  `article.artifacts.describe`, `article.artifact_semantic_jobs.execute`,
+  `article.build_jobs.input.get`, and `article.build_jobs.outputs.upload`.
+- Browser BFF: `bff.article.get`, `bff.article.collaboration.connect`,
+  `bff.article.draft.get`, `bff.article.draft.flush`,
+  `bff.article.patches.list`, `bff.article.patches.create`,
+  `bff.article.patches.review`, `bff.article.references.list`,
+  `bff.article.references.create`, `bff.article.references.delete`,
+  `bff.article.commits.list`, `bff.article.commits.create`,
+  `bff.article.commits.get`, `bff.article.commits.restore`,
+  `bff.article.builds.list`, `bff.article.builds.create`,
+  `bff.article.preview_builds.create`, `bff.article.builds.get`,
+  `bff.article.builds.retry`, `bff.article.publications.create`,
+  `bff.article.publications.retry`, `bff.article.releases.list`,
+  `bff.article.releases.create`, `bff.article.releases.get`,
+  `bff.article.templates.list`, `bff.article.templates.create`,
+  `bff.article.zotero.get`, `bff.article.zotero.update`,
+  `bff.article.zotero.delete`, `bff.article.zotero.search`, and
+  `bff.article.artifacts.describe`.
+
+The collaboration operation upgrades a signed browser Session to Hocuspocus
+WebSocket. BFF resolves Project permissions before attaching the room while
+buffering initial protocol frames; all persistence is performed through Core.
+Internal build and semantic operations require a live claimed Worker lease.
+
 Stage 8 Experiment and Box operations:
 
 - Core Experiment: `experiment.list`, `experiment.create`, `experiment.compare`,

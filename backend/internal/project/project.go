@@ -66,6 +66,13 @@ const (
 	PermissionExperimentManage  Permission = "project.experiment.manage"
 	PermissionBoxRead           Permission = "project.box.read"
 	PermissionBoxManage         Permission = "project.box.manage"
+	PermissionArticleRead       Permission = "project.article.read"
+	PermissionArticleEdit       Permission = "project.article.edit"
+	PermissionArticlePropose    Permission = "project.article.propose"
+	PermissionArticleBuild      Permission = "project.article.build"
+	PermissionArticleRelease    Permission = "project.article.release"
+	PermissionArticleTemplate   Permission = "project.article.template.manage"
+	PermissionArticleZotero     Permission = "project.article.zotero.manage"
 )
 
 var permissionsByRole = map[Role][]Permission{
@@ -107,6 +114,13 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionExperimentManage,
 		PermissionBoxRead,
 		PermissionBoxManage,
+		PermissionArticleRead,
+		PermissionArticleEdit,
+		PermissionArticlePropose,
+		PermissionArticleBuild,
+		PermissionArticleRelease,
+		PermissionArticleTemplate,
+		PermissionArticleZotero,
 	},
 	RoleMaintainer: {
 		PermissionRead,
@@ -145,6 +159,13 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionExperimentManage,
 		PermissionBoxRead,
 		PermissionBoxManage,
+		PermissionArticleRead,
+		PermissionArticleEdit,
+		PermissionArticlePropose,
+		PermissionArticleBuild,
+		PermissionArticleRelease,
+		PermissionArticleTemplate,
+		PermissionArticleZotero,
 	},
 	RoleEditor: {
 		PermissionRead,
@@ -174,6 +195,10 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionExperimentRead,
 		PermissionExperimentManage,
 		PermissionBoxRead,
+		PermissionArticleRead,
+		PermissionArticleEdit,
+		PermissionArticlePropose,
+		PermissionArticleBuild,
 	},
 	RoleViewer: {
 		PermissionRead,
@@ -191,6 +216,7 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionAgentRead,
 		PermissionExperimentRead,
 		PermissionBoxRead,
+		PermissionArticleRead,
 	},
 	RoleAgent: {
 		PermissionRead,
@@ -206,6 +232,8 @@ var permissionsByRole = map[Role][]Permission{
 		PermissionExperimentRead,
 		PermissionExperimentManage,
 		PermissionBoxRead,
+		PermissionArticleRead,
+		PermissionArticlePropose,
 	},
 	RoleBox: {
 		PermissionRead,
@@ -780,6 +808,12 @@ func agentToolAllowsPermission(identity auth.Identity, permission Permission) bo
 		requiredTools = []string{"data.read", "progress.get"}
 	case PermissionProgressEvaluate:
 		requiredTools = []string{"progress.recalculate"}
+	case PermissionArticleRead:
+		// Article objects are exposed read-only through Data Hub data.read.
+		requiredTools = []string{"data.read"}
+	case PermissionArticlePropose:
+		// A reviewed patch proposal is the sole Agent-side Article mutation.
+		requiredTools = []string{"data.read"}
 	default:
 		return false
 	}

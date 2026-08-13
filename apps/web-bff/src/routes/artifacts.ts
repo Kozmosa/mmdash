@@ -75,6 +75,9 @@ const uploadParamsSchema = z.object({
 const versionParamsSchema = projectArtifactParamsSchema.extend({
   versionId: idSchema,
 });
+const semanticDescriptionInputSchema = z.object({
+  agent_instance_id: idSchema.optional(),
+});
 
 export function registerArtifactRoutes(
   app: FastifyInstance,
@@ -220,6 +223,21 @@ export function registerArtifactRoutes(
         updateInputSchema.parse(request.body),
         coreContext(request),
       );
+    },
+  );
+
+  app.post(
+    "/api/projects/:projectId/artifacts/:artifactId/description",
+    { config: { auth: "required", project: "required" } },
+    async (request, reply) => {
+      const { artifactId } = projectArtifactParamsSchema.parse(request.params);
+      const result = await coreClient.requestArtifactSemanticDescription(
+        request.currentProjectId!,
+        artifactId,
+        semanticDescriptionInputSchema.parse(request.body ?? {}),
+        coreContext(request),
+      );
+      return reply.code(202).send(result);
     },
   );
 

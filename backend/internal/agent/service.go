@@ -1918,7 +1918,7 @@ func validManagementMode(value string) bool {
 }
 
 func validSessionType(value string) bool {
-	return value == SessionMain || value == SessionProgress || value == SessionExperiment
+	return value == SessionMain || value == SessionProgress || value == SessionExperiment || value == SessionArticle
 }
 
 func validReasoningEffort(value string) bool {

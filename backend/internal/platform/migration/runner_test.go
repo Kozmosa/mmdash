@@ -78,6 +78,9 @@ func TestLegacyMigrationAliasesRemainExplicit(t *testing.T) {
 			"000023_notification_routing_model.up.sql",
 			"000024_notification_routing_model.up.sql",
 		},
+		"000041_stage8_box_experiment.up.sql": {
+			"000033_stage8_box_experiment.up.sql",
+		},
 	}
 	if !reflect.DeepEqual(legacyMigrationAliases, expected) {
 		t.Fatalf("legacy migration aliases changed: %#v", legacyMigrationAliases)

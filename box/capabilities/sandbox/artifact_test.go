@@ -3,6 +3,7 @@ package sandbox
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -49,6 +50,9 @@ func TestGenerateManifestRejectsUnsafeOrOversizedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("missing", filepath.Join(root, "unsafe")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("Windows developer-mode symlink privilege is unavailable: %v", err)
+		}
 		t.Fatal(err)
 	}
 	if _, err := GenerateManifest(root, "experiment-1", 0, 1<<20); err == nil {

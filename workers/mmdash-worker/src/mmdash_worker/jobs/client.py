@@ -186,6 +186,68 @@ class CoreJobClient:
             timeout_seconds=self.progress_evaluation_timeout_seconds,
         )
 
+    def execute_artifact_semantic_description(self, job_id: str) -> dict[str, Any]:
+        """Ask Core to execute a claimed semantic Job through its Agent capability."""
+
+        return self._request(
+            "POST",
+            f"/v1/internal/artifact-semantic-jobs/{job_id}/execute",
+            timeout_seconds=self.progress_evaluation_timeout_seconds,
+        )
+
+    def get_article_build_input(self, job_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/internal/article-build-jobs/{job_id}/input", timeout_seconds=60)
+
+    def upload_article_build_output(
+        self,
+        job_id: str,
+        role: str,
+        source: Path,
+        *,
+        filename: str,
+        mime_type: str,
+        sha256: str,
+        size_bytes: int,
+    ) -> dict[str, Any]:
+        if size_bytes < 1 or source.stat().st_size != size_bytes:
+            raise JobAPIError("ARTICLE_OUTPUT_CHANGED", "Article output size changed")
+        parsed = urlsplit(self.base_url + f"/v1/internal/article-build-jobs/{job_id}/outputs/{role}")
+        connection_type = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        connection = connection_type(parsed.hostname, port=parsed.port, timeout=300)
+        target = parsed.path or "/"
+        try:
+            connection.putrequest("POST", target)
+            connection.putheader("Accept", "application/json")
+            connection.putheader("Authorization", f"Bearer {self.api_token}")
+            connection.putheader("Content-Type", mime_type)
+            connection.putheader("Content-Length", str(size_bytes))
+            connection.putheader("X-Content-Length", str(size_bytes))
+            connection.putheader("X-Content-SHA256", sha256)
+            connection.putheader("X-Filename", filename)
+            connection.putheader("User-Agent", "mmdash-worker/0.1")
+            connection.endheaders()
+            sent = 0
+            with source.open("rb") as contents:
+                while chunk := contents.read(64 * 1024):
+                    sent += len(chunk)
+                    if sent > size_bytes:
+                        raise JobAPIError("ARTICLE_OUTPUT_CHANGED", "Article output changed")
+                    connection.send(chunk)
+            if sent != size_bytes:
+                raise JobAPIError("ARTICLE_OUTPUT_CHANGED", "Article output changed")
+            response = connection.getresponse()
+            payload = response.read(1024 * 1024)
+            if response.status < 200 or response.status >= 300:
+                self._raise_transfer_error(response.status, payload)
+            decoded = json.loads(payload)
+            if not isinstance(decoded, dict):
+                raise JobAPIError("INVALID_RESPONSE", "Core returned invalid Article output JSON")
+            return decoded
+        except OSError as error:
+            raise JobAPIError("CORE_UNAVAILABLE", str(error)) from error
+        finally:
+            connection.close()
+
     def download_transfer(
         self,
         grant: Mapping[str, Any],

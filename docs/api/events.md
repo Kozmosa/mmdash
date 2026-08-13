@@ -136,3 +136,12 @@ recoverable trash transition. Purge does not publish another public lifecycle
 event because Data Hub already owns the deleted tombstone. Artifact payload
 schemas live under `contracts/events/` and never include signed URLs, provider
 upload IDs, object keys, credentials, or file content.
+
+Article emits append-only lifecycle facts for collaborative draft flushes,
+Patch proposal/review, Commit creation, Build queue/success/failure, and
+Release creation. Payloads contain stable IDs, bounded status metadata, fixed
+Git SHA or Artifact Version references, and no manuscript, Yjs bytes, Zotero
+secret, transfer grant, LaTeX source, PDF bytes, or raw compiler log. Build
+completion projects `article_build`, triggers Progress evaluation, and queues
+Notification consumption; Release creation projects `article_release` and
+the immutable release output map.
