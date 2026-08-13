@@ -209,6 +209,10 @@ type AgentProvider interface {
 	AgentHomeItems(context.Context, auth.Identity, string) ([]interface{}, error)
 }
 
+type ArticleProvider interface {
+	ArticleHomeItems(context.Context, auth.Identity, string) ([]interface{}, error)
+}
+
 // AdapterRegistry maps stable object types to domain-owned readers.
 type AdapterRegistry struct {
 	mu      sync.RWMutex
@@ -263,6 +267,7 @@ type Service struct {
 	Access          Access
 	Adapters        *AdapterRegistry
 	Agent           AgentProvider
+	Article         ArticleProvider
 	AgentProvenance AgentProvenanceValidator
 	Clock           interface{ Now() time.Time }
 	Models          ModelProvider
@@ -507,8 +512,16 @@ func (service Service) Home(
 			Available: true, Items: nonNilItems(agentItems), Total: len(agentItems),
 		}
 	}
+	articleSection := empty()
+	if service.Article != nil {
+		articleItems, err := service.Article.ArticleHomeItems(ctx, identity, projectID)
+		if err != nil {
+			return HomeAggregate{}, err
+		}
+		articleSection = HomeSection{Available: true, Items: nonNilItems(articleItems), Total: len(articleItems)}
+	}
 	return HomeAggregate{
-		Agent: agentSection, Article: empty(), Experiments: empty(),
+		Agent: agentSection, Article: articleSection, Experiments: empty(),
 		GeneratedAt: service.Clock.Now().UTC(), Milestones: milestones,
 		Models: models, Problem: problem, ProgressTracking: progressTracking,
 		ProjectID: projectID, Todos: todos,

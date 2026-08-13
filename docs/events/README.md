@@ -34,3 +34,8 @@ provider errors, URLs, or credential material.
 A Token provisioning or rotation failure reports whether an old active Token
 still exists. Initial auto provisioning has no old Token and reports `false`;
 an actual replacement failure must preserve the old Token and report `true`.
+
+Stage 9 Article schemas cover draft, Patch, Commit, Build, and Release
+lifecycle. Article source bodies and generated build files never enter event
+payloads; consumers resolve controlled Data Hub projections or immutable
+Artifact Version pointers.

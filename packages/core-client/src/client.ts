@@ -996,6 +996,19 @@ export class CoreClient {
     );
   }
 
+  async requestArtifactSemanticDescription(
+    projectId: string,
+    artifactId: string,
+    input: components["schemas"]["ArtifactSemanticDescriptionInput"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArtifactSemanticDescriptionJob"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/description`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
   async listArtifactVersions(
     projectId: string,
     artifactId: string,

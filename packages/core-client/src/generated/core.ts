@@ -3480,10 +3480,1011 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/article": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the Article workspace aggregate */
+    get: operations["article.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/draft": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the authoritative collaborative draft snapshot */
+    get: operations["article.draft.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/draft/flush": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Persist one CAS-protected Yjs snapshot and derived Markdown projection */
+    post: operations["article.draft.flush"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/patches": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List Article AI patches */
+    get: operations["article.patches.list"];
+    put?: never;
+    /** Propose an AI patch without mutating the draft */
+    post: operations["article.patches.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/patches/{patchId}/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        patchId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept or reject a patch as a provenance-bearing collaboration transaction */
+    post: operations["article.patches.review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List pinned Article references */
+    get: operations["article.references.list"];
+    put?: never;
+    /** Pin a versioned Problem, Model Snapshot, Experiment Result, or Artifact */
+    post: operations["article.references.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/references/{referenceId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        referenceId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove a draft reference pin */
+    delete: operations["article.references.delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/commits": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List Article commits */
+    get: operations["article.commits.list"];
+    put?: never;
+    /** Commit one exact flushed draft revision through Repo ArticleWorkspace */
+    post: operations["article.commits.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/commits/{commitId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        commitId: string;
+      };
+      cookie?: never;
+    };
+    /** Read one Article commit and its builds/releases */
+    get: operations["article.commits.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/commits/{commitId}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        commitId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore historical Markdown as a new collaborative draft revision */
+    post: operations["article.commits.restore"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/builds": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List formal and latest preview builds */
+    get: operations["article.builds.list"];
+    put?: never;
+    /** Queue a formal commit-bound Article build */
+    post: operations["article.builds.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/preview-builds": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Queue a latest-only preview for one persisted draft revision */
+    post: operations["article.preview_builds.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/builds/{buildId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        buildId: string;
+      };
+      cookie?: never;
+    };
+    /** Read a build and immutable output Artifact versions */
+    get: operations["article.builds.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/builds/{buildId}/retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        buildId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry a failed build as a new immutable attempt */
+    post: operations["article.builds.retry"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/publications": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Orchestrate Commit then Build then immutable Release */
+    post: operations["article.publications.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/publications/{publicationId}/retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        publicationId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry the Build phase without duplicating the Commit or Release */
+    post: operations["article.publications.retry"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/releases": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List immutable Article releases */
+    get: operations["article.releases.list"];
+    put?: never;
+    /** Create an immutable Release from a successful formal build */
+    post: operations["article.releases.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/releases/{releaseId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        releaseId: string;
+      };
+      cookie?: never;
+    };
+    /** Read one immutable Release and output manifest */
+    get: operations["article.releases.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/templates": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List registered validated template Artifact versions */
+    get: operations["article.templates.list"];
+    put?: never;
+    /** Validate and register one immutable template Artifact version */
+    post: operations["article.templates.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/zotero": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read redacted read-only Zotero binding */
+    get: operations["article.zotero.get"];
+    /** Bind a read-only Zotero library and encrypted API key */
+    put: operations["article.zotero.update"];
+    post?: never;
+    /** Remove the project Zotero binding and secret */
+    delete: operations["article.zotero.delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/zotero/search": {
+    parameters: {
+      query: {
+        q: string;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Search the configured Zotero library by author, title, or keyword */
+    get: operations["article.zotero.search"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/description": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Request a non-blocking semantic description and recommended usage */
+    post: operations["article.artifacts.describe"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/artifact-semantic-jobs/{jobId}/execute": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Execute a claimed Artifact semantic-description Job through the Core Agent capability */
+    post: operations["article.artifact_semantic_jobs.execute"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/article-build-jobs/{jobId}/input": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    /** Get Job-scoped Article build input and signed immutable input transfers */
+    get: operations["article.build_jobs.input.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/article-build-jobs/{jobId}/outputs/{role}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+        role: components["schemas"]["ArticleBuildOutputRole"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stream one verified build output through Core into Artifact */
+    post: operations["article.build_jobs.outputs.upload"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    PersistArticleDraftRequest: {
+      /** Format: int64 */
+      expected_revision: number;
+      /** @description Base64-encoded Yjs document update. */
+      yjs_update: string;
+      /** @description Base64-encoded Yjs state vector. */
+      state_vector: string;
+      tiptap_json: {
+        [key: string]: unknown;
+      };
+      /** @enum {string} */
+      actor_kind: "human" | "ai" | "restore";
+      provenance: {
+        [key: string]: unknown;
+      };
+    };
+    CreateArticlePatchRequest: {
+      /** Format: int64 */
+      base_revision: number;
+      patch: {
+        [key: string]: unknown;
+      };
+      rationale: string;
+      provenance: {
+        [key: string]: unknown;
+      };
+    };
+    ReviewArticlePatchRequest: {
+      /** @enum {string} */
+      decision: "accepted" | "rejected";
+      yjs_update?: string;
+      state_vector?: string;
+      tiptap_json?: {
+        [key: string]: unknown;
+      };
+      /** Format: int64 */
+      expected_revision?: number;
+    };
+    CreateArticleReferenceRequest: {
+      /** @enum {string} */
+      reference_type:
+        | "problem"
+        | "model_snapshot"
+        | "experiment_result"
+        | "artifact"
+        | "zotero";
+      source_object_id: string;
+      source_version_id: string;
+      title: string;
+      citation_key?: string;
+      metadata?: {
+        [key: string]: unknown;
+      };
+    };
+    CreateArticleCommitRequest: {
+      /** Format: int64 */
+      draft_revision: number;
+      message: string;
+    };
+    CreateArticleBuildRequest: {
+      /** Format: uuid */
+      commit_id: string;
+      /** Format: uuid */
+      template_id: string;
+      /** @enum {string} */
+      engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
+      /** @enum {string} */
+      bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+      idempotency_key: string;
+    };
+    CreateArticlePreviewBuildRequest: {
+      /** Format: int64 */
+      draft_revision: number;
+      /** Format: uuid */
+      template_id: string;
+      /** @enum {string} */
+      engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
+      /** @enum {string} */
+      bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+    };
+    CreateArticleReleaseRequest: {
+      /** Format: uuid */
+      commit_id: string;
+      /** Format: uuid */
+      build_id: string;
+      tag: string;
+      title: string;
+      notes: string;
+    };
+    CreateArticlePublicationRequest: {
+      /** Format: int64 */
+      draft_revision: number;
+      message: string;
+      /** Format: uuid */
+      template_id: string;
+      /** @enum {string} */
+      engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
+      /** @enum {string} */
+      bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+      tag: string;
+      title: string;
+      notes: string;
+      idempotency_key: string;
+    };
+    RegisterArticleTemplateRequest: {
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      manifest: components["schemas"]["ArticleTemplateManifest"];
+    };
+    UpdateArticleZoteroBindingRequest: {
+      /** @enum {string} */
+      library_type: "user" | "group";
+      library_id: string;
+      collection_key?: string;
+      api_key: string;
+    };
+    ArticleTemplateManifest: {
+      /** @constant */
+      schema_version: "1.0";
+      name: string;
+      version: string;
+      entrypoint: string;
+      output: string;
+      content_target: string;
+      bibliography_target: string;
+      /** @enum {string} */
+      engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
+      /** @enum {string} */
+      bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+    };
+    ArticleBlock: {
+      /** Format: uuid */
+      block_id: string;
+      node_type: string;
+      ordinal: number;
+      text: string;
+      attrs: {
+        [key: string]: unknown;
+      };
+      /** @enum {string} */
+      tag:
+        | "ai_draft"
+        | "human_draft"
+        | "ai_revision"
+        | "human_revision"
+        | "reviewed";
+      provenance: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArticleDraft: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: int64 */
+      draft_revision: number;
+      yjs_update: string;
+      state_vector: string;
+      tiptap_json: {
+        [key: string]: unknown;
+      };
+      markdown: string;
+      blocks: components["schemas"]["ArticleBlock"][];
+      /** @enum {string} */
+      sync_status: "synced" | "syncing" | "offline" | "failed";
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArticlePatch: {
+      /** Format: uuid */
+      patch_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: int64 */
+      base_revision: number;
+      /** Format: int64 */
+      accepted_revision?: number;
+      /** @enum {string} */
+      status: "proposed" | "accepted" | "rejected";
+      patch: {
+        [key: string]: unknown;
+      };
+      rationale: string;
+      provenance: {
+        [key: string]: unknown;
+      };
+      created_by: string;
+      reviewed_by?: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArticlePatchList: {
+      items: components["schemas"]["ArticlePatch"][];
+    };
+    ArticleReference: {
+      /** Format: uuid */
+      reference_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      reference_type:
+        | "problem"
+        | "model_snapshot"
+        | "experiment_result"
+        | "artifact"
+        | "zotero";
+      source_object_id: string;
+      source_version_id: string;
+      title: string;
+      citation_key?: string;
+      metadata: {
+        [key: string]: unknown;
+      };
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    ArticleReferenceList: {
+      items: components["schemas"]["ArticleReference"][];
+    };
+    ArticleCommit: {
+      /** Format: uuid */
+      commit_id: string;
+      /** Format: uuid */
+      project_id: string;
+      commit_sha: string;
+      /** Format: int64 */
+      draft_revision: number;
+      state_vector: string;
+      manuscript_sha256: string;
+      message: string;
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    ArticleCommitList: {
+      items: components["schemas"]["ArticleCommit"][];
+    };
+    ArticleCommitDetail: {
+      commit: components["schemas"]["ArticleCommit"];
+      builds: components["schemas"]["ArticleBuild"][];
+      releases: components["schemas"]["ArticleRelease"][];
+    };
+    ArticleTemplate: {
+      /** Format: uuid */
+      template_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      manifest: components["schemas"]["ArticleTemplateManifest"];
+      /** @enum {string} */
+      status: "validating" | "ready" | "rejected";
+      error_code?: string;
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArticleTemplateList: {
+      items: components["schemas"]["ArticleTemplate"][];
+    };
+    /** @enum {string} */
+    ArticleBuildOutputRole:
+      "pdf" | "tex_source" | "source_zip" | "build_report" | "log" | "synctex";
+    ArticleBuildOutput: {
+      role: components["schemas"]["ArticleBuildOutputRole"];
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      filename: string;
+      mime_type: string;
+      sha256: string;
+      /** Format: int64 */
+      size_bytes: number;
+    };
+    ArticleBuild: {
+      /** Format: uuid */
+      build_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      build_kind: "preview" | "formal" | "template_test";
+      /** @enum {string} */
+      status: "queued" | "running" | "succeeded" | "failed" | "superseded";
+      /** Format: int64 */
+      draft_revision?: number;
+      /** Format: uuid */
+      commit_id?: string;
+      commit_sha?: string;
+      /** Format: uuid */
+      job_id?: string;
+      /** Format: uuid */
+      template_id: string;
+      /** Format: uuid */
+      template_artifact_id: string;
+      /** Format: uuid */
+      template_version_id: string;
+      /** @enum {string} */
+      engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
+      /** @enum {string} */
+      bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+      toolchain?: {
+        [key: string]: unknown;
+      };
+      outputs: components["schemas"]["ArticleBuildOutput"][];
+      error_code?: string;
+      error_message?: string;
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      finished_at?: string;
+    };
+    ArticleBuildList: {
+      items: components["schemas"]["ArticleBuild"][];
+    };
+    ArticleRelease: {
+      /** Format: uuid */
+      release_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      commit_id: string;
+      commit_sha: string;
+      /** Format: uuid */
+      build_id: string;
+      tag: string;
+      title: string;
+      notes: string;
+      /** Format: uuid */
+      template_version_id: string;
+      engine: string;
+      toolchain: {
+        [key: string]: unknown;
+      };
+      outputs: components["schemas"]["ArticleBuildOutput"][];
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    ArticleReleaseList: {
+      items: components["schemas"]["ArticleRelease"][];
+    };
+    ArticlePublication: {
+      /** Format: uuid */
+      publication_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      commit_id: string;
+      /** Format: uuid */
+      build_id: string;
+      /** Format: uuid */
+      release_id?: string;
+      /** @enum {string} */
+      status: "building" | "released" | "failed";
+      tag: string;
+      title: string;
+      notes: string;
+      error_code?: string;
+      created_by: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ArticleZoteroBinding: {
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      library_type: "user" | "group";
+      library_id: string;
+      collection_key?: string;
+      api_key_configured: boolean;
+      /** @constant */
+      read_only: true;
+    };
+    ZoteroItem: {
+      item_key: string;
+      /** Format: int64 */
+      version: number;
+      citation_key: string;
+      title: string;
+      authors: string[];
+      item_type: string;
+      year?: string;
+      doi?: string;
+      raw: {
+        [key: string]: unknown;
+      };
+    };
+    ZoteroItemList: {
+      items: components["schemas"]["ZoteroItem"][];
+    };
+    ArticleAggregate: {
+      draft: components["schemas"]["ArticleDraft"];
+      references: components["schemas"]["ArticleReference"][];
+      commits: components["schemas"]["ArticleCommit"][];
+      builds: components["schemas"]["ArticleBuild"][];
+      releases: components["schemas"]["ArticleRelease"][];
+      templates: components["schemas"]["ArticleTemplate"][];
+      unreviewed_blocks: number;
+      section_completion: number;
+    };
+    ArtifactSemanticDescriptionInput: {
+      /**
+       * Format: uuid
+       * @description Optional active Project Agent instance. When omitted, Core selects the first active instance deterministically.
+       */
+      agent_instance_id?: string;
+    };
+    ArtifactSemanticDescriptionJob: {
+      /** Format: uuid */
+      job_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      /** @enum {string} */
+      status:
+        | "queued"
+        | "running"
+        | "succeeded"
+        | "failed"
+        | "cancelled"
+        | "timed_out";
+    };
+    ArtifactSemanticDescriptionResult: {
+      description: string;
+      recommended_usage: string[];
+      /** Format: uuid */
+      agent_session_id: string;
+      /** Format: uuid */
+      agent_run_id: string;
+    };
+    ArticleBuildJobInput: {
+      /** Format: uuid */
+      build_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      build_kind: "preview" | "formal" | "template_test";
+      manuscript: string;
+      references_bib: string;
+      article_manifest: {
+        [key: string]: unknown;
+      };
+      template: {
+        /** Format: uuid */
+        artifact_id: string;
+        /** Format: uuid */
+        version_id: string;
+        manifest: components["schemas"]["ArticleTemplateManifest"];
+        transfer: components["schemas"]["ArtifactTransferGrant"];
+      };
+      resources?: {
+        /** Format: uuid */
+        artifact_id: string;
+        /** Format: uuid */
+        version_id: string;
+        title: string;
+        filename: string;
+        mime_type: string;
+        /** Format: int64 */
+        size_bytes: number;
+        sha256: string;
+        transfer: components["schemas"]["ArtifactTransferGrant"];
+      }[];
+      /** @enum {string} */
+      engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
+      /** @enum {string} */
+      bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+      limits: {
+        timeout_seconds: number;
+        /** Format: int64 */
+        memory_bytes: number;
+        /** Format: int64 */
+        disk_bytes: number;
+        /** Format: int64 */
+        output_bytes: number;
+        /** @constant */
+        network: "none";
+      };
+      toolchain: {
+        /** @constant */
+        pandoc: "pandoc 2.17.1.1";
+        /** @constant */
+        latexmk: "Version 4.79";
+        /** @constant */
+        texlive: "TeX Live 2022/Debian";
+      };
+    };
     /** @enum {string} */
     ExperimentStatus:
       | "created"
@@ -12180,6 +13181,800 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ArtifactPointer"];
+        };
+      };
+    };
+  };
+  "article.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Article aggregate. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleAggregate"];
+        };
+      };
+    };
+  };
+  "article.draft.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Collaborative draft. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleDraft"];
+        };
+      };
+    };
+  };
+  "article.draft.flush": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PersistArticleDraftRequest"];
+      };
+    };
+    responses: {
+      /** @description Persisted draft. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleDraft"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "article.patches.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Patch list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticlePatchList"];
+        };
+      };
+    };
+  };
+  "article.patches.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticlePatchRequest"];
+      };
+    };
+    responses: {
+      /** @description Proposed patch. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticlePatch"];
+        };
+      };
+    };
+  };
+  "article.patches.review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        patchId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReviewArticlePatchRequest"];
+      };
+    };
+    responses: {
+      /** @description Reviewed patch. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticlePatch"];
+        };
+      };
+    };
+  };
+  "article.references.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Reference list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleReferenceList"];
+        };
+      };
+    };
+  };
+  "article.references.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticleReferenceRequest"];
+      };
+    };
+    responses: {
+      /** @description Pinned reference. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleReference"];
+        };
+      };
+    };
+  };
+  "article.references.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        referenceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Reference removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "article.commits.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Commit list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleCommitList"];
+        };
+      };
+    };
+  };
+  "article.commits.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticleCommitRequest"];
+      };
+    };
+    responses: {
+      /** @description Article commit. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleCommit"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "article.commits.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        commitId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Article commit detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleCommitDetail"];
+        };
+      };
+    };
+  };
+  "article.commits.restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        commitId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description New draft revision. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleDraft"];
+        };
+      };
+    };
+  };
+  "article.builds.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Build list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuildList"];
+        };
+      };
+    };
+  };
+  "article.builds.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticleBuildRequest"];
+      };
+    };
+    responses: {
+      /** @description Queued formal build. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuild"];
+        };
+      };
+    };
+  };
+  "article.preview_builds.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticlePreviewBuildRequest"];
+      };
+    };
+    responses: {
+      /** @description Queued preview. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuild"];
+        };
+      };
+    };
+  };
+  "article.builds.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        buildId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Build detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuild"];
+        };
+      };
+    };
+  };
+  "article.builds.retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        buildId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Queued retry build. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuild"];
+        };
+      };
+    };
+  };
+  "article.publications.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticlePublicationRequest"];
+      };
+    };
+    responses: {
+      /** @description Publication orchestration. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticlePublication"];
+        };
+      };
+    };
+  };
+  "article.publications.retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        publicationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Retried publication. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticlePublication"];
+        };
+      };
+    };
+  };
+  "article.releases.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Release list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleReleaseList"];
+        };
+      };
+    };
+  };
+  "article.releases.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticleReleaseRequest"];
+      };
+    };
+    responses: {
+      /** @description Immutable release. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleRelease"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "article.releases.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        releaseId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Immutable release. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleRelease"];
+        };
+      };
+    };
+  };
+  "article.templates.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Template list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleTemplateList"];
+        };
+      };
+    };
+  };
+  "article.templates.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RegisterArticleTemplateRequest"];
+      };
+    };
+    responses: {
+      /** @description Template validation registration. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleTemplate"];
+        };
+      };
+    };
+  };
+  "article.zotero.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Zotero binding. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleZoteroBinding"];
+        };
+      };
+    };
+  };
+  "article.zotero.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateArticleZoteroBindingRequest"];
+      };
+    };
+    responses: {
+      /** @description Redacted Zotero binding. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleZoteroBinding"];
+        };
+      };
+    };
+  };
+  "article.zotero.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Binding removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "article.zotero.search": {
+    parameters: {
+      query: {
+        q: string;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Zotero search results. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroItemList"];
+        };
+      };
+    };
+  };
+  "article.artifacts.describe": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["ArtifactSemanticDescriptionInput"];
+      };
+    };
+    responses: {
+      /** @description Description request accepted. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactSemanticDescriptionJob"];
+        };
+      };
+    };
+  };
+  "article.artifact_semantic_jobs.execute": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Strict semantic fields and Agent provenance for Job completion. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactSemanticDescriptionResult"];
+        };
+      };
+    };
+  };
+  "article.build_jobs.input.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Job-scoped build input. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuildJobInput"];
+        };
+      };
+    };
+  };
+  "article.build_jobs.outputs.upload": {
+    parameters: {
+      query?: never;
+      header: {
+        "X-Mmdash-Artifact-SHA256": string;
+        "X-Mmdash-Filename": string;
+        "Content-Type": string;
+        "Content-Length": number;
+      };
+      path: {
+        jobId: components["parameters"]["JobId"];
+        role: components["schemas"]["ArticleBuildOutputRole"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/octet-stream": string;
+      };
+    };
+    responses: {
+      /** @description Archived output pointer. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuildOutput"];
         };
       };
     };

@@ -69,15 +69,21 @@ function validateOpenAPIRoot(id, document) {
 }
 
 async function validateJSONSchemas() {
-  const [common, envelope, errorExample, eventExample] = await Promise.all([
+  const [common, envelope, articleTemplate, articleTemplateExample, errorExample, eventExample] = await Promise.all([
     readJSON("contracts/json-schema/common/dtos.schema.json"),
     readJSON("contracts/events/event-envelope.schema.json"),
+    readJSON("contracts/json-schema/article-template.schema.json"),
+    readJSON("contracts/json-schema/examples/article-template.valid.json"),
     readJSON("contracts/examples/error.example.json"),
     readJSON("contracts/examples/event-envelope.example.json"),
   ]);
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   addFormats(ajv);
   ajv.addSchema(common);
+  const validateArticleTemplate = ajv.compile(articleTemplate);
+  if (!validateArticleTemplate(articleTemplateExample)) {
+    fail(`article template example: ${ajv.errorsText(validateArticleTemplate.errors)}`);
+  }
   const eventFiles = (
     await readdir(path.join(root, "contracts/events"))
   ).filter(

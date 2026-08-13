@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/article.release.created.schema.json",
+  "title": "article.release.created payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["release_id", "commit_id", "build_id", "tag", "title", "status"],
+  "properties": {
+    "release_id": { "type": "string", "format": "uuid" },
+    "commit_id": { "type": "string", "format": "uuid" },
+    "build_id": { "type": "string", "format": "uuid" },
+    "tag": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "status": { "const": "released" }
+  }
+}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/mmdash/mmdash/backend/internal/agent"
 	"github.com/mmdash/mmdash/backend/internal/agent/hermes"
+	"github.com/mmdash/mmdash/backend/internal/article"
 	"github.com/mmdash/mmdash/backend/internal/artifact"
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -222,7 +223,7 @@ func run(logger *logging.Logger) error {
 		Metrics:               metricRegistry,
 		MultipartPartBytes:    processConfig.Artifact.MultipartPartBytes,
 		Signer:                artifactSigner, Storage: storage,
-		Store:            artifactStore,
+		Store: artifactStore, SemanticStore: artifactStore,
 		TransferTTL:      processConfig.Artifact.MultipartURLTTL,
 		UploadSessionTTL: processConfig.Artifact.MultipartSessionTTL,
 		WorkerSigner:     artifactWorkerSigner,
@@ -235,6 +236,7 @@ func run(logger *logging.Logger) error {
 		Projects: projectService, Store: jobStore,
 	}
 	artifactService.Jobs = jobService
+	artifactService.SemanticJobs = jobService
 	artifactModule := artifact.Module{Service: artifactService}
 	dataStore := datahub.PostgresStore{
 		Clock:       systemClock,
@@ -369,6 +371,13 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := settingsRegistry.Register(agent.SettingDefinition()); err != nil {
+		return err
+	}
+	if err := settingsRegistry.Register(settings.TypeDefinition{
+		Description: "Read-only Zotero library access for freezing cited items into Article commits.",
+		Fields:      []settings.FieldDefinition{{Key: "api_key", Kind: settings.FieldSecret, Label: "Zotero API key", Required: true}},
+		Key:         article.SettingTypeZotero, Order: 65, Owner: "article", Scopes: []settings.Scope{settings.ScopeProject}, Title: "Article Zotero",
+	}); err != nil {
 		return err
 	}
 	if err := settingsRegistry.Register(settings.TypeDefinition{
@@ -526,6 +535,9 @@ func run(logger *logging.Logger) error {
 		Generator: idGenerator, Metrics: metricRegistry, Projects: projectService,
 		Settings: &settingsService, Store: agentStore,
 	}
+	artifactService.SemanticModel = agentService
+	artifactService.SemanticJobs = jobService
+	artifactService.SemanticStore = artifactStore
 	progressService.Agent = agentService
 	agentModule := agent.Module{Service: *agentService}
 	projectService.AgentGrants = agentStore
@@ -569,6 +581,23 @@ func run(logger *logging.Logger) error {
 		Projects: projectService, Service: &artifactService,
 	}
 	repoModule := repo.Module{Service: repoService}
+	articleStore := article.PostgresStore{Audit: auditRecorder, Clock: systemClock, DB: db, Generator: idGenerator, Outbox: outboxWriter, Transaction: transactionManager}
+	articleService := &article.Service{
+		Access: projectService, Artifacts: artifactService, Clock: systemClock,
+		Generator: idGenerator, HTTPClient: http.DefaultClient, JobAccess: jobService,
+		JobWriter: jobStore, Settings: &settingsService, Store: articleStore,
+		Workspace: repo.ArticleWorkspaceService{Reader: repoService.Reads, Repositories: repoStore, Service: &repoService},
+	}
+	jobStore.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService, articleService}
+	jobService.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService, articleService}
+	jobService.Store = jobStore
+	articleService.JobAccess = jobService
+	articleService.JobWriter = jobStore
+	artifactService.Jobs = jobService
+	artifactModule.Service = artifactService
+	modelService.Jobs = jobService
+	articleModule := article.Module{Service: articleService}
+	dataService.Article = articleService
 	boxStore := boxcontrol.PostgresStore{Audit: auditRecorder, DB: db, Generator: idGenerator, Outbox: outboxWriter, Transaction: transactionManager}
 	boxService := &boxcontrol.Service{
 		Access: projectService, Clock: systemClock, Generator: idGenerator,
@@ -679,6 +708,39 @@ func run(logger *logging.Logger) error {
 			return err
 		}
 	}
+	for _, definition := range []struct {
+		objectType string
+		read       func(context.Context, auth.Identity, string, string) (interface{}, error)
+	}{
+		{"article_block", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return articleService.ArticleBlock(ctx, caller, projectID, sourceID)
+		}},
+		{"article_draft", func(ctx context.Context, caller auth.Identity, projectID, _ string) (interface{}, error) {
+			return articleService.Draft(ctx, caller, projectID)
+		}},
+		{"article_commit", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return articleService.CommitDetail(ctx, caller, projectID, sourceID)
+		}},
+		{"article_build", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return articleService.GetBuild(ctx, caller, projectID, sourceID)
+		}},
+		{"article_release", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
+			return articleService.GetRelease(ctx, caller, projectID, sourceID)
+		}},
+	} {
+		definition := definition
+		if err := dataAdapters.Register(definition.objectType, datahub.ReaderFunc(func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+			return definition.read(ctx, caller, object.ProjectID, object.SourceID)
+		})); err != nil {
+			return err
+		}
+	}
+	articleProjector := datahub.ArticleProjector{Reader: articleService, Store: dataStore}
+	for _, eventType := range []string{"article.draft.flushed", "article.patch.proposed", "article.patch.reviewed", "article.commit.created", "article.build.queued", "article.build.completed", "article.build.failed", "article.release.created"} {
+		if err := projections.Register(eventType, datahub.ProjectorFunc(articleProjector.Project)); err != nil {
+			return err
+		}
+	}
 	for _, eventType := range []string{
 		"experiment.created", "experiment.started", "experiment.succeeded",
 		"experiment.failed", "experiment.canceled", "experiment.archived",
@@ -739,6 +801,11 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := eventBus.Register(eventbus.Consumer{
+		Name: "notification.article-releases", Patterns: []string{"article.release.created"}, Handler: notificationService.HandleEvent,
+	}); err != nil {
+		return err
+	}
+	if err := eventBus.Register(eventbus.Consumer{
 		Name: "notification.settings", Patterns: []string{"settings.updated", "settings.deleted"}, Handler: notificationService.HandleSettingsEvent,
 	}); err != nil {
 		return err
@@ -766,6 +833,7 @@ func run(logger *logging.Logger) error {
 	}
 	if err := modules.Register(project.Module{
 		Agent:        agentModule.ProjectHandler(),
+		Article:      articleModule.ProjectHandler(),
 		Artifact:     artifactModule.ProjectHandler(),
 		Box:          boxModule.ProjectHandler(),
 		Experiment:   experimentModule.ProjectHandler(),
@@ -781,6 +849,9 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := modules.Register(experimentModule); err != nil {
+		return err
+	}
+	if err := modules.Register(articleModule); err != nil {
 		return err
 	}
 	if err := modules.Register(agentModule); err != nil {

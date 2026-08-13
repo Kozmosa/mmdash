@@ -27,6 +27,7 @@ import (
 const (
 	TypeInvitationReceived = "project.invitation.received"
 	TypeReminderDue        = "progress.reminder.due"
+	TypeArticleRelease     = "article.release.created"
 	OutcomeActive          = "active"
 	OutcomeResolved        = "resolved"
 	OutcomeRevoked         = "revoked"
@@ -186,7 +187,7 @@ func (registry *Registry) Register(descriptor Descriptor) error {
 	if descriptor.Priority != "low" && descriptor.Priority != "normal" && descriptor.Priority != "high" && descriptor.Priority != "urgent" {
 		return fmt.Errorf("invalid notification priority")
 	}
-	knownEvents := map[string]bool{"project.member.invited": true, "progress.reminder.due": true}
+	knownEvents := map[string]bool{"project.member.invited": true, "progress.reminder.due": true, "article.release.created": true}
 	for _, source := range descriptor.SourceEventTypes {
 		if !knownEvents[source] {
 			return fmt.Errorf("unknown notification source event: %s", source)
@@ -229,6 +230,15 @@ func DefaultRegistry() (*Registry, error) {
 		Scope: "project", InboxPolicy: "default_on", ExternalAllowed: true, Priority: "normal", TemplateKey: "progress-reminder", TemplateVersion: 1,
 		AllowedTemplateFields: []string{"project_id", "reminder_id", "task_id", "milestone_id", "title", "status"},
 		RecipientResolver:     "event.actor_or_assignee", Renderer: "code",
+	}); err != nil {
+		return nil, err
+	}
+	if err := registry.Register(Descriptor{
+		TypeKey: TypeArticleRelease, SchemaVersion: 1,
+		SourceEventTypes: []string{"article.release.created"}, AcceptedEventSchemaVersions: []int64{1},
+		Scope: "project", InboxPolicy: "default_on", ExternalAllowed: true, Priority: "normal", TemplateKey: "article-release", TemplateVersion: 1,
+		AllowedTemplateFields: []string{"release_id", "commit_id", "build_id", "tag", "title", "status"},
+		RecipientResolver:     "event.actor", Renderer: "code",
 	}); err != nil {
 		return nil, err
 	}
@@ -392,6 +402,9 @@ func (service Service) handleRegisteredEvent(ctx context.Context, event contract
 	data := allowedData(event.Payload, descriptor.AllowedTemplateFields)
 	projectID := *event.ProjectID
 	actorID := event.Actor["user_id"]
+	if actorID == "" {
+		actorID = event.Actor["actor_id"]
+	}
 	resourceType, _ := data["resource_type"].(string)
 	resourceID, _ := data["resource_id"].(string)
 	if resourceType == "" && descriptor.TypeKey == TypeInvitationReceived {
@@ -402,6 +415,9 @@ func (service Service) handleRegisteredEvent(ctx context.Context, event contract
 	}
 	if resourceID == "" {
 		resourceID = stringValue(data["reminder_id"])
+	}
+	if resourceID == "" {
+		resourceID = stringValue(data["release_id"])
 	}
 	id, err := service.Generator.New()
 	if err != nil {
@@ -420,6 +436,12 @@ func (service Service) handleRegisteredEvent(ctx context.Context, event contract
 				ResourceID: invitationID,
 				Route:      "/inbox",
 			}
+		}
+	}
+	if descriptor.TypeKey == TypeArticleRelease {
+		notification.Action = &Action{
+			Type: "article.release.open", ResourceID: resourceID,
+			Route: "/projects/" + projectID + "/article",
 		}
 	}
 	intents := make([]DeliveryIntent, 0)
@@ -517,6 +539,17 @@ func renderInboxSnapshot(typeKey string, data map[string]interface{}) map[string
 			title = "Progress 提醒到期"
 		}
 		return map[string]interface{}{"title": title, "body": "项目中有一项需要你关注的 Progress 提醒。"}
+	case TypeArticleRelease:
+		title := stringValue(data["title"])
+		if title == "" {
+			title = "论文 Release 已创建"
+		}
+		tag := stringValue(data["tag"])
+		body := "论文的新版本已发布。"
+		if tag != "" {
+			body = "论文版本 " + tag + " 已发布，可查看 PDF 与只读 TeX 产物。"
+		}
+		return map[string]interface{}{"title": title, "body": body}
 	default:
 		return map[string]interface{}{"title": "需要关注的通知", "body": "项目中有一项需要你处理的消息。"}
 	}
@@ -695,6 +728,9 @@ func resolveRecipients(event contract.EventEnvelope, data map[string]interface{}
 		return []RecipientInput{{Key: "user:" + userID, UserID: userID, ExpiresAt: expiresAt}}
 	}
 	if userID := event.Actor["user_id"]; userID != "" && event.EventType == "progress.reminder.due" {
+		return []RecipientInput{{Key: "user:" + userID, UserID: userID, ExpiresAt: expiresAt}}
+	}
+	if userID := event.Actor["actor_id"]; userID != "" && event.EventType == "article.release.created" {
 		return []RecipientInput{{Key: "user:" + userID, UserID: userID, ExpiresAt: expiresAt}}
 	}
 	emailValue := stringValue(data["normalized_email"])

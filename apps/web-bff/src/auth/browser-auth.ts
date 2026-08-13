@@ -52,7 +52,7 @@ export function registerBrowserAuth(
       return;
     }
 
-    const signed = request.cookies[sessionCookieName];
+    const signed = request.cookies?.[sessionCookieName];
     if (!signed) {
       throw unauthorized();
     }

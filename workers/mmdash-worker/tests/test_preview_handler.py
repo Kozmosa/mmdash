@@ -55,6 +55,15 @@ class FakeTransferClient:
         assert len(self.uploaded) == size_bytes
         return "thumbnail-etag"
 
+    def execute_artifact_semantic_description(self, job_id: str) -> dict[str, Any]:
+        return {
+            "description": "A calibrated source artifact.",
+            "recommended_usage": ["Use as a fixed article reference."],
+            "agent_session_id": "11111111-1111-4111-8111-111111111111",
+            "agent_run_id": "22222222-2222-4222-8222-222222222222",
+            "job_id_seen": job_id,
+        }
+
 
 class StaticProcessor(PreviewProcessor):
     def __init__(self) -> None:
@@ -101,7 +110,9 @@ def test_preview_handler_uses_job_bound_input_and_output_transfers() -> None:
 def test_production_registry_advertises_artifact_preview() -> None:
     registry = worker_registry(FakeTransferClient())
     assert registry.names() == (
+        "article.build",
         "artifact.preview",
+        "artifact.semantic.describe",
         "experiment.result.compare",
         "experiment.result.summarize",
         "model.notion.discover",
@@ -109,3 +120,15 @@ def test_production_registry_advertises_artifact_preview() -> None:
         "progress.evaluate",
         "system.test",
     )
+
+
+def test_semantic_handler_delegates_to_core_instead_of_a_provider() -> None:
+    registry = worker_registry(FakeTransferClient())
+    result = asyncio.run(
+        registry.dispatch(
+            "artifact.semantic.describe",
+            HandlerContext(job_id="job-1", worker_id="worker-1"),
+            {"untrusted": "payload is not sent to a provider"},
+        )
+    )
+    assert result["job_id_seen"] == "job-1"
