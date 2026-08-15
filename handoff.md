@@ -1,3 +1,169 @@
+# mmdash v0.1 Stage 8 Box / Experiment redesign preparation handoff
+
+- Updated: 2026-08-15
+- Branch: `main`
+- Base: `origin/main@12c1b35`
+- Scope: design and implementation handoff only; the Stage 8 runtime refactor is
+  intentionally not implemented in this change.
+- Authority: the Stage 8 sections in all three documents under
+  `docs/design/v0.1/`, plus `docs/development/box.md` and
+  `docs/development/experiment.md`, now supersede the 2026-08-11 Stage 8
+  implementation snapshot later in this file.
+
+## Why Stage 8 must be refactored
+
+The merged Stage 8 code proves the basic Core -> Box Gateway -> Local
+Docker/E2B execution chain, but its product identity and persistence model do
+not match the newly confirmed design:
+
+- `box_nodes.project_id` and Project-scoped Box Token make installation depend
+  on one Project, although Box must be a user-owned device reusable across
+  Projects;
+- the binding model permits one Box per Project rather than many-to-many;
+- Gateway cancels or recovers work from short lease loss, although an offline
+  Box must continue Runtime execution for up to 72 hours and later replay logs;
+- callback/log state is not a durable restart-safe spool with execution epoch
+  and sequence acknowledgement;
+- Web exposes only a minimal Experiment form and read-only Box status, not
+  personal Box management, Project assignment, settings, result tree, compare,
+  retry, or complete failure UX;
+- Experiment treats `artifact.zip` as the public result instead of separating
+  the permanent raw Execution Bundle, result branch Commit, and large-file
+  Artifact pointers;
+- there is no Coding Agent `self` execution/result binding contract.
+
+Do not patch new UI onto the legacy Project-owned Box model. Change contracts,
+migrations, Core authority, Gateway protocol, and product workflows as one
+vertical refactor.
+
+## Frozen product and architecture decisions
+
+- Box is installed on a user-controlled device and uses the existing CLI-like
+  browser device flow. Exchange issues a short-lived Box registration grant,
+  then a dedicated account-level Box Token; Box never stores a user Session.
+- One Box may be assigned to multiple Projects and one Project may bind
+  multiple Boxes. Project owner/maintainer/editor can use assigned Boxes;
+  editor cannot change assignment. The Box owner leaving a Project force
+  removes only that Project assignment and active tasks, not the global Box or
+  other Projects.
+- Gateway is outbound-only: heartbeat, maximum 60-second long poll, callbacks,
+  and resume. No public IP or inbound port is required.
+- Box Control is the Core control plane. Box Gateway is the user-device
+  controller. Sandbox is a Capability. Hosted/self-hosted E2B and Local Docker
+  are Runtime Adapters under Sandbox; business modules never call E2B directly.
+- Adapters compile into Box but advertise only after dependency/configuration
+  and lifecycle probes. `auto` prefers E2B and falls back to Local Docker only
+  before scheduling freezes. Explicit Runtime never falls back.
+- Offline is connectivity, not execution failure. Runtime continues and
+  Gateway persists state/logs/Bundle locally. Reconnect resumes by execution
+  epoch and sequence. At the local log budget, execution continues and new log
+  bytes are dropped with `logs_truncated=true`. Only 72 continuous offline
+  hours produce `BOX_OFFLINE_TIMEOUT`.
+- Normal revoke drains existing tasks; force revoke expires Token immediately,
+  fails active related Experiments with `BOX_FORCE_REVOKED`, and compensates a
+  pushed-but-unbound result with a revert Commit, never force-push.
+- Experiment types are `box`, `box-re`, and `self`. Runtime failures do not
+  auto-rerun after execution begins. Human rerun creates a new ID and immutable
+  retry chain; old-ID reads return old data plus latest-ID guidance.
+- Managed success is
+  `created -> queued -> preparing -> running -> uploading ->
+  processing_result -> succeeded`. Self success is
+  `created -> awaiting_result -> verifying_result -> succeeded`. Success means
+  Repo fetched/verified the remote result Commit and Experiment bound it.
+- Result paths use Experiment creation time in the Project IANA timezone:
+  `experiments/{exp_id}_{yyyymmdd_hhmm}/`. Paths never rename after timezone
+  changes.
+- Raw `execution-bundle.zip` is a permanent Artifact until Project purge.
+  Worker safely extracts/preprocesses but never writes Git. Repo commits small
+  files; large files become Artifact Versions referenced by
+  `.mmdash/artifacts.json`.
+- Project purge after the existing recycle period removes all mmdash-owned
+  Project data, Artifact bytes, Bundle, Project-scoped grants/credentials,
+  assignments, internal Repo worktrees/cache, Audit/Data Hub/Outbox/log state,
+  but preserves the account-level Box and Box Token and never modifies the
+  user's external repository or remote branches.
+
+## Frozen data and migration route
+
+Current main has continuous migrations through `000042_article_module`.
+`000041_stage8_box_experiment` is already used and must remain immutable.
+
+Planned append-only sequence:
+
+1. `000043_box_account_nodes`: account owner, many-to-many Project binding,
+   registering/online/offline/draining/revoked state, execution epoch, resume,
+   ordered log acknowledgement/truncation, safe legacy backfill and
+   reauthorization marker.
+2. `000044_experiment_execution_results`: `box/box-re/self`, execution and
+   connectivity states, failure record, retry chain, frozen result directory,
+   actual Box/Runtime, result Commit, Bundle pointer, Manifest hash, log
+   sequence and compensating result metadata.
+3. `000045_project_stage8_purge`: durable idempotent Project purge progress for
+   Stage 8 data, Artifact objects and internal Repo state.
+
+If main advances, shift the numbers while preserving order and module
+ownership. Tests must cover fresh, existing `000041`, revoked/active legacy
+Boxes, partial processing, concurrent result commits, Project purge, and
+down/up. Active legacy Box secrets cannot be reconstructed; require the new
+device authorization rather than inventing credentials.
+
+## Frozen contract route
+
+Update source contracts first, then examples, mocks, generated clients, API
+catalog and every process boundary.
+
+- Auth device flow adds `client_kind=box` and returns a registration grant, not
+  a CLI Session.
+- Personal inventory: `/v1/users/me/boxes*`, including rename and
+  `revoke(mode=drain|force)`.
+- Project assignment becomes plural:
+  `GET /v1/projects/{projectId}/boxes` and
+  `PUT/DELETE /v1/projects/{projectId}/boxes/{boxId}`.
+- Box control adds long-poll claim, resume handshake, batch log sequence
+  acknowledgements, execution epoch, truncation and late diagnostic fields.
+- Experiment schemas add new types/states/failure/retry/result fields, human
+  rerun, self result binding, result tree/compare aggregation and BFF SSE logs.
+- MCP target set is `experiment.create`, `experiment.run`,
+  `experiment.status`, `experiment.result.bind`, `result.get`,
+  `artifact.upload`, and `artifact.read`.
+- `self` creation must return the exact result directory, Manifest Schema,
+  Git/Artifact threshold, `.mmdash/artifacts.json` example, push requirement,
+  and binding Tool instructions. Bind accepts only a pushed result Commit that
+  Repo can fetch and validate.
+
+## Recommended implementation order
+
+1. Source OpenAPI/event/MCP schemas, examples, mocks, API docs, generated
+   clients, and compatibility errors for legacy singular Box routes.
+2. Append-only migrations plus fresh/existing/down-up integration tests.
+3. Auth Box device registration grant and account-level Box credential.
+4. Core Box ownership, assignment, permissions, scheduler, drain/force,
+   offline/resume/log protocol and Project purge participation.
+5. Gateway durable state/spool, long poll, restart/reconnect, removal of
+   lease-loss Runtime cancellation, hosted/self-hosted E2B probes, and explicit
+   Local Docker availability.
+6. Experiment state/failure/retry/self/result-finalization domain changes.
+7. Artifact raw Bundle and large-result support; Repo fixed-Commit transfer,
+   serialized result writes/fetch verification and compensating revert; Worker
+   typed extraction/preprocessing.
+8. Web/BFF personal Box management, Project Box and Experiment Settings,
+   Experiment cards/detail/read-only terminal/tree/preview/compare/retry.
+9. Data Hub, events, Audit, Notification, Agent analysis and MCP/CLI completion.
+10. Focused tests, `pnpm check`, Docker acceptance, offline/restart/reconnect,
+    multi-Project fairness, drain/force, purge, managed Box, self-run, hosted
+    E2B, self-hosted routing mock, and Local Docker acceptance.
+
+## Definition of handoff-ready implementation
+
+The refactor is not complete merely when Box can run a command. It is complete
+when a newly installed outbound-only Box can device-login, serve several
+Projects, survive offline execution/restart, replay or explicitly truncate
+logs, publish a verified mixed Git/Artifact result, and drain/revoke safely;
+when self-run Coding Agents receive and satisfy the exact result contract; and
+when Web users can manage Boxes, inspect full Experiment history/results,
+compare runs and follow retry chains. All contracts, migrations, generated
+code, docs, security/Audit, Data Hub and full acceptance evidence must agree.
+
 # mmdash v0.1 Stage 9 Article handoff
 
 - Updated: 2026-08-13
@@ -109,7 +275,13 @@ queue, or provider path.
   bootstrap defaults remain `admin@mmdash.local` / `mmdash-local-admin` unless
   `.env` overrides the documented variables.
 
-# mmdash v0.1 Stage 8 Experiment / Box / Sandbox handoff
+# Historical mmdash v0.1 Stage 8 Experiment / Box / Sandbox handoff
+
+> Historical implementation evidence from 2026-08-11 only. Its Project-scoped
+> Box identity, short-lease recovery, Artifact-only result and “Stage 8
+> complete” conclusion are superseded by the 2026-08-15 redesign preparation
+> at the top of this file. Preserve the evidence, but do not use it as current
+> implementation authority.
 
 - Updated: 2026-08-11
 - Branch: `codex/stage-8-experiment-box-sandbox`
@@ -122,11 +294,13 @@ queue, or provider path.
   Stage 8 fix to integrate. Before the final push, the PR head contained the
   six committed Stage 8 changes through `4b076fb`; the verified follow-up
   commit described in this handoff advances that same branch.
-- Migration: `000041_stage8_box_experiment` (with the pre-merge `000033_stage8_box_experiment` compatibility alias)
-- Delivery state: Stage 8 implementation, Local Docker terminal acceptance,
-  and the complete `Core -> registered Box Gateway -> E2B` hosted acceptance
-  are complete. The PR remains Draft only because the user explicitly forbids
-  merging it, not because an E2B or Box terminal workflow is outstanding.
+- Migration: `000041_stage8_box_experiment` (renumbered after merge from the
+  pre-merge `000033_stage8_box_experiment` name, which remains a migration
+  compatibility alias for existing development databases)
+- Historical delivery state: the legacy Stage 8 implementation, Local Docker
+  terminal acceptance, and the legacy
+  `Core -> Project-scoped Box Gateway -> E2B` hosted acceptance completed. The
+  current redesign remains unimplemented.
 
 ## Stage 8 implementation snapshot
 
