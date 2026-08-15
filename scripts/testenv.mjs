@@ -40,6 +40,7 @@ export function createLayout(root = repositoryRoot) {
     postgresSocket: path.join(runtimeRoot, "run", "postgres"),
     pythonEnvironment: path.join(testenvRoot, "python"),
     repositoryRoot: root,
+    runtimeBin: path.join(runtimeRoot, "bin"),
     runtimeRoot,
     serviceLogs: path.join(runtimeRoot, "logs"),
     stopRequest: path.join(runtimeRoot, "run", "stop.request"),
@@ -91,6 +92,7 @@ export function createIsolatedEnvironment(
     GOMODCACHE: path.join(layout.cacheRoot, "go-mod"),
     GOPATH: path.join(layout.testenvRoot, "go"),
     GOTOOLCHAIN: "local",
+    GOPROXY: environment.GOPROXY ?? "https://goproxy.cn,direct",
     LOCALAPPDATA: path.join(layout.runtimeRoot, "user", "localappdata"),
     NPM_CONFIG_CACHE: path.join(layout.cacheRoot, "npm"),
     NPM_CONFIG_USERCONFIG: path.join(layout.runtimeRoot, "config", "npmrc"),
@@ -142,8 +144,13 @@ export function createServiceConfiguration(
 ) {
   const databaseUrl = `postgres://mmdash@${host}:${ports.postgres}/mmdash?sslmode=disable`;
   const coreUrl = `http://${host}:${ports.core}`;
+  const minioAccessKey = "mmdash";
+  const minioSecretKey = "local-minio-secret";
   const minioUrl = `http://${host}:${ports.minio}`;
   const webUrl = `http://${host}:${ports.web}`;
+  const askPassBinary = `mmdash-git-askpass${
+    process.platform === "win32" ? ".exe" : ""
+  }`;
   return {
     databaseUrl,
     coreUrl,
@@ -152,6 +159,8 @@ export function createServiceConfiguration(
     webUrl,
     environments: {
       core: {
+        ARTIFACT_STORAGE_BACKEND: "minio",
+        ARTIFACT_WEB_ORIGIN: webUrl,
         CORE_ADDR: `${host}:${ports.core}`,
         CORE_OPENAPI_PATH: path.join(
           layout.repositoryRoot,
@@ -161,10 +170,13 @@ export function createServiceConfiguration(
         ),
         DATABASE_URL: databaseUrl,
         NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK: "true",
-        OBJECT_STORAGE_ACCESS_KEY: "mmdash",
+        OBJECT_STORAGE_ACCESS_KEY: minioAccessKey,
         OBJECT_STORAGE_BUCKET: "mmdash",
         OBJECT_STORAGE_ENDPOINT: minioUrl,
-        OBJECT_STORAGE_SECRET_KEY: "local-minio-secret",
+        OBJECT_STORAGE_PUBLIC_ENDPOINT: minioUrl,
+        OBJECT_STORAGE_REGION: "us-east-1",
+        OBJECT_STORAGE_SECRET_KEY: minioSecretKey,
+        REPO_ASKPASS_PATH: path.join(layout.runtimeBin, askPassBinary),
       },
       mcp: {
         CORE_BASE_URL: coreUrl,
@@ -180,8 +192,8 @@ export function createServiceConfiguration(
         MCP_GATEWAY_PORT: String(ports.mcp),
       },
       minio: {
-        MINIO_ROOT_PASSWORD: "local-minio-secret",
-        MINIO_ROOT_USER: "mmdash",
+        MINIO_ROOT_PASSWORD: minioSecretKey,
+        MINIO_ROOT_USER: minioAccessKey,
       },
       web: {
         BFF_INTERNAL_URL: `http://${host}:${ports.bff}`,
@@ -206,6 +218,7 @@ async function ensureDirectories(layout) {
     layout.minioData,
     layout.postgresSocket,
     layout.runtimeRoot,
+    layout.runtimeBin,
     layout.serviceLogs,
     layout.temporaryRoot,
   ];
@@ -594,6 +607,15 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
   process.once("SIGTERM", requestShutdown);
 
   try {
+    const askPassPath = configuration.environments.core.REPO_ASKPASS_PATH;
+    if (!existsSync(askPassPath)) {
+      await execute(
+        "go",
+        ["build", "-o", askPassPath, "./backend/cmd/mmdash-git-askpass"],
+        { environment },
+      );
+    }
+
     await initializePostgres(layout, environment);
     const postgresArguments = [
       "-D",
@@ -658,6 +680,12 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
           "backend",
           "migrations",
         ),
+      },
+    });
+    await execute("go", ["run", "./backend/cmd/artifact-storage-init"], {
+      environment: {
+        ...environment,
+        ...configuration.environments.core,
       },
     });
 
