@@ -1,64 +1,310 @@
-# Stage 8 Experiment
+# Stage 8 Experiment redesign baseline
 
-Experiment is the Core-owned record for one frozen execution request. The
-create boundary validates a full immutable Commit SHA, a supported fixed
-entrypoint (`python`, `python3`, `node`, `go`, or `binary`), JSON parameters,
-string environment values, runtime, and resource limits. Once created, the
-request is not edited; `run` creates the PostgreSQL-backed Box task and freezes
-the `run_spec` in the same transaction as the Experiment queue transition.
+This guide freezes the target Experiment boundary for the Stage 8 refactor.
+The current implementation is a migration source only: it has one Box-only
+lifecycle, hard-coded Web defaults, an Artifact-only result pointer, no
+durable offline state, no self-run binding, and no result-branch product
+workflow. Do not extend those assumptions.
 
-## Lifecycle
+The authoritative product requirements are the Stage 8 sections of the three
+documents indexed by `docs/design/v0.1/README.md`. This guide turns that design
+into an implementation handoff; source OpenAPI and JSON Schema contracts still
+describe the legacy implementation until the refactor changes them.
+
+## Ownership and immutable identity
+
+Experiment owns one immutable execution request and its final result binding.
+It does not own Box identity, Git operations, Artifact bytes, Worker execution,
+or Agent conversation state.
+
+Every Experiment freezes:
+
+- `experiment_id`, Project, creator, name, and `experiment_type`;
+- source commit, fixed entrypoint, parameters, environment, inputs, and limits;
+- requested Runtime policy and optional requested Box;
+- Project timezone and `experiments/{exp_id}_{yyyymmdd_hhmm}/` result directory;
+- idempotency key and creation time.
+
+`experiment_type` is one of:
+
+- `box`: first managed Box execution;
+- `box-re`: a human-requested rerun with a new Exp ID;
+- `self`: a Coding Agent executes outside Box and binds a pushed result commit.
+
+Before final confirmation, a rerun copies the old request and permits edits.
+After confirmation, it freezes like every other Experiment.
+
+## State model
+
+Execution and connectivity are separate dimensions.
+
+Managed Box execution:
 
 ```text
-created -> queued -> preparing -> running
-                         |          |
-                         +----------+--> succeeded / failed / canceled / timed_out
-                                                -> archived
+created -> queued -> preparing -> running -> uploading
+        -> processing_result -> succeeded
+        -> failed | canceled | timed_out
 ```
 
-The normal execution path is forward-only and repeated `run`, status, and
-result callbacks are idempotent. Lease recovery may project `preparing` or
-`running` back to `queued` while an attempt remains, and a terminal task may
-project `queued` directly to `failed` when the Experiment callback lags behind
-the task record. Core remains the only writer of Experiment, Box task, Audit,
-Outbox, and Data Hub state. PostgreSQL is the queue and claims use
-`FOR UPDATE SKIP LOCKED`.
+Self execution:
 
-## Result boundary
+```text
+created -> awaiting_result -> verifying_result -> succeeded
+        -> failed | canceled
+```
 
-Successful Box tasks upload exactly one `artifact.zip`. Core stages the stream
-to a bounded temporary file, validates `manifest.json`, rejects traversal,
-symlinks, duplicate files, hash/size mismatches, and oversized zip expansion,
-then hands the bytes to the existing Artifact multipart/version boundary.
-The public result pointer is therefore an Artifact pointer; result bytes are
-never copied into Experiment tables.
+Connectivity is `online | box_offline`. `preparing`, `running`, or `uploading`
+may coexist with `box_offline`. A transient disconnect never cancels a Runtime,
+renews/reassigns the task, or starts a duplicate attempt. At 72 hours of
+continuous disconnection Core terminates the Experiment with
+`failure_code=BOX_OFFLINE_TIMEOUT`. Once Core has accepted the complete
+Execution Bundle, server-side result processing no longer depends on Box
+connectivity.
 
-The Data Hub projects `experiment`, `experiment_run`, and `result_bundle` cards
-from the same lifecycle events. `data.read` delegates back to the authoritative
-Experiment, Box task, or Artifact adapter after permission checks.
+Runtime execution failures are not retried automatically. A human rerun creates
+a `box-re` Experiment and records:
 
-## Product paths
+```text
+retry_of_experiment_id
+root_experiment_id
+superseded_by_experiment_id
+latest_experiment_id
+retry_sequence
+```
 
-- Web: `/projects/{projectId}/experiments` provides creation, run/cancel,
-  status, bounded live log polling, and Box status.
-- Web BFF: `/api/projects/{projectId}/experiments*` and `/box` proxy only the
-  generated Core client and signed browser session.
-- MCP: `experiment.create`, `experiment.run`, `experiment.status`, and
-  `result.get` use the existing Project-scoped audit and authorization path.
-- CLI: `experiment list`, `experiment create`, `experiment run`, and
-  `experiment status` are compile-time registered Go commands.
-- Worker: `experiment.result.summarize` and `experiment.result.compare` are
-  bounded, deterministic Job handlers; they do not access business tables.
+Old IDs remain readable. `experiment.status`, `result.get`, and `data.read`
+return the old record plus `EXPERIMENT_HAS_NEWER_RETRY`, the latest ID, and the
+full retry chain.
 
-## Verification
+## Failure record
 
-Focused checks:
+Every terminal failure stores:
+
+- `failure_stage`: `scheduling`, `box_preparation`, `runtime_execution`,
+  `result_upload`, `bundle_validation`, `artifact_storage`,
+  `result_processing`, `repo_commit`, `repo_push`, `result_binding`, or
+  `box_revocation`;
+- stable `failure_code` and safe `failure_message`;
+- `failed_at`, actual Box, Runtime/version, task attempt, and retryability;
+- last accepted log sequence, `logs_truncated`, and truncation time;
+- partial or complete Execution Bundle pointer when one exists;
+- staging/result/revert Commit identifiers and structured cleanup result.
+
+Minimum new codes are `NO_ELIGIBLE_BOX`, `BOX_OFFLINE_TIMEOUT`,
+`BOX_FORCE_REVOKED`, `RUNTIME_UNAVAILABLE`, `RUNTIME_EXIT_NONZERO`,
+`RUNTIME_TIMED_OUT`, `RESULT_UPLOAD_FAILED`, `RESULT_INVALID`,
+`ARTIFACT_ARCHIVE_FAILED`, `RESULT_PROCESSING_FAILED`, `REPO_COMMIT_FAILED`,
+`REPO_PUSH_FAILED`, and `RESULT_BINDING_FAILED`.
+
+## Runtime selection and Project settings
+
+Project Settings registers an Experiment definition with:
+
+- IANA timezone;
+- default Runtime policy: `auto | e2b | local-docker`;
+- CPU, memory, timeout, disk, PID, and network defaults;
+- Git large-file threshold bounded by the provider limit.
+
+An Experiment may override defaults within Box capability. `auto` tries an
+E2B-capable Box first and falls back to Local Docker only before scheduling is
+frozen. Explicit `e2b` or `local-docker` never falls back. Among eligible bound
+Boxes the scheduler chooses the lowest load unless the caller pins one Box.
+
+## Managed result pipeline
+
+Box uploads one immutable `execution-bundle.zip` containing `manifest.json`,
+summary, logs, figures, tables, data, and models. This raw evidence is an
+Artifact retained until the Project recycle period expires. It is not the
+result-branch representation.
+
+The server-side path is:
+
+```text
+Box upload
+  -> Core bounded staging and manifest/path/hash validation
+  -> Artifact records immutable Execution Bundle
+  -> Worker safely extracts and preprocesses result
+  -> Core result-finalization use case
+  -> Artifact archives oversized result files
+  -> Repo serializes result-branch write and push
+  -> Repo fetches/verifies remote Commit
+  -> Experiment binds Commit and becomes succeeded
+```
+
+Worker never opens the business database and never executes Git. It returns a
+typed result to Core. Repo owns Git locking, fetch, commit, push, verification,
+and compensating revert.
+
+Small files are committed under the frozen result directory. Large files are
+stored as Artifact Versions and represented by `.mmdash/artifacts.json`:
+
+```json
+{
+  "schema_version": 1,
+  "files": [
+    {
+      "path": "data/large-result.bin",
+      "artifact_id": "uuid",
+      "artifact_version_id": "uuid",
+      "sha256": "lowercase hex",
+      "size": 123456789,
+      "media_type": "application/octet-stream"
+    }
+  ]
+}
+```
+
+If forced Box revocation races after push but before binding, Experiment stays
+failed and Repo pushes a compensating revert Commit. Never force-push or rewrite
+the result branch.
+
+## Self-run contract
+
+`experiment.create` with `experiment_type=self` returns a machine-readable
+`result_contract` containing:
+
+- result branch and frozen directory;
+- Manifest Schema URI/version and required files;
+- Git/provider and Project size thresholds;
+- `artifact.upload` instructions and the Artifact pointer schema;
+- the requirement to commit and push before binding;
+- the exact `experiment.result.bind` Tool and arguments.
+
+The Coding Agent runs locally, uploads large files, writes the pointer manifest,
+commits, pushes, and calls `experiment.result.bind(commit_sha)`. Experiment
+asks Repo to fetch the remote result branch and verify the Commit, path, Exp ID,
+source commit, Manifest, hashes, and same-Project Artifact Versions. The Web UI
+does not show managed live logs for `self` Experiments.
+
+## Target HTTP and MCP delta
+
+Keep current list/get/create/run/cancel/archive/log/result/compare operations,
+but update schemas for the new model and add:
+
+- `POST /v1/projects/{projectId}/experiments/{experimentId}/rerun`, a
+  human-Session-only command accepting `{overrides, idempotency_key}` and
+  returning a frozen `box-re` record with a new Exp ID; Web prepares and edits
+  the copied values client-side before the user confirms this request;
+- `POST /v1/projects/{projectId}/experiments/{experimentId}/result/bind`, a
+  self result-binding command accepting `{commit_sha, idempotency_key}` and
+  returning the `verifying_result` Experiment;
+- BFF
+  `GET /api/projects/{projectId}/experiments/{experimentId}/logs/stream`, an
+  authenticated SSE tail over already persisted logs, with `after_sequence`
+  resume and periodic keepalive;
+- result tree/virtual Artifact file aggregation;
+- retry-chain and latest-ID fields on every Experiment read boundary.
+
+`CreateExperimentRequest` is frozen to:
+
+```text
+name
+experiment_type: box | self
+source_commit: full immutable SHA
+entrypoint: fixed typed argv contract
+parameters / environment / inputs
+runtime_policy: auto | e2b | local-docker        # box only
+requested_box_id?: uuid                          # box only
+limits_override?: cpu/memory/timeout/disk/pids/network
+idempotency_key
+```
+
+Core derives creator, Project, creation time, Project IANA timezone and frozen
+`experiments/{exp_id}_{yyyymmdd_hhmm}/`; callers cannot supply the Exp ID or
+result path. Create returns the complete Experiment. For `self`, it also
+returns `result_contract`. `experiment.run` is valid only for `box`; a `self`
+Experiment starts in `awaiting_result` and has no Box task. Rerun is never
+accepted through create by passing `box-re`; only the human rerun command can
+produce that type.
+
+All Experiment reads return both dimensions, frozen request, actual
+Box/Runtime, failure record, retry links, log completeness, Bundle pointer,
+result directory/Commit/Manifest, progress, and permission-filtered actions.
+When a newer retry exists they also return
+`warning_code=EXPERIMENT_HAS_NEWER_RETRY` and `latest_experiment_id` without
+redirecting or replacing the requested record.
+
+Target MCP Tools:
+
+```text
+experiment.create
+experiment.run
+experiment.status
+experiment.result.bind
+result.get
+artifact.upload
+artifact.read
+```
+
+MCP request/response behavior is frozen as follows:
+
+- `experiment.create` accepts the same request fields plus `project_id`. Its
+  response always includes the Experiment ID/type/status/frozen path; `self`
+  additionally returns the full machine-readable `result_contract` and a
+  human-readable instruction summary.
+- `experiment.run` accepts `{project_id, experiment_id, idempotency_key}` and
+  returns the queued managed Experiment. It rejects `self` and already-started
+  IDs with stable errors.
+- `experiment.status` accepts `{project_id, experiment_id, log_tail?}` and
+  returns the authoritative Experiment, bounded recent persisted logs,
+  `logs_truncated`, progress, failure, and retry guidance. `self` never claims
+  that managed logs exist.
+- `experiment.result.bind` accepts
+  `{project_id, experiment_id, commit_sha, idempotency_key}`. It is valid only
+  for `self` in `awaiting_result`, requires a full SHA already reachable on the
+  result branch, returns `verifying_result`, and is idempotent for the same
+  SHA. A different SHA after acceptance is a conflict.
+- `result.get` accepts `{project_id, experiment_id}` and returns status,
+  result commit/directory/Manifest, read-only tree with Artifact virtual-file
+  pointers, raw Bundle metadata when authorized, and retry guidance. Before
+  binding it returns metadata with no successful result pointer.
+
+The MCP Gateway forwards Project-scoped Agent identity and idempotency to Core;
+it does not verify Git, mutate Experiment state, or synthesize directory
+instructions. Tool descriptions must explicitly state that the Coding Agent
+must push before binding and must fetch/pull managed results before reading
+them from Git.
+
+MCP descriptions, input/output JSON Schemas, examples, mocks, generated clients,
+`docs/api/endpoints.md`, and `docs/api/mcp-tools.md` must change together.
+
+## Migration plan from current main
+
+Current canonical migrations end at `000042_article_module`; never edit
+`000041_stage8_box_experiment`.
+
+- `000043_box_account_nodes` is owned by Box Control and establishes account
+  ownership/many-to-many assignment plus offline protocol storage.
+- `000044_experiment_execution_results` is owned by Experiment and adds types,
+  dual state, failure fields, retry links, result paths/Commit/Bundle pointers,
+  log epoch/sequence, and safe backfill of existing records.
+- `000045_project_stage8_purge` adds durable idempotent Project purge progress
+  needed to delete Stage 8 database data, Artifact objects, Project-scoped
+  grants/credentials, and internal Repo worktrees after the existing recycle
+  window. It preserves account-level Boxes and Box Tokens and never deletes
+  external repositories or remote branches.
+
+If another migration lands first, shift all three numbers while preserving the
+order. Cover fresh, existing `000041`, revoked Boxes, active legacy Box
+reauthorization, partial result processing, and down/up tests.
+
+## Product completion and acceptance
+
+The Web slice is incomplete until it provides cards with stage progress,
+actual Box/Runtime, failure summary, retry relationships, a read-only terminal,
+historical logs, a read-only result tree/previews, virtual Artifact files, and
+compare mode.
+
+Required focused verification after implementation:
 
 ```bash
 pnpm contracts:generate
 pnpm contracts:check
 pnpm api:check
-go test ./backend/internal/experiment ./backend/internal/boxcontrol ./backend/internal/artifact ./backend/internal/datahub
+go test ./backend/internal/experiment ./backend/internal/boxcontrol ./backend/internal/artifact ./backend/internal/repo ./backend/internal/datahub
 pnpm --filter @mmdash/web-bff test
 pnpm --filter @mmdash/mcp-gateway test
+go test ./box/...
 ```
+
+Then run the complete `pnpm check` and Docker acceptance paths from `AGENTS.md`.

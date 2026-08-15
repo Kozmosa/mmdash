@@ -38,27 +38,30 @@ Audit/request IDs, MCP health, CLI startup, and metrics. Set
 described in the [Repo guide](repo.md). Local ports are Web `3000`, BFF `3001`,
 Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO Console `9001`.
 
-Stage 8 adds an opt-in Box profile. It requires an operator-provided Core
-registration credential and a Repo-owned detached workspace with a matching
-`.mmdash-commit` marker:
+The current Stage 8 implementation still exposes a legacy opt-in Box profile.
+It requires an operator-provided Core registration credential and a Repo-owned
+detached workspace with a matching `.mmdash-commit` marker:
 
 ```bash
 docker compose -f deploy/compose/compose.yaml --profile box up -d --build
 MMDASH_SMOKE_REPO_MODE=docker MMDASH_SMOKE_STAGE8=1 pnpm smoke
 ```
 
-The normal smoke does not start Box or claim an Experiment. The optional
-Stage 8 smoke first creates the managed Local Git fixture and then creates and
-reads a frozen Experiment from its fixed code commit; set
+Treat this smoke only as migration-source regression coverage while completing
+the account-owned, outbound, offline-resumable redesign in the
+[Box guide](box.md) and [Experiment guide](experiment.md); it is not acceptance
+for the target Stage 8 product. The normal smoke does not start Box or claim an
+Experiment. The optional Stage 8 smoke first creates the managed Local Git
+fixture and then creates and reads a frozen Experiment from its fixed code commit; set
 `MMDASH_SMOKE_STAGE8_RUN=1` only when a registered online Box is available.
 `MMDASH_SMOKE_STAGE8_COMMIT` may override the fixture commit for a separately
 prepared Repo project. Do not use `down -v`; the Box, PostgreSQL, MinIO, and
 Repo data volumes are intentionally preserved.
 
-The Box advertises E2B only when `E2B_API_KEY` is injected. Hosted and
-self-hosted endpoint variables, Template capacity, and the separately opt-in
-paid acceptance command are documented in the [Box guide](box.md). The E2B
-dashboard API Key ID/Project ID is not passed to the provider API.
+The legacy Box advertises E2B only when `E2B_API_KEY` is injected. Do not carry
+that single-variable availability rule into the redesign: the target Adapter
+must pass dependency, configuration, connection, creation, and deletion probes
+before advertising either hosted or self-hosted E2B.
 
 ## Isolated native environment
 
