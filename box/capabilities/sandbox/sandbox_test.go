@@ -2,7 +2,9 @@ package sandbox
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/mmdash/mmdash/box/contracts"
 )
@@ -24,7 +26,13 @@ func TestManifestPathAndHashValidation(t *testing.T) {
 	if err := contracts.ValidateRelativePath("../secret"); err == nil {
 		t.Fatal("zip-slip path was accepted")
 	}
-	manifest := contracts.Manifest{SchemaVersion: "1", ExperimentID: "exp", Status: "succeeded", Files: []contracts.ManifestFile{{Path: "summary.md", SHA256: contracts.SHA256([]byte("ok")), Size: 2, Kind: "summary"}}}
+	now := time.Now().UTC()
+	manifest := contracts.Manifest{
+		SchemaVersion: "2", ExperimentID: "exp", SourceCommit: strings.Repeat("a", 40),
+		ResultDirectory: "experiments/exp_20260815_1200", Status: "succeeded",
+		StartedAt: now, FinishedAt: now.Add(time.Second), Runtime: "local-docker", RuntimeVersion: "1",
+		Files: []contracts.ManifestFile{{Path: "summary.md", SHA256: contracts.SHA256([]byte("ok")), Size: 2, Kind: "summary"}},
+	}
 	if err := manifest.Validate(); err != nil {
 		t.Fatal(err)
 	}

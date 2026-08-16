@@ -38,6 +38,30 @@
         "version": { "type": "string", "maxLength": 100 },
         "image": { "type": "string", "maxLength": 255 }
       }
+    },
+    "log_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "stream", "occurred_at", "message"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1 },
+        "stream": { "type": "string", "enum": ["stdout", "stderr", "system"] },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 20000 },
+        "fields": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "artifact_pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "version_id", "filename", "sha256", "size_bytes"],
+      "properties": {
+        "artifact_id": { "type": "string", "format": "uuid" },
+        "version_id": { "type": "string", "format": "uuid" },
+        "filename": { "type": "string", "const": "execution-bundle.zip" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 5368709120 }
+      }
     }
   }
 }

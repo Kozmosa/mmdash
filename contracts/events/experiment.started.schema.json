@@ -1,1 +1,17 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://mmdash.moe/contracts/events/experiment.started.schema.json","title":"experiment.started payload","type":"object","additionalProperties":false,"required":["experiment_id","task_id","box_id","runtime","status"],"properties":{"experiment_id":{"type":"string","format":"uuid"},"task_id":{"type":"string","format":"uuid"},"box_id":{"type":"string","format":"uuid"},"runtime":{"type":"string"},"status":{"type":"string","enum":["preparing","running"]}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/experiment.started.schema.json",
+  "title": "experiment.started payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["experiment_id", "task_id", "box_id", "execution_epoch", "runtime", "runtime_version", "execution_status"],
+  "properties": {
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "task_id": { "type": "string", "format": "uuid" },
+    "box_id": { "type": "string", "format": "uuid" },
+    "execution_epoch": { "type": "string", "format": "uuid" },
+    "runtime": { "type": "string", "enum": ["e2b", "local-docker"] },
+    "runtime_version": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "execution_status": { "type": "string", "enum": ["preparing", "running"] }
+  }
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"os/user"
@@ -35,28 +36,52 @@ func run(ctx context.Context) error {
 		PIDs: int(int64Env("MMDASH_BOX_PIDS", 256)), Network: getenv("MMDASH_BOX_NETWORK", "disabled"),
 	}
 	client := gateway.HTTPClient{BaseURL: getenv("MMDASH_CORE_URL", "http://localhost:8080")}
-	runtimes, runtimeFactory, err := configuredRuntimes(limits)
+	runtimes, runtimeFactory, probeErrors, err := configuredRuntimes(ctx, limits, probeRuntimeAdapter)
 	if err != nil {
 		return err
 	}
-	config := gateway.Config{
-		ProjectID: os.Getenv("MMDASH_BOX_PROJECT_ID"), Name: getenv("MMDASH_BOX_NAME", "local-box"), Version: getenv("MMDASH_BOX_VERSION", "dev"),
-		RegistrationToken: os.Getenv("MMDASH_BOX_REGISTRATION_TOKEN"), BoxID: os.Getenv("MMDASH_BOX_ID"), BoxToken: os.Getenv("MMDASH_BOX_TOKEN"),
-		StatePath: getenv("MMDASH_BOX_STATE_PATH", filepath.Join(root, "state.json")), WorkspaceRoot: os.Getenv("MMDASH_BOX_WORKSPACE"), OutputRoot: filepath.Join(root, "outputs"),
-		HeartbeatInterval: durationEnv("MMDASH_BOX_HEARTBEAT_INTERVAL", 15*time.Second), ClaimInterval: durationEnv("MMDASH_BOX_CLAIM_INTERVAL", 2*time.Second), Lease: durationEnv("MMDASH_BOX_LEASE", time.Minute), MaxConcurrent: int(int64Env("MMDASH_BOX_MAX_CONCURRENT", 1)),
-		Capabilities: []contracts.Capability{{Name: "sandbox", Version: "1", Features: []string{"manifest", "artifact.zip"}}},
-		Runtimes:     runtimes, Limits: limits,
+	for _, probeErr := range probeErrors {
+		_, _ = fmt.Fprintf(os.Stderr, "Box Runtime unavailable: %s\n", probeErr)
 	}
-	workspace := gateway.StaticWorkspace{Root: config.WorkspaceRoot, Commit: os.Getenv("MMDASH_BOX_WORKSPACE_COMMIT")}
+	config := gateway.Config{
+		InstallationID: os.Getenv("MMDASH_BOX_INSTALLATION_ID"), Name: getenv("MMDASH_BOX_NAME", "local-box"), Version: getenv("MMDASH_BOX_VERSION", "dev"),
+		BoxID: os.Getenv("MMDASH_BOX_ID"), BoxToken: os.Getenv("MMDASH_BOX_TOKEN"),
+		StatePath: getenv("MMDASH_BOX_STATE_PATH", filepath.Join(root, "state.json")), OutputRoot: filepath.Join(root, "outputs"),
+		HeartbeatInterval: durationEnv("MMDASH_BOX_HEARTBEAT_INTERVAL", 15*time.Second), ClaimWait: durationEnv("MMDASH_BOX_CLAIM_WAIT", 60*time.Second), RetryDelay: durationEnv("MMDASH_BOX_RETRY_DELAY", 2*time.Second), MaxConcurrent: int(int64Env("MMDASH_BOX_MAX_CONCURRENT", 1)),
+		LogBudgetBytes: int64Env("MMDASH_BOX_LOG_BUDGET_BYTES", 256<<20),
+		Capabilities:   []contracts.Capability{{Name: "sandbox", Version: "2", Features: []string{"execution-bundle", "durable-log-spool", "offline-resume"}}},
+		Runtimes:       runtimes, Limits: limits,
+	}
+	var workspace gateway.WorkspaceProvider = gateway.TransferWorkspace{Root: filepath.Join(root, "sources")}
+	if staticRoot := strings.TrimSpace(os.Getenv("MMDASH_BOX_WORKSPACE")); staticRoot != "" {
+		workspace = gateway.StaticWorkspace{Root: staticRoot, Commit: os.Getenv("MMDASH_BOX_WORKSPACE_COMMIT")}
+	}
 	runner := &gateway.Gateway{Client: client, Config: config, Workspace: workspace, Runtime: runtimeFactory}
 	return runner.Run(ctx)
 }
 
-func configuredRuntimes(limits contracts.ResourceLimits) ([]contracts.Runtime, gateway.RuntimeFactory, error) {
+type runtimeProbe func(context.Context, sandbox.Runtime) error
+
+type runtimeCandidate struct {
+	descriptor contracts.Runtime
+	runtime    sandbox.Runtime
+}
+
+func probeRuntimeAdapter(ctx context.Context, runtime sandbox.Runtime) error {
+	prober, ok := runtime.(sandbox.Prober)
+	if !ok {
+		return errors.New("Runtime adapter does not implement lifecycle probing")
+	}
+	return prober.Probe(ctx)
+}
+
+func configuredRuntimes(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
 	localImage := getenv("MMDASH_BOX_LOCAL_IMAGE", "mmdash/sandbox:latest")
 	localUser := localDockerUser()
-	reported := []contracts.Runtime{{Name: "local-docker", Version: "1", Image: localImage}}
-	var remote sandbox.Runtime
+	candidates := []runtimeCandidate{{
+		descriptor: contracts.Runtime{Name: "local-docker", Version: "1", Image: localImage},
+		runtime:    localdocker.Runtime{Image: localImage, User: localUser},
+	}}
 	if apiKey := strings.TrimSpace(os.Getenv("E2B_API_KEY")); apiKey != "" {
 		domain := getenv("E2B_DOMAIN", "e2b.app")
 		provider, err := e2bruntime.NewClient(e2bruntime.Config{
@@ -70,29 +95,42 @@ func configuredRuntimes(limits contracts.ResourceLimits) ([]contracts.Runtime, g
 			SandboxGrace:   durationEnv("MMDASH_E2B_SANDBOX_GRACE", 60*time.Second),
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		template := getenv("MMDASH_E2B_TEMPLATE", "base")
-		remote = e2bruntime.Runtime{Template: template, Client: provider}
-		reported = append(reported, contracts.Runtime{Name: "e2b", Version: "1", Image: template})
+		candidates = append(candidates, runtimeCandidate{
+			descriptor: contracts.Runtime{Name: "e2b", Version: "1", Image: template},
+			runtime:    e2bruntime.Runtime{Template: template, Client: provider},
+		})
+	}
+	if probe == nil {
+		probe = probeRuntimeAdapter
+	}
+	reported := make([]contracts.Runtime, 0, len(candidates))
+	available := make(map[string]sandbox.Runtime, len(candidates))
+	probeErrors := make([]error, 0, len(candidates))
+	for _, candidate := range candidates {
+		if err := probe(ctx, candidate.runtime); err != nil {
+			probeErrors = append(probeErrors, fmt.Errorf("%s: %w", candidate.descriptor.Name, err))
+			continue
+		}
+		reported = append(reported, candidate.descriptor)
+		available[candidate.descriptor.Name] = candidate.runtime
+	}
+	if len(reported) == 0 {
+		return nil, nil, probeErrors, errors.Join(append([]error{errors.New("no usable Sandbox Runtime was detected")}, probeErrors...)...)
 	}
 	factory := func(spec contracts.RunSpec) (sandbox.Runtime, error) {
 		if err := withinBoxLimits(spec.Limits, limits); err != nil {
 			return nil, err
 		}
-		switch spec.Runtime {
-		case "local-docker":
-			return localdocker.Runtime{Image: localImage, User: localUser}, nil
-		case "e2b":
-			if remote == nil {
-				return nil, errors.New("E2B runtime is not configured")
-			}
-			return remote, nil
-		default:
+		runtime := available[spec.Runtime]
+		if runtime == nil {
 			return nil, errors.New("unsupported Sandbox runtime")
 		}
+		return runtime, nil
 	}
-	return reported, factory, nil
+	return reported, factory, probeErrors, nil
 }
 
 func localDockerUser() string {

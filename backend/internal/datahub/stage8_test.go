@@ -12,11 +12,11 @@ func TestStage8ProjectionIncludesExperimentRunAndResultBundleCards(t *testing.T)
 		EventType: "experiment.succeeded",
 		ProjectID: &projectID,
 		Payload: map[string]interface{}{
-			"experiment_id": "00000000-0000-4000-8000-000000000002",
-			"task_id":       "00000000-0000-4000-8000-000000000003",
-			"name":          "sweep",
-			"status":        "succeeded",
-			"artifact_id":   "00000000-0000-4000-8000-000000000004",
+			"experiment_id":     "00000000-0000-4000-8000-000000000002",
+			"task_id":           "00000000-0000-4000-8000-000000000003",
+			"name":              "sweep",
+			"execution_status":  "succeeded",
+			"result_commit_sha": "0123456789012345678901234567890123456789",
 		},
 	})
 	if len(objects) != 3 {
@@ -32,7 +32,7 @@ func TestStage8ProjectionIncludesExperimentRunAndResultBundleCards(t *testing.T)
 
 func TestStage8ProjectionDoesNotCreateSuccessfulResultForFailure(t *testing.T) {
 	objects := stage8Objects(contract.EventEnvelope{EventType: "experiment.failed", Payload: map[string]interface{}{
-		"experiment_id": "00000000-0000-4000-8000-000000000002", "task_id": "00000000-0000-4000-8000-000000000003", "status": "failed",
+		"experiment_id": "00000000-0000-4000-8000-000000000002", "task_id": "00000000-0000-4000-8000-000000000003", "execution_status": "failed",
 	}})
 	for _, object := range objects {
 		if object.objectType == "result_bundle" {
@@ -42,10 +42,24 @@ func TestStage8ProjectionDoesNotCreateSuccessfulResultForFailure(t *testing.T) {
 }
 
 func TestStage8ProjectionMarksRevokedBox(t *testing.T) {
-	objects := stage8Objects(contract.EventEnvelope{EventType: "box.revoked", Payload: map[string]interface{}{
+	projectID := "00000000-0000-4000-8000-000000000001"
+	objects := stage8Objects(contract.EventEnvelope{EventType: "box.revoked", ProjectID: &projectID, Payload: map[string]interface{}{
 		"box_id": "00000000-0000-4000-8000-000000000004", "name": "retired", "status": "revoked", "version": "1",
 	}})
 	if len(objects) != 1 || objects[0].objectType != "box" || objects[0].status != "revoked" || objects[0].title != "retired" {
 		t.Fatalf("unexpected revoked Box projection: %#v", objects)
+	}
+	if objects[0].sourceID != "00000000-0000-4000-8000-000000000004@"+projectID {
+		t.Fatalf("Box projection key = %q", objects[0].sourceID)
+	}
+}
+
+func TestStage8ProjectionRemovesUnassignedProjectBox(t *testing.T) {
+	projectID := "00000000-0000-4000-8000-000000000001"
+	objects := stage8Objects(contract.EventEnvelope{EventType: "box.unassigned", ProjectID: &projectID, Payload: map[string]interface{}{
+		"box_id": "00000000-0000-4000-8000-000000000004", "project_id": projectID, "mode": "force",
+	}})
+	if len(objects) != 1 || !objects[0].delete || objects[0].status != "unassigned" {
+		t.Fatalf("unexpected unassigned projection: %#v", objects)
 	}
 }

@@ -2,8 +2,11 @@ package repo
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,8 +147,10 @@ func (writer WorkspaceWriter) Prepare(
 	}
 	pathspecs := make([]string, 0, len(request.Changes)+2)
 	pathspecs = append(pathspecs, "add", "--all", "--")
-	for _, change := range request.Changes {
-		pathspecs = append(pathspecs, ":(top,literal)"+change.Path)
+	if !request.StageAll {
+		for _, change := range request.Changes {
+			pathspecs = append(pathspecs, ":(top,literal)"+change.Path)
+		}
 	}
 	if _, err := writer.Git.Run(ctx, gitcli.Command{
 		Args: pathspecs, Directory: worktree, Operation: "repo.commit.stage",
@@ -385,9 +390,31 @@ func applyFileChange(worktree string, change FileChange) error {
 			_ = temporary.Close()
 			return err
 		}
-		if _, err := temporary.Write(change.Content); err != nil {
-			_ = temporary.Close()
-			return err
+		if change.SourcePath == "" {
+			if _, err := temporary.Write(change.Content); err != nil {
+				_ = temporary.Close()
+				return err
+			}
+		} else {
+			sourceInfo, sourceErr := os.Lstat(change.SourcePath)
+			if sourceErr != nil || !sourceInfo.Mode().IsRegular() ||
+				sourceInfo.Mode()&os.ModeSymlink != 0 || sourceInfo.Size() != change.SizeBytes {
+				_ = temporary.Close()
+				return ErrInvalid
+			}
+			source, sourceErr := os.Open(change.SourcePath)
+			if sourceErr != nil {
+				_ = temporary.Close()
+				return sourceErr
+			}
+			digest := sha256.New()
+			copied, copyErr := io.Copy(io.MultiWriter(temporary, digest), source)
+			closeErr := source.Close()
+			if copyErr != nil || closeErr != nil || copied != change.SizeBytes ||
+				hex.EncodeToString(digest.Sum(nil)) != change.ContentSHA256 {
+				_ = temporary.Close()
+				return ErrInvalid
+			}
 		}
 		if err := temporary.Close(); err != nil {
 			return err

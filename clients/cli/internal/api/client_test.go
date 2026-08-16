@@ -2,11 +2,53 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestExperimentClientUsesFrozenStage8Requests(t *testing.T) {
+	type capturedRequest struct {
+		method string
+		path   string
+		body   map[string]interface{}
+	}
+	requests := []capturedRequest{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body := map[string]interface{}{}
+		if request.Body != nil {
+			_ = json.NewDecoder(request.Body).Decode(&body)
+		}
+		requests = append(requests, capturedRequest{method: request.Method, path: request.URL.EscapedPath(), body: body})
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"experiment_id":"experiment-1","project_id":"project one","name":"test","experiment_type":"box","execution_status":"created","source_commit":"0123456789012345678901234567890123456789","entrypoint":"python:main.py","requested_runtime_policy":"auto","result_directory":"experiments/experiment-1_20260816_1200/","retry":{},"logs_truncated":false,"progress":0}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL)
+	if _, err := client.CreateExperiment(context.Background(), "token", "project one", "box", "test", "0123456789012345678901234567890123456789", "python:main.py", "auto"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.RunExperiment(context.Background(), "token", "project one", "experiment/one"); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("requests = %#v", requests)
+	}
+	create := requests[0]
+	if create.method != http.MethodPost || create.path != "/v1/projects/project%20one/experiments" || create.body["experiment_type"] != "box" || create.body["runtime_policy"] != "auto" {
+		t.Fatalf("create request = %#v", create)
+	}
+	if _, legacyRuntime := create.body["runtime"]; legacyRuntime {
+		t.Fatalf("legacy runtime field leaked: %#v", create.body)
+	}
+	run := requests[1]
+	if run.path != "/v1/projects/project%20one/experiments/experiment%2Fone/run" || run.body["idempotency_key"] == "" {
+		t.Fatalf("run request = %#v", run)
+	}
+}
 
 func TestClientRetriesOnlySafeRequests(t *testing.T) {
 	t.Run("identity read retries a transient failure", func(t *testing.T) {

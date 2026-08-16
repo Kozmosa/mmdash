@@ -247,9 +247,12 @@ type Checkout struct {
 
 // FileChange is one ordinary-file mutation in a controlled workspace commit.
 type FileChange struct {
-	Content   []byte
-	Operation string
-	Path      string
+	Content       []byte
+	ContentSHA256 string
+	Operation     string
+	Path          string
+	SizeBytes     int64
+	SourcePath    string
 }
 
 // WorkspaceCommitRequest is the authenticated internal write capability.
@@ -263,6 +266,7 @@ type WorkspaceCommitRequest struct {
 	Message         string
 	ProjectID       string
 	RequestSHA256   string
+	StageAll        bool
 	Workspace       WorkspaceKind
 }
 
