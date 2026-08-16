@@ -1,1 +1,14 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://mmdash.moe/contracts/events/experiment.canceled.schema.json","title":"experiment.canceled payload","type":"object","additionalProperties":false,"required":["experiment_id","task_id","status"],"properties":{"experiment_id":{"type":"string","format":"uuid"},"task_id":{"type":"string","format":"uuid"},"status":{"type":"string","const":"canceled"}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/experiment.canceled.schema.json",
+  "title": "experiment.canceled payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["experiment_id", "experiment_type", "execution_status"],
+  "properties": {
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "experiment_type": { "type": "string", "enum": ["box", "box-re", "self"] },
+    "task_id": { "type": "string", "format": "uuid" },
+    "execution_status": { "type": "string", "const": "canceled" }
+  }
+}

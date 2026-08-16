@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/mcp/experiment.result.bind.json",
+  "title": "Bind self-run experiment result",
+  "description": "After the Coding Agent commits and pushes the frozen result directory, ask mmdash Repo to fetch, verify, and bind that full Commit SHA. The same SHA is idempotent; a different accepted SHA conflicts.",
+  "x-operation-id": "experiment.result.bind",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "experiment_id", "commit_sha", "idempotency_key"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 }
+  }
+}

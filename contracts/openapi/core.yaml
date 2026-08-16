@@ -196,9 +196,15 @@ paths:
   /v1/auth/device/authorize:
     post:
       tags: [Auth]
-      summary: Start a CLI device authorization
+      summary: Start a CLI or Box device authorization
       operationId: auth.device.authorize
       security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceAuthorizationRequest"
       responses:
         "201":
           description: One-time device and user codes were created.
@@ -209,7 +215,7 @@ paths:
   /v1/auth/device/verify:
     post:
       tags: [Auth]
-      summary: Approve or deny a CLI device authorization
+      summary: Approve or deny a CLI or Box device authorization
       operationId: auth.device.verify
       requestBody:
         required: true
@@ -231,7 +237,7 @@ paths:
   /v1/auth/device/token:
     post:
       tags: [Auth]
-      summary: Exchange an approved device code for a CLI session
+      summary: Exchange an approved device code for a CLI session or Box registration grant
       operationId: auth.device.token
       security: []
       requestBody:
@@ -246,7 +252,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LoginResult"
+                oneOf:
+                  - $ref: "#/components/schemas/LoginResult"
+                  - $ref: "#/components/schemas/BoxRegistrationGrant"
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -3878,6 +3886,35 @@ paths:
           "404": { $ref: "#/components/responses/Error" },
           "409": { $ref: "#/components/responses/Error" },
         }
+  /v1/projects/{projectId}/experiments/settings:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [Experiment, Settings]
+      summary: Read Project Experiment defaults
+      operationId: experiment.settings.get
+      responses:
+        "200":
+          description: Frozen defaults used when new Experiments omit overrides.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExperimentSettings" }
+    patch:
+      tags: [Experiment, Settings]
+      summary: Update Project Experiment defaults
+      operationId: experiment.settings.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/UpdateExperimentSettingsRequest" }
+      responses:
+        "200":
+          description: Updated Experiment defaults.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExperimentSettings" }
   /v1/projects/{projectId}/experiments:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
@@ -3888,7 +3925,12 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/Cursor" }
         - { $ref: "#/components/parameters/ExperimentLimit" }
-        - name: status
+        - name: tail
+          in: query
+          required: false
+          description: Return the newest bounded window in ascending sequence order; cannot be combined with cursor.
+          schema: { type: boolean, default: false }
+        - name: execution_status
           in: query
           required: false
           schema: { $ref: "#/components/schemas/ExperimentStatus" }
@@ -4000,6 +4042,46 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Experiment" }
+  /v1/projects/{projectId}/experiments/{experimentId}/rerun:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { $ref: "#/components/parameters/ExperimentId" }
+    post:
+      tags: [Experiment]
+      summary: Create a frozen human-requested rerun with a new Exp ID
+      operationId: experiment.rerun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RerunExperimentRequest" }
+      responses:
+        "201":
+          description: New box-re Experiment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Experiment" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/experiments/{experimentId}/result/bind:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { $ref: "#/components/parameters/ExperimentId" }
+    post:
+      tags: [Experiment, Repo]
+      summary: Verify and bind a pushed self-run result Commit
+      operationId: experiment.result.bind
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BindExperimentResultRequest" }
+      responses:
+        "202":
+          description: Result verification started or completed idempotently.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Experiment" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/experiments/{experimentId}/logs:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
@@ -4023,34 +4105,41 @@ paths:
       - { $ref: "#/components/parameters/ExperimentId" }
     get:
       tags: [Experiment, Artifact]
-      summary: Read the primary result bundle pointer and manifest summary
+      summary: Read the verified result Commit, read-only tree, Bundle metadata, and retry guidance
       operationId: result.get
       responses:
         "200":
-          description: Result bundle metadata; file content is transferred through Artifact.
+          description: Result metadata and tree; Artifact-backed file bytes use Artifact transfers.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ResultBundle" }
-  /v1/boxes:
+  /v1/box-source-transfers/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 4096 }
     get:
-      tags: [Box]
-      summary: List registered Boxes visible to the caller
-      operationId: box.list
-      parameters:
-        - name: project_id
-          in: query
-          required: false
-          schema: { type: string, format: uuid }
+      tags: [Box, Repo]
+      summary: Download one immutable Repo-owned source commit using a short-lived Box grant
+      operationId: box.source.download
+      security: []
       responses:
         "200":
-          description: Box list.
+          description: Immutable source tree without Git administrative data or provider credentials.
+          headers:
+            Cache-Control: { schema: { type: string } }
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/BoxList" }
+            application/zip:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+  /v1/boxes:
     post:
       tags: [Box]
-      summary: Register a Box and issue its one-time bootstrap token
+      summary: Consume a Box registration grant and issue an account-level Box Token
       operationId: box.register
+      security: []
       requestBody:
         required: true
         content:
@@ -4062,24 +4151,61 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BoxRegistration" }
-  /v1/boxes/{boxId}:
+  /v1/users/me/boxes:
+    get:
+      tags: [Box]
+      summary: List Boxes owned by the current user
+      operationId: box.personal.list
+      responses:
+        "200":
+          description: Personal Box inventory.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoxList" }
+  /v1/users/me/boxes/{boxId}:
     parameters: [{ $ref: "#/components/parameters/BoxId" }]
     get:
       tags: [Box]
-      summary: Read one Box status and capabilities
-      operationId: box.get
+      summary: Read one Box owned by the current user
+      operationId: box.personal.get
       responses:
         "200":
           description: Box status.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Box" }
-    delete:
+    patch:
       tags: [Box]
-      summary: Revoke one Box, remove its binding, and revoke its credential
-      operationId: box.revoke
+      summary: Rename one Box owned by the current user
+      operationId: box.personal.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateBoxRequest" }
       responses:
-        "204": { description: Box and credential revoked. }
+        "200":
+          description: Updated Box.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Box" }
+  /v1/users/me/boxes/{boxId}/revoke:
+    parameters: [{ $ref: "#/components/parameters/BoxId" }]
+    post:
+      tags: [Box]
+      summary: Drain or force-revoke an owned Box
+      operationId: box.revoke
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RevokeBoxRequest" }
+      responses:
+        "202":
+          description: Revocation state and drain progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoxRevocation" }
   /v1/boxes/{boxId}/heartbeat:
     parameters: [{ $ref: "#/components/parameters/BoxId" }]
     post:
@@ -4097,33 +4223,47 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BoxHeartbeat" }
-  /v1/projects/{projectId}/box:
+  /v1/projects/{projectId}/boxes:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
-    put:
+    get:
       tags: [Box]
-      summary: Bind one Box to a Project
-      operationId: box.binding.set
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/BoxBindingRequest" }
+      summary: List Boxes assigned to a Project
+      operationId: box.project.list
       responses:
         "200":
-          description: Project Box binding.
+          description: Assigned Box inventory.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Box" }
+              schema: { $ref: "#/components/schemas/ProjectBoxList" }
+  /v1/projects/{projectId}/boxes/{boxId}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - { $ref: "#/components/parameters/BoxId" }
+    put:
+      tags: [Box]
+      summary: Assign a Box to a Project idempotently
+      operationId: box.project.assign
+      responses:
+        "200":
+          description: Authoritative Project Box assignment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectBoxBinding" }
     delete:
       tags: [Box]
-      summary: Remove the Project Box binding
-      operationId: box.binding.delete
+      summary: Remove a Box assignment from a Project
+      operationId: box.project.remove
+      parameters:
+        - name: force
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
       responses: { "204": { description: Binding removed. } }
   /v1/boxes/{boxId}/tasks/claim:
     parameters: [{ $ref: "#/components/parameters/BoxId" }]
     post:
       tags: [Box]
-      summary: Atomically claim one queued Box task using SKIP LOCKED
+      summary: Long-poll and atomically claim one eligible task using SKIP LOCKED
       operationId: box.tasks.claim
       requestBody:
         required: false
@@ -4137,44 +4277,44 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/BoxTask" }
         "204": { description: No task available. }
-  /v1/boxes/{boxId}/tasks/{taskId}/heartbeat:
+  /v1/boxes/{boxId}/tasks/{taskId}/resume:
     parameters:
       - { $ref: "#/components/parameters/BoxId" }
       - { $ref: "#/components/parameters/BoxTaskId" }
     post:
       tags: [Box]
-      summary: Renew a Box task lease and receive cancellation state
-      operationId: box.tasks.heartbeat
+      summary: Resume an offline or restarted Box task from acknowledged state
+      operationId: box.tasks.resume
       requestBody:
         required: false
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/BoxTaskHeartbeatRequest" }
+            schema: { $ref: "#/components/schemas/ResumeBoxTaskRequest" }
       responses:
         "200":
-          description: Lease state.
+          description: Authoritative resume action and log acknowledgement.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/BoxTaskLease" }
+              schema: { $ref: "#/components/schemas/BoxTaskResume" }
   /v1/boxes/{boxId}/tasks/{taskId}/logs:
     parameters:
       - { $ref: "#/components/parameters/BoxId" }
       - { $ref: "#/components/parameters/BoxTaskId" }
     post:
       tags: [Box]
-      summary: Append a bounded Box task log line
-      operationId: box.tasks.logs.append
+      summary: Append an idempotent bounded ordered Box task log batch
+      operationId: box.tasks.logs.append_batch
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/BoxTaskLogRequest" }
       responses:
-        "201":
-          description: Appended log line.
+        "200":
+          description: Highest contiguous accepted log sequence.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ExperimentLog" }
+              schema: { $ref: "#/components/schemas/BoxTaskLogAcknowledgement" }
   /v1/boxes/{boxId}/tasks/{taskId}/status:
     parameters:
       - { $ref: "#/components/parameters/BoxId" }
@@ -4200,7 +4340,7 @@ paths:
       - { $ref: "#/components/parameters/BoxTaskId" }
     post:
       tags: [Box, Artifact]
-      summary: Submit a validated standalone artifact.zip result bundle
+      summary: Submit the accepted Execution Bundle and Manifest hash for server-side result processing
       operationId: box.tasks.result
       requestBody:
         required: true
@@ -4219,13 +4359,22 @@ paths:
       - { $ref: "#/components/parameters/BoxTaskId" }
     post:
       tags: [Box, Artifact]
-      summary: Stream one verified artifact.zip into the Core Artifact boundary
+      summary: Stream one verified execution-bundle.zip into the Core Artifact boundary
       operationId: box.tasks.artifact.upload
       parameters:
         - name: X-Mmdash-Artifact-SHA256
           in: header
           required: true
           schema: { type: string, pattern: "^[0-9a-f]{64}$" }
+        - name: X-Mmdash-Execution-Epoch
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Mmdash-Artifact-Size
+          in: header
+          required: true
+          schema:
+            { type: integer, format: int64, minimum: 1, maximum: 5368709120 }
       requestBody:
         required: true
         content:
@@ -4246,7 +4395,11 @@ paths:
       responses:
         "200":
           description: Article aggregate.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleAggregate" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleAggregate" } },
+            }
   /v1/projects/{projectId}/article/draft:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -4256,7 +4409,11 @@ paths:
       responses:
         "200":
           description: Collaborative draft.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleDraft" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleDraft" } },
+            }
   /v1/projects/{projectId}/article/draft/flush:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     post:
@@ -4265,11 +4422,22 @@ paths:
       operationId: article.draft.flush
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/PersistArticleDraftRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/PersistArticleDraftRequest" },
+              },
+          }
       responses:
         "200":
           description: Persisted draft.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleDraft" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleDraft" } },
+            }
         "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/patches:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
@@ -4280,33 +4448,64 @@ paths:
       responses:
         "200":
           description: Patch list.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePatchList" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticlePatchList" } },
+            }
     post:
       tags: [Article]
       summary: Propose an AI patch without mutating the draft
       operationId: article.patches.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticlePatchRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/CreateArticlePatchRequest" },
+              },
+          }
       responses:
         "201":
           description: Proposed patch.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePatch" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticlePatch" } },
+            }
   /v1/projects/{projectId}/article/patches/{patchId}/review:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: patchId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: patchId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     post:
       tags: [Article]
       summary: Accept or reject a patch as a provenance-bearing collaboration transaction
       operationId: article.patches.review
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ReviewArticlePatchRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/ReviewArticlePatchRequest" },
+              },
+          }
       responses:
         "200":
           description: Reviewed patch.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePatch" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticlePatch" } },
+            }
   /v1/projects/{projectId}/article/references:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -4316,22 +4515,46 @@ paths:
       responses:
         "200":
           description: Reference list.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleReferenceList" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/ArticleReferenceList" },
+                },
+            }
     post:
       tags: [Article]
       summary: Pin a versioned Problem, Model Snapshot, Experiment Result, or Artifact
       operationId: article.references.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleReferenceRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/CreateArticleReferenceRequest",
+                  },
+              },
+          }
       responses:
         "201":
           description: Pinned reference.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleReference" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleReference" } },
+            }
   /v1/projects/{projectId}/article/references/{referenceId}:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: referenceId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: referenceId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     delete:
       tags: [Article]
       summary: Remove a draft reference pin
@@ -4346,23 +4569,43 @@ paths:
       responses:
         "200":
           description: Commit list.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleCommitList" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleCommitList" } },
+            }
     post:
       tags: [Article]
       summary: Commit one exact flushed draft revision through Repo ArticleWorkspace
       operationId: article.commits.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleCommitRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/CreateArticleCommitRequest" },
+              },
+          }
       responses:
         "201":
           description: Article commit.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleCommit" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleCommit" } },
+            }
         "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/commits/{commitId}:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: commitId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: commitId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Article]
       summary: Read one Article commit and its builds/releases
@@ -4370,11 +4613,22 @@ paths:
       responses:
         "200":
           description: Article commit detail.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleCommitDetail" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/ArticleCommitDetail" },
+                },
+            }
   /v1/projects/{projectId}/article/commits/{commitId}/restore:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: commitId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: commitId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     post:
       tags: [Article]
       summary: Restore historical Markdown as a new collaborative draft revision
@@ -4382,7 +4636,11 @@ paths:
       responses:
         "200":
           description: New draft revision.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleDraft" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleDraft" } },
+            }
   /v1/projects/{projectId}/article/builds:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -4392,18 +4650,33 @@ paths:
       responses:
         "200":
           description: Build list.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuildList" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleBuildList" } },
+            }
     post:
       tags: [Article]
       summary: Queue a formal commit-bound Article build
       operationId: article.builds.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleBuildRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/CreateArticleBuildRequest" },
+              },
+          }
       responses:
         "202":
           description: Queued formal build.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleBuild" } },
+            }
   /v1/projects/{projectId}/article/preview-builds:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     post:
@@ -4412,15 +4685,33 @@ paths:
       operationId: article.preview_builds.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticlePreviewBuildRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/CreateArticlePreviewBuildRequest",
+                  },
+              },
+          }
       responses:
         "202":
           description: Queued preview.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleBuild" } },
+            }
   /v1/projects/{projectId}/article/builds/{buildId}:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: buildId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: buildId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Article]
       summary: Read a build and immutable output Artifact versions
@@ -4428,11 +4719,20 @@ paths:
       responses:
         "200":
           description: Build detail.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleBuild" } },
+            }
   /v1/projects/{projectId}/article/builds/{buildId}/retry:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: buildId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: buildId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     post:
       tags: [Article]
       summary: Retry a failed build as a new immutable attempt
@@ -4440,7 +4740,11 @@ paths:
       responses:
         "202":
           description: Queued retry build.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuild" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleBuild" } },
+            }
   /v1/projects/{projectId}/article/publications:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     post:
@@ -4449,15 +4753,33 @@ paths:
       operationId: article.publications.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticlePublicationRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/CreateArticlePublicationRequest",
+                  },
+              },
+          }
       responses:
         "202":
           description: Publication orchestration.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePublication" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticlePublication" } },
+            }
   /v1/projects/{projectId}/article/publications/{publicationId}/retry:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: publicationId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: publicationId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     post:
       tags: [Article]
       summary: Retry the Build phase without duplicating the Commit or Release
@@ -4465,7 +4787,11 @@ paths:
       responses:
         "202":
           description: Retried publication.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticlePublication" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticlePublication" } },
+            }
   /v1/projects/{projectId}/article/releases:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -4475,23 +4801,43 @@ paths:
       responses:
         "200":
           description: Release list.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleReleaseList" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleReleaseList" } },
+            }
     post:
       tags: [Article]
       summary: Create an immutable Release from a successful formal build
       operationId: article.releases.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/CreateArticleReleaseRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/CreateArticleReleaseRequest" },
+              },
+          }
       responses:
         "201":
           description: Immutable release.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleRelease" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleRelease" } },
+            }
         "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/releases/{releaseId}:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: releaseId, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: releaseId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Article]
       summary: Read one immutable Release and output manifest
@@ -4499,7 +4845,11 @@ paths:
       responses:
         "200":
           description: Immutable release.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleRelease" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleRelease" } },
+            }
   /v1/projects/{projectId}/article/templates:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -4509,18 +4859,37 @@ paths:
       responses:
         "200":
           description: Template list.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleTemplateList" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/ArticleTemplateList" },
+                },
+            }
     post:
       tags: [Article]
       summary: Validate and register one immutable template Artifact version
       operationId: article.templates.create
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/RegisterArticleTemplateRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/RegisterArticleTemplateRequest",
+                  },
+              },
+          }
       responses:
         "202":
           description: Template validation registration.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleTemplate" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleTemplate" } },
+            }
   /v1/projects/{projectId}/article/zotero:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -4530,18 +4899,39 @@ paths:
       responses:
         "200":
           description: Zotero binding.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleZoteroBinding" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/ArticleZoteroBinding" },
+                },
+            }
     put:
       tags: [Article]
       summary: Bind a read-only Zotero library and encrypted API key
       operationId: article.zotero.update
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateArticleZoteroBindingRequest" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/UpdateArticleZoteroBindingRequest",
+                  },
+              },
+          }
       responses:
         "200":
           description: Redacted Zotero binding.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleZoteroBinding" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/ArticleZoteroBinding" },
+                },
+            }
     delete:
       tags: [Article]
       summary: Remove the project Zotero binding and secret
@@ -4550,7 +4940,12 @@ paths:
   /v1/projects/{projectId}/article/zotero/search:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
-      - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      - {
+          name: q,
+          in: query,
+          required: true,
+          schema: { type: string, minLength: 1, maxLength: 200 },
+        }
     get:
       tags: [Article]
       summary: Search the configured Zotero library by author, title, or keyword
@@ -4558,7 +4953,11 @@ paths:
       responses:
         "200":
           description: Zotero search results.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ZoteroItemList" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ZoteroItemList" } },
+            }
   /v1/projects/{projectId}/artifacts/{artifactId}/description:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
@@ -4571,11 +4970,21 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ArtifactSemanticDescriptionInput" }
+            schema:
+              { $ref: "#/components/schemas/ArtifactSemanticDescriptionInput" }
       responses:
         "202":
           description: Description request accepted.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArtifactSemanticDescriptionJob" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "#/components/schemas/ArtifactSemanticDescriptionJob",
+                    },
+                },
+            }
   /v1/internal/artifact-semantic-jobs/{jobId}/execute:
     parameters: [{ $ref: "#/components/parameters/JobId" }]
     post:
@@ -4585,7 +4994,16 @@ paths:
       responses:
         "200":
           description: Strict semantic fields and Agent provenance for Job completion.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArtifactSemanticDescriptionResult" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "#/components/schemas/ArtifactSemanticDescriptionResult",
+                    },
+                },
+            }
   /v1/internal/article-build-jobs/{jobId}/input:
     parameters: [{ $ref: "#/components/parameters/JobId" }]
     get:
@@ -4595,27 +5013,114 @@ paths:
       responses:
         "200":
           description: Job-scoped build input.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuildJobInput" } } }
+          content:
+            {
+              application/json:
+                {
+                  schema: { $ref: "#/components/schemas/ArticleBuildJobInput" },
+                },
+            }
   /v1/internal/article-build-jobs/{jobId}/outputs/{role}:
     parameters:
       - { $ref: "#/components/parameters/JobId" }
-      - { name: role, in: path, required: true, schema: { $ref: "#/components/schemas/ArticleBuildOutputRole" } }
+      - {
+          name: role,
+          in: path,
+          required: true,
+          schema: { $ref: "#/components/schemas/ArticleBuildOutputRole" },
+        }
     post:
       tags: [Article, Artifact, Jobs]
       summary: Stream one verified build output through Core into Artifact
       operationId: article.build_jobs.outputs.upload
       parameters:
-        - { name: X-Mmdash-Artifact-SHA256, in: header, required: true, schema: { type: string, pattern: "^[0-9a-f]{64}$" } }
-        - { name: X-Mmdash-Filename, in: header, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
-        - { name: Content-Type, in: header, required: true, schema: { type: string, minLength: 3, maxLength: 255 } }
-        - { name: Content-Length, in: header, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - {
+            name: X-Mmdash-Artifact-SHA256,
+            in: header,
+            required: true,
+            schema: { type: string, pattern: "^[0-9a-f]{64}$" },
+          }
+        - {
+            name: X-Mmdash-Filename,
+            in: header,
+            required: true,
+            schema: { type: string, minLength: 1, maxLength: 255 },
+          }
+        - {
+            name: Content-Type,
+            in: header,
+            required: true,
+            schema: { type: string, minLength: 3, maxLength: 255 },
+          }
+        - {
+            name: Content-Length,
+            in: header,
+            required: true,
+            schema: { type: integer, format: int64, minimum: 1 },
+          }
       requestBody:
         required: true
-        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+        content:
+          {
+            application/octet-stream:
+              { schema: { type: string, format: binary } },
+          }
       responses:
         "201":
           description: Archived output pointer.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ArticleBuildOutput" } } }
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleBuildOutput" } },
+            }
+  /v1/internal/experiment-result-jobs/{jobId}/input:
+    parameters: [{ $ref: "#/components/parameters/JobId" }]
+    get:
+      tags: [Experiment, Artifact, Jobs]
+      summary: Get a Job-scoped immutable Experiment Bundle transfer
+      operationId: experiment.result_jobs.input.get
+      responses:
+        "200":
+          description: Frozen Experiment metadata and short-lived Bundle transfer.
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    { $ref: "#/components/schemas/ExperimentResultJobInput" },
+                },
+            }
+  /v1/internal/experiment-result-jobs/{jobId}/finalize:
+    parameters: [{ $ref: "#/components/parameters/JobId" }]
+    post:
+      tags: [Experiment, Artifact, Repo, Jobs]
+      summary: Finalize a Worker-validated Experiment Bundle through Artifact and Repo
+      operationId: experiment.result_jobs.finalize
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/FinalizeExperimentResultRequest",
+                  },
+              },
+          }
+      responses:
+        "200":
+          description: Result Commit was pushed, verified, and bound.
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "#/components/schemas/FinalizeExperimentResultResponse",
+                    },
+                },
+            }
 components:
   securitySchemes:
     bearerAuth:
@@ -4908,11 +5413,31 @@ components:
     PersistArticleDraftRequest:
       type: object
       additionalProperties: false
-      required: [expected_revision, yjs_update, state_vector, tiptap_json, actor_kind, provenance]
+      required:
+        [
+          expected_revision,
+          yjs_update,
+          state_vector,
+          tiptap_json,
+          actor_kind,
+          provenance,
+        ]
       properties:
         expected_revision: { type: integer, format: int64, minimum: 0 }
-        yjs_update: { type: string, minLength: 1, maxLength: 16777216, description: Base64-encoded Yjs document update. }
-        state_vector: { type: string, minLength: 1, maxLength: 1048576, description: Base64-encoded Yjs state vector. }
+        yjs_update:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 16777216,
+            description: Base64-encoded Yjs document update.,
+          }
+        state_vector:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 1048576,
+            description: Base64-encoded Yjs state vector.,
+          }
         tiptap_json: { type: object, additionalProperties: true }
         actor_kind: { type: string, enum: [human, ai, restore] }
         provenance: { type: object, additionalProperties: true }
@@ -4940,11 +5465,17 @@ components:
       additionalProperties: false
       required: [reference_type, source_object_id, source_version_id, title]
       properties:
-        reference_type: { type: string, enum: [problem, model_snapshot, experiment_result, artifact, zotero] }
+        reference_type:
+          {
+            type: string,
+            enum:
+              [problem, model_snapshot, experiment_result, artifact, zotero],
+          }
         source_object_id: { type: string, minLength: 1, maxLength: 255 }
         source_version_id: { type: string, minLength: 1, maxLength: 255 }
         title: { type: string, minLength: 1, maxLength: 500 }
-        citation_key: { type: string, pattern: "^[A-Za-z][A-Za-z0-9_:+.-]{0,99}$" }
+        citation_key:
+          { type: string, pattern: "^[A-Za-z][A-Za-z0-9_:+.-]{0,99}$" }
         metadata: { type: object, additionalProperties: true }
     CreateArticleCommitRequest:
       type: object
@@ -4956,7 +5487,8 @@ components:
     CreateArticleBuildRequest:
       type: object
       additionalProperties: false
-      required: [commit_id, template_id, engine, bibliography_tool, idempotency_key]
+      required:
+        [commit_id, template_id, engine, bibliography_tool, idempotency_key]
       properties:
         commit_id: { type: string, format: uuid }
         template_id: { type: string, format: uuid }
@@ -4985,7 +5517,18 @@ components:
     CreateArticlePublicationRequest:
       type: object
       additionalProperties: false
-      required: [draft_revision, message, template_id, engine, bibliography_tool, tag, title, notes, idempotency_key]
+      required:
+        [
+          draft_revision,
+          message,
+          template_id,
+          engine,
+          bibliography_tool,
+          tag,
+          title,
+          notes,
+          idempotency_key,
+        ]
       properties:
         draft_revision: { type: integer, format: int64, minimum: 1 }
         message: { type: string, minLength: 1, maxLength: 500 }
@@ -5012,11 +5555,23 @@ components:
         library_type: { type: string, enum: [user, group] }
         library_id: { type: string, minLength: 1, maxLength: 100 }
         collection_key: { type: string, maxLength: 100 }
-        api_key: { type: string, minLength: 1, maxLength: 1000, writeOnly: true }
+        api_key:
+          { type: string, minLength: 1, maxLength: 1000, writeOnly: true }
     ArticleTemplateManifest:
       type: object
       additionalProperties: false
-      required: [schema_version, name, version, entrypoint, output, content_target, bibliography_target, engine, bibliography_tool]
+      required:
+        [
+          schema_version,
+          name,
+          version,
+          entrypoint,
+          output,
+          content_target,
+          bibliography_target,
+          engine,
+          bibliography_tool,
+        ]
       properties:
         schema_version: { type: string, const: "1.0" }
         name: { type: string }
@@ -5030,20 +5585,37 @@ components:
     ArticleBlock:
       type: object
       additionalProperties: false
-      required: [block_id, node_type, ordinal, text, attrs, tag, provenance, updated_at]
+      required:
+        [block_id, node_type, ordinal, text, attrs, tag, provenance, updated_at]
       properties:
         block_id: { type: string, format: uuid }
         node_type: { type: string }
         ordinal: { type: integer, minimum: 0 }
         text: { type: string }
         attrs: { type: object, additionalProperties: true }
-        tag: { type: string, enum: [ai_draft, human_draft, ai_revision, human_revision, reviewed] }
+        tag:
+          {
+            type: string,
+            enum:
+              [ai_draft, human_draft, ai_revision, human_revision, reviewed],
+          }
         provenance: { type: object, additionalProperties: true }
         updated_at: { type: string, format: date-time }
     ArticleDraft:
       type: object
       additionalProperties: false
-      required: [project_id, draft_revision, yjs_update, state_vector, tiptap_json, markdown, blocks, sync_status, updated_at]
+      required:
+        [
+          project_id,
+          draft_revision,
+          yjs_update,
+          state_vector,
+          tiptap_json,
+          markdown,
+          blocks,
+          sync_status,
+          updated_at,
+        ]
       properties:
         project_id: { type: string, format: uuid }
         draft_revision: { type: integer, format: int64, minimum: 0 }
@@ -5051,13 +5623,26 @@ components:
         state_vector: { type: string }
         tiptap_json: { type: object, additionalProperties: true }
         markdown: { type: string }
-        blocks: { type: array, items: { $ref: "#/components/schemas/ArticleBlock" } }
+        blocks:
+          { type: array, items: { $ref: "#/components/schemas/ArticleBlock" } }
         sync_status: { type: string, enum: [synced, syncing, offline, failed] }
         updated_at: { type: string, format: date-time }
     ArticlePatch:
       type: object
       additionalProperties: false
-      required: [patch_id, project_id, base_revision, status, patch, rationale, provenance, created_by, created_at, updated_at]
+      required:
+        [
+          patch_id,
+          project_id,
+          base_revision,
+          status,
+          patch,
+          rationale,
+          provenance,
+          created_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         patch_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5075,15 +5660,38 @@ components:
       type: object
       additionalProperties: false
       required: [items]
-      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticlePatch" } } }
+      properties:
+        {
+          items:
+            {
+              type: array,
+              items: { $ref: "#/components/schemas/ArticlePatch" },
+            },
+        }
     ArticleReference:
       type: object
       additionalProperties: false
-      required: [reference_id, project_id, reference_type, source_object_id, source_version_id, title, metadata, created_by, created_at]
+      required:
+        [
+          reference_id,
+          project_id,
+          reference_type,
+          source_object_id,
+          source_version_id,
+          title,
+          metadata,
+          created_by,
+          created_at,
+        ]
       properties:
         reference_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
-        reference_type: { type: string, enum: [problem, model_snapshot, experiment_result, artifact, zotero] }
+        reference_type:
+          {
+            type: string,
+            enum:
+              [problem, model_snapshot, experiment_result, artifact, zotero],
+          }
         source_object_id: { type: string }
         source_version_id: { type: string }
         title: { type: string }
@@ -5095,11 +5703,29 @@ components:
       type: object
       additionalProperties: false
       required: [items]
-      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleReference" } } }
+      properties:
+        {
+          items:
+            {
+              type: array,
+              items: { $ref: "#/components/schemas/ArticleReference" },
+            },
+        }
     ArticleCommit:
       type: object
       additionalProperties: false
-      required: [commit_id, project_id, commit_sha, draft_revision, state_vector, manuscript_sha256, message, created_by, created_at]
+      required:
+        [
+          commit_id,
+          project_id,
+          commit_sha,
+          draft_revision,
+          state_vector,
+          manuscript_sha256,
+          message,
+          created_by,
+          created_at,
+        ]
       properties:
         commit_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5114,19 +5740,42 @@ components:
       type: object
       additionalProperties: false
       required: [items]
-      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleCommit" } } }
+      properties:
+        {
+          items:
+            {
+              type: array,
+              items: { $ref: "#/components/schemas/ArticleCommit" },
+            },
+        }
     ArticleCommitDetail:
       type: object
       additionalProperties: false
       required: [commit, builds, releases]
       properties:
         commit: { $ref: "#/components/schemas/ArticleCommit" }
-        builds: { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } }
-        releases: { type: array, items: { $ref: "#/components/schemas/ArticleRelease" } }
+        builds:
+          { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } }
+        releases:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleRelease" },
+          }
     ArticleTemplate:
       type: object
       additionalProperties: false
-      required: [template_id, project_id, artifact_id, version_id, manifest, status, created_by, created_at, updated_at]
+      required:
+        [
+          template_id,
+          project_id,
+          artifact_id,
+          version_id,
+          manifest,
+          status,
+          created_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         template_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5142,14 +5791,22 @@ components:
       type: object
       additionalProperties: false
       required: [items]
-      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleTemplate" } } }
+      properties:
+        {
+          items:
+            {
+              type: array,
+              items: { $ref: "#/components/schemas/ArticleTemplate" },
+            },
+        }
     ArticleBuildOutputRole:
       type: string
       enum: [pdf, tex_source, source_zip, build_report, log, synctex]
     ArticleBuildOutput:
       type: object
       additionalProperties: false
-      required: [role, artifact_id, version_id, filename, mime_type, sha256, size_bytes]
+      required:
+        [role, artifact_id, version_id, filename, mime_type, sha256, size_bytes]
       properties:
         role: { $ref: "#/components/schemas/ArticleBuildOutputRole" }
         artifact_id: { type: string, format: uuid }
@@ -5161,12 +5818,31 @@ components:
     ArticleBuild:
       type: object
       additionalProperties: false
-      required: [build_id, project_id, build_kind, status, template_id, template_artifact_id, template_version_id, engine, bibliography_tool, outputs, created_by, created_at, updated_at]
+      required:
+        [
+          build_id,
+          project_id,
+          build_kind,
+          status,
+          template_id,
+          template_artifact_id,
+          template_version_id,
+          engine,
+          bibliography_tool,
+          outputs,
+          created_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         build_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
         build_kind: { type: string, enum: [preview, formal, template_test] }
-        status: { type: string, enum: [queued, running, succeeded, failed, superseded] }
+        status:
+          {
+            type: string,
+            enum: [queued, running, succeeded, failed, superseded],
+          }
         draft_revision: { type: integer, format: int64 }
         commit_id: { type: string, format: uuid }
         commit_sha: { type: string }
@@ -5177,7 +5853,11 @@ components:
         engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
         bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
         toolchain: { type: object, additionalProperties: true }
-        outputs: { type: array, items: { $ref: "#/components/schemas/ArticleBuildOutput" } }
+        outputs:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleBuildOutput" },
+          }
         error_code: { type: string }
         error_message: { type: string }
         created_by: { type: string }
@@ -5188,11 +5868,34 @@ components:
       type: object
       additionalProperties: false
       required: [items]
-      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } } }
+      properties:
+        {
+          items:
+            {
+              type: array,
+              items: { $ref: "#/components/schemas/ArticleBuild" },
+            },
+        }
     ArticleRelease:
       type: object
       additionalProperties: false
-      required: [release_id, project_id, commit_id, commit_sha, build_id, tag, title, notes, template_version_id, engine, toolchain, outputs, created_by, created_at]
+      required:
+        [
+          release_id,
+          project_id,
+          commit_id,
+          commit_sha,
+          build_id,
+          tag,
+          title,
+          notes,
+          template_version_id,
+          engine,
+          toolchain,
+          outputs,
+          created_by,
+          created_at,
+        ]
       properties:
         release_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5205,18 +5908,42 @@ components:
         template_version_id: { type: string, format: uuid }
         engine: { type: string }
         toolchain: { type: object, additionalProperties: true }
-        outputs: { type: array, items: { $ref: "#/components/schemas/ArticleBuildOutput" } }
+        outputs:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleBuildOutput" },
+          }
         created_by: { type: string }
         created_at: { type: string, format: date-time }
     ArticleReleaseList:
       type: object
       additionalProperties: false
       required: [items]
-      properties: { items: { type: array, items: { $ref: "#/components/schemas/ArticleRelease" } } }
+      properties:
+        {
+          items:
+            {
+              type: array,
+              items: { $ref: "#/components/schemas/ArticleRelease" },
+            },
+        }
     ArticlePublication:
       type: object
       additionalProperties: false
-      required: [publication_id, project_id, commit_id, build_id, status, tag, title, notes, created_by, created_at, updated_at]
+      required:
+        [
+          publication_id,
+          project_id,
+          commit_id,
+          build_id,
+          status,
+          tag,
+          title,
+          notes,
+          created_by,
+          created_at,
+          updated_at,
+        ]
       properties:
         publication_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5234,7 +5961,8 @@ components:
     ArticleZoteroBinding:
       type: object
       additionalProperties: false
-      required: [project_id, library_type, library_id, api_key_configured, read_only]
+      required:
+        [project_id, library_type, library_id, api_key_configured, read_only]
       properties:
         project_id: { type: string, format: uuid }
         library_type: { type: string, enum: [user, group] }
@@ -5245,7 +5973,8 @@ components:
     ZoteroItem:
       type: object
       additionalProperties: false
-      required: [item_key, version, citation_key, title, authors, item_type, raw]
+      required:
+        [item_key, version, citation_key, title, authors, item_type, raw]
       properties:
         item_key: { type: string }
         version: { type: integer, format: int64, minimum: 0 }
@@ -5260,18 +5989,46 @@ components:
       type: object
       additionalProperties: false
       required: [items]
-      properties: { items: { type: array, items: { $ref: "#/components/schemas/ZoteroItem" } } }
+      properties:
+        {
+          items:
+            { type: array, items: { $ref: "#/components/schemas/ZoteroItem" } },
+        }
     ArticleAggregate:
       type: object
       additionalProperties: false
-      required: [draft, references, commits, builds, releases, templates, unreviewed_blocks, section_completion]
+      required:
+        [
+          draft,
+          references,
+          commits,
+          builds,
+          releases,
+          templates,
+          unreviewed_blocks,
+          section_completion,
+        ]
       properties:
         draft: { $ref: "#/components/schemas/ArticleDraft" }
-        references: { type: array, items: { $ref: "#/components/schemas/ArticleReference" } }
-        commits: { type: array, items: { $ref: "#/components/schemas/ArticleCommit" } }
-        builds: { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } }
-        releases: { type: array, items: { $ref: "#/components/schemas/ArticleRelease" } }
-        templates: { type: array, items: { $ref: "#/components/schemas/ArticleTemplate" } }
+        references:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleReference" },
+          }
+        commits:
+          { type: array, items: { $ref: "#/components/schemas/ArticleCommit" } }
+        builds:
+          { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } }
+        releases:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleRelease" },
+          }
+        templates:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleTemplate" },
+          }
         unreviewed_blocks: { type: integer, minimum: 0 }
         section_completion: { type: number, minimum: 0, maximum: 1 }
     ArtifactSemanticDescriptionInput:
@@ -5291,7 +6048,11 @@ components:
         project_id: { type: string, format: uuid }
         artifact_id: { type: string, format: uuid }
         version_id: { type: string, format: uuid }
-        status: { type: string, enum: [queued, running, succeeded, failed, cancelled, timed_out] }
+        status:
+          {
+            type: string,
+            enum: [queued, running, succeeded, failed, cancelled, timed_out],
+          }
     ArtifactSemanticDescriptionResult:
       type: object
       additionalProperties: false
@@ -5308,7 +6069,20 @@ components:
     ArticleBuildJobInput:
       type: object
       additionalProperties: false
-      required: [build_id, project_id, build_kind, manuscript, references_bib, article_manifest, template, engine, bibliography_tool, limits, toolchain]
+      required:
+        [
+          build_id,
+          project_id,
+          build_kind,
+          manuscript,
+          references_bib,
+          article_manifest,
+          template,
+          engine,
+          bibliography_tool,
+          limits,
+          toolchain,
+        ]
       properties:
         build_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
@@ -5331,14 +6105,25 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [artifact_id, version_id, title, filename, mime_type, size_bytes, sha256, transfer]
+            required:
+              [
+                artifact_id,
+                version_id,
+                title,
+                filename,
+                mime_type,
+                size_bytes,
+                sha256,
+                transfer,
+              ]
             properties:
               artifact_id: { type: string, format: uuid }
               version_id: { type: string, format: uuid }
               title: { type: string, minLength: 1, maxLength: 255 }
               filename: { type: string, minLength: 1, maxLength: 255 }
               mime_type: { type: string, minLength: 3, maxLength: 255 }
-              size_bytes: { type: integer, format: int64, minimum: 1, maximum: 536870912 }
+              size_bytes:
+                { type: integer, format: int64, minimum: 1, maximum: 536870912 }
               sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
               transfer: { $ref: "#/components/schemas/ArtifactTransferGrant" }
         engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
@@ -5346,12 +6131,26 @@ components:
         limits:
           type: object
           additionalProperties: false
-          required: [timeout_seconds, memory_bytes, disk_bytes, output_bytes, network]
+          required:
+            [timeout_seconds, memory_bytes, disk_bytes, output_bytes, network]
           properties:
             timeout_seconds: { type: integer, minimum: 1, maximum: 600 }
-            memory_bytes: { type: integer, format: int64, minimum: 134217728, maximum: 2147483648 }
-            disk_bytes: { type: integer, format: int64, minimum: 134217728, maximum: 4294967296 }
-            output_bytes: { type: integer, format: int64, minimum: 1, maximum: 536870912 }
+            memory_bytes:
+              {
+                type: integer,
+                format: int64,
+                minimum: 134217728,
+                maximum: 2147483648,
+              }
+            disk_bytes:
+              {
+                type: integer,
+                format: int64,
+                minimum: 134217728,
+                maximum: 4294967296,
+              }
+            output_bytes:
+              { type: integer, format: int64, minimum: 1, maximum: 536870912 }
             network: { type: string, const: none }
         toolchain:
           type: object
@@ -5363,13 +6162,48 @@ components:
             texlive: { type: string, const: "TeX Live 2022/Debian" }
     ExperimentStatus:
       type: string
-      enum: [created, queued, preparing, running, succeeded, failed, canceled, archived]
+      enum:
+        [
+          created,
+          queued,
+          preparing,
+          running,
+          uploading,
+          processing_result,
+          awaiting_result,
+          verifying_result,
+          succeeded,
+          failed,
+          canceled,
+          timed_out,
+          archived,
+        ]
+    ExperimentConnectivityStatus:
+      type: string
+      enum: [online, box_offline]
+    ExperimentType:
+      type: string
+      enum: [box, box-re, self]
+    RuntimePolicy:
+      type: string
+      enum: [auto, e2b, local-docker]
     BoxStatus:
       type: string
-      enum: [registering, online, offline, revoked]
+      enum: [registering, online, offline, draining, revoked]
     BoxTaskStatus:
       type: string
-      enum: [queued, preparing, running, succeeded, failed, canceled, timed_out]
+      enum:
+        [
+          queued,
+          preparing,
+          running,
+          uploading,
+          processing_result,
+          succeeded,
+          failed,
+          canceled,
+          timed_out,
+        ]
     BoxCapability:
       type: object
       additionalProperties: false
@@ -5392,10 +6226,12 @@ components:
     BoxResourceLimits:
       type: object
       additionalProperties: false
-      required: [cpu_millis, memory_bytes, timeout_seconds, disk_bytes, pids, network]
+      required:
+        [cpu_millis, memory_bytes, timeout_seconds, disk_bytes, pids, network]
       properties:
         cpu_millis: { type: integer, minimum: 1, maximum: 100000 }
-        memory_bytes: { type: integer, minimum: 1048576, maximum: 1099511627776 }
+        memory_bytes:
+          { type: integer, minimum: 1048576, maximum: 1099511627776 }
         timeout_seconds: { type: integer, minimum: 1, maximum: 86400 }
         disk_bytes: { type: integer, minimum: 1048576, maximum: 1099511627776 }
         pids: { type: integer, minimum: 1, maximum: 100000 }
@@ -5409,13 +6245,38 @@ components:
         capacity: { type: integer, minimum: 1, maximum: 10000 }
         cpu_millis: { type: integer, minimum: 0 }
         memory_bytes: { type: integer, minimum: 0 }
+    ProjectBoxBinding:
+      type: object
+      additionalProperties: false
+      required: [project_id, box_id, assigned_by, assigned_at]
+      properties:
+        project_id: { type: string, format: uuid }
+        box_id: { type: string, format: uuid }
+        assigned_by: { type: string, format: uuid }
+        assigned_at: { type: string, format: date-time }
+        force_unbound_at: { type: string, format: date-time }
     Box:
       type: object
       additionalProperties: false
-      required: [box_id, project_id, name, status, version, capabilities, runtimes, limits, load, created_at, updated_at]
+      required:
+        [
+          box_id,
+          owner_user_id,
+          name,
+          status,
+          version,
+          capabilities,
+          runtimes,
+          limits,
+          load,
+          project_assignments,
+          legacy_reauthorization_required,
+          created_at,
+          updated_at,
+        ]
       properties:
         box_id: { type: string, format: uuid }
-        project_id: { type: string, format: uuid }
+        owner_user_id: { type: string, format: uuid }
         name: { type: string, minLength: 1, maxLength: 200 }
         status: { $ref: "#/components/schemas/BoxStatus" }
         version: { type: string, maxLength: 100 }
@@ -5429,8 +6290,15 @@ components:
           items: { $ref: "#/components/schemas/BoxRuntime" }
         limits: { $ref: "#/components/schemas/BoxResourceLimits" }
         load: { $ref: "#/components/schemas/BoxLoad" }
+        project_assignments:
+          type: array
+          maxItems: 1000
+          items: { $ref: "#/components/schemas/ProjectBoxBinding" }
         last_heartbeat_at: { type: string, format: date-time }
-        disconnected_at: { type: string, format: date-time }
+        offline_since: { type: string, format: date-time }
+        drain_requested_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time }
+        legacy_reauthorization_required: { type: boolean }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     BoxList:
@@ -5441,33 +6309,60 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/Box" }
+    ProjectBoxList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Box" }
     RegisterBoxRequest:
       type: object
       additionalProperties: false
-      required: [project_id, name, version, capabilities, runtimes, limits, idempotency_key]
+      required: [registration_grant, installation_id, name, version]
       properties:
-        project_id: { type: string, format: uuid }
+        registration_grant: { type: string, minLength: 32, maxLength: 4096 }
+        installation_id: { type: string, minLength: 1, maxLength: 200 }
         name: { type: string, minLength: 1, maxLength: 200 }
         version: { type: string, minLength: 1, maxLength: 100 }
         capabilities:
           type: array
-          minItems: 1
           maxItems: 100
           items: { $ref: "#/components/schemas/BoxCapability" }
         runtimes:
           type: array
-          minItems: 1
           maxItems: 20
           items: { $ref: "#/components/schemas/BoxRuntime" }
         limits: { $ref: "#/components/schemas/BoxResourceLimits" }
-        idempotency_key: { type: string, minLength: 1, maxLength: 200 }
     BoxRegistration:
       type: object
       additionalProperties: false
-      required: [box, token]
+      required: [box, box_token]
       properties:
         box: { $ref: "#/components/schemas/Box" }
-        token: { type: string, minLength: 32, maxLength: 4096 }
+        box_token: { type: string, minLength: 32, maxLength: 4096 }
+        token_expires_at: { type: string, format: date-time }
+    UpdateBoxRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+    RevokeBoxRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [drain, force] }
+    BoxRevocation:
+      type: object
+      additionalProperties: false
+      required: [box, mode, active_experiments]
+      properties:
+        box: { $ref: "#/components/schemas/Box" }
+        mode: { type: string, enum: [drain, force] }
+        active_experiments: { type: integer, minimum: 0 }
     BoxHeartbeatRequest:
       type: object
       additionalProperties: false
@@ -5481,7 +6376,6 @@ components:
           items: { $ref: "#/components/schemas/BoxCapability" }
         runtimes:
           type: array
-          minItems: 1
           maxItems: 20
           items: { $ref: "#/components/schemas/BoxRuntime" }
         limits: { $ref: "#/components/schemas/BoxResourceLimits" }
@@ -5496,39 +6390,117 @@ components:
           type: array
           maxItems: 100
           items: { type: string, format: uuid }
-    BoxBindingRequest:
-      type: object
-      additionalProperties: false
-      required: [box_id]
-      properties:
-        box_id: { type: string, format: uuid }
     ClaimBoxTaskRequest:
       type: object
       additionalProperties: false
       properties:
-        lease_seconds: { type: integer, minimum: 10, maximum: 900, default: 60 }
-    BoxTaskHeartbeatRequest:
+        wait_seconds: { type: integer, minimum: 0, maximum: 60, default: 30 }
+    ResumeBoxTaskRequest:
       type: object
       additionalProperties: false
+      required:
+        [
+          execution_epoch,
+          local_phase,
+          last_local_sequence,
+          bundle_state,
+          acknowledged_callbacks,
+        ]
       properties:
-        lease_seconds: { type: integer, minimum: 10, maximum: 900, default: 60 }
+        execution_epoch: { type: string, format: uuid }
+        local_phase: { $ref: "#/components/schemas/BoxTaskStatus" }
+        last_local_sequence: { type: integer, format: int64, minimum: 0 }
+        bundle_state:
+          { type: string, enum: [none, collecting, ready, uploaded] }
+        acknowledged_callbacks:
+          type: array
+          maxItems: 1000
+          items: { type: string, minLength: 1, maxLength: 200 }
+    BoxTaskResume:
+      type: object
+      additionalProperties: false
+      required: [action, accepted_phase, accepted_through_sequence]
+      properties:
+        action:
+          {
+            type: string,
+            enum: [continue, stop_failed, stop_canceled, cleanup],
+          }
+        accepted_phase: { $ref: "#/components/schemas/BoxTaskStatus" }
+        accepted_through_sequence: { type: integer, format: int64, minimum: 0 }
+    BoxTaskLogEntry:
+      type: object
+      additionalProperties: false
+      required: [sequence, stream, occurred_at, message]
+      properties:
+        sequence: { type: integer, format: int64, minimum: 1 }
+        stream: { type: string, enum: [stdout, stderr, system] }
+        occurred_at: { type: string, format: date-time }
+        message: { type: string, minLength: 1, maxLength: 20000 }
+        fields: { type: object, additionalProperties: true }
     BoxTaskLogRequest:
       type: object
       additionalProperties: false
-      required: [level, message]
+      required: [execution_epoch, first_sequence, entries, logs_truncated]
       properties:
-        level: { type: string, enum: [debug, info, warning, error] }
-        message: { type: string, minLength: 1, maxLength: 20000 }
-        fields: { type: object, additionalProperties: true }
+        execution_epoch: { type: string, format: uuid }
+        first_sequence: { type: integer, format: int64, minimum: 1 }
+        entries:
+          type: array
+          minItems: 0
+          maxItems: 500
+          items: { $ref: "#/components/schemas/BoxTaskLogEntry" }
+        logs_truncated: { type: boolean }
+        logs_truncated_at: { type: string, format: date-time }
+    BoxTaskLogAcknowledgement:
+      type: object
+      additionalProperties: false
+      required: [accepted_through_sequence]
+      properties:
+        accepted_through_sequence: { type: integer, format: int64, minimum: 0 }
+    ExperimentFailure:
+      type: object
+      additionalProperties: false
+      required:
+        [stage, code, message, failed_at, retryable, attempt, cleanup_result]
+      properties:
+        stage:
+          {
+            type: string,
+            enum:
+              [
+                scheduling,
+                box_preparation,
+                runtime_execution,
+                result_upload,
+                bundle_validation,
+                artifact_storage,
+                result_processing,
+                repo_commit,
+                repo_push,
+                result_binding,
+                box_revocation,
+              ],
+          }
+        code: { type: string, minLength: 1, maxLength: 100 }
+        message: { type: string, minLength: 1, maxLength: 2000 }
+        failed_at: { type: string, format: date-time }
+        box_id: { type: string, format: uuid }
+        runtime: { type: string, enum: [local-docker, e2b] }
+        attempt: { type: integer, minimum: 0 }
+        retryable: { type: boolean }
+        cleanup_result: { type: object, additionalProperties: true }
     BoxTaskStatusRequest:
       type: object
       additionalProperties: false
-      required: [status]
+      required: [execution_epoch, status, occurred_at]
       properties:
+        execution_epoch: { type: string, format: uuid }
         status: { $ref: "#/components/schemas/BoxTaskStatus" }
+        occurred_at: { type: string, format: date-time }
+        runtime_version: { type: string, maxLength: 100 }
         exit_code: { type: integer, minimum: -255, maximum: 255 }
-        error_code: { type: string, maxLength: 100 }
-        error_message: { type: string, maxLength: 2000 }
+        failure: { $ref: "#/components/schemas/ExperimentFailure" }
         resource_usage: { type: object, additionalProperties: true }
         summary: { type: string, maxLength: 20000 }
     ArtifactPointer:
@@ -5538,85 +6510,341 @@ components:
       properties:
         artifact_id: { type: string, format: uuid }
         version_id: { type: string, format: uuid }
-        filename: { type: string, const: artifact.zip }
+        filename: { type: string, const: execution-bundle.zip }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, minimum: 1 }
     BoxTaskResultRequest:
       type: object
       additionalProperties: false
-      required: [manifest, artifact]
+      required: [execution_epoch, manifest_sha256, execution_bundle]
       properties:
-        manifest: { type: object, additionalProperties: true }
-        artifact: { $ref: "#/components/schemas/ArtifactPointer" }
-    BoxTaskLease:
-      type: object
-      additionalProperties: false
-      required: [task_id, lease_expires_at, cancel_requested]
-      properties:
-        task_id: { type: string, format: uuid }
-        lease_expires_at: { type: string, format: date-time }
-        cancel_requested: { type: boolean }
+        execution_epoch: { type: string, format: uuid }
+        manifest_sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        execution_bundle: { $ref: "#/components/schemas/ArtifactPointer" }
     BoxTask:
       type: object
       additionalProperties: false
-      required: [task_id, experiment_id, project_id, status, attempt, max_attempts, run_spec, created_at, updated_at]
+      required:
+        [
+          task_id,
+          experiment_id,
+          project_id,
+          box_id,
+          execution_epoch,
+          status,
+          attempt,
+          run_spec,
+          actual_runtime,
+          runtime_version,
+          created_at,
+          updated_at,
+        ]
       properties:
         task_id: { type: string, format: uuid }
         experiment_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
+        box_id: { type: string, format: uuid }
+        execution_epoch: { type: string, format: uuid }
         status: { $ref: "#/components/schemas/BoxTaskStatus" }
         attempt: { type: integer, minimum: 1 }
-        max_attempts: { type: integer, minimum: 1, maximum: 10 }
-        lease_expires_at: { type: string, format: date-time }
         cancel_requested: { type: boolean }
         run_spec: { type: object, additionalProperties: true }
+        actual_runtime: { type: string, enum: [local-docker, e2b] }
+        runtime_version: { type: string, maxLength: 100 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    ExperimentSettings:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          project_id,
+          timezone,
+          default_runtime_policy,
+          default_limits,
+          git_large_file_threshold_bytes,
+          updated_by,
+          updated_at,
+        ]
+      properties:
+        project_id: { type: string, format: uuid }
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: IANA timezone used to freeze new result-directory timestamps.
+          example: Asia/Shanghai
+        default_runtime_policy: { $ref: "#/components/schemas/RuntimePolicy" }
+        default_limits: { $ref: "#/components/schemas/BoxResourceLimits" }
+        git_large_file_threshold_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 5368709120
+        updated_by: { type: string, format: uuid }
+        updated_at: { type: string, format: date-time }
+    UpdateExperimentSettingsRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 100
+        default_runtime_policy: { $ref: "#/components/schemas/RuntimePolicy" }
+        default_limits: { $ref: "#/components/schemas/BoxResourceLimits" }
+        git_large_file_threshold_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 5368709120
     CreateExperimentRequest:
       type: object
       additionalProperties: false
-      required: [name, source_commit, entrypoint, parameters, environment, inputs, runtime, limits, idempotency_key]
+      required:
+        [
+          name,
+          experiment_type,
+          source_commit,
+          entrypoint,
+          parameters,
+          environment,
+          inputs,
+          idempotency_key,
+        ]
       properties:
         name: { type: string, minLength: 1, maxLength: 200 }
-        source_commit: { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
-        entrypoint: { type: string, minLength: 1, maxLength: 500, pattern: "^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$" }
+        experiment_type: { type: string, enum: [box, self] }
+        source_commit:
+          { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        entrypoint:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 500,
+            pattern: "^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$",
+          }
         parameters: { type: object, additionalProperties: true }
-        environment: { type: object, additionalProperties: { type: string }, maxProperties: 100 }
+        environment:
+          {
+            type: object,
+            additionalProperties: { type: string },
+            maxProperties: 100,
+          }
         inputs: { type: object, additionalProperties: true }
-        runtime: { type: string, enum: [local-docker, e2b] }
-        limits: { $ref: "#/components/schemas/BoxResourceLimits" }
+        runtime_policy: { $ref: "#/components/schemas/RuntimePolicy" }
+        requested_box_id: { type: string, format: uuid }
+        limits_override: { $ref: "#/components/schemas/BoxResourceLimits" }
         idempotency_key: { type: string, minLength: 1, maxLength: 200 }
-        max_attempts: { type: integer, minimum: 1, maximum: 5, default: 1 }
     RunExperimentRequest:
       type: object
       additionalProperties: false
+      required: [idempotency_key]
       properties:
         idempotency_key: { type: string, minLength: 1, maxLength: 200 }
+    RerunExperimentRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        source_commit:
+          { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        entrypoint:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 500,
+            pattern: "^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$",
+          }
+        parameters: { type: object, additionalProperties: true }
+        environment:
+          {
+            type: object,
+            additionalProperties: { type: string },
+            maxProperties: 100,
+          }
+        inputs: { type: object, additionalProperties: true }
+        runtime_policy: { $ref: "#/components/schemas/RuntimePolicy" }
+        requested_box_id: { type: string, format: uuid }
+        limits_override: { $ref: "#/components/schemas/BoxResourceLimits" }
+        idempotency_key: { type: string, minLength: 1, maxLength: 200 }
+    BindExperimentResultRequest:
+      type: object
+      additionalProperties: false
+      required: [commit_sha, idempotency_key]
+      properties:
+        commit_sha: { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        idempotency_key: { type: string, minLength: 1, maxLength: 200 }
+    ExperimentResultContract:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          branch,
+          directory,
+          manifest_schema,
+          git_large_file_threshold_bytes,
+          artifact_pointer_path,
+          push_required,
+          bind_tool,
+          instructions,
+        ]
+      properties:
+        branch: { type: string, minLength: 1, maxLength: 255 }
+        directory: { type: string, minLength: 1, maxLength: 4096 }
+        manifest_schema: { type: string, format: uri }
+        git_large_file_threshold_bytes:
+          { type: integer, format: int64, minimum: 1 }
+        artifact_pointer_path: { type: string, const: .mmdash/artifacts.json }
+        push_required: { type: boolean, const: true }
+        bind_tool: { type: string, const: experiment.result.bind }
+        instructions: { type: string, minLength: 1, maxLength: 10000 }
+    ExperimentRetry:
+      type: object
+      additionalProperties: false
+      required: [root_experiment_id, latest_experiment_id, retry_sequence]
+      properties:
+        retry_of_experiment_id: { type: string, format: uuid }
+        root_experiment_id: { type: string, format: uuid }
+        superseded_by_experiment_id: { type: string, format: uuid }
+        latest_experiment_id: { type: string, format: uuid }
+        retry_sequence: { type: integer, minimum: 0 }
+        warning_code: { type: string, enum: [EXPERIMENT_HAS_NEWER_RETRY] }
+    ExperimentPreparedResultFile:
+      type: object
+      additionalProperties: false
+      required: [path, sha256, size_bytes, kind, media_type]
+      properties:
+        path:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 4096,
+            pattern: "^(?!/)(?!.*(^|/)\\.\\.(/|$))(?!.*[\\\\:]).+$",
+          }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size_bytes:
+          { type: integer, format: int64, minimum: 0, maximum: 10737418240 }
+        kind:
+          {
+            type: string,
+            enum: [file, log, figure, table, data, model, summary],
+          }
+        media_type: { type: string, minLength: 1, maxLength: 255 }
+    ExperimentResultJobInput:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          experiment_id,
+          project_id,
+          artifact_id,
+          version_id,
+          bundle_sha256,
+          bundle_size_bytes,
+          manifest_sha256,
+          result_directory,
+          git_large_file_threshold_bytes,
+          transfer,
+        ]
+      properties:
+        experiment_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        artifact_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        bundle_sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        bundle_size_bytes:
+          { type: integer, format: int64, minimum: 1, maximum: 10737418240 }
+        manifest_sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        result_directory: { type: string, minLength: 1, maxLength: 4096 }
+        git_large_file_threshold_bytes:
+          { type: integer, format: int64, minimum: 1, maximum: 5368709120 }
+        transfer: { $ref: "#/components/schemas/ArtifactTransferGrant" }
+    FinalizeExperimentResultRequest:
+      type: object
+      additionalProperties: false
+      required: [manifest_sha256, files]
+      properties:
+        manifest_sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        files:
+          type: array
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/ExperimentPreparedResultFile" }
+        summary: { type: string, maxLength: 20000 }
+        analysis: { type: string, maxLength: 20000 }
+    FinalizeExperimentResultResponse:
+      type: object
+      additionalProperties: false
+      required: [experiment_id, result_commit_sha]
+      properties:
+        experiment_id: { type: string, format: uuid }
+        result_commit_sha:
+          { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
     Experiment:
       type: object
       additionalProperties: false
-      required: [experiment_id, project_id, name, status, created_by, source_commit, entrypoint, parameters, environment, inputs, runtime, limits, created_at, updated_at]
+      required:
+        [
+          experiment_id,
+          project_id,
+          name,
+          experiment_type,
+          execution_status,
+          created_by,
+          source_commit,
+          entrypoint,
+          parameters,
+          environment,
+          inputs,
+          requested_runtime_policy,
+          limits,
+          project_timezone,
+          result_directory,
+          retry,
+          logs_truncated,
+          progress,
+          created_at,
+          updated_at,
+        ]
       properties:
         experiment_id: { type: string, format: uuid }
         project_id: { type: string, format: uuid }
         name: { type: string }
-        status: { $ref: "#/components/schemas/ExperimentStatus" }
+        experiment_type: { $ref: "#/components/schemas/ExperimentType" }
+        execution_status: { $ref: "#/components/schemas/ExperimentStatus" }
+        connectivity_status:
+          { $ref: "#/components/schemas/ExperimentConnectivityStatus" }
         created_by: { type: string, format: uuid }
         source_commit: { type: string }
         entrypoint: { type: string }
         parameters: { type: object, additionalProperties: true }
         environment: { type: object, additionalProperties: { type: string } }
         inputs: { type: object, additionalProperties: true }
-        runtime: { type: string, enum: [local-docker, e2b] }
+        requested_runtime_policy: { $ref: "#/components/schemas/RuntimePolicy" }
+        requested_box_id: { type: string, format: uuid }
+        actual_runtime: { type: string, enum: [local-docker, e2b] }
+        runtime_version: { type: string }
         limits: { $ref: "#/components/schemas/BoxResourceLimits" }
         box_id: { type: string, format: uuid }
         task_id: { type: string, format: uuid }
         exit_code: { type: integer }
-        failure_code: { type: string }
-        failure_message: { type: string }
+        failure: { $ref: "#/components/schemas/ExperimentFailure" }
         resource_usage: { type: object, additionalProperties: true }
         summary: { type: string }
-        result: { $ref: "#/components/schemas/ResultBundle" }
+        project_timezone: { type: string, minLength: 1, maxLength: 100 }
+        result_directory: { type: string, minLength: 1, maxLength: 4096 }
+        result_commit_sha:
+          { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        execution_bundle: { $ref: "#/components/schemas/ArtifactPointer" }
+        result_manifest_sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        result_contract:
+          { $ref: "#/components/schemas/ExperimentResultContract" }
+        retry: { $ref: "#/components/schemas/ExperimentRetry" }
+        logs_truncated: { type: boolean }
+        logs_truncated_at: { type: string, format: date-time }
+        progress: { type: integer, minimum: 0, maximum: 100 }
         created_at: { type: string, format: date-time }
         started_at: { type: string, format: date-time }
         finished_at: { type: string, format: date-time }
@@ -5634,14 +6862,27 @@ components:
     ExperimentLog:
       type: object
       additionalProperties: false
-      required: [log_id, experiment_id, level, message, occurred_at]
+      required:
+        [
+          log_id,
+          experiment_id,
+          sequence,
+          stream,
+          message,
+          occurred_at,
+          received_at,
+          late_after_failure,
+        ]
       properties:
         log_id: { type: string, format: uuid }
         experiment_id: { type: string, format: uuid }
-        level: { type: string, enum: [debug, info, warning, error] }
+        sequence: { type: integer, format: int64, minimum: 1 }
+        stream: { type: string, enum: [stdout, stderr, system] }
         message: { type: string }
         fields: { type: object, additionalProperties: true }
         occurred_at: { type: string, format: date-time }
+        received_at: { type: string, format: date-time }
+        late_after_failure: { type: boolean }
     ExperimentLogPage:
       type: object
       additionalProperties: false
@@ -5652,13 +6893,38 @@ components:
           items: { $ref: "#/components/schemas/ExperimentLog" }
         has_more: { type: boolean }
         next_cursor: { type: string }
+    ResultFile:
+      type: object
+      additionalProperties: false
+      required: [path, storage_kind, sha256, size_bytes, media_type]
+      properties:
+        path: { type: string, minLength: 1, maxLength: 4096 }
+        storage_kind: { type: string, enum: [git, artifact] }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        media_type: { type: string, minLength: 1, maxLength: 255 }
+        artifact_id: { type: string, format: uuid }
+        artifact_version_id: { type: string, format: uuid }
+        repository_path: { type: string, minLength: 1, maxLength: 4096 }
     ResultBundle:
       type: object
       additionalProperties: false
-      required: [manifest, artifact]
+      required:
+        [experiment_id, execution_status, result_directory, files, retry]
       properties:
+        experiment_id: { type: string, format: uuid }
+        execution_status: { $ref: "#/components/schemas/ExperimentStatus" }
+        result_directory: { type: string, minLength: 1, maxLength: 4096 }
+        result_commit_sha:
+          { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        result_manifest_sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         manifest: { type: object, additionalProperties: true }
-        artifact: { $ref: "#/components/schemas/ArtifactPointer" }
+        execution_bundle: { $ref: "#/components/schemas/ArtifactPointer" }
+        files:
+          type: array
+          maxItems: 10000
+          items: { $ref: "#/components/schemas/ResultFile" }
+        retry: { $ref: "#/components/schemas/ExperimentRetry" }
         summary: { type: string }
         analysis: { type: string }
     ExperimentComparison:
@@ -5712,11 +6978,20 @@ components:
           type: string
           minLength: 32
           maxLength: 4096
+    DeviceAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      required: [client_kind]
+      properties:
+        client_kind:
+          type: string
+          enum: [cli, box]
     DeviceAuthorization:
       type: object
       additionalProperties: false
       required:
         [
+          client_kind,
           device_code,
           user_code,
           verification_uri,
@@ -5725,6 +7000,9 @@ components:
           interval,
         ]
       properties:
+        client_kind:
+          type: string
+          enum: [cli, box]
         device_code:
           type: string
           minLength: 32
@@ -5758,12 +7036,27 @@ components:
     DeviceTokenRequest:
       type: object
       additionalProperties: false
-      required: [device_code]
+      required: [device_code, client_kind]
       properties:
         device_code:
           type: string
           minLength: 32
           maxLength: 4096
+        client_kind:
+          type: string
+          enum: [cli, box]
+    BoxRegistrationGrant:
+      type: object
+      additionalProperties: false
+      required: [registration_grant, grant_expires_at]
+      properties:
+        registration_grant:
+          type: string
+          minLength: 32
+          maxLength: 4096
+        grant_expires_at:
+          type: string
+          format: date-time
     RegisterRequest:
       type: object
       additionalProperties: false
@@ -5898,9 +7191,11 @@ components:
           type: string
           enum: [api, agent, box]
           description: >-
-            `agent` is retained only for request-contract compatibility and is
-            rejected by this generic endpoint. Product Agent Tokens must be
-            issued through the project-scoped Agent credential lifecycle.
+            `agent` and `box` are retained only for request-contract
+            compatibility and are rejected by this generic endpoint. Product
+            Agent Tokens must be issued through the project-scoped Agent
+            credential lifecycle. Box Tokens are issued only by consuming a
+            browser-approved Box registration grant at `box.register`.
         name:
           type: string
           minLength: 1

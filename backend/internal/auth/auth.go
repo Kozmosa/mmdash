@@ -46,6 +46,7 @@ type Session struct {
 
 // DeviceAuthorization is a short-lived user-approved CLI login request.
 type DeviceAuthorization struct {
+	ClientKind     string
 	CreatedAt      time.Time
 	DeviceCodeHash string
 	ExpiresAt      time.Time
@@ -57,12 +58,44 @@ type DeviceAuthorization struct {
 
 // DeviceAuthorizationResult returns the two one-time codes to the CLI.
 type DeviceAuthorizationResult struct {
+	ClientKind              string    `json:"client_kind"`
 	DeviceCode              string    `json:"device_code"`
 	ExpiresAt               time.Time `json:"expires_at"`
 	Interval                int       `json:"interval"`
 	UserCode                string    `json:"user_code"`
 	VerificationURI         string    `json:"verification_uri"`
 	VerificationURIComplete string    `json:"verification_uri_complete"`
+}
+
+const (
+	DeviceClientCLI = "cli"
+	DeviceClientBox = "box"
+)
+
+// BoxRegistrationGrant is the hashed, one-time bridge between browser device
+// authorization and Box registration. The plaintext grant is returned once
+// and never persisted.
+type BoxRegistrationGrant struct {
+	ConsumedAt *time.Time
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	GrantHash  string
+	ID         string
+	UserID     string
+}
+
+// BoxRegistrationGrantResult is returned to a Box after its owner approves
+// the browser device flow.
+type BoxRegistrationGrantResult struct {
+	ExpiresAt         time.Time `json:"grant_expires_at"`
+	RegistrationGrant string    `json:"registration_grant"`
+}
+
+// DeviceExchange is the persistence representation of the mutually exclusive
+// CLI-session and Box-registration outcomes.
+type DeviceExchange struct {
+	Grant   *BoxRegistrationGrant
+	Session *Session
 }
 
 // Token is a persisted API, Agent, or Box credential.
@@ -235,7 +268,7 @@ type Store interface {
 	FindToken(context.Context, string, time.Time) (Token, User, error)
 	FindUserByEmail(context.Context, string) (User, string, error)
 	DecideDeviceAuthorization(context.Context, string, string, bool, time.Time) error
-	ExchangeDeviceAuthorization(context.Context, string, time.Time, func(User) (Session, error)) (Session, User, error)
+	ExchangeDeviceAuthorization(context.Context, string, string, time.Time, func(User) (DeviceExchange, error)) (DeviceExchange, User, error)
 	ListTokens(context.Context, string) ([]Token, error)
 	RotateSession(context.Context, string, string, string, time.Time) (Session, User, error)
 	RevokeSession(context.Context, string, time.Time) error
@@ -244,6 +277,23 @@ type Store interface {
 	UpdatePassword(context.Context, string, string, time.Time) error
 	UpdateUser(context.Context, string, string, string, time.Time) (User, error)
 	DeleteUser(context.Context, string) error
+}
+
+// BoxRegistrationStore atomically consumes a browser-approved grant, creates
+// the Auth-owned account credential, and invokes Box Control in the same
+// transaction so a token can never exist without its Box node.
+type BoxRegistrationStore interface {
+	ConsumeBoxRegistrationGrant(
+		context.Context,
+		string,
+		Token,
+		time.Time,
+		func(context.Context, transaction.Tx, Token) error,
+	) (Token, error)
+}
+
+type BoxTokenStore interface {
+	RevokeBoxToken(context.Context, string, string, time.Time) error
 }
 
 // ManagedTokenStore lets a product domain revoke one of its own
@@ -316,18 +366,19 @@ type ProjectTokenAuthorizer interface {
 
 // Service contains credential policy and token cryptography.
 type Service struct {
-	AccessTokenTTL         time.Duration
-	Clock                  clock.Clock
-	DeviceAuthorizationTTL time.Duration
-	DevicePollInterval     time.Duration
-	DeviceVerificationURI  string
-	Generator              identity.Generator
-	JWTSecret              []byte
-	Invitations            InvitationService
-	Policy                 RegistrationPolicy
-	ProjectTokens          ProjectTokenAuthorizer
-	SessionTTL             time.Duration
-	Store                  Store
+	AccessTokenTTL          time.Duration
+	BoxRegistrationGrantTTL time.Duration
+	Clock                   clock.Clock
+	DeviceAuthorizationTTL  time.Duration
+	DevicePollInterval      time.Duration
+	DeviceVerificationURI   string
+	Generator               identity.Generator
+	JWTSecret               []byte
+	Invitations             InvitationService
+	Policy                  RegistrationPolicy
+	ProjectTokens           ProjectTokenAuthorizer
+	SessionTTL              time.Duration
+	Store                   Store
 }
 
 // Register creates an active account and immediately creates a session.
@@ -573,7 +624,11 @@ func (service Service) Refresh(ctx context.Context, refreshToken string) (LoginR
 }
 
 // StartDeviceAuthorization creates one short-lived device login challenge.
-func (service Service) StartDeviceAuthorization(ctx context.Context) (DeviceAuthorizationResult, error) {
+func (service Service) StartDeviceAuthorization(ctx context.Context, clientKind string) (DeviceAuthorizationResult, error) {
+	clientKind = strings.TrimSpace(clientKind)
+	if clientKind != DeviceClientCLI && clientKind != DeviceClientBox {
+		return DeviceAuthorizationResult{}, ErrInvalid
+	}
 	now := service.Clock.Now().UTC()
 	id, err := service.Generator.New()
 	if err != nil {
@@ -599,11 +654,11 @@ func (service Service) StartDeviceAuthorization(ctx context.Context) (DeviceAuth
 	if verificationURI == "" {
 		return DeviceAuthorizationResult{}, fmt.Errorf("device verification URI is not configured")
 	}
-	authorization := DeviceAuthorization{CreatedAt: now, DeviceCodeHash: hashToken(deviceCode), ExpiresAt: now.Add(ttl), ID: id, Status: "pending", UserCodeHash: hashToken(normalizeUserCode(userCode))}
+	authorization := DeviceAuthorization{ClientKind: clientKind, CreatedAt: now, DeviceCodeHash: hashToken(deviceCode), ExpiresAt: now.Add(ttl), ID: id, Status: "pending", UserCodeHash: hashToken(normalizeUserCode(userCode))}
 	if err := service.Store.CreateDeviceAuthorization(ctx, authorization); err != nil {
 		return DeviceAuthorizationResult{}, err
 	}
-	return DeviceAuthorizationResult{DeviceCode: deviceCode, ExpiresAt: authorization.ExpiresAt, Interval: int(interval / time.Second), UserCode: userCode, VerificationURI: verificationURI, VerificationURIComplete: verificationURI + "?user_code=" + userCode}, nil
+	return DeviceAuthorizationResult{ClientKind: clientKind, DeviceCode: deviceCode, ExpiresAt: authorization.ExpiresAt, Interval: int(interval / time.Second), UserCode: userCode, VerificationURI: verificationURI, VerificationURIComplete: verificationURI + "?user_code=" + userCode}, nil
 }
 
 // DecideDeviceAuthorization records the authenticated browser user's decision.
@@ -614,44 +669,71 @@ func (service Service) DecideDeviceAuthorization(ctx context.Context, identity I
 	return service.Store.DecideDeviceAuthorization(ctx, hashToken(normalizeUserCode(userCode)), identity.User.ID, approve, service.Clock.Now().UTC())
 }
 
-// ExchangeDeviceAuthorization creates a refreshable CLI session exactly once.
-func (service Service) ExchangeDeviceAuthorization(ctx context.Context, deviceCode string) (LoginResult, error) {
+// ExchangeDeviceAuthorization creates either a refreshable CLI session or a
+// one-time Box registration grant exactly once. A Box never receives a user
+// Session from this flow.
+func (service Service) ExchangeDeviceAuthorization(ctx context.Context, deviceCode string, clientKind string) (interface{}, error) {
 	if !strings.HasPrefix(deviceCode, "mmdash_device_") {
-		return LoginResult{}, ErrInvalid
+		return nil, ErrInvalid
+	}
+	clientKind = strings.TrimSpace(clientKind)
+	if clientKind != DeviceClientCLI && clientKind != DeviceClientBox {
+		return nil, ErrInvalid
 	}
 	now := service.Clock.Now().UTC()
-	sessionID, err := service.Generator.New()
-	if err != nil {
-		return LoginResult{}, err
-	}
-	refreshToken, err := randomSecret("mmdash_refresh_")
-	if err != nil {
-		return LoginResult{}, err
-	}
-	sessionExpiresAt := now.Add(service.SessionTTL)
-	accessExpiresAt := service.accessExpiresAt(now, sessionExpiresAt)
 	var accessToken string
-	session, user, err := service.Store.ExchangeDeviceAuthorization(ctx, hashToken(deviceCode), now, func(user User) (Session, error) {
+	var refreshToken string
+	var registrationGrant string
+	exchange, user, err := service.Store.ExchangeDeviceAuthorization(ctx, hashToken(deviceCode), clientKind, now, func(user User) (DeviceExchange, error) {
+		if clientKind == DeviceClientBox {
+			grantID, err := service.Generator.New()
+			if err != nil {
+				return DeviceExchange{}, err
+			}
+			registrationGrant, err = randomSecret("mmdash_box_registration_")
+			if err != nil {
+				return DeviceExchange{}, err
+			}
+			ttl := service.BoxRegistrationGrantTTL
+			if ttl <= 0 {
+				ttl = 10 * time.Minute
+			}
+			grant := BoxRegistrationGrant{CreatedAt: now, ExpiresAt: now.Add(ttl), GrantHash: hashToken(registrationGrant), ID: grantID, UserID: user.ID}
+			return DeviceExchange{Grant: &grant}, nil
+		}
+		sessionID, err := service.Generator.New()
+		if err != nil {
+			return DeviceExchange{}, err
+		}
+		refreshToken, err = randomSecret("mmdash_refresh_")
+		if err != nil {
+			return DeviceExchange{}, err
+		}
+		sessionExpiresAt := now.Add(service.SessionTTL)
+		accessExpiresAt := service.accessExpiresAt(now, sessionExpiresAt)
 		jwtID, err := randomSecret("jwt_")
 		if err != nil {
-			return Session{}, err
+			return DeviceExchange{}, err
 		}
 		accessToken, err = service.signJWT(jwtClaims{ExpiresAt: accessExpiresAt.Unix(), ID: jwtID, IssuedAt: now.Unix(), SessionID: sessionID, Subject: user.ID, Type: "session"})
 		if err != nil {
-			return Session{}, err
+			return DeviceExchange{}, err
 		}
-		return Session{
-			CreatedAt:        now,
-			ExpiresAt:        sessionExpiresAt,
-			ID:               sessionID,
-			RefreshTokenHash: hashToken(refreshToken),
-			TokenHash:        hashToken(accessToken),
-			UserID:           user.ID,
-		}, nil
+		session := Session{CreatedAt: now, ExpiresAt: sessionExpiresAt, ID: sessionID, RefreshTokenHash: hashToken(refreshToken), TokenHash: hashToken(accessToken), UserID: user.ID}
+		return DeviceExchange{Session: &session}, nil
 	})
 	if err != nil {
-		return LoginResult{}, err
+		return nil, err
 	}
+	if exchange.Grant != nil {
+		requestctx.SetActor(ctx, user.ID, "box-registration")
+		return BoxRegistrationGrantResult{ExpiresAt: exchange.Grant.ExpiresAt, RegistrationGrant: registrationGrant}, nil
+	}
+	if exchange.Session == nil {
+		return nil, fmt.Errorf("device authorization exchange produced no result")
+	}
+	session := *exchange.Session
+	accessExpiresAt := service.accessExpiresAt(now, session.ExpiresAt)
 	requestctx.SetActor(ctx, user.ID, "session")
 	return LoginResult{AccessToken: accessToken, ExpiresAt: accessExpiresAt, RefreshToken: refreshToken, SessionID: session.ID, User: user}, nil
 }
@@ -750,9 +832,9 @@ func (service Service) Logout(ctx context.Context, authorization string) error {
 	return service.Store.RevokeSession(ctx, identity.SessionID, service.Clock.Now().UTC())
 }
 
-// IssueToken creates a generic API or Box token. Product Agent credentials are
-// issued only through IssueAgentToken so an instance, grant, and exact tools
-// cannot be omitted by a legacy caller.
+// IssueToken creates a generic API token. Product Agent and Box credentials
+// have dedicated lifecycle methods so their required grants and resource
+// bindings cannot be omitted by a legacy caller.
 func (service Service) IssueToken(
 	ctx context.Context,
 	identity Identity,
@@ -764,10 +846,7 @@ func (service Service) IssueToken(
 	if identity.Kind != "session" && identity.Kind != "api" {
 		return IssuedToken{}, ErrForbidden
 	}
-	if kind != "api" && kind != "box" {
-		return IssuedToken{}, ErrInvalid
-	}
-	if kind == "box" && projectID == "" {
+	if kind != "api" {
 		return IssuedToken{}, ErrInvalid
 	}
 	if projectID != "" {
@@ -805,6 +884,51 @@ func (service Service) IssueToken(
 		return IssuedToken{}, fmt.Errorf("create token: %w", err)
 	}
 	return IssuedToken{Secret: secret, Token: token}, nil
+}
+
+// IssueBoxTokenFromRegistrationGrant consumes one approved grant and creates
+// an account-level Box token. The supplied callback must create the Box node
+// through Box Control using the same transaction.
+func (service Service) IssueBoxTokenFromRegistrationGrant(
+	ctx context.Context,
+	registrationGrant string,
+	name string,
+	register func(context.Context, transaction.Tx, Token) error,
+) (IssuedToken, error) {
+	registrationGrant = strings.TrimSpace(registrationGrant)
+	name = strings.TrimSpace(name)
+	if !strings.HasPrefix(registrationGrant, "mmdash_box_registration_") || name == "" || register == nil {
+		return IssuedToken{}, ErrInvalid
+	}
+	store, ok := service.Store.(BoxRegistrationStore)
+	if !ok {
+		return IssuedToken{}, fmt.Errorf("Box registration store is not configured")
+	}
+	tokenID, err := service.Generator.New()
+	if err != nil {
+		return IssuedToken{}, err
+	}
+	secret, err := randomSecret("mmdash_box_")
+	if err != nil {
+		return IssuedToken{}, err
+	}
+	now := service.Clock.Now().UTC()
+	token := Token{CreatedAt: now, ID: tokenID, Kind: "box", Name: name, TokenHash: hashToken(secret)}
+	token, err = store.ConsumeBoxRegistrationGrant(ctx, hashToken(registrationGrant), token, now, register)
+	if err != nil {
+		return IssuedToken{}, err
+	}
+	return IssuedToken{Secret: secret, Token: token}, nil
+}
+
+// RevokeBoxToken invalidates one account-level Box credential after Box
+// Control has authorized and recorded the corresponding lifecycle transition.
+func (service Service) RevokeBoxToken(ctx context.Context, tokenID string, ownerUserID string) error {
+	store, ok := service.Store.(BoxTokenStore)
+	if !ok || strings.TrimSpace(tokenID) == "" || strings.TrimSpace(ownerUserID) == "" {
+		return ErrInvalid
+	}
+	return store.RevokeBoxToken(ctx, tokenID, ownerUserID, service.Clock.Now().UTC())
 }
 
 // IssueAgentToken creates a pending, high-entropy product Agent credential.

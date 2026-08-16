@@ -1,3 +1,48 @@
+# mmdash v0.1 Stage 8 Box / Experiment refactor handoff
+
+- Updated: 2026-08-16
+- Branch: `codex/stage8-refactor`
+- Base: `main@7a4e39f` after the final main merge
+- Delivery state: Stage 8 refactor implemented; Docker acceptance was explicitly
+  waived by the user because of the remaining weekly quota.
+
+## Delivered Stage 8 vertical slice
+
+- Account-owned Box device authorization and dedicated Box Tokens; many-to-many
+  Project assignment, personal Box management, Project Box/Experiment settings,
+  member-departure force-unassignment, draining and force revoke.
+- Outbound-only Gateway long polling, execution epochs, durable restart-safe
+  callback/log/result spool, offline resume, ordered log acknowledgement,
+  `logs_truncated`, 72-hour offline timeout, immutable Execution Bundle upload,
+  Local Docker and hosted/self-hosted E2B adapters with lifecycle probes.
+- Frozen `box / box-re / self` Experiment types, separate execution/connectivity
+  state, structured failures, immutable retry chains, old-ID guidance, Project
+  timezone result paths, MCP/CLI create/run/status/bind/result flows, and exact
+  Coding Agent self-run instructions.
+- Artifact-owned permanent raw Bundles and large files, Worker-safe extraction,
+  Repo-owned serialized result commits and remote verification, Artifact pointer
+  manifests, and compensating revert for pushed-but-unbound results invalidated
+  by force revoke/unassignment.
+- Experiment cards/progress, read-only persisted Terminal history and SSE stream,
+  result tree, virtual Artifact files, comparison, Box management and split
+  settings UI; Data Hub projections, event schemas, Audit records, generated
+  clients and API catalogs are aligned.
+- Durable Project purge aborts multipart uploads, deletes mmdash-owned Artifact
+  bytes and internal Repo storage, cascades Project-scoped database state, keeps
+  account Boxes/Tokens, and never changes external Git repositories or branches.
+
+## Verification evidence
+
+- Focused Core, Box, Repo, Artifact, Experiment, Data Hub, Project and CLI Go
+  suites passed; Web 134 tests/build, Web BFF 63 tests/build, MCP Gateway 38
+  tests/build, contract generation/check and API catalog check passed.
+- The final repository-wide `pnpm check` was stopped at the first lint finding
+  (one unused UI import), which was corrected without rerunning the gate because
+  the user explicitly ordered all remaining tests stopped. No Docker/Compose
+  command was run per the user's quota instruction.
+
+## Historical pre-implementation preparation snapshot
+
 # mmdash v0.1 Stage 8 Box / Experiment redesign preparation handoff
 
 - Updated: 2026-08-15

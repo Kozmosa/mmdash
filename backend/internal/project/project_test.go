@@ -52,6 +52,17 @@ type artifactValidatorStub struct {
 	ids       []string
 }
 
+type memberRemovalHookStub struct {
+	called    bool
+	projectID string
+	userID    string
+}
+
+func (stub *memberRemovalHookStub) BeforeProjectMemberRemoval(_ context.Context, projectID, userID string) error {
+	stub.called, stub.projectID, stub.userID = true, projectID, userID
+	return nil
+}
+
 func (stub *artifactValidatorStub) ValidateProjectReferences(
 	_ context.Context,
 	projectID string,
@@ -332,6 +343,20 @@ func TestOwnerCannotRemoveSelf(t *testing.T) {
 	}
 	if store.memberRemoved {
 		t.Fatal("forbidden owner removal reached persistence")
+	}
+}
+
+func TestNonOwnerCanLeaveAndClosesOwnedProjectResourcesFirst(t *testing.T) {
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "editor"}}
+	store := &roleStoreStub{roles: map[string]Role{"editor": RoleEditor}}
+	hook := &memberRemovalHookStub{}
+	service := Service{Auth: authStub{identity: identity}, MemberRemoval: hook, Store: store}
+
+	if err := service.RemoveMember(context.Background(), identity, "project-1", "editor"); err != nil {
+		t.Fatalf("leave project: %v", err)
+	}
+	if !hook.called || hook.projectID != "project-1" || hook.userID != "editor" || !store.memberRemoved {
+		t.Fatalf("incomplete member removal: hook=%#v store=%#v", hook, store)
 	}
 }
 

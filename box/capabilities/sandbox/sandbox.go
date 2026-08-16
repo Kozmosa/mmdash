@@ -7,15 +7,28 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/mmdash/mmdash/box/contracts"
 )
 
+// ErrExecutionDetached means the Gateway process stopped observing a still
+// running recoverable Runtime. It is connectivity/local-controller state, not
+// an experiment failure; a restarted Gateway must attach again by task ID.
+var ErrExecutionDetached = errors.New("sandbox execution remains active and detached")
+
 type Runtime interface {
 	Run(context.Context, RunRequest) (RunResult, error)
 	Cancel(context.Context, string) error
+}
+
+// Prober is implemented by Runtime adapters that can prove their external
+// dependencies and a minimal create/run/destroy lifecycle are usable. A Box
+// must advertise only runtimes whose probe succeeds.
+type Prober interface {
+	Probe(context.Context) error
 }
 
 // Destroyer is implemented by runtimes that own an external execution
@@ -71,13 +84,13 @@ func EntrypointCommand(entrypoint string) ([]string, error) {
 	}
 	switch parts[0] {
 	case "python", "python3":
-		return []string{"python3", filepath.Join("/workspace", file)}, nil
+		return []string{"python3", path.Join("/workspace", file)}, nil
 	case "node":
-		return []string{"node", filepath.Join("/workspace", file)}, nil
+		return []string{"node", path.Join("/workspace", file)}, nil
 	case "go":
-		return []string{"go", "run", filepath.Join("/workspace", file)}, nil
+		return []string{"go", "run", path.Join("/workspace", file)}, nil
 	case "binary":
-		return []string{filepath.Join("/workspace", file)}, nil
+		return []string{path.Join("/workspace", file)}, nil
 	default:
 		return nil, fmt.Errorf("unsupported entrypoint kind %q", parts[0])
 	}

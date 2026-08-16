@@ -1,1 +1,16 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://mmdash.moe/contracts/events/box.heartbeat.received.schema.json","title":"box.heartbeat.received payload","type":"object","additionalProperties":false,"required":["box_id","project_id","status","version","running_tasks"],"properties":{"box_id":{"type":"string","format":"uuid"},"project_id":{"type":"string","format":"uuid"},"status":{"type":"string","enum":["online","offline"]},"version":{"type":"string"},"running_tasks":{"type":"integer","minimum":0}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/box.heartbeat.received.schema.json",
+  "title": "box.heartbeat.received payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["box_id", "owner_user_id", "status", "version", "running_tasks", "runtimes"],
+  "properties": {
+    "box_id": { "type": "string", "format": "uuid" },
+    "owner_user_id": { "type": "string", "format": "uuid" },
+    "status": { "type": "string", "enum": ["online", "offline", "draining"] },
+    "version": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "running_tasks": { "type": "integer", "minimum": 0 },
+    "runtimes": { "type": "array", "items": { "type": "string", "enum": ["e2b", "local-docker"] }, "uniqueItems": true }
+  }
+}

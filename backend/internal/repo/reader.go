@@ -3,7 +3,9 @@ package repo
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -422,6 +424,37 @@ func (reader Reader) ReadFile(
 	response.Encoding = &encoding
 	response.PreviewStatus = "text"
 	return response, nil
+}
+
+// HashBlob streams one immutable regular-file blob through SHA-256 without
+// buffering its contents or exposing a managed worktree path.
+func (reader Reader) HashBlob(
+	ctx context.Context,
+	repository Repository,
+	objectID string,
+	expectedSize int64,
+) (string, error) {
+	if gitcli.ValidateFullSHA(objectID) != nil || expectedSize < 0 || expectedSize > 10<<30 {
+		return "", ErrInvalid
+	}
+	layout, err := reader.readyLayout(repository)
+	if err != nil {
+		return "", err
+	}
+	hasher := sha256.New()
+	result, err := reader.Git.RunStream(ctx, gitcli.Command{
+		Args: []string{
+			"--git-dir=" + layout.Bare, "cat-file", "blob", objectID,
+		},
+		Directory: layout.Repository, Operation: "repo.content.hash",
+	}, hasher, expectedSize)
+	if err != nil || result.Bytes != expectedSize {
+		if err != nil {
+			return "", err
+		}
+		return "", ErrObjectNotFound
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func (reader Reader) readyLayout(repository Repository) (gitcli.Layout, error) {

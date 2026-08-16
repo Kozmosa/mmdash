@@ -131,9 +131,9 @@ func (store PostgresStore) CreateDeviceAuthorization(ctx context.Context, author
 	_, err := store.DB.ExecContext(ctx, `
 		INSERT INTO auth_device_authorizations (
 			authorization_id, device_code_hash, user_code_hash, status,
-			expires_at, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6)
-	`, authorization.ID, authorization.DeviceCodeHash, authorization.UserCodeHash, authorization.Status, authorization.ExpiresAt, authorization.CreatedAt)
+			expires_at, created_at, client_kind
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, authorization.ID, authorization.DeviceCodeHash, authorization.UserCodeHash, authorization.Status, authorization.ExpiresAt, authorization.CreatedAt, authorization.ClientKind)
 	return err
 }
 
@@ -163,19 +163,21 @@ func (store PostgresStore) DecideDeviceAuthorization(ctx context.Context, userCo
 func (store PostgresStore) ExchangeDeviceAuthorization(
 	ctx context.Context,
 	deviceCodeHash string,
+	clientKind string,
 	now time.Time,
-	createSession func(User) (Session, error),
-) (Session, User, error) {
-	var session Session
+	createExchange func(User) (DeviceExchange, error),
+) (DeviceExchange, User, error) {
+	var exchange DeviceExchange
 	var user User
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		var userID string
 		err := tx.QueryRowContext(ctx, `
 			UPDATE auth_device_authorizations
 			SET status = 'consumed', consumed_at = $2
-			WHERE device_code_hash = $1 AND status = 'approved' AND expires_at > $2
+			WHERE device_code_hash = $1 AND client_kind = $3
+			  AND status = 'approved' AND expires_at > $2
 			RETURNING user_id
-		`, deviceCodeHash, now).Scan(&userID)
+		`, deviceCodeHash, now, clientKind).Scan(&userID)
 		if err == sql.ErrNoRows {
 			return deviceAuthorizationError(ctx, tx, "device_code_hash", deviceCodeHash, now)
 		}
@@ -189,22 +191,38 @@ func (store PostgresStore) ExchangeDeviceAuthorization(
 		if err != nil {
 			return err
 		}
-		session, err = createSession(user)
+		exchange, err = createExchange(user)
 		if err != nil {
 			return err
 		}
-		if session.UserID != userID {
-			return fmt.Errorf("device session user does not match approved user")
+		if (exchange.Session == nil) == (exchange.Grant == nil) {
+			return fmt.Errorf("device exchange must create exactly one result")
+		}
+		if exchange.Session != nil {
+			session := exchange.Session
+			if clientKind != DeviceClientCLI || session.UserID != userID {
+				return fmt.Errorf("device session does not match approved CLI authorization")
+			}
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO auth_sessions (
+					session_id, user_id, token_hash, refresh_token_hash,
+					expires_at, last_seen_at, created_at
+				) VALUES ($1, $2, $3, $4, $5, $6, $6)
+			`, session.ID, session.UserID, session.TokenHash, session.RefreshTokenHash, session.ExpiresAt, session.CreatedAt)
+			return err
+		}
+		grant := exchange.Grant
+		if clientKind != DeviceClientBox || grant.UserID != userID {
+			return fmt.Errorf("registration grant does not match approved Box authorization")
 		}
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO auth_sessions (
-				session_id, user_id, token_hash, refresh_token_hash,
-				expires_at, last_seen_at, created_at
-			) VALUES ($1, $2, $3, $4, $5, $6, $6)
-		`, session.ID, session.UserID, session.TokenHash, session.RefreshTokenHash, session.ExpiresAt, session.CreatedAt)
+			INSERT INTO auth_box_registration_grants (
+				grant_id, grant_hash, user_id, expires_at, created_at
+			) VALUES ($1, $2, $3, $4, $5)
+		`, grant.ID, grant.GrantHash, grant.UserID, grant.ExpiresAt, grant.CreatedAt)
 		return err
 	})
-	return session, user, err
+	return exchange, user, err
 }
 
 func (store PostgresStore) RotateSession(ctx context.Context, refreshTokenHash string, tokenHash string, newRefreshTokenHash string, now time.Time) (Session, User, error) {
@@ -335,6 +353,64 @@ func (store PostgresStore) CreateToken(ctx context.Context, token Token) error {
 		) VALUES ($1, $2, NULLIF($3, '')::UUID, $4, $5, $6, $7, $8)
 	`, token.ID, token.UserID, token.ProjectID, token.Kind, token.Name, token.TokenHash, token.ExpiresAt, token.CreatedAt)
 	return err
+}
+
+func (store PostgresStore) ConsumeBoxRegistrationGrant(
+	ctx context.Context,
+	grantHash string,
+	token Token,
+	now time.Time,
+	register func(context.Context, transaction.Tx, Token) error,
+) (Token, error) {
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var userID string
+		err := tx.QueryRowContext(ctx, `
+			UPDATE auth_box_registration_grants
+			SET consumed_at = $2
+			WHERE grant_hash = $1 AND consumed_at IS NULL AND expires_at > $2
+			RETURNING user_id
+		`, grantHash, now).Scan(&userID)
+		if errors.Is(err, sql.ErrNoRows) {
+			var expiresAt time.Time
+			var consumedAt *time.Time
+			if lookupErr := tx.QueryRowContext(ctx, `
+				SELECT expires_at, consumed_at
+				FROM auth_box_registration_grants
+				WHERE grant_hash = $1
+			`, grantHash).Scan(&expiresAt, &consumedAt); errors.Is(lookupErr, sql.ErrNoRows) {
+				return ErrNotFound
+			} else if lookupErr != nil {
+				return lookupErr
+			}
+			if !expiresAt.After(now) {
+				return ErrAuthorizationExpired
+			}
+			return ErrConflict
+		}
+		if err != nil {
+			return err
+		}
+		token.UserID = userID
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO auth_tokens (
+				token_id, user_id, project_id, kind, name, token_hash,
+				expires_at, created_at
+			) VALUES ($1, $2, NULL, 'box', $3, $4, $5, $6)
+		`, token.ID, token.UserID, token.Name, token.TokenHash, token.ExpiresAt, token.CreatedAt); err != nil {
+			return err
+		}
+		return register(ctx, tx, token)
+	})
+	return token, err
+}
+
+func (store PostgresStore) RevokeBoxToken(ctx context.Context, tokenID string, ownerUserID string, now time.Time) error {
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE auth_tokens
+		SET revoked_at = COALESCE(revoked_at, $3)
+		WHERE token_id = $1 AND user_id = $2 AND kind = 'box' AND project_id IS NULL
+	`, tokenID, ownerUserID, now)
+	return requireAffected(result, err)
 }
 
 func (store PostgresStore) FindToken(ctx context.Context, tokenHash string, now time.Time) (Token, User, error) {

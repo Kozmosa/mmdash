@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -39,6 +40,12 @@ type Result struct {
 	Duration time.Duration
 	Stderr   []byte
 	Stdout   []byte
+}
+
+// StreamResult reports a bounded stdout stream without retaining file bytes.
+type StreamResult struct {
+	Bytes    int64
+	Duration time.Duration
 }
 
 // CommandError intentionally omits argv, paths, credentials, and provider output.
@@ -153,6 +160,66 @@ func (client *Client) Run(ctx context.Context, request Command) (Result, error) 
 	}
 }
 
+// RunStream executes one reviewed Git command and streams stdout into a
+// caller-owned sink. It is reserved for immutable Git object bytes that may be
+// larger than the normal diagnostic-output limit.
+func (client *Client) RunStream(
+	ctx context.Context,
+	request Command,
+	output io.Writer,
+	maxBytes int64,
+) (StreamResult, error) {
+	if strings.TrimSpace(request.Operation) == "" || request.Directory == "" ||
+		len(request.Args) == 0 || output == nil || maxBytes < 0 || maxBytes > 10<<30 {
+		return StreamResult{}, &CommandError{
+			Code: ErrCommandFailed, ExitCode: -1, Operation: "invalid",
+		}
+	}
+	select {
+	case client.semaphore <- struct{}{}:
+		defer func() { <-client.semaphore }()
+	case <-ctx.Done():
+		return StreamResult{}, &CommandError{
+			Code: ErrTimeout, ExitCode: -1, Operation: request.Operation,
+		}
+	}
+	timeout := request.Timeout
+	if timeout <= 0 {
+		timeout = client.CommandTimeout
+	}
+	commandContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	stdout := &limitedStreamWriter{limit: maxBytes, writer: output}
+	stderr := &limitedBuffer{limit: client.MaxOutputBytes}
+	command := exec.CommandContext(commandContext, client.GitPath, request.Args...)
+	command.Dir = request.Directory
+	command.Env = client.commandEnvironment(request)
+	command.Stdout = stdout
+	command.Stderr = stderr
+	startedAt := time.Now()
+	runErr := command.Run()
+	result := StreamResult{Bytes: stdout.written, Duration: time.Since(startedAt)}
+	if runErr == nil && !stdout.exceeded && !stderr.exceeded {
+		return result, nil
+	}
+	code := ErrCommandFailed
+	redactedStderr := redact(stderr.Bytes(), request.Sensitive)
+	switch {
+	case commandContext.Err() != nil:
+		code = ErrTimeout
+	case stdout.exceeded || stderr.exceeded:
+		code = ErrOutputLimit
+	case looksLikeAuthenticationFailure(redactedStderr):
+		code = ErrAuthentication
+	}
+	exitCode := -1
+	var exitError *exec.ExitError
+	if errors.As(runErr, &exitError) {
+		exitCode = exitError.ExitCode()
+	}
+	return result, &CommandError{Code: code, ExitCode: exitCode, Operation: request.Operation}
+}
+
 func (client *Client) commandEnvironment(request Command) []string {
 	environment := []string{}
 	for _, key := range []string{"PATH", "Path", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP"} {
@@ -239,6 +306,37 @@ type limitedBuffer struct {
 	exceeded bool
 	limit    int
 	mutex    sync.Mutex
+}
+
+type limitedStreamWriter struct {
+	exceeded bool
+	limit    int64
+	writer   io.Writer
+	written  int64
+}
+
+func (writer *limitedStreamWriter) Write(contents []byte) (int, error) {
+	remaining := writer.limit - writer.written
+	if remaining <= 0 && len(contents) > 0 {
+		writer.exceeded = true
+		return 0, ErrOutputLimit
+	}
+	if int64(len(contents)) > remaining {
+		contents = contents[:remaining]
+		writer.exceeded = true
+	}
+	written, err := writer.writer.Write(contents)
+	writer.written += int64(written)
+	if err != nil {
+		return written, err
+	}
+	if writer.exceeded {
+		return written, ErrOutputLimit
+	}
+	if written != len(contents) {
+		return written, io.ErrShortWrite
+	}
+	return written, nil
 }
 
 func (writer *limitedBuffer) Write(contents []byte) (int, error) {
