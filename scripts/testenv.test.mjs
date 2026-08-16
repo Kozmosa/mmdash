@@ -45,6 +45,20 @@ describe("isolated Pixi development environment", () => {
     expect(environment.HOME).toBeUndefined();
   });
 
+  it("defaults the Go module proxy to a mirror and honors overrides", () => {
+    const root = path.resolve("C:/workspace/mmdash");
+    const layout = createLayout(root);
+    expect(
+      createIsolatedEnvironment(layout, { PATH: "tools" }).GOPROXY,
+    ).toContain("goproxy.cn");
+    expect(
+      createIsolatedEnvironment(layout, {
+        PATH: "tools",
+        GOPROXY: "https://proxy.golang.org,direct",
+      }).GOPROXY,
+    ).toBe("https://proxy.golang.org,direct");
+  });
+
   it("uses unique overridable ports and rejects unsafe values", () => {
     const ports = resolvePorts({
       MMDASH_TESTENV_WEB_PORT: "23000",
@@ -70,9 +84,17 @@ describe("isolated Pixi development environment", () => {
     expect(configuration.databaseUrl).toContain("127.0.0.1:15432");
     expect(configuration.coreUrl).toBe("http://127.0.0.1:18080");
     expect(
-      configuration.environments.core
-        .NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK,
+      configuration.environments.core.NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK,
     ).toBe("true");
+    expect(configuration.environments.core).toMatchObject({
+      ARTIFACT_STORAGE_BACKEND: "minio",
+      ARTIFACT_WEB_ORIGIN: "http://127.0.0.1:13000",
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: "http://127.0.0.1:19000",
+      OBJECT_STORAGE_REGION: "us-east-1",
+    });
+    expect(configuration.environments.core.REPO_ASKPASS_PATH).toContain(
+      "mmdash-git-askpass",
+    );
     expect(configuration.environments.webBff.BFF_HOST).toBe("127.0.0.1");
     expect(configuration.environments.mcp.MCP_GATEWAY_HOST).toBe("127.0.0.1");
     expect(configuration.environments.web).toMatchObject({
