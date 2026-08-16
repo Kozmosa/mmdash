@@ -36,10 +36,12 @@
 - Focused Core, Box, Repo, Artifact, Experiment, Data Hub, Project and CLI Go
   suites passed; Web 134 tests/build, Web BFF 63 tests/build, MCP Gateway 38
   tests/build, contract generation/check and API catalog check passed.
-- The final repository-wide `pnpm check` was stopped at the first lint finding
-  (one unused UI import), which was corrected without rerunning the gate because
-  the user explicitly ordered all remaining tests stopped. No Docker/Compose
-  command was run per the user's quota instruction.
+- The repository-wide `pnpm check` was rerun on 2026-08-16 after formatting
+  `box/contracts/types.go`. TypeScript/Go/Python lint, all tests, production
+  builds, contract checks, and API catalog checks passed. The final Caddyfile
+  step could not spawn the locally installed `caddy.exe` in this restricted
+  Windows process (`EPERM`); no Caddyfile syntax failure was reported. No
+  Docker/Compose command was run per the user's quota instruction.
 
 ## Historical pre-implementation preparation snapshot
 
