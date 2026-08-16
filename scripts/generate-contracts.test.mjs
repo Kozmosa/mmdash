@@ -18,11 +18,12 @@ function checkGeneratedContracts() {
 describe("generated contract freshness", () => {
   it("ignores platform line endings but rejects changed generated content", async () => {
     const original = await readFile(generatedFile, "utf8");
+    const normalized = original.replace(/\r\n/g, "\n");
     try {
-      await writeFile(generatedFile, original.replace(/\n/g, "\r\n"), "utf8");
+      await writeFile(generatedFile, normalized.replace(/\n/g, "\r\n"), "utf8");
       expect(checkGeneratedContracts().status).toBe(0);
 
-      await writeFile(generatedFile, `${original}\n// stale`, "utf8");
+      await writeFile(generatedFile, `${normalized}\n// stale`, "utf8");
       expect(checkGeneratedContracts().status).toBe(1);
     } finally {
       await writeFile(generatedFile, original, "utf8");

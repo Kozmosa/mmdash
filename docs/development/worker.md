@@ -11,6 +11,19 @@ uv run --package mmdash-worker pytest workers/mmdash-worker/tests
 uv run --package mmdash-worker ruff check workers/mmdash-worker
 ```
 
+The repository test commands have distinct scopes:
+
+```bash
+pnpm test:core       # Go Core/backend tests only
+pnpm test:python     # the complete Python Worker suite
+pnpm test            # TypeScript, all maintained Go tests, and Python Worker tests
+```
+
+The Worker pytest configuration applies a 30-second timeout to each test and a
+120-second timeout to the complete session, using the cross-platform thread
+timeout method. A stalled Worker test therefore fails quickly in local runs
+and in CI instead of waiting indefinitely.
+
 ## Run one job
 
 1. Log in to Core and issue an API token with `POST /v1/auth/tokens`.
