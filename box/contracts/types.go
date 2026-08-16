@@ -130,19 +130,19 @@ type Resume struct {
 }
 
 type Manifest struct {
-	SchemaVersion string         `json:"schema_version"`
-	ExperimentID  string         `json:"experiment_id"`
-	SourceCommit  string         `json:"source_commit"`
-	ResultDirectory string       `json:"result_directory"`
-	Status        string         `json:"status"`
-	StartedAt     time.Time      `json:"started_at"`
-	FinishedAt    time.Time      `json:"finished_at"`
-	Runtime       string         `json:"runtime"`
-	RuntimeVersion string        `json:"runtime_version"`
-	LogsTruncated bool           `json:"logs_truncated"`
-	Summary       string         `json:"summary,omitempty"`
-	ExitCode      *int           `json:"exit_code,omitempty"`
-	Files         []ManifestFile `json:"files"`
+	SchemaVersion   string         `json:"schema_version"`
+	ExperimentID    string         `json:"experiment_id"`
+	SourceCommit    string         `json:"source_commit"`
+	ResultDirectory string         `json:"result_directory"`
+	Status          string         `json:"status"`
+	StartedAt       time.Time      `json:"started_at"`
+	FinishedAt      time.Time      `json:"finished_at"`
+	Runtime         string         `json:"runtime"`
+	RuntimeVersion  string         `json:"runtime_version"`
+	LogsTruncated   bool           `json:"logs_truncated"`
+	Summary         string         `json:"summary,omitempty"`
+	ExitCode        *int           `json:"exit_code,omitempty"`
+	Files           []ManifestFile `json:"files"`
 }
 
 type ManifestFile struct {
