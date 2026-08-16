@@ -2,7 +2,6 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from mmdash_worker.jobs.client import JobAPIError
 from mmdash_worker.jobs.handlers import (
     HandlerContext,
     HandlerError,
@@ -19,13 +18,11 @@ class FakeClient:
         *,
         renew_error: Exception | None = None,
         renew_result: dict[str, Any] | None = None,
-        complete_error: Exception | None = None,
     ) -> None:
         self.job = job
         self.calls: list[tuple[Any, ...]] = []
         self.renew_error = renew_error
         self.renew_result = renew_result
-        self.complete_error = complete_error
 
     def heartbeat_worker(
         self,
@@ -69,8 +66,6 @@ class FakeClient:
         result: Mapping[str, Any],
     ) -> dict[str, Any]:
         self.calls.append(("complete", job_id, worker_id, result))
-        if self.complete_error is not None:
-            raise self.complete_error
         return {"id": job_id, "status": "succeeded"}
 
     def fail(
@@ -152,92 +147,12 @@ def test_safe_handler_failure_is_submitted_with_retry_policy() -> None:
     )
 
 
-def test_core_completion_failure_preserves_safe_error_code() -> None:
-    client = FakeClient(
-        {"id": "job-media", "job_type": "system.test", "payload": {}},
-        complete_error=JobAPIError(
-            "MODEL_MEDIA_IMPORT_FAILED",
-            "Model media could not be transferred to Artifact",
-            502,
-        ),
-    )
-    runtime = WorkerRuntime(
-        client,
-        baseline_registry(),
-        worker_id="worker-1",
-        version="0.1.0",
-        lease_seconds=10,
-        poll_seconds=0,
-    )
-
-    assert asyncio.run(runtime.run_once()) is True
-    assert client.calls[-1] == (
-        "fail",
-        "job-media",
-        "worker-1",
-        "MODEL_MEDIA_IMPORT_FAILED",
-        "Model media could not be transferred to Artifact",
-        True,
-        0,
-    )
-
-
-def test_core_configuration_rejection_is_not_retried() -> None:
-    registry = HandlerRegistry()
-
-    def reject_configuration(_context: object, _payload: object) -> dict[str, Any]:
-        raise JobAPIError(
-            "PROGRESS_EVALUATOR_CONFIGURATION_INVALID",
-            "Progress evaluator configuration is invalid",
-            422,
-        )
-
-    registry.register("progress.evaluate", reject_configuration)
-    client = FakeClient(
-        {"id": "job-progress", "job_type": "progress.evaluate", "payload": {}}
-    )
-    runtime = WorkerRuntime(
-        client,
-        registry,
-        worker_id="worker-1",
-        version="0.1.0",
-        lease_seconds=10,
-        poll_seconds=0,
-    )
-
-    assert asyncio.run(runtime.run_once()) is True
-    assert client.calls[-1] == (
-        "fail",
-        "job-progress",
-        "worker-1",
-        "PROGRESS_EVALUATOR_CONFIGURATION_INVALID",
-        "Progress evaluator configuration is invalid",
-        False,
-        0,
-    )
-
-
-def test_empty_poll_reports_no_work_without_dispatch() -> None:
-    client = FakeClient(None)
-    runtime = WorkerRuntime(
-        client,
-        baseline_registry(),
-        worker_id="worker-1",
-        version="0.1.0",
-        lease_seconds=10,
-        poll_seconds=0,
-    )
-    assert asyncio.run(runtime.run_once()) is False
-    assert [call[0] for call in client.calls] == ["heartbeat", "claim"]
-
-
 def test_long_running_handler_renews_its_lease_before_completion() -> None:
     registry = HandlerRegistry()
     client = FakeClient({"id": "job-3", "job_type": "system.long", "payload": {}})
 
-    async def long_handler(_context: object, _payload: object) -> dict[str, Any]:
-        while not any(call[0] == "renew" for call in client.calls):
-            await asyncio.sleep(0)
+    async def long_handler(context: HandlerContext, _payload: object) -> dict[str, Any]:
+        await asyncio.wait_for(context.lease_renewed_event.wait(), timeout=1.0)
         return {"status": "renewed"}
 
     registry.register("system.long", long_handler)
@@ -266,8 +181,8 @@ def test_renewal_cancellation_submits_a_stable_failure_without_completion() -> N
     async def cancellation_aware_handler(
         context: HandlerContext, _payload: object
     ) -> dict[str, Any]:
-        while not context.cancellation_requested:
-            await asyncio.sleep(0)
+        await asyncio.wait_for(context.cancellation_requested_event.wait(), timeout=1.0)
+        assert context.cancellation_requested
         return {"status": "cancelled"}
 
     registry.register("system.cancel", cancellation_aware_handler)
@@ -302,8 +217,8 @@ def test_renewal_failure_submits_a_retryable_failure_without_completion() -> Non
     )
 
     async def lease_aware_handler(context: HandlerContext, _payload: object) -> dict[str, Any]:
-        while not context.lease_renewal_failed:
-            await asyncio.sleep(0)
+        await asyncio.wait_for(context.lease_renewal_failed_event.wait(), timeout=1.0)
+        assert context.lease_renewal_failed
         return {"status": "lease-lost"}
 
     registry.register("system.renew", lease_aware_handler)

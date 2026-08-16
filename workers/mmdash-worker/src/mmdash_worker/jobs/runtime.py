@@ -191,9 +191,12 @@ class WorkerRuntime:
                     )
                 except Exception:  # noqa: BLE001 - lease loss must fail the attempt safely
                     context.lease_renewal_failed = True
+                    context.lease_renewal_failed_event.set()
                     return
                 if job.get("cancel_requested_at"):
                     context.cancellation_requested = True
+                    context.cancellation_requested_event.set()
+                context.lease_renewed_event.set()
 
     async def _submit_failure(self, job_id: str, error: HandlerError) -> None:
         await self._safe_log(
