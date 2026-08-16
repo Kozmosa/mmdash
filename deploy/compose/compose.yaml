@@ -126,6 +126,8 @@ services:
       AUTH_BOOTSTRAP_DISPLAY_NAME: ${AUTH_BOOTSTRAP_DISPLAY_NAME:-mmdash Admin}
       # 首个管理员密码；生产必须使用 Secret 管理器注入的强随机值。
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-mmdash-local-admin}
+      # Hidden Project that owns versioned Box Gateway installer Artifacts.
+      MMDASH_BOX_RELEASE_PROJECT_ID: ${MMDASH_BOX_RELEASE_PROJECT_ID:-00000000-0000-4000-8000-000000000900}
       # Settings AES-GCM 加密主密钥；生产必须替换为稳定的 Secret，轮换需有迁移方案。
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-development-settings-encryption-key-change-me}
       # Public Notion integration credentials; Project access tokens are stored encrypted in Settings.

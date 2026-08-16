@@ -51,6 +51,9 @@ func TestSourceArchiveExportsOnlyTheFrozenCommitTree(t *testing.T) {
 		}
 		files[item.Name] = string(contents)
 	}
+	if _, included := files["link"]; included {
+		t.Fatalf("source archive materialized a Git symlink")
+	}
 	if files["README.md"] != "updated\n" || files["new.txt"] != "rename me\n" || files["old.txt"] != "" {
 		t.Fatalf("archive was not pinned to the requested commit: %#v", files)
 	}

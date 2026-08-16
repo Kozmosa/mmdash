@@ -3380,6 +3380,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/box/releases": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the published Box Gateway installers from the system Artifact project */
+    get: operations["box.releases.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/users/me/boxes": {
     parameters: {
       query?: never;
@@ -4758,6 +4775,24 @@ export interface components {
     };
     BoxList: {
       items: components["schemas"]["Box"][];
+    };
+    BoxReleaseList: {
+      items: components["schemas"]["BoxRelease"][];
+    };
+    BoxRelease: {
+      /** @enum {string} */
+      platform: "windows" | "linux";
+      version: string;
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      filename: string;
+      sha256: string;
+      size_bytes: number;
+      download: components["schemas"]["ArtifactTransferGrant"];
+      install_command: string;
+      instructions: string;
     };
     ProjectBoxList: {
       items: components["schemas"]["Box"][];
@@ -13457,6 +13492,26 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["BoxRegistration"];
+        };
+      };
+    };
+  };
+  "box.releases.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current immutable installer versions for supported platforms. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxReleaseList"];
         };
       };
     };

@@ -132,6 +132,24 @@ export type Box = {
   updated_at: string;
 };
 
+export type BoxRelease = {
+  platform: "windows" | "linux";
+  version: string;
+  artifact_id: string;
+  version_id: string;
+  filename: string;
+  sha256: string;
+  size_bytes: number;
+  download: {
+    method: "GET" | "PUT";
+    url: string;
+    headers: Record<string, string>;
+    expires_at: string;
+  };
+  install_command: string;
+  instructions: string;
+};
+
 export type ExperimentLog = {
   log_id: string;
   experiment_id: string;
