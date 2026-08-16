@@ -651,6 +651,10 @@ func (store PostgresStore) Restore(
 			WHERE project.project_id = $1
 			  AND project.deleted_at IS NOT NULL
 			  AND project.purge_at > $3
+			  AND NOT EXISTS (
+			    SELECT 1 FROM project_stage8_purges AS purge
+			    WHERE purge.project_id=project.project_id AND purge.status='running'
+			  )
 			  AND EXISTS (
 			    SELECT 1
 			    FROM project_members AS member
@@ -681,11 +685,9 @@ func (store PostgresStore) Restore(
 }
 
 func (store PostgresStore) PurgeExpired(ctx context.Context, now time.Time) error {
-	_, err := store.DB.ExecContext(ctx, `
-		DELETE FROM projects
-		WHERE deleted_at IS NOT NULL AND purge_at <= $1
-	`, now)
-	return wrap("purge expired projects", err)
+	// Migration 000045 schedules durable cleanup. Physical deletion is owned by
+	// Stage8Purger so object storage and managed Repo state are removed first.
+	return nil
 }
 
 func (store PostgresStore) getTrashed(

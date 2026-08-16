@@ -77,15 +77,15 @@ func TestPostgresRevokeBoxUnbindsAndRecordsLifecycle(t *testing.T) {
 	if len(offline) != 1 || offline[0].ID != boxID || offline[0].Status != StatusOffline {
 		t.Fatalf("unexpected offline transition: %#v", offline)
 	}
-	revoked, err := store.Revoke(requestContext, boxID, now.Add(2*time.Minute))
+	revoked, _, err := store.ForceRevoke(requestContext, boxID, now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("revoke Box: %v", err)
 	}
-	if revoked.Status != StatusRevoked || revoked.DisconnectedAt == nil {
+	if revoked.Status != StatusRevoked || revoked.OfflineSince == nil {
 		t.Fatalf("unexpected revoked Box: %#v", revoked)
 	}
-	if err := (auth.PostgresStore{DB: db}).RevokeManagedToken(ctx, tokenID, projectID, "box", now); err != nil {
-		t.Fatalf("revoke managed token: %v", err)
+	if err := (auth.PostgresStore{DB: db}).RevokeBoxToken(ctx, tokenID, userID, now); err != nil {
+		t.Fatalf("revoke Box token: %v", err)
 	}
 
 	var bindingCount, auditCount, outboxCount int
@@ -96,7 +96,7 @@ func TestPostgresRevokeBoxUnbindsAndRecordsLifecycle(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_events WHERE project_id=$1 AND action='box.revoked'`, projectID).Scan(&auditCount); err != nil {
 		t.Fatalf("count Audit: %v", err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_outbox WHERE project_id=$1 AND event_type='box.revoked'`, projectID).Scan(&outboxCount); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_outbox WHERE project_id=$1 AND event_type='box.unassigned'`, projectID).Scan(&outboxCount); err != nil {
 		t.Fatalf("count Outbox: %v", err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT revoked_at FROM auth_tokens WHERE token_id=$1`, tokenID).Scan(&revokedAt); err != nil {

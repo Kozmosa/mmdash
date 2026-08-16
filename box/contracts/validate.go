@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var (
@@ -17,12 +19,26 @@ var (
 )
 
 func (spec RunSpec) Validate() error {
-	if spec.SchemaVersion != "1" || !commitPattern.MatchString(spec.SourceCommit) ||
-		spec.ExperimentID == "" || spec.ProjectID == "" || !entryPattern.MatchString(spec.Entrypoint) {
+	if spec.SchemaVersion != "2" || !commitPattern.MatchString(spec.SourceCommit) ||
+		spec.ExperimentID == "" || spec.ProjectID == "" || spec.ExecutionEpoch == "" ||
+		!entryPattern.MatchString(spec.Entrypoint) {
 		return errors.New("invalid frozen run specification")
 	}
 	if spec.Runtime != "local-docker" && spec.Runtime != "e2b" {
 		return errors.New("unsupported runtime")
+	}
+	if spec.RuntimeVersion == "" || spec.SourceTransfer.SourceCommit != spec.SourceCommit ||
+		spec.SourceTransfer.ExpiresAt.IsZero() || !spec.SourceTransfer.ExpiresAt.After(time.Now().UTC()) {
+		return errors.New("invalid source transfer or runtime version")
+	}
+	parsed, err := url.ParseRequestURI(spec.SourceTransfer.URL)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return errors.New("invalid source transfer URL")
+	}
+	if spec.ResultContract.BundleFilename != "execution-bundle.zip" ||
+		spec.ResultContract.Directory == "" || spec.ResultContract.ManifestSchema == "" ||
+		spec.ResultContract.MaxBundleBytes < 1 || spec.ResultContract.MaxBundleBytes > 5<<30 {
+		return errors.New("invalid result contract")
 	}
 	if err := spec.Limits.Validate(); err != nil {
 		return err
@@ -40,7 +56,11 @@ func (limits ResourceLimits) Validate() error {
 }
 
 func (manifest Manifest) Validate() error {
-	if manifest.SchemaVersion != "1" || manifest.ExperimentID == "" ||
+	if manifest.SchemaVersion != "2" || manifest.ExperimentID == "" ||
+		!commitPattern.MatchString(manifest.SourceCommit) || manifest.ResultDirectory == "" ||
+		manifest.StartedAt.IsZero() || manifest.FinishedAt.Before(manifest.StartedAt) ||
+		(manifest.Runtime != "local-docker" && manifest.Runtime != "e2b") ||
+		manifest.RuntimeVersion == "" ||
 		(manifest.Status != "succeeded" && manifest.Status != "failed" && manifest.Status != "canceled" && manifest.Status != "timed_out") {
 		return errors.New("invalid manifest header")
 	}

@@ -33,6 +33,7 @@ class CoreJobClient:
         model_export_timeout_seconds: float = 300.0,
         model_completion_timeout_seconds: float = 300.0,
         progress_evaluation_timeout_seconds: float = 900.0,
+        experiment_result_timeout_seconds: float = 3600.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token.strip()
@@ -40,6 +41,7 @@ class CoreJobClient:
         self.model_export_timeout_seconds = model_export_timeout_seconds
         self.model_completion_timeout_seconds = model_completion_timeout_seconds
         self.progress_evaluation_timeout_seconds = progress_evaluation_timeout_seconds
+        self.experiment_result_timeout_seconds = experiment_result_timeout_seconds
         if not self.base_url or not self.api_token:
             raise ValueError("Core base URL and API token are required")
         if (
@@ -47,6 +49,7 @@ class CoreJobClient:
             or self.model_export_timeout_seconds <= 0
             or self.model_completion_timeout_seconds <= 0
             or self.progress_evaluation_timeout_seconds <= 0
+            or self.experiment_result_timeout_seconds <= 0
         ):
             raise ValueError("Core request timeouts must be positive")
 
@@ -193,6 +196,25 @@ class CoreJobClient:
             "POST",
             f"/v1/internal/artifact-semantic-jobs/{job_id}/execute",
             timeout_seconds=self.progress_evaluation_timeout_seconds,
+        )
+
+    def get_experiment_result_input(self, job_id: str) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/v1/internal/experiment-result-jobs/{job_id}/input",
+            timeout_seconds=60,
+        )
+
+    def finalize_experiment_result(
+        self,
+        job_id: str,
+        result: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/internal/experiment-result-jobs/{job_id}/finalize",
+            result,
+            timeout_seconds=self.experiment_result_timeout_seconds,
         )
 
     def get_article_build_input(self, job_id: str) -> dict[str, Any]:

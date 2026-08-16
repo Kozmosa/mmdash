@@ -33,6 +33,48 @@ func (request LoginRequest) Validate() error {
 	return nil
 }
 
+// DeviceAuthorizationRequest is generated from the Core request-body schema.
+type DeviceAuthorizationRequest struct {
+	ClientKind string `json:"client_kind"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request DeviceAuthorizationRequest) Validate() error {
+	if request.ClientKind == "" {
+		return fmt.Errorf("client_kind is required")
+	}
+	if request.ClientKind != "cli" && request.ClientKind != "box" {
+		return fmt.Errorf("client_kind has an unsupported value")
+	}
+	return nil
+}
+
+// DeviceTokenRequest is generated from the Core request-body schema.
+type DeviceTokenRequest struct {
+	DeviceCode string `json:"device_code"`
+	ClientKind string `json:"client_kind"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request DeviceTokenRequest) Validate() error {
+	if request.DeviceCode == "" {
+		return fmt.Errorf("device_code is required")
+	}
+	if len(request.DeviceCode) < 32 {
+		return fmt.Errorf("device_code is too short")
+	}
+	if len(request.DeviceCode) > 4096 {
+		return fmt.Errorf("device_code is too long")
+	}
+	if request.ClientKind == "" {
+		return fmt.Errorf("client_kind is required")
+	}
+	if request.ClientKind != "cli" && request.ClientKind != "box" {
+		return fmt.Errorf("client_kind has an unsupported value")
+	}
+	return nil
+}
+
 // CreateTokenRequest is generated from the Core request-body schema.
 type CreateTokenRequest struct {
 	Kind      string     `json:"kind"`
@@ -2186,19 +2228,34 @@ func (request CompleteNotionOAuthRequest) Validate() error {
 
 // RegisterBoxRequest is generated from the Core request-body schema.
 type RegisterBoxRequest struct {
-	ProjectID      string                   `json:"project_id"`
-	Name           string                   `json:"name"`
-	Version        string                   `json:"version"`
-	Capabilities   []map[string]interface{} `json:"capabilities"`
-	Runtimes       []map[string]interface{} `json:"runtimes"`
-	Limits         map[string]interface{}   `json:"limits"`
-	IdempotencyKey string                   `json:"idempotency_key"`
+	RegistrationGrant string                    `json:"registration_grant"`
+	InstallationID    string                    `json:"installation_id"`
+	Name              string                    `json:"name"`
+	Version           string                    `json:"version"`
+	Capabilities      *[]map[string]interface{} `json:"capabilities,omitempty"`
+	Runtimes          *[]map[string]interface{} `json:"runtimes,omitempty"`
+	Limits            *map[string]interface{}   `json:"limits,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request RegisterBoxRequest) Validate() error {
-	if request.ProjectID == "" {
-		return fmt.Errorf("project_id is required")
+	if request.RegistrationGrant == "" {
+		return fmt.Errorf("registration_grant is required")
+	}
+	if len(request.RegistrationGrant) < 32 {
+		return fmt.Errorf("registration_grant is too short")
+	}
+	if len(request.RegistrationGrant) > 4096 {
+		return fmt.Errorf("registration_grant is too long")
+	}
+	if request.InstallationID == "" {
+		return fmt.Errorf("installation_id is required")
+	}
+	if len(request.InstallationID) < 1 {
+		return fmt.Errorf("installation_id is too short")
+	}
+	if len(request.InstallationID) > 200 {
+		return fmt.Errorf("installation_id is too long")
 	}
 	if request.Name == "" {
 		return fmt.Errorf("name is required")
@@ -2218,35 +2275,50 @@ func (request RegisterBoxRequest) Validate() error {
 	if len(request.Version) > 100 {
 		return fmt.Errorf("version is too long")
 	}
-	if request.Capabilities == nil {
-		return fmt.Errorf("capabilities is required")
+	if request.Capabilities != nil {
+		if len(*request.Capabilities) > 100 {
+			return fmt.Errorf("capabilities has too many items")
+		}
 	}
-	if len(request.Capabilities) > 100 {
-		return fmt.Errorf("capabilities has too many items")
+	if request.Runtimes != nil {
+		if len(*request.Runtimes) > 20 {
+			return fmt.Errorf("runtimes has too many items")
+		}
 	}
-	if len(request.Capabilities) < 1 {
-		return fmt.Errorf("capabilities has too few items")
+	return nil
+}
+
+// UpdateBoxRequest is generated from the Core request-body schema.
+type UpdateBoxRequest struct {
+	Name string `json:"name"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateBoxRequest) Validate() error {
+	if request.Name == "" {
+		return fmt.Errorf("name is required")
 	}
-	if request.Runtimes == nil {
-		return fmt.Errorf("runtimes is required")
+	if len(request.Name) < 1 {
+		return fmt.Errorf("name is too short")
 	}
-	if len(request.Runtimes) > 20 {
-		return fmt.Errorf("runtimes has too many items")
+	if len(request.Name) > 200 {
+		return fmt.Errorf("name is too long")
 	}
-	if len(request.Runtimes) < 1 {
-		return fmt.Errorf("runtimes has too few items")
+	return nil
+}
+
+// RevokeBoxRequest is generated from the Core request-body schema.
+type RevokeBoxRequest struct {
+	Mode string `json:"mode"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RevokeBoxRequest) Validate() error {
+	if request.Mode == "" {
+		return fmt.Errorf("mode is required")
 	}
-	if request.Limits == nil {
-		return fmt.Errorf("limits is required")
-	}
-	if request.IdempotencyKey == "" {
-		return fmt.Errorf("idempotency_key is required")
-	}
-	if len(request.IdempotencyKey) < 1 {
-		return fmt.Errorf("idempotency_key is too short")
-	}
-	if len(request.IdempotencyKey) > 200 {
-		return fmt.Errorf("idempotency_key is too long")
+	if request.Mode != "drain" && request.Mode != "force" {
+		return fmt.Errorf("mode has an unsupported value")
 	}
 	return nil
 }
@@ -2286,9 +2358,6 @@ func (request BoxHeartbeatRequest) Validate() error {
 	if len(request.Runtimes) > 20 {
 		return fmt.Errorf("runtimes has too many items")
 	}
-	if len(request.Runtimes) < 1 {
-		return fmt.Errorf("runtimes has too few items")
-	}
 	if request.Limits == nil {
 		return fmt.Errorf("limits is required")
 	}
@@ -2298,99 +2367,121 @@ func (request BoxHeartbeatRequest) Validate() error {
 	return nil
 }
 
-// BoxBindingRequest is generated from the Core request-body schema.
-type BoxBindingRequest struct {
-	BoxID string `json:"box_id"`
-}
-
-// Validate applies the OpenAPI field constraints before a handler runs.
-func (request BoxBindingRequest) Validate() error {
-	if request.BoxID == "" {
-		return fmt.Errorf("box_id is required")
-	}
-	return nil
-}
-
 // ClaimBoxTaskRequest is generated from the Core request-body schema.
 type ClaimBoxTaskRequest struct {
-	LeaseSeconds *int64 `json:"lease_seconds,omitempty"`
+	WaitSeconds *int64 `json:"wait_seconds,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request ClaimBoxTaskRequest) Validate() error {
-	if request.LeaseSeconds != nil {
-		if *request.LeaseSeconds < 10 {
-			return fmt.Errorf("lease_seconds is below its minimum")
+	if request.WaitSeconds != nil {
+		if *request.WaitSeconds < 0 {
+			return fmt.Errorf("wait_seconds is below its minimum")
 		}
-		if *request.LeaseSeconds > 900 {
-			return fmt.Errorf("lease_seconds exceeds its maximum")
+		if *request.WaitSeconds > 60 {
+			return fmt.Errorf("wait_seconds exceeds its maximum")
 		}
 	}
 	return nil
 }
 
-// BoxTaskHeartbeatRequest is generated from the Core request-body schema.
-type BoxTaskHeartbeatRequest struct {
-	LeaseSeconds *int64 `json:"lease_seconds,omitempty"`
+// ResumeBoxTaskRequest is generated from the Core request-body schema.
+type ResumeBoxTaskRequest struct {
+	ExecutionEpoch        string   `json:"execution_epoch"`
+	LocalPhase            string   `json:"local_phase"`
+	LastLocalSequence     int64    `json:"last_local_sequence"`
+	BundleState           string   `json:"bundle_state"`
+	AcknowledgedCallbacks []string `json:"acknowledged_callbacks"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
-func (request BoxTaskHeartbeatRequest) Validate() error {
-	if request.LeaseSeconds != nil {
-		if *request.LeaseSeconds < 10 {
-			return fmt.Errorf("lease_seconds is below its minimum")
-		}
-		if *request.LeaseSeconds > 900 {
-			return fmt.Errorf("lease_seconds exceeds its maximum")
-		}
+func (request ResumeBoxTaskRequest) Validate() error {
+	if request.ExecutionEpoch == "" {
+		return fmt.Errorf("execution_epoch is required")
+	}
+	if request.LocalPhase == "" {
+		return fmt.Errorf("local_phase is required")
+	}
+	if request.LocalPhase != "queued" && request.LocalPhase != "preparing" && request.LocalPhase != "running" && request.LocalPhase != "uploading" && request.LocalPhase != "processing_result" && request.LocalPhase != "succeeded" && request.LocalPhase != "failed" && request.LocalPhase != "canceled" && request.LocalPhase != "timed_out" {
+		return fmt.Errorf("local_phase has an unsupported value")
+	}
+	if request.LastLocalSequence < 0 {
+		return fmt.Errorf("last_local_sequence is below its minimum")
+	}
+	if request.BundleState == "" {
+		return fmt.Errorf("bundle_state is required")
+	}
+	if request.BundleState != "none" && request.BundleState != "collecting" && request.BundleState != "ready" && request.BundleState != "uploaded" {
+		return fmt.Errorf("bundle_state has an unsupported value")
+	}
+	if request.AcknowledgedCallbacks == nil {
+		return fmt.Errorf("acknowledged_callbacks is required")
+	}
+	if len(request.AcknowledgedCallbacks) > 1000 {
+		return fmt.Errorf("acknowledged_callbacks has too many items")
 	}
 	return nil
 }
 
 // BoxTaskLogRequest is generated from the Core request-body schema.
 type BoxTaskLogRequest struct {
-	Level   string                  `json:"level"`
-	Message string                  `json:"message"`
-	Fields  *map[string]interface{} `json:"fields,omitempty"`
+	ExecutionEpoch  string                   `json:"execution_epoch"`
+	FirstSequence   int64                    `json:"first_sequence"`
+	Entries         []map[string]interface{} `json:"entries"`
+	LogsTruncated   bool                     `json:"logs_truncated"`
+	LogsTruncatedAt *time.Time               `json:"logs_truncated_at,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request BoxTaskLogRequest) Validate() error {
-	if request.Level == "" {
-		return fmt.Errorf("level is required")
+	if request.ExecutionEpoch == "" {
+		return fmt.Errorf("execution_epoch is required")
 	}
-	if request.Level != "debug" && request.Level != "info" && request.Level != "warning" && request.Level != "error" {
-		return fmt.Errorf("level has an unsupported value")
+	if request.FirstSequence < 1 {
+		return fmt.Errorf("first_sequence is below its minimum")
 	}
-	if request.Message == "" {
-		return fmt.Errorf("message is required")
+	if request.Entries == nil {
+		return fmt.Errorf("entries is required")
 	}
-	if len(request.Message) < 1 {
-		return fmt.Errorf("message is too short")
+	if len(request.Entries) > 500 {
+		return fmt.Errorf("entries has too many items")
 	}
-	if len(request.Message) > 20000 {
-		return fmt.Errorf("message is too long")
+	if len(request.Entries) < 0 {
+		return fmt.Errorf("entries has too few items")
 	}
 	return nil
 }
 
 // BoxTaskStatusRequest is generated from the Core request-body schema.
 type BoxTaskStatusRequest struct {
-	Status        string                  `json:"status"`
-	ExitCode      *int64                  `json:"exit_code,omitempty"`
-	ErrorCode     *string                 `json:"error_code,omitempty"`
-	ErrorMessage  *string                 `json:"error_message,omitempty"`
-	ResourceUsage *map[string]interface{} `json:"resource_usage,omitempty"`
-	Summary       *string                 `json:"summary,omitempty"`
+	ExecutionEpoch string                  `json:"execution_epoch"`
+	Status         string                  `json:"status"`
+	OccurredAt     time.Time               `json:"occurred_at"`
+	RuntimeVersion *string                 `json:"runtime_version,omitempty"`
+	ExitCode       *int64                  `json:"exit_code,omitempty"`
+	Failure        *map[string]interface{} `json:"failure,omitempty"`
+	ResourceUsage  *map[string]interface{} `json:"resource_usage,omitempty"`
+	Summary        *string                 `json:"summary,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request BoxTaskStatusRequest) Validate() error {
+	if request.ExecutionEpoch == "" {
+		return fmt.Errorf("execution_epoch is required")
+	}
 	if request.Status == "" {
 		return fmt.Errorf("status is required")
 	}
-	if request.Status != "queued" && request.Status != "preparing" && request.Status != "running" && request.Status != "succeeded" && request.Status != "failed" && request.Status != "canceled" && request.Status != "timed_out" {
+	if request.Status != "queued" && request.Status != "preparing" && request.Status != "running" && request.Status != "uploading" && request.Status != "processing_result" && request.Status != "succeeded" && request.Status != "failed" && request.Status != "canceled" && request.Status != "timed_out" {
 		return fmt.Errorf("status has an unsupported value")
+	}
+	if request.OccurredAt.IsZero() {
+		return fmt.Errorf("occurred_at is required")
+	}
+	if request.RuntimeVersion != nil {
+		if len(*request.RuntimeVersion) > 100 {
+			return fmt.Errorf("runtime_version is too long")
+		}
 	}
 	if request.ExitCode != nil {
 		if *request.ExitCode < -255 {
@@ -2398,16 +2489,6 @@ func (request BoxTaskStatusRequest) Validate() error {
 		}
 		if *request.ExitCode > 255 {
 			return fmt.Errorf("exit_code exceeds its maximum")
-		}
-	}
-	if request.ErrorCode != nil {
-		if len(*request.ErrorCode) > 100 {
-			return fmt.Errorf("error_code is too long")
-		}
-	}
-	if request.ErrorMessage != nil {
-		if len(*request.ErrorMessage) > 2000 {
-			return fmt.Errorf("error_message is too long")
 		}
 	}
 	if request.Summary != nil {
@@ -2420,33 +2501,78 @@ func (request BoxTaskStatusRequest) Validate() error {
 
 // BoxTaskResultRequest is generated from the Core request-body schema.
 type BoxTaskResultRequest struct {
-	Manifest map[string]interface{} `json:"manifest"`
-	Artifact map[string]interface{} `json:"artifact"`
+	ExecutionEpoch  string                 `json:"execution_epoch"`
+	ManifestSha256  string                 `json:"manifest_sha256"`
+	ExecutionBundle map[string]interface{} `json:"execution_bundle"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request BoxTaskResultRequest) Validate() error {
-	if request.Manifest == nil {
-		return fmt.Errorf("manifest is required")
+	if request.ExecutionEpoch == "" {
+		return fmt.Errorf("execution_epoch is required")
 	}
-	if request.Artifact == nil {
-		return fmt.Errorf("artifact is required")
+	if request.ManifestSha256 == "" {
+		return fmt.Errorf("manifest_sha256 is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{64}$", request.ManifestSha256); err != nil || !matched {
+		return fmt.Errorf("manifest_sha256 has an invalid format")
+	}
+	if request.ExecutionBundle == nil {
+		return fmt.Errorf("execution_bundle is required")
+	}
+	return nil
+}
+
+// UpdateExperimentSettingsRequest is generated from the Core request-body schema.
+type UpdateExperimentSettingsRequest struct {
+	Timezone                   *string                 `json:"timezone,omitempty"`
+	DefaultRuntimePolicy       *string                 `json:"default_runtime_policy,omitempty"`
+	DefaultLimits              *map[string]interface{} `json:"default_limits,omitempty"`
+	GitLargeFileThresholdBytes *int64                  `json:"git_large_file_threshold_bytes,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateExperimentSettingsRequest) Validate() error {
+	if request.Timezone == nil && request.DefaultRuntimePolicy == nil && request.DefaultLimits == nil && request.GitLargeFileThresholdBytes == nil {
+		return fmt.Errorf("at least one field is required")
+	}
+	if request.Timezone != nil {
+		if len(*request.Timezone) < 1 {
+			return fmt.Errorf("timezone is too short")
+		}
+		if len(*request.Timezone) > 100 {
+			return fmt.Errorf("timezone is too long")
+		}
+	}
+	if request.DefaultRuntimePolicy != nil {
+		if *request.DefaultRuntimePolicy != "auto" && *request.DefaultRuntimePolicy != "e2b" && *request.DefaultRuntimePolicy != "local-docker" {
+			return fmt.Errorf("default_runtime_policy has an unsupported value")
+		}
+	}
+	if request.GitLargeFileThresholdBytes != nil {
+		if *request.GitLargeFileThresholdBytes < 1 {
+			return fmt.Errorf("git_large_file_threshold_bytes is below its minimum")
+		}
+		if *request.GitLargeFileThresholdBytes > 5368709120 {
+			return fmt.Errorf("git_large_file_threshold_bytes exceeds its maximum")
+		}
 	}
 	return nil
 }
 
 // CreateExperimentRequest is generated from the Core request-body schema.
 type CreateExperimentRequest struct {
-	Name           string                 `json:"name"`
-	SourceCommit   string                 `json:"source_commit"`
-	Entrypoint     string                 `json:"entrypoint"`
-	Parameters     map[string]interface{} `json:"parameters"`
-	Environment    map[string]interface{} `json:"environment"`
-	Inputs         map[string]interface{} `json:"inputs"`
-	Runtime        string                 `json:"runtime"`
-	Limits         map[string]interface{} `json:"limits"`
-	IdempotencyKey string                 `json:"idempotency_key"`
-	MaxAttempts    *int64                 `json:"max_attempts,omitempty"`
+	Name           string                  `json:"name"`
+	ExperimentType string                  `json:"experiment_type"`
+	SourceCommit   string                  `json:"source_commit"`
+	Entrypoint     string                  `json:"entrypoint"`
+	Parameters     map[string]interface{}  `json:"parameters"`
+	Environment    map[string]interface{}  `json:"environment"`
+	Inputs         map[string]interface{}  `json:"inputs"`
+	RuntimePolicy  *string                 `json:"runtime_policy,omitempty"`
+	RequestedBoxID *string                 `json:"requested_box_id,omitempty"`
+	LimitsOverride *map[string]interface{} `json:"limits_override,omitempty"`
+	IdempotencyKey string                  `json:"idempotency_key"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -2459,6 +2585,12 @@ func (request CreateExperimentRequest) Validate() error {
 	}
 	if len(request.Name) > 200 {
 		return fmt.Errorf("name is too long")
+	}
+	if request.ExperimentType == "" {
+		return fmt.Errorf("experiment_type is required")
+	}
+	if request.ExperimentType != "box" && request.ExperimentType != "self" {
+		return fmt.Errorf("experiment_type has an unsupported value")
 	}
 	if request.SourceCommit == "" {
 		return fmt.Errorf("source_commit is required")
@@ -2487,14 +2619,10 @@ func (request CreateExperimentRequest) Validate() error {
 	if request.Inputs == nil {
 		return fmt.Errorf("inputs is required")
 	}
-	if request.Runtime == "" {
-		return fmt.Errorf("runtime is required")
-	}
-	if request.Runtime != "local-docker" && request.Runtime != "e2b" {
-		return fmt.Errorf("runtime has an unsupported value")
-	}
-	if request.Limits == nil {
-		return fmt.Errorf("limits is required")
+	if request.RuntimePolicy != nil {
+		if *request.RuntimePolicy != "auto" && *request.RuntimePolicy != "e2b" && *request.RuntimePolicy != "local-docker" {
+			return fmt.Errorf("runtime_policy has an unsupported value")
+		}
 	}
 	if request.IdempotencyKey == "" {
 		return fmt.Errorf("idempotency_key is required")
@@ -2505,30 +2633,141 @@ func (request CreateExperimentRequest) Validate() error {
 	if len(request.IdempotencyKey) > 200 {
 		return fmt.Errorf("idempotency_key is too long")
 	}
-	if request.MaxAttempts != nil {
-		if *request.MaxAttempts < 1 {
-			return fmt.Errorf("max_attempts is below its minimum")
-		}
-		if *request.MaxAttempts > 5 {
-			return fmt.Errorf("max_attempts exceeds its maximum")
-		}
-	}
 	return nil
 }
 
 // RunExperimentRequest is generated from the Core request-body schema.
 type RunExperimentRequest struct {
-	IdempotencyKey *string `json:"idempotency_key,omitempty"`
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
 func (request RunExperimentRequest) Validate() error {
-	if request.IdempotencyKey != nil {
-		if len(*request.IdempotencyKey) < 1 {
-			return fmt.Errorf("idempotency_key is too short")
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// RerunExperimentRequest is generated from the Core request-body schema.
+type RerunExperimentRequest struct {
+	Name           *string                 `json:"name,omitempty"`
+	SourceCommit   *string                 `json:"source_commit,omitempty"`
+	Entrypoint     *string                 `json:"entrypoint,omitempty"`
+	Parameters     *map[string]interface{} `json:"parameters,omitempty"`
+	Environment    *map[string]interface{} `json:"environment,omitempty"`
+	Inputs         *map[string]interface{} `json:"inputs,omitempty"`
+	RuntimePolicy  *string                 `json:"runtime_policy,omitempty"`
+	RequestedBoxID *string                 `json:"requested_box_id,omitempty"`
+	LimitsOverride *map[string]interface{} `json:"limits_override,omitempty"`
+	IdempotencyKey string                  `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request RerunExperimentRequest) Validate() error {
+	if request.Name != nil {
+		if len(*request.Name) < 1 {
+			return fmt.Errorf("name is too short")
 		}
-		if len(*request.IdempotencyKey) > 200 {
-			return fmt.Errorf("idempotency_key is too long")
+		if len(*request.Name) > 200 {
+			return fmt.Errorf("name is too long")
+		}
+	}
+	if request.SourceCommit != nil {
+		if matched, err := regexp.MatchString("^[0-9a-f]{40}([0-9a-f]{24})?$", *request.SourceCommit); err != nil || !matched {
+			return fmt.Errorf("source_commit has an invalid format")
+		}
+	}
+	if request.Entrypoint != nil {
+		if len(*request.Entrypoint) < 1 {
+			return fmt.Errorf("entrypoint is too short")
+		}
+		if len(*request.Entrypoint) > 500 {
+			return fmt.Errorf("entrypoint is too long")
+		}
+		if matched, err := regexp.MatchString("^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$", *request.Entrypoint); err != nil || !matched {
+			return fmt.Errorf("entrypoint has an invalid format")
+		}
+	}
+	if request.RuntimePolicy != nil {
+		if *request.RuntimePolicy != "auto" && *request.RuntimePolicy != "e2b" && *request.RuntimePolicy != "local-docker" {
+			return fmt.Errorf("runtime_policy has an unsupported value")
+		}
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// BindExperimentResultRequest is generated from the Core request-body schema.
+type BindExperimentResultRequest struct {
+	CommitSha      string `json:"commit_sha"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request BindExperimentResultRequest) Validate() error {
+	if request.CommitSha == "" {
+		return fmt.Errorf("commit_sha is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{40}([0-9a-f]{24})?$", request.CommitSha); err != nil || !matched {
+		return fmt.Errorf("commit_sha has an invalid format")
+	}
+	if request.IdempotencyKey == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(request.IdempotencyKey) < 1 {
+		return fmt.Errorf("idempotency_key is too short")
+	}
+	if len(request.IdempotencyKey) > 200 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	return nil
+}
+
+// FinalizeExperimentResultRequest is generated from the Core request-body schema.
+type FinalizeExperimentResultRequest struct {
+	ManifestSha256 string                   `json:"manifest_sha256"`
+	Files          []map[string]interface{} `json:"files"`
+	Summary        *string                  `json:"summary,omitempty"`
+	Analysis       *string                  `json:"analysis,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request FinalizeExperimentResultRequest) Validate() error {
+	if request.ManifestSha256 == "" {
+		return fmt.Errorf("manifest_sha256 is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{64}$", request.ManifestSha256); err != nil || !matched {
+		return fmt.Errorf("manifest_sha256 has an invalid format")
+	}
+	if request.Files == nil {
+		return fmt.Errorf("files is required")
+	}
+	if len(request.Files) > 10000 {
+		return fmt.Errorf("files has too many items")
+	}
+	if request.Summary != nil {
+		if len(*request.Summary) > 20000 {
+			return fmt.Errorf("summary is too long")
+		}
+	}
+	if request.Analysis != nil {
+		if len(*request.Analysis) > 20000 {
+			return fmt.Errorf("analysis is too long")
 		}
 	}
 	return nil

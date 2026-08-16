@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/mmdash/mmdash/box/capabilities/sandbox"
+	"github.com/mmdash/mmdash/box/contracts"
 )
 
 const (
@@ -248,6 +249,49 @@ func (client *ProviderClient) Run(ctx context.Context, template string, request 
 		mergeMetrics(usage, metrics)
 	}
 	return sandbox.RunResult{ExitCode: exitCode, ResourceUsage: usage}, nil
+}
+
+// Probe verifies provider credentials, Template compatibility and the full
+// create/read/destroy lifecycle. It intentionally does not upload a workspace
+// or execute user code.
+func (client *ProviderClient) Probe(ctx context.Context, template string) (probeErr error) {
+	template = strings.TrimSpace(template)
+	if template == "" {
+		return errors.New("E2B template is required")
+	}
+	request := sandbox.RunRequest{
+		ID: "probe-" + fmt.Sprintf("%x", time.Now().UnixNano()),
+		Spec: contracts.RunSpec{
+			ExperimentID: "runtime-probe", ProjectID: "runtime-probe",
+			Environment: map[string]string{},
+			Limits: contracts.ResourceLimits{
+				CPUMillis: 1, MemoryBytes: 1 << 20, TimeoutSecond: 30,
+				DiskBytes: 1 << 20, PIDs: 1, Network: "disabled",
+			},
+		},
+	}
+	connection, err := client.createSandbox(ctx, template, request)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), client.cleanupTimeout)
+		defer cancel()
+		if err := client.killSandbox(cleanupCtx, connection.SandboxID); err != nil {
+			probeErr = errors.Join(probeErr, fmt.Errorf("destroy E2B probe sandbox: %w", err))
+		}
+	}()
+	info, err := client.getSandbox(ctx, connection.SandboxID)
+	if err != nil {
+		return err
+	}
+	if info.TemplateID != "" && info.TemplateID != template {
+		return errors.New("E2B probe sandbox used an unexpected template")
+	}
+	if !versionAtLeast(connection.EnvdVersion, minimumOctetEnvdVersion) {
+		return fmt.Errorf("E2B template envd %s is too old; version %s or newer is required", connection.EnvdVersion, minimumOctetEnvdVersion)
+	}
+	return nil
 }
 
 func (client *ProviderClient) Cancel(ctx context.Context, taskID string) error {

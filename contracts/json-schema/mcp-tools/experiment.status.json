@@ -2,12 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mmdash.moe/contracts/mcp/experiment.status.json",
   "title": "Read experiment status",
+  "description": "Return execution and connectivity states, persisted logs, failure details, result progress, and retry guidance without redirecting an old Exp ID.",
   "x-operation-id": "experiment.status",
   "type": "object",
   "additionalProperties": false,
   "required": ["project_id", "experiment_id"],
   "properties": {
     "project_id": { "type": "string", "format": "uuid" },
-    "experiment_id": { "type": "string", "format": "uuid" }
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "log_tail": { "type": "integer", "minimum": 0, "maximum": 500, "default": 100 }
   }
 }

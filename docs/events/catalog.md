@@ -85,15 +85,22 @@ All entries currently use envelope schema version `1`.
 | `agent.token.activated`         | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, optional replaced Token ID, `status=active`                   | none                           |
 | `agent.token.rotation_failed`   | agent    | yes            | `project_id`, Token `resource_id`, `rotation_id`, safe code, whether an old Token remains active                | none                           |
 | `agent.token.revoked`           | agent    | yes            | `project_id`, Token `resource_id`, `status=revoked`                                                             | none                           |
-| `experiment.created`            | experiment | yes          | `experiment_id`, immutable `source_commit`, `entrypoint`, `status=created`                                    | `datahub.projections`, progress trigger |
-| `experiment.started`            | experiment | yes          | `experiment_id`, `task_id`, `box_id`, `runtime`, `status`                                                      | `datahub.projections`          |
-| `experiment.succeeded`          | experiment | yes          | `experiment_id`, `task_id`, `artifact_id`, `version_id`, `status=succeeded`                                    | `datahub.projections`          |
-| `experiment.failed`             | experiment | yes          | `experiment_id`, `task_id`, bounded `error_code`, optional `exit_code`, `status`                               | `datahub.projections`          |
-| `experiment.canceled`           | experiment | yes          | `experiment_id`, `task_id`, `status=canceled`                                                                  | `datahub.projections`          |
-| `experiment.archived`           | experiment | yes          | `experiment_id`, `status=archived`                                                                             | `datahub.projections`          |
-| `box.registered`                | boxcontrol | yes         | `box_id`, `project_id`, `version`, `status=registering`                                                        | `datahub.projections`          |
-| `box.heartbeat.received`        | boxcontrol | yes         | `box_id`, `project_id`, `version`, `running_tasks`, `status`                                                   | none                           |
-| `box.revoked`                   | boxcontrol | yes         | `box_id`, `project_id`, `name`, `version`, `status=revoked`                                                    | `datahub.projections`          |
+| `experiment.created`            | experiment | yes          | `experiment_id`, type, immutable source/entrypoint, initial execution status, frozen result directory           | `datahub.projections`, progress trigger |
+| `experiment.started`            | experiment | yes          | `experiment_id`, task/Box/epoch, actual Runtime/version, execution status                                      | `datahub.projections`          |
+| `experiment.phase_changed`      | experiment | yes          | `experiment_id`, previous/current execution status, optional connectivity state, progress                      | `datahub.projections`          |
+| `experiment.succeeded`          | experiment | yes          | `experiment_id`, type, verified result Commit/directory/Manifest hash, optional immutable Bundle IDs           | `datahub.projections`          |
+| `experiment.failed`             | experiment | yes          | `experiment_id`, optional task/Box, stable failure stage/code/time, retryability, log truncation                | `datahub.projections`          |
+| `experiment.rerun_created`      | experiment | yes          | new/previous/root Experiment IDs and immutable retry sequence                                                    | `datahub.projections`          |
+| `experiment.result_bound`       | experiment | yes          | `experiment_id`, verified result Commit/directory/Manifest hash                                                  | `datahub.projections`          |
+| `experiment.canceled`           | experiment | yes          | `experiment_id`, type, optional task, `execution_status=canceled`                                               | `datahub.projections`          |
+| `experiment.archived`           | experiment | yes          | `experiment_id`, type, prior terminal state, `execution_status=archived`                                        | `datahub.projections`          |
+| `box.registered`                | boxcontrol | no          | `box_id`, owner, name, version, `status=registering`                                                            | none                           |
+| `box.assigned`                  | boxcontrol | yes         | `box_id`, `project_id`, assigning user and time                                                                 | `datahub.projections`          |
+| `box.unassigned`                | boxcontrol | yes         | `box_id`, `project_id`, normal/force mode and failed Experiment count                                           | `datahub.projections`          |
+| `box.heartbeat.received`        | boxcontrol | no          | `box_id`, owner, version, running tasks, advertised Runtimes and status                                         | none                           |
+| `box.offline`                   | boxcontrol | no          | `box_id`, offline start and bounded active Experiment IDs                                                       | `datahub.projections`          |
+| `box.recovered`                 | boxcontrol | no          | `box_id`, recovery time and offline duration                                                                    | `datahub.projections`          |
+| `box.revoked`                   | boxcontrol | no          | `box_id`, owner, name, drain/force mode, status and failed Experiment count                                     | `datahub.projections`          |
 
 `conditional` means project settings carry `project_id`, while system settings
 use a null project scope.

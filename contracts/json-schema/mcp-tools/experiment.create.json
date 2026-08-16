@@ -2,21 +2,49 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mmdash.moe/contracts/mcp/experiment.create.json",
   "title": "Create experiment",
+  "description": "Create one frozen Box-managed or self-run experiment. A self-run response includes the exact result branch, directory, Manifest, Artifact pointer, push, and binding instructions.",
   "x-operation-id": "experiment.create",
   "type": "object",
   "additionalProperties": false,
-  "required": ["project_id", "name", "source_commit", "entrypoint", "parameters", "environment", "inputs", "runtime", "limits", "idempotency_key"],
+  "required": ["project_id", "name", "experiment_type", "source_commit", "entrypoint", "parameters", "environment", "inputs", "idempotency_key"],
   "properties": {
     "project_id": { "type": "string", "format": "uuid" },
     "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "experiment_type": { "type": "string", "enum": ["box", "self"] },
     "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
-    "entrypoint": { "type": "string", "pattern": "^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$" },
+    "entrypoint": { "type": "string", "pattern": "^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$", "maxLength": 500 },
     "parameters": { "type": "object", "additionalProperties": true },
-    "environment": { "type": "object", "additionalProperties": { "type": "string" } },
+    "environment": { "type": "object", "additionalProperties": { "type": "string" }, "maxProperties": 100 },
     "inputs": { "type": "object", "additionalProperties": true },
-    "runtime": { "type": "string", "enum": ["local-docker", "e2b"] },
-    "limits": { "type": "object", "additionalProperties": true },
-    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 },
-    "max_attempts": { "type": "integer", "minimum": 1, "maximum": 5, "default": 1 }
-  }
+    "runtime_policy": { "type": "string", "enum": ["auto", "e2b", "local-docker"], "default": "auto" },
+    "requested_box_id": { "type": "string", "format": "uuid" },
+    "limits_override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu_millis", "memory_bytes", "timeout_seconds", "disk_bytes", "pids", "network"],
+      "properties": {
+        "cpu_millis": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "memory_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1099511627776 },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "disk_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1099511627776 },
+        "pids": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "network": { "type": "string", "enum": ["disabled", "restricted", "enabled"] }
+      }
+    },
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "experiment_type": { "const": "self" } }, "required": ["experiment_type"] },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["runtime_policy"] },
+            { "required": ["requested_box_id"] },
+            { "required": ["limits_override"] }
+          ]
+        }
+      }
+    }
+  ]
 }

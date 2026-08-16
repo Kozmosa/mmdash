@@ -14,6 +14,11 @@ machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 | `progress.recalculate` | Schedule a versioned Progress evaluation             | Yes            | CLI, Agent  | `progress.recalculate.json` | Stage 6 mutation        |
 | `artifact.read`        | Obtain a short-lived grant for one attached Artifact | Yes            | Agent       | `artifact.read.json`        | Agent attachment read   |
 | `artifact.upload`      | Upload an image/file as an Agent Artifact            | Yes            | Agent       | `artifact.upload.json`      | Agent Artifact mutation |
+| `experiment.create`    | Register a managed or self-run Experiment             | Yes            | CLI, Agent  | `experiment.create.json`    | Stage 8 mutation        |
+| `experiment.run`       | Queue a frozen managed Experiment                     | Yes            | CLI, Agent  | `experiment.run.json`       | Stage 8 mutation        |
+| `experiment.status`    | Read status, logs, failure, and retry guidance         | Yes            | CLI, Agent  | `experiment.status.json`    | Stage 8 read            |
+| `experiment.result.bind` | Bind a pushed self-run result Commit                | Yes            | CLI, Agent  | `experiment.result.bind.json` | Stage 8 mutation      |
+| `result.get`           | Read a verified result tree and Artifact pointers     | Yes            | CLI, Agent  | `result.get.json`           | Stage 8 read            |
 | `system.echo`          | Verify the complete MCP Gateway boundary             | Yes            | CLI, Agent  | `system.echo.json`          | Foundation test tool    |
 
 ## Client and principal paths
@@ -87,17 +92,38 @@ objects return safe metadata rather than editable text.
 
 ## Stage 8 Experiment tools
 
-`experiment.create` accepts a Project ID, full Commit SHA, supported fixed
-entrypoint, frozen parameters/environment/inputs, runtime, limits, and an
-idempotency key. `experiment.run` queues the frozen request exactly once.
-`experiment.status` reads the authoritative lifecycle and resource state, and
-`result.get` returns the primary `artifact.zip` Artifact pointer and validated
-manifest summary. All four tools use the existing Agent Tool allowlist,
-Project scope, Core RBAC, request correlation, and required MCP audit path.
+`experiment.create` accepts `experiment_type=box|self`, a Project ID, full
+Commit SHA, supported fixed entrypoint, frozen parameters/environment/inputs,
+an optional per-run Runtime/Box/limits override, and an idempotency key. Core
+freezes the Project timezone and exact
+`experiments/{exp_id}_{yyyymmdd_hhmm}/` directory. A `self` response also
+returns the result branch, Manifest contract, Git large-file threshold,
+`.mmdash/artifacts.json` pointer format, `artifact.upload` instructions, and
+the required push-then-bind sequence.
 
-Result bytes are not returned through MCP. Agents use the Artifact boundary or
-the Data Hub `result_bundle` projection for authorized metadata and previews.
-Failed experiments retain logs but never expose a successful result pointer.
+`experiment.run` queues a frozen `box` Experiment exactly once and rejects
+`self`. `experiment.status` returns both execution and connectivity state,
+bounded persisted logs, `logs_truncated`, structured failure data, progress,
+and retry guidance. When the requested ID has been rerun, it still returns the
+old record together with `EXPERIMENT_HAS_NEWER_RETRY` and the latest ID.
+
+For `self`, the Coding Agent must commit and push the exact result directory,
+then call `experiment.result.bind` with the full pushed Commit SHA. Core asks
+Repo to fetch and verify reachability, directory shape, Manifest, source
+Commit, and large-file Artifact pointers; the Experiment remains
+`verifying_result` until that succeeds. Self-run Experiments never claim to
+have managed live logs.
+
+`result.get` returns result status, the verified Commit and directory, a
+read-only file tree, virtual Artifact file pointers, optional immutable
+`execution-bundle.zip` metadata, and retry guidance. Result bytes and signed
+URLs are not embedded in MCP responses. A managed Coding Agent must fetch/pull
+the result branch after completion before reading the files through Git.
+
+All five tools use the Agent Tool allowlist, Project scope, Core RBAC, request
+correlation, and required MCP audit path. Failed experiments retain logs and
+any accepted immutable Execution Bundle but never expose a successful result
+Commit.
 
 ## `context.promote`
 

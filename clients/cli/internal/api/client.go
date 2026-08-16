@@ -119,17 +119,26 @@ type ModelSync struct {
 }
 
 type Experiment struct {
-	ID             string `json:"experiment_id"`
-	ProjectID      string `json:"project_id"`
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	SourceCommit   string `json:"source_commit"`
-	Entrypoint     string `json:"entrypoint"`
-	Runtime        string `json:"runtime"`
-	BoxID          string `json:"box_id,omitempty"`
-	TaskID         string `json:"task_id,omitempty"`
-	FailureCode    string `json:"failure_code,omitempty"`
-	FailureMessage string `json:"failure_message,omitempty"`
+	ID                     string                 `json:"experiment_id"`
+	ProjectID              string                 `json:"project_id"`
+	Name                   string                 `json:"name"`
+	Type                   string                 `json:"experiment_type"`
+	ExecutionStatus        string                 `json:"execution_status"`
+	ConnectivityStatus     string                 `json:"connectivity_status,omitempty"`
+	SourceCommit           string                 `json:"source_commit"`
+	Entrypoint             string                 `json:"entrypoint"`
+	RequestedRuntimePolicy string                 `json:"requested_runtime_policy"`
+	ActualRuntime          string                 `json:"actual_runtime,omitempty"`
+	RuntimeVersion         string                 `json:"runtime_version,omitempty"`
+	BoxID                  string                 `json:"box_id,omitempty"`
+	TaskID                 string                 `json:"task_id,omitempty"`
+	Failure                map[string]interface{} `json:"failure,omitempty"`
+	ResultDirectory        string                 `json:"result_directory"`
+	ResultCommitSHA        string                 `json:"result_commit_sha,omitempty"`
+	ResultContract         map[string]interface{} `json:"result_contract,omitempty"`
+	Retry                  map[string]interface{} `json:"retry"`
+	LogsTruncated          bool                   `json:"logs_truncated"`
+	Progress               int                    `json:"progress"`
 }
 type ExperimentPage struct {
 	Items   []Experiment `json:"items"`
@@ -219,16 +228,27 @@ func (client *Client) ListExperiments(ctx context.Context, token, projectID stri
 	return result, err
 }
 
-func (client *Client) CreateExperiment(ctx context.Context, token, projectID, name, commit, entrypoint string) (Experiment, error) {
+func (client *Client) CreateExperiment(
+	ctx context.Context,
+	token, projectID, experimentType, name, commit, entrypoint, runtimePolicy string,
+) (Experiment, error) {
 	var result Experiment
-	body := map[string]interface{}{"name": name, "source_commit": commit, "entrypoint": entrypoint, "parameters": map[string]interface{}{}, "environment": map[string]string{}, "inputs": map[string]interface{}{}, "runtime": "local-docker", "limits": map[string]interface{}{"cpu_millis": 1000, "memory_bytes": 1073741824, "timeout_seconds": 300, "disk_bytes": 1073741824, "pids": 128, "network": "disabled"}, "idempotency_key": requestID()}
+	body := map[string]interface{}{
+		"name": name, "experiment_type": experimentType,
+		"source_commit": commit, "entrypoint": entrypoint,
+		"parameters": map[string]interface{}{}, "environment": map[string]string{},
+		"inputs": map[string]interface{}{}, "idempotency_key": requestID(),
+	}
+	if experimentType == "box" && runtimePolicy != "" {
+		body["runtime_policy"] = runtimePolicy
+	}
 	err := client.do(ctx, http.MethodPost, "/v1/projects/"+url.PathEscape(projectID)+"/experiments", body, token, &result, false)
 	return result, err
 }
 
 func (client *Client) RunExperiment(ctx context.Context, token, projectID, experimentID string) (Experiment, error) {
 	var result Experiment
-	err := client.do(ctx, http.MethodPost, "/v1/projects/"+url.PathEscape(projectID)+"/experiments/"+url.PathEscape(experimentID)+"/run", nil, token, &result, false)
+	err := client.do(ctx, http.MethodPost, "/v1/projects/"+url.PathEscape(projectID)+"/experiments/"+url.PathEscape(experimentID)+"/run", map[string]string{"idempotency_key": requestID()}, token, &result, false)
 	return result, err
 }
 
