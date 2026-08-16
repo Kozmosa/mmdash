@@ -69,6 +69,9 @@ type Service struct {
 	ConfirmRecoveryLease  time.Duration
 	Store                 Store
 	WorkerSigner          *TransferSigner
+	// SystemProjectID owns mmdash-maintained artifacts such as Box installers.
+	// It is intentionally not exposed through ordinary Project artifact routes.
+	SystemProjectID string
 }
 
 // RegisterGit registers one small immutable Repo result without copying it to
@@ -984,6 +987,126 @@ func (service Service) Download(
 		Filename: version.Filename, MIMEType: version.MIMEType,
 		SizeBytes: version.SizeBytes, Transfer: transfer,
 	}, nil
+}
+
+// ListBoxReleases returns current, available Box installer artifacts from the
+// mmdash system Project. The endpoint that calls this method authenticates a
+// human session, while this method deliberately does not use ordinary Project
+// membership because the system Project is hidden from user project lists.
+func (service Service) ListBoxReleases(ctx context.Context) (BoxReleaseList, error) {
+	projectID := strings.TrimSpace(service.SystemProjectID)
+	if projectID == "" {
+		projectID = DefaultBoxReleaseProjectID
+	}
+	if service.Store == nil || service.Signer == nil || service.Storage == nil {
+		return BoxReleaseList{}, ErrNotAvailable
+	}
+	page, err := service.Store.List(ctx, projectID, ListFilter{
+		Kind: KindOther, Limit: 200, Source: SourceSystem, Status: StatusAvailable,
+	})
+	if err != nil {
+		return BoxReleaseList{}, err
+	}
+	result := BoxReleaseList{Items: make([]BoxRelease, 0, len(page.Items))}
+	for _, detail := range page.Items {
+		platform, version, ok := boxReleaseMetadata(detail)
+		if !ok || detail.CurrentVersion == nil {
+			continue
+		}
+		current := detail.CurrentVersion
+		grant, err := service.downloadAvailableVersion(ctx, projectID, detail.Artifact.ID, current.ID)
+		if err != nil {
+			if errors.Is(err, ErrNotAvailable) {
+				continue
+			}
+			return BoxReleaseList{}, err
+		}
+		result.Items = append(result.Items, BoxRelease{
+			Platform: platform, Version: version,
+			ArtifactID: detail.Artifact.ID, VersionID: current.ID,
+			Filename: current.Filename, SHA256: current.SHA256,
+			SizeBytes: current.SizeBytes, Download: grant.Transfer,
+			InstallCommand: boxReleaseInstallCommand(platform, current.Filename),
+			Instructions:   boxReleaseInstructions(platform),
+		})
+	}
+	return result, nil
+}
+
+func (service Service) downloadAvailableVersion(
+	ctx context.Context, projectID, artifactID, versionID string,
+) (DownloadGrant, error) {
+	detail, err := service.Store.GetDetail(ctx, projectID, artifactID, false)
+	if err != nil {
+		return DownloadGrant{}, err
+	}
+	version, err := service.Store.GetVersion(ctx, projectID, artifactID, versionID)
+	if err != nil {
+		return DownloadGrant{}, err
+	}
+	if detail.Artifact.Status != StatusAvailable || version.Status != StatusAvailable ||
+		(version.StorageClass != "object" && version.StorageClass != "git") ||
+		(version.StorageClass == "object" && (version.ObjectKey == "" || version.Backend != service.Storage.Backend())) ||
+		(version.StorageClass == "git" && (version.GitReference == nil || service.Git == nil)) {
+		return DownloadGrant{}, ErrNotAvailable
+	}
+	transfer, err := service.downloadTransfer(ctx, version)
+	if err != nil {
+		return DownloadGrant{}, err
+	}
+	return DownloadGrant{
+		ArtifactID: artifactID, VersionID: version.ID,
+		Filename: version.Filename, MIMEType: version.MIMEType,
+		SizeBytes: version.SizeBytes, Transfer: transfer,
+	}, nil
+}
+
+func boxReleaseMetadata(detail Detail) (string, string, bool) {
+	if detail.Artifact.Source != SourceSystem || detail.Artifact.Kind != KindOther || detail.Artifact.Status != StatusAvailable {
+		return "", "", false
+	}
+	platform, version, tagged := "", "", false
+	for _, tag := range detail.Artifact.Tags {
+		switch {
+		case strings.HasPrefix(tag, "platform:"):
+			platform = strings.TrimPrefix(tag, "platform:")
+		case strings.HasPrefix(tag, "version:"):
+			version = strings.TrimPrefix(tag, "version:")
+		case tag == "box-release":
+			tagged = true
+		}
+	}
+	filename := strings.ToLower(detail.Artifact.Name)
+	if platform == "" {
+		switch {
+		case strings.Contains(filename, "windows") || strings.Contains(filename, "win"):
+			platform = "windows"
+		case strings.Contains(filename, "linux"):
+			platform = "linux"
+		}
+	}
+	if !tagged {
+		return "", "", false
+	}
+	if (platform != "windows" && platform != "linux") || version == "" {
+		return "", "", false
+	}
+	return platform, version, true
+}
+
+func boxReleaseInstallCommand(platform, filename string) string {
+	filename = path.Base(strings.TrimSpace(filename))
+	if platform == "windows" {
+		return ".\\" + filename
+	}
+	return "chmod +x ./" + filename + " && ./" + filename
+}
+
+func boxReleaseInstructions(platform string) string {
+	if platform == "windows" {
+		return "下载后在 PowerShell 中运行该文件。首次启动会输出一次性设备码；打开提示的浏览器地址登录 mmdash 并确认授权，然后按需设置 MMDASH_CORE_URL、MMDASH_BOX_NAME 和 Runtime 依赖。"
+	}
+	return "下载后执行安装命令。首次启动会输出一次性设备码；打开提示的浏览器地址登录 mmdash 并确认授权，然后按需设置 MMDASH_CORE_URL、MMDASH_BOX_NAME 和 Runtime 依赖。"
 }
 
 func (service Service) OpenSignedDownload(

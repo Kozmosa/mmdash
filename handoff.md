@@ -5,6 +5,11 @@
 - Base: `main@7a4e39f` after the final main merge
 - Delivery state: Stage 8 refactor implemented; Docker acceptance was explicitly
   waived by the user because of the remaining weekly quota.
+- Follow-up fixes (2026-08-16): the Experiment list is now card-only and links
+  to an independent detail route for Terminal/result-tree views; Box Management
+  now lists platform-specific installers from the hidden mmdash system Artifact
+  Project and includes browser/device-auth installation guidance. Repo source
+  archives skip Git symlinks instead of failing CI's frozen-tree test.
 
 ## Delivered Stage 8 vertical slice
 

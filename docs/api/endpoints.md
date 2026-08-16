@@ -51,7 +51,7 @@ Stage 8 Experiment and Box operations:
   `box.personal.update`, `box.revoke`, `box.heartbeat`, `box.project.list`,
   `box.project.assign`, `box.project.remove`, `box.tasks.claim`,
   `box.tasks.resume`, `box.tasks.logs.append_batch`, `box.tasks.status`,
-  `box.tasks.result`, and `box.tasks.artifact.upload`.
+  `box.tasks.result`, `box.tasks.artifact.upload`, and `box.releases.list`.
 - Web BFF: `bff.experiment.list`, `bff.experiment.create`,
   `bff.experiment.compare`, `bff.experiment.get`, `bff.experiment.run`,
   `bff.experiment.cancel`, `bff.experiment.archive`, `bff.experiment.rerun`,
@@ -59,8 +59,8 @@ Stage 8 Experiment and Box operations:
   `bff.experiment.settings.update`, `bff.experiment.logs.list`,
   `bff.experiment.logs.stream`, `bff.result.get`, `bff.box.personal.list`,
   `bff.box.personal.get`, `bff.box.personal.update`, `bff.box.revoke`,
-  `bff.box.project.list`, `bff.box.project.assign`, and
-  `bff.box.project.remove`.
+  `bff.box.project.list`, `bff.box.project.assign`, `bff.box.project.remove`,
+  and `bff.box.releases.list`.
 - MCP Gateway and CLI expose the frozen `experiment.create`, `experiment.run`,
   `experiment.status`, `experiment.result.bind`, and `result.get` tools through
   the same Core RBAC and Audit boundary.

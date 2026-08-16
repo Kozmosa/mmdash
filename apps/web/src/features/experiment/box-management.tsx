@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Box as BoxIcon, LoaderCircle, Pencil, ShieldAlert, Unplug } from "lucide-react";
+import { Box as BoxIcon, Download, LoaderCircle, Pencil, ShieldAlert, Unplug } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 
 import { experimentApi } from "./api";
-import type { Box } from "./types";
+import type { Box, BoxRelease } from "./types";
 
 export function BoxManagement() {
   const client = useQueryClient();
@@ -19,6 +19,11 @@ export function BoxManagement() {
     queryFn: () => experimentApi.personalBoxes(),
     queryKey: ["personal-boxes"],
     refetchInterval: 5_000,
+  });
+  const releases = useQuery({
+    queryFn: () => experimentApi.boxReleases(),
+    queryKey: ["box-releases"],
+    staleTime: 60_000,
   });
   const rename = useMutation({
     mutationFn: ({ boxId, name }: { boxId: string; name: string }) => experimentApi.renameBox(boxId, name),
@@ -45,6 +50,7 @@ export function BoxManagement() {
           Box 属于你的账号，可分配给多个 Project。新安装的 Gateway 会像 CLI 一样打开浏览器完成设备授权。
         </p>
       </header>
+      <BoxInstallerCard releases={releases.data?.items ?? []} />
       {boxes.isLoading ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />正在读取 Box…</p> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         {boxes.data?.items.map((box) => (
@@ -62,6 +68,47 @@ export function BoxManagement() {
       ) : null}
     </section>
   );
+}
+
+function BoxInstallerCard({ releases }: Readonly<{ releases: BoxRelease[] }>) {
+  const [platform, setPlatform] = useState<"windows" | "linux">(detectPlatform());
+  const release = releases.find((item) => item.platform === platform);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Download className="size-4" />安装 Box Gateway</CardTitle>
+        <CardDescription>安装包由 mmdash 的系统 Artifact Project 统一版本管理；下载的是不可变 Artifact Version。</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="选择操作系统">
+          <Button onClick={() => setPlatform("windows")} size="sm" variant={platform === "windows" ? "default" : "outline"}>Windows</Button>
+          <Button onClick={() => setPlatform("linux")} size="sm" variant={platform === "linux" ? "default" : "outline"}>Linux</Button>
+        </div>
+        {release ? (
+          <div className="space-y-3 rounded-lg border border-border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-medium">{release.filename}</p><p className="text-xs text-muted-foreground">版本 {release.version} · {formatBytes(release.size_bytes)}</p></div><a className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90" download={release.filename} href={release.download.url}><Download className="size-4" />下载</a></div>
+            <p className="break-all font-mono text-[11px] text-muted-foreground">SHA-256: {release.sha256}</p>
+            <div className="rounded-md bg-muted/60 p-3"><p className="mb-1 text-xs font-medium">安装命令</p><code className="block whitespace-pre-wrap break-all text-xs">{release.install_command}</code></div>
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{release.instructions}</p>
+          </div>
+        ) : (
+          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">当前平台暂未发布可用安装包。请让 mmdash 管理员将带有 `box-release`、`platform:{platform}` 和 `version:x.y.z` 标签的 Artifact Version 发布到系统 Project。</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function detectPlatform(): "windows" | "linux" {
+  if (typeof navigator !== "undefined" && /linux/i.test(navigator.userAgent)) {
+    return "linux";
+  }
+  return "windows";
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KiB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 function BoxCard({ box, onRename, onRevoke, pending }: Readonly<{ box: Box; onRename: (name: string) => void; onRevoke: (mode: "drain" | "force") => void; pending: boolean }>) {

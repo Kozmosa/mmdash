@@ -49,6 +49,25 @@ maintainer, and editor can use assigned Boxes; editor cannot change assignment.
 When a Box owner leaves a Project, only that Project assignment is force
 removed and its active Box tasks fail; the global Box and other Projects remain.
 
+## Installer releases and first start
+
+Box installers are ordinary immutable Artifact Versions in the hidden mmdash
+system Artifact Project. A release must be tagged `box-release`,
+`platform:windows` or `platform:linux`, and `version:x.y.z`; the Artifact name
+should include the platform and architecture. The read-only `box.releases.list`
+catalog signs the current Version for each platform, so the Box Management page
+can show a short-lived download button without exposing the system Project or a
+permanent object-storage URL. Publishing a new Version preserves every older
+Version for audit and rollback.
+
+After downloading, run the platform command shown in Box Management. The
+Gateway prints a one-time device code and verification URL. Open that URL,
+sign in to the mmdash account, approve the Box device, and return to the
+terminal. Set `MMDASH_CORE_URL` when Core is not at its default address and
+configure the Runtime adapter locally (`E2B_API_KEY`/`E2B_API_URL` or the
+Local Docker image). E2B secrets remain on the Box host and are never uploaded
+to mmdash.
+
 ## Outbound control protocol
 
 Gateway sends heartbeat and uses a maximum 60-second bounded long poll for

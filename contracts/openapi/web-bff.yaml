@@ -748,6 +748,18 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ResultBundle"
+  /api/box/releases:
+    get:
+      tags: [Box]
+      summary: List published Box Gateway installers
+      operationId: bff.box.releases.list
+      responses:
+        "200":
+          description: Current immutable installers for the current platform catalog.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/BoxReleaseList"
   /api/users/me/boxes:
     get:
       tags: [Box]
