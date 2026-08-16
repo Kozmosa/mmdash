@@ -13,6 +13,7 @@
     "build:python": "uv build --package mmdash-worker",
     "test": "pnpm test:ts && pnpm test:go && pnpm test:python",
     "test:ts": "vitest run scripts --exclude \".claude/**\" --exclude \".cache/**\" --exclude \".worktrees/**\" --exclude \".pnpm-store/**\" && pnpm -r --if-present test",
+    "test:core": "go test ./backend/...",
     "test:go": "go test ./backend/... ./box/... ./clients/cli/...",
     "test:python": "uv run --package mmdash-worker pytest",
     "lint": "pnpm lint:ts && pnpm lint:go && pnpm lint:python",

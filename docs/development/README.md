@@ -94,6 +94,8 @@ DATABASE_URL=postgres://mmdash:mmdash@localhost:5432/mmdash?sslmode=disable pnpm
 | --------------------------------------------- | -------------------------------------------------- |
 | `pnpm lint`                                   | TypeScript, Go formatting, and Python lint         |
 | `pnpm test`                                   | TypeScript, Go, and Python tests                   |
+| `pnpm test:core`                              | Go Core/backend tests only                         |
+| `pnpm test:python`                            | Python Worker tests (30-second test, 120-second suite timeout) |
 | `pnpm build`                                  | All three language builds                          |
 | `pnpm format`                                 | Format supported source files                      |
 | `pnpm api:check`                              | Check OpenAPI operations against the API catalog   |
@@ -101,6 +103,12 @@ DATABASE_URL=postgres://mmdash:mmdash@localhost:5432/mmdash?sslmode=disable pnpm
 | `pnpm contracts:check`                        | Validate schemas, mocks, generation, compatibility |
 | `pnpm caddy:check`                            | Validate ingress invariants and Caddyfile syntax   |
 | `pnpm commit:check -- "feat(scope): summary"` | Validate a commit subject                          |
+
+`pnpm test:core` runs only `go test ./backend/...`; it does not start the
+TypeScript, Box/CLI Go, or Python test runners. `pnpm test:python` runs the
+maintained Worker suite from `workers/mmdash-worker`. The normal `pnpm test`
+continues to run TypeScript, all maintained Go packages, and the full Python
+Worker suite.
 
 ## Create a module
 
