@@ -129,7 +129,7 @@ func TestPostgresApplyTaskStatusPersistsExperimentLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply preparing task status: %v", err)
 	}
-	if updated.Status != StatusPreparing || updated.BoxID != boxID || updated.StartedAt == nil {
+	if updated.ExecutionStatus != StatusPreparing || updated.BoxID != boxID || updated.StartedAt == nil {
 		t.Fatalf("unexpected preparing Experiment: %#v", updated)
 	}
 	var auditCount, outboxCount int

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mmdash/mmdash/box/capabilities/sandbox"
 	"github.com/mmdash/mmdash/box/contracts"
@@ -14,6 +15,7 @@ type fakeClient struct {
 	request   sandbox.RunRequest
 	canceled  string
 	destroyed string
+	probed    string
 }
 
 func (client *fakeClient) Run(_ context.Context, template string, request sandbox.RunRequest) (sandbox.RunResult, error) {
@@ -28,13 +30,17 @@ func (client *fakeClient) Destroy(_ context.Context, id string) error {
 	client.destroyed = id
 	return nil
 }
+func (client *fakeClient) Probe(_ context.Context, template string) error {
+	client.probed = template
+	return nil
+}
 
 func TestRuntimePreservesSandboxSemanticsWithoutLeakingProviderFields(t *testing.T) {
 	client := &fakeClient{}
 	runtime := Runtime{Template: "python-sandbox-v1", Client: client}
 	request := sandbox.RunRequest{
 		ID:        "task-1",
-		Spec:      contracts.RunSpec{SchemaVersion: "1", ExperimentID: "exp-1", ProjectID: "project-1", SourceCommit: strings.Repeat("a", 40), Entrypoint: "python:run.py", Runtime: "e2b", Limits: contracts.ResourceLimits{CPUMillis: 1, MemoryBytes: 1 << 20, TimeoutSecond: 1, DiskBytes: 1 << 20, PIDs: 1, Network: "disabled"}},
+		Spec:      contracts.RunSpec{SchemaVersion: "2", ExperimentID: "exp-1", ProjectID: "project-1", ExecutionEpoch: "epoch-1", SourceCommit: strings.Repeat("a", 40), SourceTransfer: contracts.SourceTransfer{URL: "https://example.test/source.zip", ExpiresAt: time.Now().Add(time.Hour), SourceCommit: strings.Repeat("a", 40)}, Entrypoint: "python:run.py", Runtime: "e2b", RuntimeVersion: "1", Limits: contracts.ResourceLimits{CPUMillis: 1, MemoryBytes: 1 << 20, TimeoutSecond: 1, DiskBytes: 1 << 20, PIDs: 1, Network: "disabled"}, ResultContract: contracts.ResultContract{Directory: "experiments/exp-1_20260815_1200/", BundleFilename: "execution-bundle.zip", ManifestSchema: "https://mmdash.moe/contracts/manifest.schema.json", MaxBundleBytes: 1 << 20}},
 		Workspace: "/workspace", OutputDir: "/output",
 	}
 	result, err := runtime.Run(context.Background(), request)
@@ -49,6 +55,9 @@ func TestRuntimePreservesSandboxSemanticsWithoutLeakingProviderFields(t *testing
 	}
 	if err := runtime.Destroy(context.Background(), request.ID); err != nil || client.destroyed != request.ID {
 		t.Fatalf("destroy: %v %q", err, client.destroyed)
+	}
+	if err := runtime.Probe(context.Background()); err != nil || client.probed != "python-sandbox-v1" {
+		t.Fatalf("probe: %v %q", err, client.probed)
 	}
 }
 

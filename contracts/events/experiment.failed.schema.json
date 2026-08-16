@@ -1,1 +1,20 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://mmdash.moe/contracts/events/experiment.failed.schema.json","title":"experiment.failed payload","type":"object","additionalProperties":false,"required":["experiment_id","task_id","status","error_code"],"properties":{"experiment_id":{"type":"string","format":"uuid"},"task_id":{"type":"string","format":"uuid"},"status":{"type":"string","enum":["failed","timed_out"]},"error_code":{"type":"string","maxLength":100},"exit_code":{"type":"integer"}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/experiment.failed.schema.json",
+  "title": "experiment.failed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["experiment_id", "execution_status", "failure_stage", "failure_code", "failed_at", "retryable", "logs_truncated"],
+  "properties": {
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "task_id": { "type": "string", "format": "uuid" },
+    "box_id": { "type": "string", "format": "uuid" },
+    "execution_status": { "type": "string", "enum": ["failed", "timed_out"] },
+    "failure_stage": { "type": "string", "maxLength": 100 },
+    "failure_code": { "type": "string", "maxLength": 100 },
+    "failed_at": { "type": "string", "format": "date-time" },
+    "retryable": { "type": "boolean" },
+    "logs_truncated": { "type": "boolean" },
+    "exit_code": { "type": "integer" }
+  }
+}

@@ -38,12 +38,10 @@ import {
   projectMemberListTool,
 } from "./tools/project-members.js";
 import { projectGetTool, projectListTool } from "./tools/projects.js";
-import {
-  progressGetTool,
-  progressRecalculateTool,
-} from "./tools/progress.js";
+import { progressGetTool, progressRecalculateTool } from "./tools/progress.js";
 import {
   experimentCreateTool,
+  experimentResultBindTool,
   experimentRunTool,
   experimentStatusTool,
   resultGetTool,
@@ -149,6 +147,7 @@ function createDefaultToolRegistry(): ToolRegistry {
   registry.register(artifactUploadTool);
   registry.register(contextPromoteTool);
   registry.register(experimentCreateTool);
+  registry.register(experimentResultBindTool);
   registry.register(experimentRunTool);
   registry.register(experimentStatusTool);
   registry.register(dataListTool);

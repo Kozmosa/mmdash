@@ -59,15 +59,24 @@ Stage 8 Experiment and Box lifecycle payloads are defined by:
 
 - `experiment.created.schema.json`
 - `experiment.started.schema.json`
+- `experiment.phase_changed.schema.json`
+- `experiment.rerun_created.schema.json`
+- `experiment.result_bound.schema.json`
 - `experiment.succeeded.schema.json`
 - `experiment.failed.schema.json`
 - `experiment.canceled.schema.json`
 - `experiment.archived.schema.json`
 - `box.registered.schema.json`
 - `box.heartbeat.received.schema.json`
+- `box.assigned.schema.json`
+- `box.unassigned.schema.json`
+- `box.offline.schema.json`
+- `box.recovered.schema.json`
 - `box.revoked.schema.json`
 
-The result bundle is always named `artifact.zip` and contains `manifest.json`.
+The immutable raw Execution Bundle is always named `execution-bundle.zip` and
+contains `manifest.json`. Experiment success additionally requires a verified
+and bound result Commit; the Bundle pointer alone is not a successful result.
 
 Automatic Task and Proposal events may carry `source_evaluation_id`; Agent Run
 events may carry `source=progress_evaluation` and the originating evaluation

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/box.assigned.schema.json",
+  "title": "box.assigned payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["box_id", "project_id", "assigned_by", "assigned_at"],
+  "properties": {
+    "box_id": { "type": "string", "format": "uuid" },
+    "project_id": { "type": "string", "format": "uuid" },
+    "assigned_by": { "type": "string", "format": "uuid" },
+    "assigned_at": { "type": "string", "format": "date-time" }
+  }
+}

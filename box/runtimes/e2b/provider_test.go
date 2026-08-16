@@ -387,7 +387,7 @@ func TestProviderClientRunsOfficialLifecycleAndCollectsOutput(t *testing.T) {
 	if !slices.Equal(main.Request.Process.Args, []string{"--nproc=128:128", "--", "python3", "/workspace/run.py"}) {
 		t.Fatalf("main argv: %#v", main.Request.Process.Args)
 	}
-	if !hasSetupCommand(mock.starts, "/bin/ln") || !hasSetupCommand(mock.starts, "/bin/chmod") || !hasSetupCommand(mock.starts, "/bin/chown") {
+	if !hasSetupCommand(mock.starts, "/bin/ln") || !hasSetupCommand(mock.starts, "/bin/chown") {
 		t.Fatalf("setup commands: %#v", mock.starts)
 	}
 }
@@ -621,10 +621,11 @@ func providerRunRequest(id, workspace, output string, timeout int) sandbox.RunRe
 	return sandbox.RunRequest{
 		ID: id,
 		Spec: contracts.RunSpec{
-			SchemaVersion: "1", ExperimentID: "experiment-1", ProjectID: "project-1",
-			SourceCommit: strings.Repeat("a", 40), Entrypoint: "python:run.py", Runtime: "e2b",
-			Environment: map[string]string{"EXAMPLE": "value"},
-			Limits:      contracts.ResourceLimits{CPUMillis: 1000, MemoryBytes: 512 << 20, TimeoutSecond: timeout, DiskBytes: 1 << 30, PIDs: 128, Network: "disabled"},
+			SchemaVersion: "2", ExperimentID: "experiment-1", ProjectID: "project-1", ExecutionEpoch: "epoch-1",
+			SourceCommit: strings.Repeat("a", 40), SourceTransfer: contracts.SourceTransfer{URL: "https://example.test/source.zip", ExpiresAt: time.Now().Add(time.Hour), SourceCommit: strings.Repeat("a", 40)}, Entrypoint: "python:run.py", Runtime: "e2b", RuntimeVersion: "1",
+			Environment:    map[string]string{"EXAMPLE": "value"},
+			Limits:         contracts.ResourceLimits{CPUMillis: 1000, MemoryBytes: 512 << 20, TimeoutSecond: timeout, DiskBytes: 1 << 30, PIDs: 128, Network: "disabled"},
+			ResultContract: contracts.ResultContract{Directory: "experiments/experiment-1_20260815_1200/", BundleFilename: "execution-bundle.zip", ManifestSchema: "https://mmdash.moe/contracts/manifest.schema.json", MaxBundleBytes: 1 << 30},
 		},
 		Workspace: workspace, OutputDir: output,
 	}

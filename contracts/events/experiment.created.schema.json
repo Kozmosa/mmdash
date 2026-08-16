@@ -1,1 +1,17 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://mmdash.moe/contracts/events/experiment.created.schema.json","title":"experiment.created payload","type":"object","additionalProperties":false,"required":["experiment_id","name","source_commit","entrypoint","status"],"properties":{"experiment_id":{"type":"string","format":"uuid"},"name":{"type":"string","minLength":1,"maxLength":200},"source_commit":{"type":"string"},"entrypoint":{"type":"string"},"status":{"type":"string","const":"created"}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/experiment.created.schema.json",
+  "title": "experiment.created payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["experiment_id", "experiment_type", "name", "source_commit", "entrypoint", "execution_status", "result_directory"],
+  "properties": {
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "experiment_type": { "type": "string", "enum": ["box", "box-re", "self"] },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "entrypoint": { "type": "string" },
+    "execution_status": { "type": "string", "enum": ["created", "awaiting_result"] },
+    "result_directory": { "type": "string", "maxLength": 4096 }
+  }
+}

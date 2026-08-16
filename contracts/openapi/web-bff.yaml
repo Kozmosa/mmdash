@@ -104,7 +104,7 @@ paths:
   /api/auth/device/verify:
     post:
       tags: [Auth]
-      summary: Approve or deny a CLI device authorization in the browser
+      summary: Approve or deny a CLI or Box device authorization in the browser
       operationId: bff.auth.device.verify
       requestBody:
         required: true
@@ -487,6 +487,37 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/experiments/settings:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Experiment, Settings]
+      summary: Read Project Experiment defaults
+      operationId: bff.experiment.settings.get
+      responses:
+        "200":
+          description: Experiment defaults.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ExperimentSettings"
+    patch:
+      tags: [Experiment, Settings]
+      summary: Update Project Experiment defaults
+      operationId: bff.experiment.settings.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateExperimentSettingsRequest"
+      responses:
+        "200":
+          description: Updated Experiment defaults.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ExperimentSettings"
   /api/projects/{projectId}/experiments:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -497,7 +528,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/ExperimentLimit"
-        - name: status
+        - name: execution_status
           in: query
           required: false
           schema:
@@ -613,6 +644,48 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/Experiment"
+  /api/projects/{projectId}/experiments/{experimentId}/rerun:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    post:
+      tags: [Experiment]
+      summary: Create a frozen human-requested rerun with a new Exp ID
+      operationId: bff.experiment.rerun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/RerunExperimentRequest"
+      responses:
+        "201":
+          description: New box-re Experiment.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Experiment"
+  /api/projects/{projectId}/experiments/{experimentId}/result/bind:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    post:
+      tags: [Experiment, Repo]
+      summary: Verify and bind a pushed self-run result Commit
+      operationId: bff.experiment.result.bind
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/BindExperimentResultRequest"
+      responses:
+        "202":
+          description: Result verification accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Experiment"
   /api/projects/{projectId}/experiments/{experimentId}/logs:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -622,14 +695,18 @@ paths:
       summary: Read a bounded experiment log page
       operationId: bff.experiment.logs.list
       parameters:
-        - name: offset
+        - name: cursor
           in: query
           required: false
-          schema: { type: integer, minimum: 0, default: 0 }
+          schema: { type: string, pattern: "^[0-9]+$" }
         - name: limit
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - name: tail
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Append-only log page.
@@ -637,6 +714,25 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ExperimentLogPage"
+  /api/projects/{projectId}/experiments/{experimentId}/logs/stream:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ExperimentId"
+    get:
+      tags: [Experiment, Streams]
+      summary: Stream persisted Experiment logs as read-only SSE
+      operationId: bff.experiment.logs.stream
+      parameters:
+        - name: after_sequence
+          in: query
+          required: false
+          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: SSE log entries and keepalive events.
+          content:
+            text/event-stream:
+              schema: { type: string }
   /api/projects/{projectId}/experiments/{experimentId}/result:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -652,44 +748,107 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ResultBundle"
+  /api/users/me/boxes:
+    get:
+      tags: [Box]
+      summary: List Boxes owned by the current user
+      operationId: bff.box.personal.list
+      responses:
+        "200":
+          description: Personal Box inventory.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/BoxList"
+  /api/users/me/boxes/{boxId}:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/BoxId"
+    get:
+      tags: [Box]
+      summary: Read an owned Box
+      operationId: bff.box.personal.get
+      responses:
+        "200":
+          description: Personal Box detail.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Box"
+    patch:
+      tags: [Box]
+      summary: Rename an owned Box
+      operationId: bff.box.personal.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/UpdateBoxRequest"
+      responses:
+        "200":
+          description: Updated Box.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/Box"
+  /api/users/me/boxes/{boxId}/revoke:
+    parameters:
+      - $ref: "./core.yaml#/components/parameters/BoxId"
+    post:
+      tags: [Box]
+      summary: Drain or force-revoke an owned Box
+      operationId: bff.box.revoke
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/RevokeBoxRequest"
+      responses:
+        "202":
+          description: Revocation state.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/BoxRevocation"
   /api/projects/{projectId}/boxes:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
       tags: [Box]
       summary: List project Boxes
-      operationId: bff.box.list
+      operationId: bff.box.project.list
       responses:
         "200":
           description: Box status and capability list.
           content:
             application/json:
               schema:
-                $ref: "./core.yaml#/components/schemas/BoxList"
-  /api/projects/{projectId}/box:
+                $ref: "./core.yaml#/components/schemas/ProjectBoxList"
+  /api/projects/{projectId}/boxes/{boxId}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
+      - $ref: "./core.yaml#/components/parameters/BoxId"
     put:
       tags: [Box]
-      summary: Bind a Box to a project
-      operationId: bff.box.binding.set
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "./core.yaml#/components/schemas/BoxBindingRequest"
+      summary: Assign a Box to a Project
+      operationId: bff.box.project.assign
       responses:
         "200":
           description: Updated Box binding.
           content:
             application/json:
               schema:
-                $ref: "./core.yaml#/components/schemas/Box"
+                $ref: "./core.yaml#/components/schemas/ProjectBoxBinding"
     delete:
       tags: [Box]
-      summary: Remove the project Box binding
-      operationId: bff.box.binding.delete
+      summary: Remove a Box assignment from a Project
+      operationId: bff.box.project.remove
+      parameters:
+        - name: force
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
       responses:
         "204":
           description: Binding removed.
@@ -704,7 +863,8 @@ paths:
           description: Redacted Agent instances.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceList" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/AgentInstanceList" }
     post:
       tags: [Agent]
       summary: Create and bind an Agent instance
@@ -713,13 +873,19 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/CreateAgentInstanceRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/CreateAgentInstanceRequest",
+              }
       responses:
         "201":
           description: Manual provisioning may return a Token once; auto never does.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult",
+                }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -743,19 +909,28 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/UpdateAgentInstanceRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/UpdateAgentInstanceRequest",
+              }
       responses:
         "200":
           description: Updated instance; manual scope rotation may return the new Token once.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/AgentInstanceProvisioningResult",
+                }
     delete:
       tags: [Agent]
       summary: Remove an Agent instance
       operationId: bff.agent.instances.disable
       responses:
-        "204": { description: Instance removed from the workspace and credentials revoked. }
+        "204":
+          {
+            description: Instance removed from the workspace and credentials revoked.,
+          }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/checks:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -768,13 +943,15 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/RunAgentChecksRequest" }
+            schema:
+              { $ref: "./core.yaml#/components/schemas/RunAgentChecksRequest" }
       responses:
         "200":
           description: Independent safe check results.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentChecksResult" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/AgentChecksResult" }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/project-access/verify:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -788,7 +965,10 @@ paths:
           description: Reverse-connection result.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentProjectAccessVerificationResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/AgentProjectAccessVerificationResult",
+                }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/rotate:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -801,13 +981,19 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/RotateAgentTokenRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/RotateAgentTokenRequest",
+              }
       responses:
         "201":
           description: Rotation state; manual mode may return the Token once.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentTokenRotationResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/AgentTokenRotationResult",
+                }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/verify:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -822,7 +1008,10 @@ paths:
           description: Token activated after actual MCP access.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentTokenVerificationResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/AgentTokenVerificationResult",
+                }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}/abort:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -837,7 +1026,10 @@ paths:
           description: Pending Token revoked and old Token retained.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentTokenAbortResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/AgentTokenAbortResult",
+                }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/tokens/{tokenId}:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -871,7 +1063,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/UpdateAgentPromptRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/UpdateAgentPromptRequest",
+              }
       responses:
         "200":
           description: Updated effective prompt.
@@ -905,7 +1100,8 @@ paths:
           description: Indexed Agent sessions.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentSessionList" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/AgentSessionList" }
     post:
       tags: [Agent]
       summary: Create an Agent session
@@ -914,7 +1110,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/CreateAgentSessionRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/CreateAgentSessionRequest",
+              }
       responses:
         "201":
           description: Agent session created.
@@ -944,7 +1143,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/UpdateAgentSessionRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/UpdateAgentSessionRequest",
+              }
       responses:
         "200":
           description: Renamed Agent session.
@@ -964,7 +1166,8 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/EndAgentSessionRequest" }
+            schema:
+              { $ref: "./core.yaml#/components/schemas/EndAgentSessionRequest" }
       responses:
         "200":
           description: Ended Agent session.
@@ -999,7 +1202,10 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/ForkAgentSessionRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/ForkAgentSessionRequest",
+              }
       responses:
         "201":
           description: Child Agent session.
@@ -1035,7 +1241,8 @@ paths:
           description: Normalized Agent messages.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/AgentMessageList" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/AgentMessageList" }
   /api/projects/{projectId}/agent-instances/{agentInstanceId}/sessions/{sessionId}/runs:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -1049,7 +1256,8 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/StartAgentRunRequest" }
+            schema:
+              { $ref: "./core.yaml#/components/schemas/StartAgentRunRequest" }
       responses:
         "202":
           description: Agent Run accepted.
@@ -1111,7 +1319,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/RespondAgentRunApprovalRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/RespondAgentRunApprovalRequest",
+              }
       responses:
         "200":
           description: Approval recorded and current Run returned.
@@ -1148,7 +1359,8 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/ReplayAgentRunRequest" }
+            schema:
+              { $ref: "./core.yaml#/components/schemas/ReplayAgentRunRequest" }
       responses:
         "202":
           description: Fork and replacement Run accepted.
@@ -1169,7 +1381,8 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/ReplayAgentRunRequest" }
+            schema:
+              { $ref: "./core.yaml#/components/schemas/ReplayAgentRunRequest" }
       responses:
         "202":
           description: Replacement Agent Run accepted.
@@ -1632,13 +1845,19 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/RecalculateProgressRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/RecalculateProgressRequest",
+              }
       responses:
         "202":
           description: Evaluation scheduled or merged.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/RecalculateProgressResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/RecalculateProgressResult",
+                }
   /api/projects/{projectId}/progress/evaluations:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
@@ -1655,7 +1874,10 @@ paths:
           description: Evaluation history.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/ProgressEvaluationPage" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/ProgressEvaluationPage",
+                }
   /api/projects/{projectId}/progress/evaluations/{evaluationId}:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -1672,7 +1894,8 @@ paths:
           description: Evaluation detail.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/ProgressEvaluation" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ProgressEvaluation" }
   /api/projects/{projectId}/progress/evaluations/{evaluationId}/retry:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -1689,7 +1912,10 @@ paths:
           description: Retry scheduled.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/RecalculateProgressResult" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/RecalculateProgressResult",
+                }
   /api/projects/{projectId}/progress/stage-override:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     post:
@@ -1700,13 +1926,19 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/SetProgressStageOverrideRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/SetProgressStageOverrideRequest",
+              }
       responses:
         "200":
           description: Active override.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/ProgressStageOverride" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/ProgressStageOverride",
+                }
     delete:
       tags: [Progress]
       summary: Clear the human Progress stage override
@@ -1716,7 +1948,10 @@ paths:
           description: Cleared override.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/ProgressStageOverride" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/ProgressStageOverride",
+                }
   /api/projects/{projectId}/models:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
@@ -1765,7 +2000,10 @@ paths:
           description: Public integration availability and authorized workspace.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/NotionOAuthConnection" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/NotionOAuthConnection",
+                }
   /api/projects/{projectId}/models/notion/oauth/authorizations:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     post:
@@ -1776,13 +2014,19 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/StartNotionOAuthRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/StartNotionOAuthRequest",
+              }
       responses:
         "201":
           description: Authorization URL for top-level browser navigation.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/NotionOAuthAuthorization" }
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/NotionOAuthAuthorization",
+                }
   /api/projects/{projectId}/models/notion/oauth/connection:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     delete:
@@ -1790,18 +2034,35 @@ paths:
       summary: Revoke and remove the Project Notion authorization
       operationId: bff.model.notion.oauth.disconnect
       responses:
-        "204": { description: Disconnected while retaining existing Model history. }
+        "204":
+          { description: Disconnected while retaining existing Model history. }
   /api/integrations/notion/oauth/callback:
     get:
       tags: [Model]
       summary: Complete Notion OAuth and redirect to the state-bound Project settings
       operationId: bff.model.notion.oauth.callback
       parameters:
-        - { name: state, in: query, required: true, schema: { type: string, minLength: 32, maxLength: 512 } }
-        - { name: code, in: query, schema: { type: string, minLength: 1, maxLength: 2048 } }
-        - { name: error, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+        - {
+            name: state,
+            in: query,
+            required: true,
+            schema: { type: string, minLength: 32, maxLength: 512 },
+          }
+        - {
+            name: code,
+            in: query,
+            schema: { type: string, minLength: 1, maxLength: 2048 },
+          }
+        - {
+            name: error,
+            in: query,
+            schema: { type: string, minLength: 1, maxLength: 200 },
+          }
       responses:
-        "302": { description: Relative redirect to Model settings with a non-secret completion status. }
+        "302":
+          {
+            description: Relative redirect to Model settings with a non-secret completion status.,
+          }
   /api/projects/{projectId}/models/questions:
     parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
     get:
@@ -1813,7 +2074,8 @@ paths:
           description: Ordered Model questions.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestionList" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ModelQuestionList" }
     post:
       tags: [Model]
       summary: Create a Model question bound to a discovered child page
@@ -1822,7 +2084,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/CreateModelQuestionRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/CreateModelQuestionRequest",
+              }
       responses:
         "201":
           description: Created Model question.
@@ -1842,7 +2107,8 @@ paths:
           description: Model question detail.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/ModelQuestionDetail" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ModelQuestionDetail" }
     patch:
       tags: [Model]
       summary: Update a Model question or its bound page
@@ -1851,7 +2117,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/UpdateModelQuestionRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/UpdateModelQuestionRequest",
+              }
       responses:
         "200":
           description: Updated Model question.
@@ -1892,7 +2161,8 @@ paths:
           description: Newest-first Snapshot timeline.
           content:
             application/json:
-              schema: { $ref: "./core.yaml#/components/schemas/ModelSnapshotList" }
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ModelSnapshotList" }
   /api/projects/{projectId}/models/questions/{questionId}/snapshots/{snapshotId}:
     parameters:
       - $ref: "./core.yaml#/components/parameters/ProjectId"
@@ -1916,7 +2186,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/UpdateModelSnapshotRequest" }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/UpdateModelSnapshotRequest",
+              }
       responses:
         "200":
           description: Updated Snapshot metadata.
@@ -3291,7 +3564,20 @@ paths:
       operationId: bff.article.get
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
       responses:
-        "200": { description: Article aggregate., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleAggregate" } } } }
+        "200":
+          {
+            description: Article aggregate.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "./core.yaml#/components/schemas/ArticleAggregate",
+                      },
+                  },
+              },
+          }
   /api/projects/{projectId}/article/collaboration:
     get:
       tags: [Article]
@@ -3309,7 +3595,18 @@ paths:
       operationId: bff.article.draft.get
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
       responses:
-        "200": { description: Article draft., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleDraft" } } } }
+        "200":
+          {
+            description: Article draft.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "./core.yaml#/components/schemas/ArticleDraft" },
+                  },
+              },
+          }
   /api/projects/{projectId}/article/draft/flush:
     post:
       tags: [Article]
@@ -3317,21 +3614,77 @@ paths:
       operationId: bff.article.draft.flush
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
       responses:
-        "200": { description: Flushed draft., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleDraft" } } } }
+        "200":
+          {
+            description: Flushed draft.,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "./core.yaml#/components/schemas/ArticleDraft" },
+                  },
+              },
+          }
   /api/projects/{projectId}/article/patches:
     get:
       tags: [Article]
       operationId: bff.article.patches.list
       summary: List Article patches
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      responses: { "200": { description: Patch list., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticlePatchList" } } } } }
+      responses:
+        {
+          "200":
+            {
+              description: Patch list.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticlePatchList",
+                        },
+                    },
+                },
+            },
+        }
     post:
       tags: [Article]
       operationId: bff.article.patches.create
       summary: Propose an Article patch
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateArticlePatchRequest" } } } }
-      responses: { "201": { description: Patch., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticlePatch" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/CreateArticlePatchRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "201":
+            {
+              description: Patch.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticlePatch",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/patches/{patchId}/review:
     post:
       tags: [Article]
@@ -3339,23 +3692,102 @@ paths:
       summary: Accept or reject an Article patch
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: patchId, in: path, required: true, schema: { type: string, format: uuid } }
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ReviewArticlePatchRequest" } } } }
-      responses: { "200": { description: Patch., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticlePatch" } } } } }
+        - {
+            name: patchId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/ReviewArticlePatchRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "200":
+            {
+              description: Patch.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticlePatch",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/references:
     get:
       tags: [Article]
       operationId: bff.article.references.list
       summary: List Article references
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      responses: { "200": { description: References., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleReferenceList" } } } } }
+      responses:
+        {
+          "200":
+            {
+              description: References.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleReferenceList",
+                        },
+                    },
+                },
+            },
+        }
     post:
       tags: [Article]
       operationId: bff.article.references.create
       summary: Pin an Article reference
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateArticleReferenceRequest" } } } }
-      responses: { "201": { description: Reference., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleReference" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/CreateArticleReferenceRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "201":
+            {
+              description: Reference.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleReference",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/references/{referenceId}:
     delete:
       tags: [Article]
@@ -3363,7 +3795,12 @@ paths:
       summary: Remove an Article reference
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: referenceId, in: path, required: true, schema: { type: string, format: uuid } }
+        - {
+            name: referenceId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
       responses: { "204": { description: Reference removed. } }
   /api/projects/{projectId}/article/commits:
     get:
@@ -3371,14 +3808,59 @@ paths:
       operationId: bff.article.commits.list
       summary: List Article commits
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      responses: { "200": { description: Commits., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleCommitList" } } } } }
+      responses:
+        {
+          "200":
+            {
+              description: Commits.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleCommitList",
+                        },
+                    },
+                },
+            },
+        }
     post:
       tags: [Article]
       operationId: bff.article.commits.create
       summary: Flush and commit one exact Article draft revision
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateArticleCommitRequest" } } } }
-      responses: { "201": { description: Commit., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleCommit" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/CreateArticleCommitRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "201":
+            {
+              description: Commit.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleCommit",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/commits/{commitId}:
     get:
       tags: [Article]
@@ -3386,8 +3868,29 @@ paths:
       summary: Read Article commit detail
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: commitId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { "200": { description: Commit detail., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleCommitDetail" } } } } }
+        - {
+            name: commitId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Commit detail.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleCommitDetail",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/commits/{commitId}/restore:
     post:
       tags: [Article]
@@ -3395,30 +3898,125 @@ paths:
       summary: Restore a Commit as a new draft
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: commitId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { "200": { description: New draft., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleDraft" } } } } }
+        - {
+            name: commitId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: New draft.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleDraft",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/builds:
     get:
       tags: [Article]
       operationId: bff.article.builds.list
       summary: List Article builds
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      responses: { "200": { description: Builds., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleBuildList" } } } } }
+      responses:
+        {
+          "200":
+            {
+              description: Builds.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleBuildList",
+                        },
+                    },
+                },
+            },
+        }
     post:
       tags: [Article]
       operationId: bff.article.builds.create
       summary: Queue a commit-bound Article build
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateArticleBuildRequest" } } } }
-      responses: { "202": { description: Build., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleBuild" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/CreateArticleBuildRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "202":
+            {
+              description: Build.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleBuild",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/preview-builds:
     post:
       tags: [Article]
       operationId: bff.article.preview_builds.create
       summary: Queue a latest-only draft preview
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateArticlePreviewBuildRequest" } } } }
-      responses: { "202": { description: Preview., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleBuild" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/CreateArticlePreviewBuildRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "202":
+            {
+              description: Preview.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleBuild",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/builds/{buildId}:
     get:
       tags: [Article]
@@ -3426,8 +4024,29 @@ paths:
       summary: Read Article build detail
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: buildId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { "200": { description: Build., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleBuild" } } } } }
+        - {
+            name: buildId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Build.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleBuild",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/builds/{buildId}/retry:
     post:
       tags: [Article]
@@ -3435,16 +4054,66 @@ paths:
       summary: Retry an Article build
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: buildId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { "202": { description: Retry build., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleBuild" } } } } }
+        - {
+            name: buildId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        {
+          "202":
+            {
+              description: Retry build.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleBuild",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/publications:
     post:
       tags: [Article]
       operationId: bff.article.publications.create
       summary: Flush and orchestrate Commit, Build, then Release
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateArticlePublicationRequest" } } } }
-      responses: { "202": { description: Publication., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticlePublication" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/CreateArticlePublicationRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "202":
+            {
+              description: Publication.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticlePublication",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/publications/{publicationId}/retry:
     post:
       tags: [Article]
@@ -3452,22 +4121,88 @@ paths:
       summary: Retry a failed Publication build phase
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: publicationId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { "202": { description: Publication., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticlePublication" } } } } }
+        - {
+            name: publicationId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        {
+          "202":
+            {
+              description: Publication.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticlePublication",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/releases:
     get:
       tags: [Article]
       operationId: bff.article.releases.list
       summary: List immutable Article releases
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      responses: { "200": { description: Releases., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleReleaseList" } } } } }
+      responses:
+        {
+          "200":
+            {
+              description: Releases.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleReleaseList",
+                        },
+                    },
+                },
+            },
+        }
     post:
       tags: [Article]
       operationId: bff.article.releases.create
       summary: Create an immutable Article release
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/CreateArticleReleaseRequest" } } } }
-      responses: { "201": { description: Release., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleRelease" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/CreateArticleReleaseRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "201":
+            {
+              description: Release.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleRelease",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/releases/{releaseId}:
     get:
       tags: [Article]
@@ -3475,36 +4210,147 @@ paths:
       summary: Read immutable Article release detail
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: releaseId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { "200": { description: Release., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleRelease" } } } } }
+        - {
+            name: releaseId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Release.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleRelease",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/templates:
     get:
       tags: [Article]
       operationId: bff.article.templates.list
       summary: List Article templates
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      responses: { "200": { description: Templates., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleTemplateList" } } } } }
+      responses:
+        {
+          "200":
+            {
+              description: Templates.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleTemplateList",
+                        },
+                    },
+                },
+            },
+        }
     post:
       tags: [Article]
       operationId: bff.article.templates.create
       summary: Register and validate an Article template
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/RegisterArticleTemplateRequest" } } } }
-      responses: { "202": { description: Template., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleTemplate" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/RegisterArticleTemplateRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "202":
+            {
+              description: Template.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleTemplate",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/zotero:
     get:
       tags: [Article]
       operationId: bff.article.zotero.get
       summary: Read redacted Zotero binding
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      responses: { "200": { description: Zotero binding., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleZoteroBinding" } } } } }
+      responses:
+        {
+          "200":
+            {
+              description: Zotero binding.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleZoteroBinding",
+                        },
+                    },
+                },
+            },
+        }
     put:
       tags: [Article]
       operationId: bff.article.zotero.update
       summary: Update Zotero binding
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/UpdateArticleZoteroBindingRequest" } } } }
-      responses: { "200": { description: Zotero binding., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArticleZoteroBinding" } } } } }
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "./core.yaml#/components/schemas/UpdateArticleZoteroBindingRequest",
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "200":
+            {
+              description: Zotero binding.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArticleZoteroBinding",
+                        },
+                    },
+                },
+            },
+        }
     delete:
       tags: [Article]
       operationId: bff.article.zotero.delete
@@ -3518,8 +4364,29 @@ paths:
       summary: Search Zotero
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
-        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
-      responses: { "200": { description: Zotero items., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ZoteroItemList" } } } } }
+        - {
+            name: q,
+            in: query,
+            required: true,
+            schema: { type: string, minLength: 1, maxLength: 200 },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Zotero items.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ZoteroItemList",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/artifacts/{artifactId}/description:
     post:
       tags: [Article, Artifact]
@@ -3532,8 +4399,27 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: "./core.yaml#/components/schemas/ArtifactSemanticDescriptionInput" }
-      responses: { "202": { description: Durable semantic-description Job., content: { application/json: { schema: { $ref: "./core.yaml#/components/schemas/ArtifactSemanticDescriptionJob" } } } } }
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/ArtifactSemanticDescriptionInput",
+              }
+      responses:
+        {
+          "202":
+            {
+              description: Durable semantic-description Job.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ArtifactSemanticDescriptionJob",
+                        },
+                    },
+                },
+            },
+        }
 components:
   securitySchemes:
     browserSession:

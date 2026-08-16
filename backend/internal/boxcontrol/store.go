@@ -5,28 +5,33 @@ import (
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/auth"
+	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/project"
 )
 
 type Store interface {
-	Create(context.Context, Box, string) error
+	CreateInTransaction(context.Context, transaction.Tx, Box) error
 	Get(context.Context, string) (Box, error)
-	List(context.Context, string) ([]Box, error)
-	UpdateHeartbeat(context.Context, string, Box, time.Time) (Box, error)
+	ListOwned(context.Context, string) ([]Box, error)
+	ListProject(context.Context, string) ([]Box, error)
+	UpdateName(context.Context, string, string, time.Time) (Box, error)
+	UpdateHeartbeat(context.Context, string, Box, time.Time) (Box, bool, error)
 	MarkOffline(context.Context, time.Time, time.Time, int) ([]Box, error)
-	Revoke(context.Context, string, time.Time) (Box, error)
-	Bind(context.Context, string, string, time.Time) (Box, error)
-	Unbind(context.Context, string, time.Time) error
+	FailOfflineTimeouts(context.Context, time.Time, time.Time, int) ([]Task, error)
+	BeginDrain(context.Context, string, time.Time) (Box, int, error)
+	ForceRevoke(context.Context, string, time.Time) (Box, []Task, error)
+	FinalizeDrained(context.Context, string, time.Time) (Box, bool, error)
+	Assign(context.Context, ProjectBinding) (ProjectBinding, error)
+	Unassign(context.Context, string, string, bool, time.Time) ([]Task, error)
 	CreateTask(context.Context, Task) error
 	GetTask(context.Context, string) (Task, error)
-	ClaimTask(context.Context, string, time.Time, time.Duration) (*Task, error)
-	RecoverExpired(context.Context, time.Time, int) ([]Task, error)
-	RenewTask(context.Context, string, string, time.Time, time.Duration) (TaskLease, error)
+	ClaimTask(context.Context, string, time.Time) (*Task, error)
+	ResumeTask(context.Context, string, string, ResumeRequest, time.Time) (Resume, error)
 	CancelTask(context.Context, string, time.Time) (Task, error)
-	AppendLog(context.Context, Log) (Log, error)
-	ReportStatus(context.Context, string, string, string, *int, string, string, map[string]interface{}, string, time.Time) (Task, error)
+	AppendLogs(context.Context, string, string, LogBatch, time.Time) (LogAcknowledgement, error)
+	ReportStatus(context.Context, string, string, string, string, time.Time, *int, *Failure, map[string]interface{}, string) (Task, error)
 	SubmitResult(context.Context, string, string, Result, time.Time) (Task, error)
-	ListLogs(context.Context, string, int, int) ([]Log, error)
+	ListLogs(context.Context, string, int64, int) ([]Log, bool, error)
 }
 
 type Access interface {
@@ -34,12 +39,17 @@ type Access interface {
 	Authorize(context.Context, auth.Identity, string, project.Permission) error
 }
 
-type TokenIssuer interface {
-	IssueToken(context.Context, auth.Identity, string, string, string, *time.Time) (auth.IssuedToken, error)
+type BoxCredentialIssuer interface {
+	IssueBoxTokenFromRegistrationGrant(
+		context.Context,
+		string,
+		string,
+		func(context.Context, transaction.Tx, auth.Token) error,
+	) (auth.IssuedToken, error)
 }
 
-type TokenRevoker interface {
-	RevokeManagedToken(context.Context, auth.Identity, string, string, string) error
+type BoxCredentialRevoker interface {
+	RevokeBoxToken(context.Context, string, string) error
 }
 
 type IDGenerator interface{ New() (string, error) }

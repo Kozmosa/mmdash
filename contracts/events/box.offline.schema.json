@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/box.offline.schema.json",
+  "title": "box.offline payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["box_id", "offline_since", "active_experiment_ids"],
+  "properties": {
+    "box_id": { "type": "string", "format": "uuid" },
+    "offline_since": { "type": "string", "format": "date-time" },
+    "active_experiment_ids": { "type": "array", "maxItems": 10000, "items": { "type": "string", "format": "uuid" } }
+  }
+}

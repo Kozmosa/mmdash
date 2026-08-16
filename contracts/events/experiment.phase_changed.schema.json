@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/experiment.phase_changed.schema.json",
+  "title": "experiment.phase_changed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["experiment_id", "previous_status", "execution_status", "progress"],
+  "properties": {
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "previous_status": { "type": "string" },
+    "execution_status": { "type": "string" },
+    "connectivity_status": { "type": "string", "enum": ["online", "box_offline"] },
+    "progress": { "type": "integer", "minimum": 0, "maximum": 100 }
+  }
+}
