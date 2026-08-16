@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import re
 from collections.abc import Awaitable, Callable, Mapping
@@ -34,13 +35,20 @@ class HandlerError(RuntimeError):
 
 @dataclass
 class HandlerContext:
-    """Per-attempt context with cooperative cancellation."""
+    """Per-attempt context with cooperative cancellation and lifecycle signals."""
 
     job_id: str
     worker_id: str
     cancellation_requested: bool = False
     lease_renewal_failed: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    lease_renewed_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    cancellation_requested_event: asyncio.Event = field(
+        default_factory=asyncio.Event, repr=False
+    )
+    lease_renewal_failed_event: asyncio.Event = field(
+        default_factory=asyncio.Event, repr=False
+    )
 
 
 class HandlerRegistry:

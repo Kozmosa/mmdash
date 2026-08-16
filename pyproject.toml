@@ -12,3 +12,6 @@ package = false
 
 [tool.pytest.ini_options]
 testpaths = ["workers"]
+timeout = 30
+timeout_method = "thread"
+session_timeout = 120
