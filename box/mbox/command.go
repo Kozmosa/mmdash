@@ -309,10 +309,12 @@ func service(args []string, stdout io.Writer) error {
 		return serviceAction("start", stdout)
 	case "stop":
 		return serviceAction("stop", stdout)
+	case "remove":
+		return removeService(root, stdout)
 	case "status", "":
 		return serviceAction("status", stdout)
 	default:
-		return fmt.Errorf("unknown service command %q (use init, start, stop or status)", command)
+		return fmt.Errorf("unknown service command %q (use init, start, stop, status or remove)", command)
 	}
 }
 
@@ -363,6 +365,49 @@ func serviceAction(action string, stdout io.Writer) error {
 	return runSystemCommand("systemctl", action, "mmdash-box.service")
 }
 
+func removeService(root string, stdout io.Writer) error {
+	marker := filepath.Join(root, "service.json")
+	if _, err := os.Stat(marker); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(stdout, "未发现已注册的 Box 服务")
+			return nil
+		}
+		return err
+	}
+	if err := removeRegisteredService(); err != nil {
+		return err
+	}
+	if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	fmt.Fprintf(stdout, "Box 服务已移除，配置和数据保留：%s\n", root)
+	return nil
+}
+
+func removeRegisteredService() error {
+	if runtime.GOOS == "windows" {
+		if err := runSystemCommand("sc.exe", "stop", serviceName); err != nil && !isServiceStateError(err, 1062) {
+			return err
+		}
+		if err := runSystemCommand("sc.exe", "delete", serviceName); err != nil && !isServiceStateError(err, 1060) {
+			return err
+		}
+		return nil
+	}
+	if err := runSystemCommand("systemctl", "disable", "--now", "mmdash-box.service"); err != nil {
+		return err
+	}
+	if err := os.Remove("/etc/systemd/system/mmdash-box.service"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove systemd unit: %w", err)
+	}
+	return runSystemCommand("systemctl", "daemon-reload")
+}
+
+func isServiceStateError(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ProcessState.ExitCode() == code
+}
+
 func uninstall(args []string, stdout io.Writer) error {
 	values, flags, err := parseOptions(args)
 	if err != nil {
@@ -389,23 +434,8 @@ func uninstall(args []string, stdout io.Writer) error {
 	}
 	serviceMarker := filepath.Join(root, "service.json")
 	if _, markerErr := os.Stat(serviceMarker); markerErr == nil {
-		if err := serviceAction("stop", io.Discard); err != nil {
+		if err := removeRegisteredService(); err != nil {
 			return err
-		}
-		if runtime.GOOS == "windows" {
-			if err := runSystemCommand("sc.exe", "delete", serviceName); err != nil {
-				return err
-			}
-		} else {
-			if err := runSystemCommand("systemctl", "disable", "--now", "mmdash-box.service"); err != nil {
-				return err
-			}
-			if err := os.Remove("/etc/systemd/system/mmdash-box.service"); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("remove systemd unit: %w", err)
-			}
-			if err := runSystemCommand("systemctl", "daemon-reload"); err != nil {
-				return err
-			}
 		}
 	}
 	if err := os.RemoveAll(root); err != nil {
@@ -536,7 +566,7 @@ func printHelp(out io.Writer) {
   mbox setup [--root PATH] [--control-url URL] [--name NAME]
   mbox account login|status|logout [--root PATH]
   mbox config show|set key=value [--root PATH]
-  mbox service init|start|stop|status [--root PATH]
+	mbox service init|start|stop|status|remove [--root PATH]
   mbox uninstall [--root PATH] [--yes]
 
 setup 会引导配置 mmdash 公网地址（支持 HTTP/HTTPS）、Box 名称、Local Docker
