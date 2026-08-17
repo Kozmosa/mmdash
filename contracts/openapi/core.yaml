@@ -4150,7 +4150,18 @@ paths:
           description: Registered Box and opaque token returned once.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/BoxRegistration" }
+               schema: { $ref: "#/components/schemas/BoxRegistration" }
+  /v1/box/releases:
+    get:
+      tags: [Box, Artifact]
+      summary: List the published Box Gateway installers from the system Artifact project
+      operationId: box.releases.list
+      responses:
+        "200":
+          description: Current immutable installer versions for supported platforms.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoxReleaseList" }
   /v1/users/me/boxes:
     get:
       tags: [Box]
@@ -6309,6 +6320,31 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/Box" }
+    BoxReleaseList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/BoxRelease" }
+    BoxRelease:
+      type: object
+      additionalProperties: false
+      required:
+        [platform, version, artifact_id, version_id, filename, sha256, size_bytes, download, install_command, instructions]
+      properties:
+        platform: { type: string, enum: [windows, linux] }
+        version: { type: string, minLength: 1, maxLength: 100 }
+        artifact_id: { type: string, format: uuid }
+        version_id: { type: string, format: uuid }
+        filename: { type: string, minLength: 1, maxLength: 255 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size_bytes: { type: integer, minimum: 1 }
+        download: { $ref: "#/components/schemas/ArtifactTransferGrant" }
+        install_command: { type: string, minLength: 1, maxLength: 2000 }
+        instructions: { type: string, minLength: 1, maxLength: 20000 }
     ProjectBoxList:
       type: object
       additionalProperties: false

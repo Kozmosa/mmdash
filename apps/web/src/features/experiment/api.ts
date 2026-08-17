@@ -2,6 +2,7 @@ import { apiClient } from "@/lib/api-client";
 
 import type {
   Box,
+  BoxRelease,
   Experiment,
   ExperimentLog,
   ExperimentSettings,
@@ -137,6 +138,9 @@ export const experimentApi = {
   },
   personalBoxes() {
     return apiClient.request<{ items: Box[] }>("/users/me/boxes");
+  },
+  boxReleases() {
+    return apiClient.request<{ items: BoxRelease[] }>("/box/releases");
   },
   renameBox(boxId: string, name: string) {
     return apiClient.request<Box>(

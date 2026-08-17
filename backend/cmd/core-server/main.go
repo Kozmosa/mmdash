@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -164,6 +165,9 @@ func run(logger *logging.Logger) error {
 	if err := authService.EnsureBootstrapUser(startupContext, processConfig.Auth.BootstrapEmail, processConfig.Auth.BootstrapDisplayName, processConfig.Auth.BootstrapPassword); err != nil {
 		return fmt.Errorf("ensure bootstrap user: %w", err)
 	}
+	if err := ensureBoxReleaseProject(startupContext, db, systemBoxReleaseProjectID(), processConfig.Auth.BootstrapEmail, systemClock.Now()); err != nil {
+		return fmt.Errorf("ensure Box release project: %w", err)
+	}
 	eventStore := outbox.PostgresStore{
 		Clock:       systemClock,
 		DB:          db,
@@ -239,6 +243,7 @@ func run(logger *logging.Logger) error {
 		TransferTTL:      processConfig.Artifact.MultipartURLTTL,
 		UploadSessionTTL: processConfig.Artifact.MultipartSessionTTL,
 		WorkerSigner:     artifactWorkerSigner,
+		SystemProjectID:  systemBoxReleaseProjectID(),
 	}
 	previewHook := artifactService
 	jobStore.Hooks = []jobs.LifecycleHook{previewHook}
@@ -1132,6 +1137,33 @@ func run(logger *logging.Logger) error {
 		logger,
 		processConfig.ShutdownTimeout,
 	).Run(ctx)
+}
+
+func systemBoxReleaseProjectID() string {
+	if value := strings.TrimSpace(os.Getenv("MMDASH_BOX_RELEASE_PROJECT_ID")); value != "" {
+		return value
+	}
+	return artifact.DefaultBoxReleaseProjectID
+}
+
+func ensureBoxReleaseProject(ctx context.Context, db *sql.DB, projectID, bootstrapEmail string, now time.Time) error {
+	if db == nil || strings.TrimSpace(projectID) == "" || strings.TrimSpace(bootstrapEmail) == "" {
+		return errors.New("Box release project configuration is incomplete")
+	}
+	var userID string
+	if err := db.QueryRowContext(ctx, `SELECT user_id FROM auth_users WHERE LOWER(email)=LOWER($1)`, bootstrapEmail).Scan(&userID); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO projects (
+			project_id, name, problem_title, problem_summary,
+			project_constraints, source_artifact_ids, created_by, created_at, updated_at
+		) VALUES ($1, 'mmdash System Artifacts', 'mmdash-managed files',
+			'Internal immutable artifacts maintained by mmdash.', '[]'::jsonb,
+			'[]'::jsonb, $2, $3, $3)
+		ON CONFLICT (project_id) DO NOTHING
+	`, projectID, userID, now.UTC())
+	return err
 }
 
 func runModelScheduler(ctx context.Context, service *model.Service, owner string, logger *logging.Logger) {

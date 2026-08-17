@@ -23,6 +23,22 @@ type RegistrationInput struct {
 	Limits         contracts.ResourceLimits
 }
 
+// RegistrationInputFor builds the frozen registration payload for
+// administrative commands such as `mbox account login` without exposing
+// Gateway internals.
+func RegistrationInputFor(installationID, name, version string, runtimes []contracts.Runtime, limits contracts.ResourceLimits) RegistrationInput {
+	return RegistrationInput{
+		InstallationID: installationID,
+		Name:           name,
+		Version:        version,
+		Capabilities: []contracts.Capability{{
+			Name: "sandbox", Version: "2", Features: []string{"execution-bundle", "durable-log-spool", "offline-resume"},
+		}},
+		Runtimes: runtimes,
+		Limits:   limits,
+	}
+}
+
 type Registration struct {
 	BoxID string
 	Token string
