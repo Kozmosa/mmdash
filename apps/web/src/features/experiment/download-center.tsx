@@ -122,7 +122,7 @@ mmdash --help`,
               },
               {
                 description:
-                  "先在普通 PowerShell 初始化 Box 并完成浏览器登录。然后右键 PowerShell，选择“以管理员身份运行”，再注册和启动 Windows 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置：",
+                  "先在普通 PowerShell 初始化 Box 并完成浏览器登录。然后右键 PowerShell，选择“以管理员身份运行”，再注册和启动 Windows 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置。只移除服务而保留数据时，管理员 PowerShell 执行 mbox service remove：",
                 code: String.raw`mbox setup
 mbox account login
 # 以下命令必须在“管理员 PowerShell”中运行
@@ -162,7 +162,7 @@ mmdash --help`,
               },
               {
                 description:
-                  "初始化 Box 并完成浏览器登录，然后使用 sudo 注册和启动 systemd 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置：",
+                  "初始化 Box 并完成浏览器登录，然后使用 sudo 注册和启动 systemd 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置。只移除服务而保留数据时，执行 sudo mbox service remove：",
                 code: String.raw`mbox setup
 mbox account login
 sudo mbox service init --root "$HOME/.local/share/mmdash-box"

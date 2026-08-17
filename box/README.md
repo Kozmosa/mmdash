@@ -36,12 +36,15 @@ mbox config set e2b.enabled=true e2b.api-key=... e2b.api-url=https://api.example
 mbox service start
 mbox service stop
 mbox service status
+mbox service remove
 mbox uninstall --yes
 ```
 
 `service init` registers Windows auto-start through the Service Control
-Manager or a Linux systemd unit. `uninstall` stops and unregisters that service
-before deleting the selected Box root; it does not modify project repositories.
+Manager or a Linux systemd unit. `service remove` unregisters the service while
+keeping Box configuration and data. `uninstall` stops and unregisters that
+service before deleting the selected Box root; it does not modify project
+repositories.
 
 The E2B adapter accepts a hosted E2B account or a self-deployed E2B API and
 Sandbox URL. Provider secrets are kept on the Box host and are never included
