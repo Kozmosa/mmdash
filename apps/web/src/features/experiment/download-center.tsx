@@ -14,8 +14,8 @@ export function DownloadCenter() {
           下载 mmdash 工具
         </h1>
         <p className="mt-6 text-lg text-muted-foreground">
-          这里提供本地开发环境最近一次构建的静态 Box Gateway 和 CLI。无需登录，
-          点击对应平台即可下载。
+          这里提供 Box Gateway 和 CLI
+          的可执行文件。无需登录，点击对应平台即可下载。
         </p>
       </section>
 
@@ -80,7 +80,7 @@ export function DownloadCenter() {
             </a>
           </div>
           <p className="mt-4 text-xs text-muted-foreground">
-            文件由每次启动 `dev.mjs` 时的 Go 构建步骤生成。
+            当前提供开发版 CLI。
           </p>
         </article>
       </section>
