@@ -33,6 +33,18 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "gateway" {
+		options, err := parseGatewayOptions(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if err := runWithRoot(ctx, options.root); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintf(os.Stderr, "[box] Gateway stopped: %s\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if handled, err := mbox.Execute(ctx, os.Args[1:], os.Stdout, os.Stderr); handled {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(os.Stderr, err)
