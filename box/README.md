@@ -1,0 +1,48 @@
+# mmdash Box
+
+`mmdash-box` is the outbound Box Gateway. The same binary exposes the `mbox`
+administrative commands used to install and operate it on Windows and Linux.
+
+## First setup
+
+Run these commands from a terminal in the directory containing the binary:
+
+```text
+mbox setup
+mbox account login
+mbox service init
+mbox service status
+```
+
+`mbox setup` asks for the public mmdash Box Control address, Box name, Local
+Docker image, and Runtime adapter settings. Both `http://` and `https://` are
+valid; Core itself is never configured as a public endpoint. Use
+`mbox setup --root PATH` to select a different persistent directory.
+
+The default persistent directory is `%LocalAppData%\\MMDash Box` on Windows and
+`$XDG_DATA_HOME/mmdash-box` (falling back to `~/.local/share/mmdash-box`) on
+Linux. The directory contains `config.json`, `state.json`, `logs/`, task
+spools, outputs, and transferred sources.
+
+## Administration
+
+```text
+mbox account status
+mbox account logout
+mbox config show
+mbox config set control-url=http://localhost:3001
+mbox config set local-docker.enabled=true local-docker.image=mmdash/sandbox:latest
+mbox config set e2b.enabled=true e2b.api-key=... e2b.api-url=https://api.example.test
+mbox service start
+mbox service stop
+mbox service status
+mbox uninstall --yes
+```
+
+`service init` registers Windows auto-start through the Service Control
+Manager or a Linux systemd unit. `uninstall` stops and unregisters that service
+before deleting the selected Box root; it does not modify project repositories.
+
+The E2B adapter accepts a hosted E2B account or a self-deployed E2B API and
+Sandbox URL. Provider secrets are kept on the Box host and are never included
+in task callbacks.
