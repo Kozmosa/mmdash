@@ -16,7 +16,7 @@ func TestValidateArtifactZipChecksManifestHashesAndPaths(t *testing.T) {
 	contents := []byte("summary")
 	digest := sha256.Sum256(contents)
 	manifest := map[string]interface{}{
-		"schema_version": "1", "experiment_id": experimentID, "status": "succeeded",
+		"schema_version": "2", "experiment_id": experimentID, "status": "succeeded",
 		"files": []map[string]interface{}{{"path": "summary.md", "sha256": hex.EncodeToString(digest[:]), "size_bytes": len(contents), "kind": "summary"}},
 	}
 	filename := writeZip(t, manifest, map[string][]byte{"summary.md": contents})
@@ -25,7 +25,7 @@ func TestValidateArtifactZipChecksManifestHashesAndPaths(t *testing.T) {
 	}
 
 	badManifest := map[string]interface{}{
-		"schema_version": "1", "experiment_id": experimentID, "status": "succeeded",
+		"schema_version": "2", "experiment_id": experimentID, "status": "succeeded",
 		"files": []map[string]interface{}{{"path": "../secret", "sha256": strings.Repeat("a", 64), "size_bytes": 1}},
 	}
 	badFilename := writeZip(t, badManifest, map[string][]byte{"../secret": []byte("x")})

@@ -13,15 +13,37 @@ import (
 
 type revokeStoreStub struct {
 	Store
-	box     Box
-	revoked bool
+	box       Box
+	revoked   bool
+	forceUsed bool
+	active    int
 }
 
-func (store *revokeStoreStub) Get(context.Context, string) (Box, error) { return store.box, nil }
-func (store *revokeStoreStub) Revoke(_ context.Context, _ string, now time.Time) (Box, error) {
-	store.revoked = true
-	store.box.Status, store.box.UpdatedAt = StatusRevoked, now
+func (store *revokeStoreStub) Get(context.Context, string) (Box, error) {
 	return store.box, nil
+}
+
+func (store *revokeStoreStub) BeginDrain(_ context.Context, _ string, now time.Time) (Box, int, error) {
+	store.box.Status = StatusDraining
+	store.box.DrainRequestedAt = &now
+	return store.box, store.active, nil
+}
+
+func (store *revokeStoreStub) FinalizeDrained(_ context.Context, _ string, now time.Time) (Box, bool, error) {
+	if store.active > 0 {
+		return Box{}, false, nil
+	}
+	store.revoked = true
+	store.box.Status = StatusRevoked
+	store.box.RevokedAt = &now
+	return store.box, true, nil
+}
+
+func (store *revokeStoreStub) ForceRevoke(_ context.Context, _ string, now time.Time) (Box, []Task, error) {
+	store.revoked, store.forceUsed = true, true
+	store.box.Status = StatusRevoked
+	store.box.RevokedAt = &now
+	return store.box, []Task{{ID: "task-1", Status: TaskFailed}}, nil
 }
 
 type revokeAccessStub struct{ allowed bool }
@@ -29,6 +51,7 @@ type revokeAccessStub struct{ allowed bool }
 func (stub revokeAccessStub) Authenticate(context.Context, string) (auth.Identity, error) {
 	return auth.Identity{}, nil
 }
+
 func (stub revokeAccessStub) Authorize(context.Context, auth.Identity, string, project.Permission) error {
 	if !stub.allowed {
 		return auth.ErrForbidden
@@ -37,68 +60,91 @@ func (stub revokeAccessStub) Authorize(context.Context, auth.Identity, string, p
 }
 
 type tokenRevokerStub struct {
-	called    bool
-	projectID string
-	kind      string
-	tokenID   string
+	called      bool
+	ownerUserID string
+	tokenID     string
 }
 
-func (stub *tokenRevokerStub) RevokeManagedToken(_ context.Context, _ auth.Identity, projectID, kind, tokenID string) error {
-	stub.called, stub.projectID, stub.kind, stub.tokenID = true, projectID, kind, tokenID
+func (stub *tokenRevokerStub) RevokeBoxToken(_ context.Context, tokenID, ownerUserID string) error {
+	stub.called, stub.ownerUserID, stub.tokenID = true, ownerUserID, tokenID
 	return nil
 }
 
-func TestValidateBoxRejectsUnsupportedRuntimeAndUnsafeLimits(t *testing.T) {
-	base := Box{
-		ProjectID: "project-1", Name: "box", Version: "1", Capabilities: []Capability{{Name: "sandbox", Version: "1"}},
-		Runtimes: []Runtime{{Name: "local-docker", Version: "1"}}, Limits: ResourceLimits{CPUMillis: 500, MemoryBytes: 1 << 20, TimeoutSecond: 30, DiskBytes: 1 << 20, PIDs: 32, Network: "disabled"},
+func validRegistrationBox() Box {
+	return Box{
+		Name: "box", Version: "1", InstallationID: "install-1",
+		Capabilities: []Capability{{Name: "sandbox", Version: "1"}},
+		Runtimes:     []Runtime{{Name: "local-docker", Version: "1"}},
+		Limits: ResourceLimits{
+			CPUMillis: 500, MemoryBytes: 1 << 20, TimeoutSecond: 30,
+			DiskBytes: 1 << 20, PIDs: 32, Network: "disabled",
+		},
 	}
-	if err := validateBox(&base, "project-1"); err != nil {
+}
+
+func TestValidateRegistrationRejectsUnsupportedRuntimeAndUnsafeLimits(t *testing.T) {
+	base := validRegistrationBox()
+	if err := validateRegistration(&base); err != nil {
 		t.Fatalf("valid Box rejected: %v", err)
 	}
 	base.Runtimes[0].Name = "arbitrary-shell"
-	if err := validateBox(&base, "project-1"); err == nil {
+	if err := validateRegistration(&base); err == nil {
 		t.Fatal("unsupported runtime accepted")
 	}
-	base.Runtimes[0].Name = "local-docker"
+	base = validRegistrationBox()
 	base.Limits.Network = "public"
-	if err := validateBox(&base, "project-1"); err == nil {
+	if err := validateRegistration(&base); err == nil {
 		t.Fatal("unsupported network policy accepted")
 	}
 }
 
 func TestValidateHeartbeatPreservesRegisteredIdentity(t *testing.T) {
-	registered := Box{ProjectID: "project-1", Name: "box"}
-	update := Box{
-		Version: "2", Capabilities: []Capability{{Name: "sandbox", Version: "1"}},
-		Runtimes: []Runtime{{Name: "e2b", Version: "1"}},
-		Limits:   ResourceLimits{CPUMillis: 1000, MemoryBytes: 512 << 20, TimeoutSecond: 90, DiskBytes: 1 << 30, PIDs: 64, Network: "disabled"},
-	}
+	registered := Box{Name: "box", InstallationID: "install-1"}
+	update := validRegistrationBox()
+	update.Name = "forged"
+	update.InstallationID = "forged"
+	update.Version = "2"
+	update.Runtimes = []Runtime{{Name: "e2b", Version: "1"}}
 	if err := validateHeartbeat(&update, registered); err != nil {
 		t.Fatalf("valid heartbeat rejected: %v", err)
 	}
-	if update.Name != registered.Name || update.ProjectID != registered.ProjectID {
+	if update.Name != registered.Name || update.InstallationID != registered.InstallationID {
 		t.Fatalf("registered identity was not preserved: %#v", update)
 	}
 }
 
-func TestRevokeBoxRevokesNodeThenManagedCredential(t *testing.T) {
-	store := &revokeStoreStub{box: Box{ID: "box-1", ProjectID: "project-1", Status: StatusOnline, TokenID: "token-1"}}
+func TestDrainRevokeFinalizesNodeThenAccountCredential(t *testing.T) {
+	store := &revokeStoreStub{box: Box{
+		ID: "box-1", OwnerUserID: "owner-1", Status: StatusOnline, TokenID: "token-1",
+	}}
 	revoker := &tokenRevokerStub{}
-	service := Service{Access: revokeAccessStub{allowed: true}, Revoker: revoker, Store: store}
-	if err := service.Revoke(context.Background(), auth.Identity{Kind: "session", User: auth.User{ID: "manager"}}, "box-1"); err != nil {
+	service := Service{Revoker: revoker, Store: store}
+	result, err := service.Revoke(
+		context.Background(),
+		auth.Identity{Kind: "session", User: auth.User{ID: "owner-1"}},
+		"box-1", "drain",
+	)
+	if err != nil {
 		t.Fatalf("revoke Box: %v", err)
 	}
-	if !store.revoked || !revoker.called || revoker.projectID != "project-1" || revoker.kind != "box" || revoker.tokenID != "token-1" {
-		t.Fatalf("incomplete revoke lifecycle: store=%#v revoker=%#v", store, revoker)
+	if result.Box.Status != StatusRevoked || !store.revoked || !revoker.called ||
+		revoker.ownerUserID != "owner-1" || revoker.tokenID != "token-1" {
+		t.Fatalf("incomplete revoke lifecycle: result=%#v store=%#v revoker=%#v", result, store, revoker)
 	}
 }
 
-func TestRevokeBoxRequiresProjectManagement(t *testing.T) {
-	store := &revokeStoreStub{box: Box{ID: "box-1", ProjectID: "project-1", Status: StatusOnline, TokenID: "token-1"}}
+func TestRevokeRequiresBoxOwnership(t *testing.T) {
+	store := &revokeStoreStub{box: Box{
+		ID: "box-1", OwnerUserID: "owner-1", Status: StatusOnline, TokenID: "token-1",
+	}}
 	revoker := &tokenRevokerStub{}
-	service := Service{Access: revokeAccessStub{}, Revoker: revoker, Store: store}
-	if err := service.Revoke(context.Background(), auth.Identity{Kind: "session"}, "box-1"); !errors.Is(err, ErrForbidden) {
+	service := Service{Revoker: revoker, Store: store}
+	_, err := service.Revoke(
+		context.Background(),
+		auth.Identity{Kind: "session", User: auth.User{ID: "other-user"}},
+		"box-1", "force",
+	)
+	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("unexpected unauthorized revoke result: %v", err)
 	}
 	if store.revoked || revoker.called {
@@ -106,53 +152,26 @@ func TestRevokeBoxRequiresProjectManagement(t *testing.T) {
 	}
 }
 
-func TestDecodeOptionalTaskMapAcceptsInitialNullResourceUsage(t *testing.T) {
-	value, err := decodeOptionalMap(nil)
-	if err != nil || value == nil || len(value) != 0 {
-		t.Fatalf("initial resource usage was not normalized: %#v %v", value, err)
-	}
-	value, err = decodeOptionalMap([]byte(`{"duration_ms":12}`))
-	if err != nil || value["duration_ms"] != float64(12) {
-		t.Fatalf("resource usage JSON was not decoded: %#v %v", value, err)
-	}
-}
-
 func TestArtifactPointerValidationRejectsForgedMetadata(t *testing.T) {
-	valid := map[string]interface{}{
-		"artifact_id": "00000000-0000-4000-8000-000000000001", "version_id": "00000000-0000-4000-8000-000000000002",
-		"filename": "artifact.zip", "sha256": strings.Repeat("a", 64), "size_bytes": int64(1),
+	valid := ArtifactPointer{
+		ArtifactID: "00000000-0000-4000-8000-000000000001",
+		VersionID:  "00000000-0000-4000-8000-000000000002",
+		Filename:   "execution-bundle.zip",
+		SHA256:     strings.Repeat("a", 64),
+		SizeBytes:  1,
 	}
 	if !validArtifactPointer(valid) {
 		t.Fatal("valid artifact pointer rejected")
 	}
-	for name, value := range map[string]interface{}{
-		"wrong filename": func() map[string]interface{} {
-			copy := cloneMap(valid)
-			copy["filename"] = "result_manifest.json"
-			return copy
-		}(),
-		"zero size": func() map[string]interface{} { copy := cloneMap(valid); copy["size_bytes"] = int64(0); return copy }(),
-		"bad hash": func() map[string]interface{} {
-			copy := cloneMap(valid)
-			copy["sha256"] = strings.Repeat("g", 64)
-			return copy
-		}(),
-		"fake id": func() map[string]interface{} {
-			copy := cloneMap(valid)
-			copy["artifact_id"] = "artifact-1"
-			return copy
-		}(),
-	} {
-		if validArtifactPointer(value.(map[string]interface{})) {
+	cases := map[string]ArtifactPointer{
+		"wrong filename": func() ArtifactPointer { copy := valid; copy.Filename = "artifact.zip"; return copy }(),
+		"zero size":      func() ArtifactPointer { copy := valid; copy.SizeBytes = 0; return copy }(),
+		"bad hash":       func() ArtifactPointer { copy := valid; copy.SHA256 = strings.Repeat("g", 64); return copy }(),
+		"fake id":        func() ArtifactPointer { copy := valid; copy.ArtifactID = "artifact-1"; return copy }(),
+	}
+	for name, value := range cases {
+		if validArtifactPointer(value) {
 			t.Fatalf("%s was accepted", name)
 		}
 	}
-}
-
-func cloneMap(value map[string]interface{}) map[string]interface{} {
-	copy := make(map[string]interface{}, len(value))
-	for key, item := range value {
-		copy[key] = item
-	}
-	return copy
 }

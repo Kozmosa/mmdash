@@ -114,7 +114,7 @@ def test_production_registry_advertises_artifact_preview() -> None:
         "artifact.preview",
         "artifact.semantic.describe",
         "experiment.result.compare",
-        "experiment.result.summarize",
+        "experiment.result.process",
         "model.notion.discover",
         "model.notion.snapshot",
         "progress.evaluate",

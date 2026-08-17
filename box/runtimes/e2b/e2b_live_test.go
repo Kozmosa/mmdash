@@ -180,10 +180,11 @@ func liveRunRequest(id, workspace, output string, timeout int, mode string) sand
 	return sandbox.RunRequest{
 		ID: id,
 		Spec: contracts.RunSpec{
-			SchemaVersion: "1", ExperimentID: "experiment-live", ProjectID: "project-live",
-			SourceCommit: strings.Repeat("b", 40), Entrypoint: "python:run.py", Runtime: "e2b",
-			Environment: map[string]string{"MMDASH_ACCEPTANCE_MODE": mode},
-			Limits:      contracts.ResourceLimits{CPUMillis: 1000, MemoryBytes: 512 << 20, TimeoutSecond: timeout, DiskBytes: 1 << 30, PIDs: 64, Network: "disabled"},
+			SchemaVersion: "2", ExperimentID: "experiment-live", ProjectID: "project-live", ExecutionEpoch: "epoch-live",
+			SourceCommit: strings.Repeat("b", 40), SourceTransfer: contracts.SourceTransfer{URL: "https://example.test/source.zip", ExpiresAt: time.Now().Add(time.Hour), SourceCommit: strings.Repeat("b", 40)}, Entrypoint: "python:run.py", Runtime: "e2b", RuntimeVersion: "1",
+			Environment:    map[string]string{"MMDASH_ACCEPTANCE_MODE": mode},
+			Limits:         contracts.ResourceLimits{CPUMillis: 1000, MemoryBytes: 512 << 20, TimeoutSecond: timeout, DiskBytes: 1 << 30, PIDs: 64, Network: "disabled"},
+			ResultContract: contracts.ResultContract{Directory: "experiments/experiment-live_20260815_1200/", BundleFilename: "execution-bundle.zip", ManifestSchema: "https://mmdash.moe/contracts/manifest.schema.json", MaxBundleBytes: 1 << 30},
 		},
 		Workspace: workspace, OutputDir: output,
 	}

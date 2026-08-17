@@ -111,4 +111,34 @@ describe("public user API boundary", () => {
       expect.objectContaining({ accessToken: undefined }),
     );
   });
+
+  it("forwards Box control callbacks with the opaque Box token while Core stays private", async () => {
+    const currentIdentity = vi.fn();
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ accepted_through_sequence: 4 }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const app = buildApp({
+      config: testConfig,
+      coreClient: { currentIdentity, fetch } as unknown as CoreClient,
+      logger: false,
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      headers: { authorization: "Bearer box-token" },
+      method: "POST",
+      payload: { execution_epoch: "epoch-1", first_sequence: 1, entries: [] },
+      url: "/v1/boxes/box-1/tasks/task-1/logs",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(currentIdentity).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith(
+      "/v1/boxes/box-1/tasks/task-1/logs",
+      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({ accessToken: "box-token" }),
+    );
+  });
 });

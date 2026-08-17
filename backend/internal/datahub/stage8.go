@@ -41,6 +41,11 @@ func (store PostgresStore) ProjectStage8(ctx context.Context, event contract.Eve
 			if _, err := tx.ExecContext(ctx, `INSERT INTO data_activity(activity_id,project_id,object_id,event_id,activity_type,title,summary,actor,metadata,occurred_at,created_at) SELECT $1,$2,object_id,$3,$4,$5,$6,$7,$8,$9,$10 FROM data_objects WHERE source_module=$11 AND object_type=$12 AND source_id=$13 ON CONFLICT(event_id) WHERE event_id IS NOT NULL DO NOTHING`, activityID, *event.ProjectID, event.EventID, event.EventType, object.title, object.summary, jsonBytes(event.Actor), jsonBytes(object.metadata), event.OccurredAt, store.Clock.Now().UTC(), object.sourceModule, object.objectType, object.sourceID); err != nil {
 				return err
 			}
+			if object.delete {
+				if _, err := tx.ExecContext(ctx, `DELETE FROM data_objects WHERE source_module=$1 AND object_type=$2 AND source_id=$3 AND project_id=$4`, object.sourceModule, object.objectType, object.sourceID, *event.ProjectID); err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
@@ -49,11 +54,15 @@ func (store PostgresStore) ProjectStage8(ctx context.Context, event contract.Eve
 type stage8ProjectionObject struct {
 	objectType, sourceModule, sourceID, title, summary, status string
 	metadata                                                   map[string]interface{}
+	delete                                                     bool
 }
 
 func stage8Objects(event contract.EventEnvelope) []stage8ProjectionObject {
 	payload := event.Payload
-	status, _ := payload["status"].(string)
+	status, _ := payload["execution_status"].(string)
+	if status == "" {
+		status, _ = payload["status"].(string)
+	}
 	metadata := map[string]interface{}{}
 	for key, value := range payload {
 		if key != "name" && key != "summary" {
@@ -63,6 +72,14 @@ func stage8Objects(event contract.EventEnvelope) []stage8ProjectionObject {
 	switch {
 	case strings.HasPrefix(event.EventType, "experiment."):
 		experimentID, _ := payload["experiment_id"].(string)
+		if status == "" {
+			switch event.EventType {
+			case "experiment.rerun_created":
+				status = "created"
+			case "experiment.result_bound":
+				status = "succeeded"
+			}
+		}
 		if experimentID == "" || status == "" {
 			return nil
 		}
@@ -76,24 +93,38 @@ func stage8Objects(event contract.EventEnvelope) []stage8ProjectionObject {
 			runMetadata["experiment_id"] = experimentID
 			objects = append(objects, stage8ProjectionObject{objectType: "experiment_run", sourceModule: "experiment", sourceID: taskID, title: name + " run", summary: status, status: status, metadata: runMetadata})
 		}
-		if status == "succeeded" {
-			if artifactID, ok := payload["artifact_id"].(string); ok && artifactID != "" {
-				resultMetadata := cloneMetadata(metadata)
-				resultMetadata["experiment_id"] = experimentID
-				objects = append(objects, stage8ProjectionObject{objectType: "result_bundle", sourceModule: "experiment", sourceID: experimentID, title: name + " result", summary: status, status: status, metadata: resultMetadata})
-			}
+		if event.EventType == "experiment.succeeded" {
+			resultMetadata := cloneMetadata(metadata)
+			resultMetadata["experiment_id"] = experimentID
+			objects = append(objects, stage8ProjectionObject{objectType: "result_bundle", sourceModule: "experiment", sourceID: experimentID, title: name + " result", summary: status, status: status, metadata: resultMetadata})
 		}
 		return objects
-	case event.EventType == "box.registered" || event.EventType == "box.heartbeat.received" || event.EventType == "box.revoked":
+	case strings.HasPrefix(event.EventType, "box."):
 		boxID, _ := payload["box_id"].(string)
-		if boxID == "" || status == "" {
+		switch event.EventType {
+		case "box.assigned":
+			status = "assigned"
+		case "box.unassigned":
+			status = "unassigned"
+		case "box.offline":
+			status = "offline"
+		case "box.recovered":
+			status = "online"
+		}
+		if boxID == "" || status == "" || event.ProjectID == nil {
 			return nil
 		}
 		name, _ := payload["name"].(string)
 		if name == "" {
 			name = fmt.Sprintf("Box %s", boxID[:minInt(8, len(boxID))])
 		}
-		return []stage8ProjectionObject{{objectType: "box", sourceModule: "boxcontrol", sourceID: boxID, title: name, summary: status, status: status, metadata: metadata}}
+		metadata["box_id"] = boxID
+		return []stage8ProjectionObject{{
+			objectType: "box", sourceModule: "boxcontrol",
+			sourceID: boxID + "@" + *event.ProjectID,
+			title:    name, summary: status, status: status, metadata: metadata,
+			delete: event.EventType == "box.unassigned",
+		}}
 	default:
 		return nil
 	}

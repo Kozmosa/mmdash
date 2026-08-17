@@ -25,7 +25,7 @@ export class ApiError extends Error {
 
 type QueryValue = boolean | number | string | null | undefined;
 
-const publicPagePrefixes = ["/login", "/register", "/invite"];
+const publicPagePrefixes = ["/login", "/register", "/invite", "/downloads"];
 const unauthenticatedRequestPrefixes = [
   "/auth/login",
   "/auth/register",
@@ -42,7 +42,14 @@ export function shouldRedirectToLogin(
     !unauthenticatedRequestPrefixes.some((prefix) =>
       requestPath.startsWith(prefix),
     ) &&
-    !publicPagePrefixes.some((prefix) => currentPathname.startsWith(prefix))
+    !isPublicPage(currentPathname)
+  );
+}
+
+function isPublicPage(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    publicPagePrefixes.some((prefix) => pathname.startsWith(prefix))
   );
 }
 

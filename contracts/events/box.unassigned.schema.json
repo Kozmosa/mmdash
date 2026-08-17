@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/box.unassigned.schema.json",
+  "title": "box.unassigned payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["box_id", "project_id", "mode", "failed_experiment_count"],
+  "properties": {
+    "box_id": { "type": "string", "format": "uuid" },
+    "project_id": { "type": "string", "format": "uuid" },
+    "mode": { "type": "string", "enum": ["normal", "force"] },
+    "failed_experiment_count": { "type": "integer", "minimum": 0 }
+  }
+}

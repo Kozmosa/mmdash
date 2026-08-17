@@ -41,6 +41,53 @@ type Coordinator struct {
 	RetryLimit time.Duration
 }
 
+type projectSyncStore interface {
+	SyncStore
+	GetByProject(context.Context, string) (Repository, error)
+	RequestSyncSource(context.Context, string, time.Time, string) (Repository, error)
+}
+
+// SyncProject requests and waits for one authoritative remote fetch. The same
+// lease/transaction path used by the background coordinator remains the only
+// way fetched heads become durable Repo state.
+func (coordinator Coordinator) SyncProject(
+	ctx context.Context,
+	projectID string,
+) (Repository, error) {
+	store, ok := coordinator.Store.(projectSyncStore)
+	if !ok || coordinator.Clock == nil || projectID == "" {
+		return Repository{}, ErrInvalid
+	}
+	requestedAt := coordinator.Clock.Now().UTC()
+	if _, err := store.RequestSyncSource(ctx, projectID, requestedAt, "manual"); err != nil {
+		return Repository{}, err
+	}
+	for {
+		// It is safe if the background loop wins the claim; the durable state
+		// check below observes either coordinator's completion.
+		_ = coordinator.RunOnce(ctx)
+		repository, err := store.GetByProject(ctx, projectID)
+		if err != nil {
+			return Repository{}, err
+		}
+		if repository.SyncRequestedAt == nil && repository.SyncLockedBy == nil &&
+			repository.LastSyncedAt != nil && !repository.LastSyncedAt.Before(requestedAt) {
+			return repository, nil
+		}
+		if repository.SyncLockedBy == nil && repository.LastErrorCode != nil &&
+			repository.NextSyncAt != nil && repository.NextSyncAt.After(coordinator.Clock.Now().UTC()) {
+			return Repository{}, ErrNotReady
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return Repository{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
 // Run polls until Core shutdown. Individual repository failures are persisted
 // and reported without terminating the coordinator.
 func (coordinator Coordinator) Run(ctx context.Context) {

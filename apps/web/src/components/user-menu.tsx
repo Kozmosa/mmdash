@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, LogOut, Trash2, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, Server, Trash2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -116,6 +116,15 @@ export function UserMenu({
             >
               <UserRound aria-hidden="true" className="size-4" />
               个人中心
+            </Link>
+            <Link
+              className="flex min-h-9 items-center gap-2 rounded-md px-2.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+              href="/account/boxes"
+              onClick={() => setOpen(false)}
+              role="menuitem"
+            >
+              <Server aria-hidden="true" className="size-4" />
+              Box 管理
             </Link>
             <Link
               className="flex min-h-9 items-center gap-2 rounded-md px-2.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent"

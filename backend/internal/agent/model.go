@@ -48,6 +48,7 @@ var DefaultAllowedTools = []string{
 	"artifact.upload",
 	"artifact.read",
 	"experiment.create",
+	"experiment.result.bind",
 	"experiment.run",
 	"experiment.status",
 	"result.get",

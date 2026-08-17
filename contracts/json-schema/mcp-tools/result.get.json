@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mmdash.moe/contracts/mcp/result.get.json",
   "title": "Read experiment result",
+  "description": "Return the verified result Commit, frozen directory, read-only Git/Artifact tree, raw Bundle metadata when authorized, and retry guidance.",
   "x-operation-id": "result.get",
   "type": "object",
   "additionalProperties": false,

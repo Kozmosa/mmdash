@@ -1,3 +1,62 @@
+# mmdash v0.1 Stage 8 Box / Experiment refactor handoff
+
+- Updated: 2026-08-17
+- Branch: `main`
+- Base: `origin/main@bef9531` after the mbox merge
+- Delivery state: Stage 8 refactor and the first cross-platform mbox management
+  workflow are implemented; Docker acceptance was explicitly
+  waived by the user because of the remaining weekly quota.
+- Follow-up fixes (2026-08-16): the Experiment list is now card-only and links
+  to an independent detail route for Terminal/result-tree views; Box Management
+  now lists platform-specific installers from the hidden mmdash system Artifact
+  Project and includes browser/device-auth installation guidance. Repo source
+  archives skip Git symlinks instead of failing CI's frozen-tree test.
+
+## Delivered Stage 8 vertical slice
+
+- Account-owned Box device authorization and dedicated Box Tokens; many-to-many
+  Project assignment, personal Box management, Project Box/Experiment settings,
+  member-departure force-unassignment, draining and force revoke.
+- Outbound-only Gateway long polling, execution epochs, durable restart-safe
+  callback/log/result spool, offline resume, ordered log acknowledgement,
+  `logs_truncated`, 72-hour offline timeout, immutable Execution Bundle upload,
+  Local Docker and hosted/self-hosted E2B adapters with lifecycle probes.
+- Frozen `box / box-re / self` Experiment types, separate execution/connectivity
+  state, structured failures, immutable retry chains, old-ID guidance, Project
+  timezone result paths, MCP/CLI create/run/status/bind/result flows, and exact
+  Coding Agent self-run instructions.
+- Artifact-owned permanent raw Bundles and large files, Worker-safe extraction,
+  Repo-owned serialized result commits and remote verification, Artifact pointer
+  manifests, and compensating revert for pushed-but-unbound results invalidated
+  by force revoke/unassignment.
+- Experiment cards/progress, read-only persisted Terminal history and SSE stream,
+  result tree, virtual Artifact files, comparison, Box management and split
+  settings UI; Data Hub projections, event schemas, Audit records, generated
+  clients and API catalogs are aligned.
+- Durable Project purge aborts multipart uploads, deletes mmdash-owned Artifact
+  bytes and internal Repo storage, cascades Project-scoped database state, keeps
+  account Boxes/Tokens, and never changes external Git repositories or branches.
+- The first Box operator workflow is now the cross-platform `mbox` command:
+  `setup`, account login/status/logout, `config show/set`, service
+  init/start/stop/status, and uninstall. Windows uses SCM, Linux uses systemd,
+  and the selected Box root stores config, identity, logs, spools and outputs.
+  The public homepage/download center is reserved for Box and CLI binaries;
+  `dev.mjs` builds both binaries on every startup.
+
+## Verification evidence
+
+- Focused Core, Box, Repo, Artifact, Experiment, Data Hub, Project and CLI Go
+  suites passed; Web 134 tests/build, Web BFF 63 tests/build, MCP Gateway 38
+  tests/build, contract generation/check and API catalog check passed.
+- The repository-wide `pnpm check` was rerun on 2026-08-16 after formatting
+  `box/contracts/types.go`. TypeScript/Go/Python lint, all tests, production
+  builds, contract checks, and API catalog checks passed. The final Caddyfile
+  step could not spawn the locally installed `caddy.exe` in this restricted
+  Windows process (`EPERM`); no Caddyfile syntax failure was reported. No
+  Docker/Compose command was run per the user's quota instruction.
+
+## Historical pre-implementation preparation snapshot
+
 # mmdash v0.1 Stage 8 Box / Experiment redesign preparation handoff
 
 - Updated: 2026-08-15
