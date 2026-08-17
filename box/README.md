@@ -46,6 +46,11 @@ keeping Box configuration and data. `uninstall` stops and unregisters that
 service before deleting the selected Box root; it does not modify project
 repositories.
 
+On Windows, run `service init`, `service start`, `service stop`, `service
+status`, and `service remove` from an elevated PowerShell or Command Prompt.
+After replacing `mbox.exe`, run `mbox service remove` and then `mbox service
+init` once to register the new executable with the Service Control Manager.
+
 The E2B adapter accepts a hosted E2B account or a self-deployed E2B API and
 Sandbox URL. Provider secrets are kept on the Box host and are never included
 in task callbacks.

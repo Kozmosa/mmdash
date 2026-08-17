@@ -26,7 +26,7 @@ import (
 	"github.com/mmdash/mmdash/box/gateway"
 )
 
-const serviceName = "MmdashBox"
+const ServiceName = "MmdashBox"
 
 var defaultLimits = contracts.ResourceLimits{
 	CPUMillis: 1000, MemoryBytes: 1 << 30, TimeoutSecond: 3600,
@@ -328,10 +328,10 @@ func serviceInit(root string, stdout io.Writer) error {
 	}
 	if runtime.GOOS == "windows" {
 		binPath := fmt.Sprintf(`"%s" --gateway --root "%s"`, executable, root)
-		if err := runSystemCommand("sc.exe", "create", serviceName, "binPath=", binPath, "start=", "auto", "DisplayName=", "mmdash Box Gateway"); err != nil {
+		if err := runSystemCommand("sc.exe", "create", ServiceName, "binPath=", binPath, "start=", "auto", "DisplayName=", "mmdash Box Gateway"); err != nil {
 			return err
 		}
-		_ = runSystemCommand("sc.exe", "description", serviceName, "mmdash outbound Box Gateway")
+		_ = runSystemCommand("sc.exe", "description", ServiceName, "mmdash outbound Box Gateway")
 	} else {
 		unitPath := "/etc/systemd/system/mmdash-box.service"
 		unit := fmt.Sprintf("[Unit]\nDescription=mmdash Box Gateway\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart=%s --gateway --root %s\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n", shellQuote(executable), shellQuote(root))
@@ -345,7 +345,7 @@ func serviceInit(root string, stdout io.Writer) error {
 			return err
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "service.json"), []byte(fmt.Sprintf("{\"name\":%q,\"root\":%q}\n", serviceName, root)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "service.json"), []byte(fmt.Sprintf("{\"name\":%q,\"root\":%q}\n", ServiceName, root)), 0o600); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, "Box 服务已注册并设置为开机启动")
@@ -355,9 +355,9 @@ func serviceInit(root string, stdout io.Writer) error {
 func serviceAction(action string, stdout io.Writer) error {
 	if runtime.GOOS == "windows" {
 		if action == "status" {
-			return runSystemCommand("sc.exe", "query", serviceName)
+			return runSystemCommand("sc.exe", "query", ServiceName)
 		}
-		return runSystemCommand("sc.exe", action, serviceName)
+		return runSystemCommand("sc.exe", action, ServiceName)
 	}
 	if action == "status" {
 		return runSystemCommand("systemctl", "status", "mmdash-box.service", "--no-pager")
@@ -386,10 +386,10 @@ func removeService(root string, stdout io.Writer) error {
 
 func removeRegisteredService() error {
 	if runtime.GOOS == "windows" {
-		if err := runSystemCommand("sc.exe", "stop", serviceName); err != nil && !isServiceStateError(err, 1062) {
+		if err := runSystemCommand("sc.exe", "stop", ServiceName); err != nil && !isServiceStateError(err, 1062) {
 			return err
 		}
-		if err := runSystemCommand("sc.exe", "delete", serviceName); err != nil && !isServiceStateError(err, 1060) {
+		if err := runSystemCommand("sc.exe", "delete", ServiceName); err != nil && !isServiceStateError(err, 1060) {
 			return err
 		}
 		return nil
