@@ -4,6 +4,12 @@ const protectedPrefixes = ["/projects", "/account", "/cli/authorize"];
 
 export function proxy(request: NextRequest) {
   if (
+    request.nextUrl.pathname === "/" &&
+    request.cookies.has("mmdash_session")
+  ) {
+    return NextResponse.redirect(new URL("/projects", request.url));
+  }
+  if (
     !protectedPrefixes.some((prefix) =>
       request.nextUrl.pathname.startsWith(prefix),
     )
