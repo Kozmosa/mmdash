@@ -10,7 +10,6 @@ import {
   Unplug,
 } from "lucide-react";
 import { useState } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +24,8 @@ import {
 import { Input } from "@/components/ui/input";
 
 import { experimentApi } from "./api";
-import type { Box, BoxRelease } from "./types";
+import { developmentDownloads } from "./development-downloads";
+import type { Box } from "./types";
 
 export function BoxManagement() {
   const client = useQueryClient();
@@ -33,11 +33,6 @@ export function BoxManagement() {
     queryFn: () => experimentApi.personalBoxes(),
     queryKey: ["personal-boxes"],
     refetchInterval: 5_000,
-  });
-  const releases = useQuery({
-    queryFn: () => experimentApi.boxReleases(),
-    queryKey: ["box-releases"],
-    staleTime: 60_000,
   });
   const rename = useMutation({
     mutationFn: ({ boxId, name }: { boxId: string; name: string }) =>
@@ -71,7 +66,7 @@ export function BoxManagement() {
           `mbox account login` 完成初始化和账号绑定。
         </p>
       </header>
-      <BoxInstallerCard releases={releases.data?.items ?? []} />
+      <BoxInstallerCard />
       {boxes.isLoading ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin" />
@@ -105,14 +100,7 @@ export function BoxManagement() {
   );
 }
 
-export function BoxInstallerCard({
-  releases,
-  centerLink = true,
-}: Readonly<{ releases: BoxRelease[]; centerLink?: boolean }>) {
-  const [platform, setPlatform] = useState<"windows" | "linux">(
-    detectPlatform(),
-  );
-  const release = releases.find((item) => item.platform === platform);
+export function BoxInstallerCard() {
   return (
     <Card>
       <CardHeader>
@@ -121,95 +109,46 @@ export function BoxInstallerCard({
           安装 Box Gateway
         </CardTitle>
         <CardDescription>
-          安装包由 mmdash 的系统 Artifact Project 统一版本管理；下载的是不可变
-          Artifact Version。
+          下载 dev.mjs 最近一次构建的静态开发版可执行文件。正式发行版发布后会
+          使用独立的版本目录。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div
           className="flex flex-wrap gap-2"
           role="group"
-          aria-label="选择操作系统"
+          aria-label="下载 Box Gateway"
         >
-          <Button
-            onClick={() => setPlatform("windows")}
-            size="sm"
-            variant={platform === "windows" ? "default" : "outline"}
+          <a
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+            download={developmentDownloads.box.windows.filename}
+            href={developmentDownloads.box.windows.href}
           >
+            <Download className="size-4" />
             Windows
-          </Button>
-          <Button
-            onClick={() => setPlatform("linux")}
-            size="sm"
-            variant={platform === "linux" ? "default" : "outline"}
+          </a>
+          <a
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium shadow-xs hover:bg-accent hover:text-accent-foreground"
+            download={developmentDownloads.box.linux.filename}
+            href={developmentDownloads.box.linux.href}
           >
+            <Download className="size-4" />
             Linux
-          </Button>
+          </a>
         </div>
-        {release ? (
-          <div className="space-y-3 rounded-lg border border-border p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="font-medium">{release.filename}</p>
-                <p className="text-xs text-muted-foreground">
-                  版本 {release.version} · {formatBytes(release.size_bytes)}
-                </p>
-              </div>
-              {centerLink ? (
-                <Link
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-                  href={`/downloads?platform=${platform}`}
-                >
-                  <Download className="size-4" />
-                  前往下载中心
-                </Link>
-              ) : (
-                <a
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-                  download={release.filename}
-                  href={release.download.url}
-                >
-                  <Download className="size-4" />
-                  下载
-                </a>
-              )}
-            </div>
-            <p className="break-all font-mono text-[11px] text-muted-foreground">
-              SHA-256: {release.sha256}
-            </p>
-            <div className="rounded-md bg-muted/60 p-3">
-              <p className="mb-1 text-xs font-medium">安装命令</p>
-              <code className="block whitespace-pre-wrap break-all text-xs">
-                {release.install_command}
-              </code>
-            </div>
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {release.instructions}
-            </p>
-          </div>
-        ) : (
-          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            当前平台暂未发布可用安装包。请让 mmdash 管理员将带有
-            `box-release`、`platform:{platform}` 和 `version:x.y.z` 标签的
-            Artifact Version 发布到系统 Project。
+        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <p>
+            Windows 和 Linux 按钮分别对应 `apps/web/public/downloads/dev/`
+            下的静态文件。每次启动 `dev.mjs` 都会重新构建并覆盖对应文件。
           </p>
-        )}
+          <p className="mt-2">
+            下载后运行 `mbox setup`，再执行 `mbox account login`
+            完成初始化和账号绑定。
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
-}
-
-function detectPlatform(): "windows" | "linux" {
-  if (typeof navigator !== "undefined" && /linux/i.test(navigator.userAgent)) {
-    return "linux";
-  }
-  return "windows";
-}
-
-function formatBytes(value: number): string {
-  if (value < 1024 * 1024)
-    return `${Math.max(1, Math.round(value / 1024))} KiB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 function BoxCard({

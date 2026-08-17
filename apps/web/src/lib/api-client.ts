@@ -25,7 +25,7 @@ export class ApiError extends Error {
 
 type QueryValue = boolean | number | string | null | undefined;
 
-const publicPagePrefixes = ["/login", "/register", "/invite"];
+const publicPagePrefixes = ["/login", "/register", "/invite", "/downloads"];
 const unauthenticatedRequestPrefixes = [
   "/auth/login",
   "/auth/register",
