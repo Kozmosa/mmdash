@@ -313,9 +313,26 @@ func service(args []string, stdout io.Writer) error {
 		return removeService(root, stdout)
 	case "status", "":
 		return serviceAction("status", stdout)
+	case "logs":
+		return serviceLogs(root, stdout)
 	default:
-		return fmt.Errorf("unknown service command %q (use init, start, stop, status or remove)", command)
+		return fmt.Errorf("unknown service command %q (use init, start, stop, status, logs or remove)", command)
 	}
+}
+
+func serviceLogs(root string, stdout io.Writer) error {
+	path := filepath.Join(root, "logs", "service.log")
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintln(stdout, "尚无服务日志；可直接运行 mbox --gateway --root PATH 查看启动日志")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(stdout, file)
+	return err
 }
 
 func serviceInit(root string, stdout io.Writer) error {
@@ -566,7 +583,7 @@ func printHelp(out io.Writer) {
   mbox setup [--root PATH] [--control-url URL] [--name NAME]
   mbox account login|status|logout [--root PATH]
   mbox config show|set key=value [--root PATH]
-	mbox service init|start|stop|status|remove [--root PATH]
+	mbox service init|start|stop|status|logs|remove [--root PATH]
   mbox uninstall [--root PATH] [--yes]
 
 setup 会引导配置 mmdash 公网地址（支持 HTTP/HTTPS）、Box 名称、Local Docker
