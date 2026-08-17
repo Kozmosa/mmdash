@@ -109,8 +109,8 @@ export function BoxInstallerCard() {
           安装 Box Gateway
         </CardTitle>
         <CardDescription>
-          下载 dev.mjs 最近一次构建的静态开发版可执行文件。正式发行版发布后会
-          使用独立的版本目录。
+          下载当前可用的 Box Gateway 可执行文件。正式发行版发布后会使用独立的
+          版本目录。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -137,14 +137,8 @@ export function BoxInstallerCard() {
           </a>
         </div>
         <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          <p>
-            Windows 和 Linux 按钮分别对应 `apps/web/public/downloads/dev/`
-            下的静态文件。每次启动 `dev.mjs` 都会重新构建并覆盖对应文件。
-          </p>
-          <p className="mt-2">
-            下载后运行 `mbox setup`，再执行 `mbox account login`
-            完成初始化和账号绑定。
-          </p>
+          下载后运行 `mbox setup`，再执行 `mbox account login`
+          完成初始化和账号绑定。
         </div>
       </CardContent>
     </Card>
