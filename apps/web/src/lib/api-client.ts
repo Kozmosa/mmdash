@@ -42,7 +42,14 @@ export function shouldRedirectToLogin(
     !unauthenticatedRequestPrefixes.some((prefix) =>
       requestPath.startsWith(prefix),
     ) &&
-    !publicPagePrefixes.some((prefix) => currentPathname.startsWith(prefix))
+    !isPublicPage(currentPathname)
+  );
+}
+
+function isPublicPage(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    publicPagePrefixes.some((prefix) => pathname.startsWith(prefix))
   );
 }
 
