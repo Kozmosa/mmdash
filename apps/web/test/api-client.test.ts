@@ -57,6 +57,7 @@ describe("ApiClient", () => {
     expect(shouldRedirectToLogin(401, "/auth/me", "/register")).toBe(false);
     expect(shouldRedirectToLogin(401, "/auth/me", "/invite")).toBe(false);
     expect(shouldRedirectToLogin(401, "/auth/me", "/")).toBe(false);
+    expect(shouldRedirectToLogin(401, "/auth/me", "/downloads")).toBe(false);
     expect(shouldRedirectToLogin(401, "/projects", "/projects")).toBe(true);
   });
 });

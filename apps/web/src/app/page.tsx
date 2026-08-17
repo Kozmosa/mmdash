@@ -40,7 +40,7 @@ export default function RootPage() {
           </Link>
           <Link
             className="inline-flex h-10 items-center rounded-md border border-border px-5 text-sm font-medium hover:bg-muted"
-            href="/account/boxes"
+            href="/downloads"
           >
             下载 Box / CLI
           </Link>
