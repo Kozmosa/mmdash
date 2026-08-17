@@ -64,6 +64,34 @@ type persistedState struct {
 	Tasks          map[string]*taskState `json:"tasks"`
 }
 
+// Identity is the durable account-level identity used by the Gateway. The
+// mbox account command uses these helpers so account binding can be completed
+// without starting a worker process.
+type Identity struct {
+	InstallationID string `json:"installation_id"`
+	BoxID          string `json:"box_id,omitempty"`
+	BoxToken       string `json:"box_token,omitempty"`
+}
+
+func LoadIdentity(path string) (Identity, error) {
+	state, err := loadState(path)
+	if err != nil {
+		return Identity{}, err
+	}
+	return Identity{InstallationID: state.InstallationID, BoxID: state.BoxID, BoxToken: state.BoxToken}, nil
+}
+
+func SaveIdentity(path string, identity Identity) error {
+	state, err := loadState(path)
+	if err != nil {
+		return err
+	}
+	state.InstallationID = identity.InstallationID
+	state.BoxID = identity.BoxID
+	state.BoxToken = identity.BoxToken
+	return saveState(path, state)
+}
+
 func loadState(path string) (persistedState, error) {
 	state := persistedState{SchemaVersion: stateSchemaVersion, Tasks: map[string]*taskState{}}
 	if path == "" {
