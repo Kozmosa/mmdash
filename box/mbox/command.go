@@ -324,7 +324,7 @@ func serviceLogs(root string, stdout io.Writer) error {
 	path := filepath.Join(root, "logs", "service.log")
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintln(stdout, "尚无服务日志；可直接运行 mbox --gateway --root PATH 查看启动日志")
+		fmt.Fprintln(stdout, "尚无服务日志；可直接运行 mbox gateway --root PATH 查看启动日志")
 		return nil
 	}
 	if err != nil {
