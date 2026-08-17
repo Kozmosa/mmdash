@@ -1,9 +1,10 @@
 # mmdash v0.1 Stage 8 Box / Experiment refactor handoff
 
-- Updated: 2026-08-16
-- Branch: `codex/stage8-refactor`
-- Base: `main@7a4e39f` after the final main merge
-- Delivery state: Stage 8 refactor implemented; Docker acceptance was explicitly
+- Updated: 2026-08-17
+- Branch: `main`
+- Base: `origin/main@bef9531` after the mbox merge
+- Delivery state: Stage 8 refactor and the first cross-platform mbox management
+  workflow are implemented; Docker acceptance was explicitly
   waived by the user because of the remaining weekly quota.
 - Follow-up fixes (2026-08-16): the Experiment list is now card-only and links
   to an independent detail route for Terminal/result-tree views; Box Management
@@ -35,6 +36,12 @@
 - Durable Project purge aborts multipart uploads, deletes mmdash-owned Artifact
   bytes and internal Repo storage, cascades Project-scoped database state, keeps
   account Boxes/Tokens, and never changes external Git repositories or branches.
+- The first Box operator workflow is now the cross-platform `mbox` command:
+  `setup`, account login/status/logout, `config show/set`, service
+  init/start/stop/status, and uninstall. Windows uses SCM, Linux uses systemd,
+  and the selected Box root stores config, identity, logs, spools and outputs.
+  The public homepage/download center is reserved for Box and CLI binaries;
+  `dev.mjs` builds both binaries on every startup.
 
 ## Verification evidence
 
