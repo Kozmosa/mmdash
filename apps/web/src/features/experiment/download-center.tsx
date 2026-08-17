@@ -122,13 +122,16 @@ mmdash --help`,
               },
               {
                 description:
-                  "先在普通 PowerShell 初始化 Box 并完成浏览器登录。然后右键 PowerShell，选择“以管理员身份运行”，再注册和启动 Windows 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置。只移除服务而保留数据时，管理员 PowerShell 执行 mbox service remove：",
+                  "先在普通 PowerShell 初始化 Box 并完成浏览器登录。Local Docker 的镜像必须已经存在于 Docker Desktop；然后右键 PowerShell，选择“以管理员身份运行”，再注册和启动 Windows 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置。服务停止时用 mbox service logs 查看日志，前台排查可直接运行 mbox --gateway：",
                 code: String.raw`mbox setup
 mbox account login
 # 以下命令必须在“管理员 PowerShell”中运行
 mbox service init
 mbox service start
-mbox service status`,
+mbox service status
+mbox service logs
+# 前台查看完整启动输出（PATH 中的 mbox 可直接运行）
+mbox --gateway --root "$env:LOCALAPPDATA\MMDash Box"`,
                 title: "初始化并启动服务",
               },
               {

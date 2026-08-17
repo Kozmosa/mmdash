@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"os/user"
@@ -45,7 +46,8 @@ func main() {
 		os.Exit(2)
 	}
 	if err := runWithRoot(ctx, options.root); err != nil && !errors.Is(err, context.Canceled) {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "[box] Gateway stopped: %s\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -74,6 +76,10 @@ func parseGatewayOptions(args []string) (gatewayOptions, error) {
 }
 
 func runWithRoot(ctx context.Context, rootOverride string) error {
+	return runWithRootOutput(ctx, rootOverride, os.Stdout, os.Stderr)
+}
+
+func runWithRootOutput(ctx context.Context, rootOverride string, stdout, stderr io.Writer) error {
 	root := rootOverride
 	if root == "" {
 		root = config.DefaultRoot()
@@ -81,6 +87,7 @@ func runWithRoot(ctx context.Context, rootOverride string) error {
 	if absolute, err := filepath.Abs(root); err == nil {
 		root = absolute
 	}
+	fmt.Fprintf(stdout, "[box] Gateway starting; root=%s\n", root)
 	settings, err := config.Load(root)
 	if err != nil {
 		return err
@@ -101,12 +108,17 @@ func runWithRoot(ctx context.Context, rootOverride string) error {
 	}
 	client := gateway.HTTPClient{BaseURL: controlURL}
 	runtimes, runtimeFactory, probeErrors, err := configuredRuntimesWithSettings(ctx, limits, probeRuntimeAdapter, settings)
+	for _, probeErr := range probeErrors {
+		fmt.Fprintf(stderr, "[box] Runtime unavailable: %s\n", probeErr)
+	}
 	if err != nil {
 		return err
 	}
-	for _, probeErr := range probeErrors {
-		_, _ = fmt.Fprintf(os.Stderr, "Box Runtime unavailable: %s\n", probeErr)
+	runtimeNames := make([]string, 0, len(runtimes))
+	for _, runtime := range runtimes {
+		runtimeNames = append(runtimeNames, runtime.Name)
 	}
+	fmt.Fprintf(stdout, "[box] Runtime ready: %s; control=%s\n", strings.Join(runtimeNames, ", "), controlURL)
 	config := gateway.Config{
 		InstallationID: os.Getenv("MMDASH_BOX_INSTALLATION_ID"), Name: getenv("MMDASH_BOX_NAME", settings.Name), Version: getenv("MMDASH_BOX_VERSION", "dev"),
 		BoxID: os.Getenv("MMDASH_BOX_ID"), BoxToken: os.Getenv("MMDASH_BOX_TOKEN"),
@@ -120,8 +132,12 @@ func runWithRoot(ctx context.Context, rootOverride string) error {
 	if staticRoot := strings.TrimSpace(os.Getenv("MMDASH_BOX_WORKSPACE")); staticRoot != "" {
 		workspace = gateway.StaticWorkspace{Root: staticRoot, Commit: os.Getenv("MMDASH_BOX_WORKSPACE_COMMIT")}
 	}
-	runner := &gateway.Gateway{Client: client, Config: config, Workspace: workspace, Runtime: runtimeFactory}
-	return runner.Run(ctx)
+	runner := &gateway.Gateway{
+		Client: client, Config: config, Workspace: workspace, Runtime: runtimeFactory,
+		Stdout: stdout, Stderr: stderr,
+	}
+	err = runner.Run(ctx)
+	return err
 }
 
 type runtimeProbe func(context.Context, sandbox.Runtime) error
