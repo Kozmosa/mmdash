@@ -52,9 +52,9 @@ func (service Service) ArchiveExperimentResult(ctx context.Context, projectID, e
 	}
 	now := service.now()
 	sourceID := experimentID
-	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindExperimentResult, Source: SourceExperiment, SourceObjectID: &sourceID, Tags: []string{"experiment-result"}, Name: "artifact.zip", RecommendedUsage: []string{"result"}, CurrentVersionID: &versionID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
-	version := Version{ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1, StorageClass: "object", Filename: "artifact.zip", SHA256: strings.ToLower(expectedSHA), MIMEType: "application/zip", SizeBytes: expectedSize, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now}
-	upload, _, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, "artifact.zip", "application/zip", strings.ToLower(expectedSHA), expectedSize, "experiment-result:"+experimentID, plan)
+	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindExperimentResult, Source: SourceExperiment, SourceObjectID: &sourceID, Tags: []string{"experiment-result", "execution-bundle"}, Name: "execution-bundle.zip", RecommendedUsage: []string{"result", "evidence"}, CurrentVersionID: &versionID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
+	version := Version{ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1, StorageClass: "object", Filename: "execution-bundle.zip", SHA256: strings.ToLower(expectedSHA), MIMEType: "application/zip", SizeBytes: expectedSize, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now}
+	upload, _, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, "execution-bundle.zip", "application/zip", strings.ToLower(expectedSHA), expectedSize, "experiment-result:"+experimentID, plan)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -192,7 +192,7 @@ func validateArtifactZip(filename, experimentID string) error {
 		return ErrInvalid
 	}
 	var manifest map[string]interface{}
-	if json.Unmarshal(manifestBytes, &manifest) != nil || manifest["schema_version"] != "1" || manifest["experiment_id"] != experimentID || manifest["status"] != "succeeded" {
+	if json.Unmarshal(manifestBytes, &manifest) != nil || manifest["schema_version"] != "2" || manifest["experiment_id"] != experimentID || manifest["status"] != "succeeded" {
 		return ErrInvalid
 	}
 	entries, ok := manifest["files"].([]interface{})
@@ -234,7 +234,7 @@ func validateArtifactZip(filename, experimentID string) error {
 }
 
 func safeZipPath(name string) bool {
-	return name != "" && !strings.ContainsRune(name, 0) && !strings.HasPrefix(name, "/") && path.Clean(name) == name && name != "." && name != ".." && !strings.HasPrefix(name, "../")
+	return name != "" && !strings.ContainsRune(name, 0) && !strings.ContainsAny(name, "\\:") && !strings.HasPrefix(name, "/") && path.Clean(name) == name && name != "." && name != ".." && !strings.HasPrefix(name, "../")
 }
 
 func jsonInteger(value interface{}) (int64, bool) {

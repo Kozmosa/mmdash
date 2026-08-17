@@ -49,6 +49,46 @@ maintainer, and editor can use assigned Boxes; editor cannot change assignment.
 When a Box owner leaves a Project, only that Project assignment is force
 removed and its active Box tasks fail; the global Box and other Projects remain.
 
+## Installer releases and first start
+
+Box installers are ordinary immutable Artifact Versions in the hidden mmdash
+system Artifact Project. A release must be tagged `box-release`,
+`platform:windows` or `platform:linux`, and `version:x.y.z`; the Artifact name
+should include the platform and architecture. The read-only `box.releases.list`
+catalog signs the current Version for each platform, so the Box Management page
+can show a short-lived download button without exposing the system Project or a
+permanent object-storage URL. Publishing a new Version preserves every older
+Version for audit and rollback.
+
+After downloading, use the cross-platform `mbox` command. The first-run setup
+is deliberately terminal based so the same workflow works on Windows and
+Linux:
+
+```text
+mbox setup [--root PATH]
+mbox account login
+mbox config show
+mbox service init
+mbox service status
+```
+
+`mbox setup` guides the operator through the public Box Control address (both
+`http://` and `https://` are accepted), Box name, Local Docker image, and the
+hosted or self-deployed E2B adapter settings. `mbox account login` starts the
+one-time browser device flow, registers the account-owned Box, and persists the
+opaque Box Token under the selected Box root. `mbox config set` updates any
+Runtime/adapter setting without editing JSON by hand. `mbox service init`
+registers an auto-start Windows service or a systemd unit; `start`, `stop`, and
+`status` operate on that registration.
+
+The default root is `%LocalAppData%\\MMDash Box` on Windows and
+`$XDG_DATA_HOME/mmdash-box` (or `~/.local/share/mmdash-box`) on Linux. Use
+`--root` to choose another directory. Configuration, state, logs, task spools,
+outputs, and workspace transfer data remain below that root. `mbox uninstall`
+stops and removes the registered service before deleting the initialized Box
+root; it does not touch the user's project repository. E2B secrets remain on
+the Box host and are never uploaded to mmdash.
+
 ## Outbound control protocol
 
 Gateway sends heartbeat and uses a maximum 60-second bounded long poll for

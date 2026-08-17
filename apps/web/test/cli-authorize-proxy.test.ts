@@ -6,6 +6,7 @@ import { config, proxy } from "@/proxy";
 describe("CLI authorization route protection", () => {
   it("registers the authorization page with the Next proxy matcher", () => {
     expect(config.matcher).toContain("/cli/authorize/:path*");
+    expect(config.matcher).toContain("/login");
   });
 
   it("redirects an unauthenticated device approval to login with its code", () => {
@@ -26,5 +27,17 @@ describe("CLI authorization route protection", () => {
     );
 
     expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("redirects an authenticated visitor away from the login page", () => {
+    const response = proxy(
+      new NextRequest("https://mmdash.test/login", {
+        headers: { cookie: "mmdash_session=signed" },
+      }),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://mmdash.test/projects",
+    );
   });
 });

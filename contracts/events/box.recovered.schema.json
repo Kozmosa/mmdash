@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/box.recovered.schema.json",
+  "title": "box.recovered payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["box_id", "recovered_at", "offline_seconds"],
+  "properties": {
+    "box_id": { "type": "string", "format": "uuid" },
+    "recovered_at": { "type": "string", "format": "date-time" },
+    "offline_seconds": { "type": "integer", "minimum": 0 }
+  }
+}

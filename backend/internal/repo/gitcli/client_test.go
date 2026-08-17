@@ -1,6 +1,7 @@
 package gitcli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -46,6 +47,28 @@ func TestClientBoundsOutputRedactsCredentialsAndReportsTimeout(t *testing.T) {
 	})
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("slow command should time out: %v", err)
+	}
+}
+
+func TestClientStreamsBoundedObjectBytes(t *testing.T) {
+	client, err := NewClient(os.Args[0], "askpass", 2*time.Second, 1, 16)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	var output bytes.Buffer
+	result, err := client.RunStream(context.Background(), Command{
+		Args:      []string{"-test.run=TestGitClientHelper", "--", "large"},
+		Directory: t.TempDir(), Operation: "test.stream",
+	}, &output, 1024)
+	if err != nil || result.Bytes != 1024 || output.Len() != 1024 {
+		t.Fatalf("stream result: %#v size=%d err=%v", result, output.Len(), err)
+	}
+	output.Reset()
+	if _, err := client.RunStream(context.Background(), Command{
+		Args:      []string{"-test.run=TestGitClientHelper", "--", "large"},
+		Directory: t.TempDir(), Operation: "test.stream.limit",
+	}, &output, 100); !errors.Is(err, ErrOutputLimit) {
+		t.Fatalf("stream limit was not enforced: %v", err)
 	}
 }
 

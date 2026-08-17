@@ -20,6 +20,19 @@ type Runtime struct {
 	Client   Client
 }
 
+func (runtime Runtime) Probe(ctx context.Context) error {
+	if runtime.Client == nil || runtime.Template == "" {
+		return errors.New("E2B runtime is not configured")
+	}
+	prober, ok := runtime.Client.(interface {
+		Probe(context.Context, string) error
+	})
+	if !ok {
+		return errors.New("E2B client does not implement lifecycle probing")
+	}
+	return prober.Probe(ctx, runtime.Template)
+}
+
 func (runtime Runtime) Destroy(ctx context.Context, id string) error {
 	if runtime.Client == nil {
 		return errors.New("E2B runtime is not configured")

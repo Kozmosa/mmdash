@@ -2,13 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mmdash.moe/contracts/mcp/experiment.run.json",
   "title": "Run experiment",
+  "description": "Queue one frozen Box-managed experiment. Self-run experiments must push and bind a result instead.",
   "x-operation-id": "experiment.run",
   "type": "object",
   "additionalProperties": false,
-  "required": ["project_id", "experiment_id"],
+  "required": ["project_id", "experiment_id", "idempotency_key"],
   "properties": {
     "project_id": { "type": "string", "format": "uuid" },
     "experiment_id": { "type": "string", "format": "uuid" },
-    "idempotency_key": { "type": "string", "maxLength": 200 }
+    "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 }
   }
 }

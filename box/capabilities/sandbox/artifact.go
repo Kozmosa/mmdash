@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mmdash/mmdash/box/contracts"
 )
@@ -27,8 +28,21 @@ const (
 // GenerateManifest creates the authoritative result manifest from the actual
 // Sandbox output. Experiment programs only write result files; they cannot
 // choose the terminal status, experiment identity, hashes, or packaged paths.
-func GenerateManifest(root, experimentID string, exitCode int, diskLimit int64) (contracts.Manifest, error) {
-	if root == "" || experimentID == "" || diskLimit < 1 {
+type ManifestInput struct {
+	ExperimentID    string
+	SourceCommit    string
+	ResultDirectory string
+	Status          string
+	StartedAt       time.Time
+	FinishedAt      time.Time
+	Runtime         string
+	RuntimeVersion  string
+	LogsTruncated   bool
+	ExitCode        *int
+}
+
+func GenerateManifest(root string, input ManifestInput, diskLimit int64) (contracts.Manifest, error) {
+	if root == "" || input.ExperimentID == "" || diskLimit < 1 {
 		return contracts.Manifest{}, errors.New("invalid manifest generation input")
 	}
 	root, err := filepath.Abs(root)
@@ -44,11 +58,18 @@ func GenerateManifest(root, experimentID string, exitCode int, diskLimit int64) 
 		limit = maxArtifactBytes
 	}
 	manifest := contracts.Manifest{
-		SchemaVersion: "1",
-		ExperimentID:  experimentID,
-		Status:        "succeeded",
-		ExitCode:      &exitCode,
-		Files:         []contracts.ManifestFile{},
+		SchemaVersion:   "2",
+		ExperimentID:    input.ExperimentID,
+		SourceCommit:    input.SourceCommit,
+		ResultDirectory: input.ResultDirectory,
+		Status:          input.Status,
+		StartedAt:       input.StartedAt,
+		FinishedAt:      input.FinishedAt,
+		Runtime:         input.Runtime,
+		RuntimeVersion:  input.RuntimeVersion,
+		LogsTruncated:   input.LogsTruncated,
+		ExitCode:        input.ExitCode,
+		Files:           []contracts.ManifestFile{},
 	}
 	var total int64
 	err = filepath.WalkDir(rootReal, func(localPath string, entry os.DirEntry, walkErr error) error {
@@ -256,7 +277,7 @@ func BuildArtifactZip(root, destination string, manifest contracts.Manifest) (co
 		return contracts.ArtifactPointer{}, err
 	}
 	digest := sha256.Sum256(data)
-	return contracts.ArtifactPointer{Filename: "artifact.zip", SHA256: hex.EncodeToString(digest[:]), Size: int64(len(data))}, nil
+	return contracts.ArtifactPointer{Filename: "execution-bundle.zip", SHA256: hex.EncodeToString(digest[:]), Size: int64(len(data))}, nil
 }
 
 func safeManifestPath(relative string) bool {

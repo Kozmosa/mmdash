@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestGenerateManifestOwnsIdentityStatusAndFileMetadata(t *testing.T) {
@@ -21,7 +23,14 @@ func TestGenerateManifestOwnsIdentityStatusAndFileMetadata(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, manifestFilename), []byte(`{"experiment_id":"forged","status":"failed"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := GenerateManifest(root, "experiment-1", 0, 1<<20)
+	now := time.Now().UTC()
+	exitCode := 0
+	manifest, err := GenerateManifest(root, ManifestInput{
+		ExperimentID: "experiment-1", SourceCommit: strings.Repeat("a", 40),
+		ResultDirectory: "experiments/experiment-1_20260815_1200", Status: "succeeded",
+		StartedAt: now, FinishedAt: now.Add(time.Second), Runtime: "local-docker",
+		RuntimeVersion: "1", ExitCode: &exitCode,
+	}, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +52,7 @@ func TestGenerateManifestRejectsUnsafeOrOversizedOutput(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "large.bin"), []byte("too large"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := GenerateManifest(root, "experiment-1", 0, 1); err == nil {
+	if _, err := GenerateManifest(root, manifestInput(), 1); err == nil {
 		t.Fatal("oversized output was accepted")
 	}
 	if err := os.Remove(filepath.Join(root, "large.bin")); err != nil {
@@ -55,7 +64,18 @@ func TestGenerateManifestRejectsUnsafeOrOversizedOutput(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	if _, err := GenerateManifest(root, "experiment-1", 0, 1<<20); err == nil {
+	if _, err := GenerateManifest(root, manifestInput(), 1<<20); err == nil {
 		t.Fatal("output symlink was accepted")
+	}
+}
+
+func manifestInput() ManifestInput {
+	now := time.Now().UTC()
+	exitCode := 0
+	return ManifestInput{
+		ExperimentID: "experiment-1", SourceCommit: strings.Repeat("a", 40),
+		ResultDirectory: "experiments/experiment-1_20260815_1200", Status: "succeeded",
+		StartedAt: now, FinishedAt: now.Add(time.Second), Runtime: "local-docker",
+		RuntimeVersion: "1", ExitCode: &exitCode,
 	}
 }

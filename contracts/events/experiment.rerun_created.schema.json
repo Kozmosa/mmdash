@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/experiment.rerun_created.schema.json",
+  "title": "experiment.rerun_created payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["experiment_id", "retry_of_experiment_id", "root_experiment_id", "retry_sequence"],
+  "properties": {
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "retry_of_experiment_id": { "type": "string", "format": "uuid" },
+    "root_experiment_id": { "type": "string", "format": "uuid" },
+    "retry_sequence": { "type": "integer", "minimum": 1 }
+  }
+}

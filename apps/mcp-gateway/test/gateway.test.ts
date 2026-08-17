@@ -103,6 +103,7 @@ describe("MCP Gateway", () => {
       "data.list",
       "data.read",
       "experiment.create",
+      "experiment.result.bind",
       "experiment.run",
       "experiment.status",
       "progress.get",
@@ -183,6 +184,63 @@ describe("MCP Gateway", () => {
       "project.list",
       "project.get",
     ]);
+  });
+
+  it("returns the newest bounded persisted logs with experiment status", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000081";
+    const experimentId = "00000000-0000-4000-8000-000000000082";
+    const getExperiment = vi.fn().mockResolvedValue({
+      execution_status: "running",
+      experiment_id: experimentId,
+      logs_truncated: false,
+      project_id: projectId,
+      retry: { latest_experiment_id: experimentId, retry_sequence: 0 },
+    });
+    const listExperimentLogs = vi.fn().mockResolvedValue({
+      has_more: true,
+      items: [{ message: "latest", sequence: 42, stream: "stdout" }],
+      next_cursor: "42",
+    });
+    const gateway = buildGateway({
+      config: testConfig,
+      coreClient: {
+        getExperiment,
+        listExperimentLogs,
+      } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const client = new Client(
+      { name: "mmdash-experiment-status-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), {
+        fetch: sessionFetch.fetch,
+      }),
+    );
+
+    const result = await client.callTool({
+      arguments: {
+        experiment_id: experimentId,
+        log_tail: 25,
+        project_id: projectId,
+      },
+      name: "experiment.status",
+    });
+    await client.close();
+
+    expect(result.structuredContent).toMatchObject({
+      execution_status: "running",
+      logs: [{ message: "latest", sequence: 42 }],
+      logs_has_more: true,
+    });
+    expect(listExperimentLogs).toHaveBeenCalledWith(
+      projectId,
+      experimentId,
+      expect.objectContaining({ accessToken: cliToken, projectId }),
+      { limit: 25, tail: true },
+    );
   });
 
   it("reads and recalculates Progress through the delegated Core boundary", async () => {

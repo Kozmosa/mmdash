@@ -407,7 +407,7 @@ function rewriteTransferUrl(url: string): string {
   return `/api/artifact-transfers/${token}`;
 }
 
-function rewriteTransferGrant(
+export function rewriteTransferGrant(
   transfer: components["schemas"]["ArtifactTransferGrant"],
 ): components["schemas"]["ArtifactTransferGrant"] {
   return { ...transfer, url: rewriteTransferUrl(transfer.url) };

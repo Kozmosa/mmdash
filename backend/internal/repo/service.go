@@ -430,6 +430,7 @@ func (service Service) validateCommitRequest(
 		len(request.Message) > 10000 ||
 		strings.TrimSpace(request.IdempotencyKey) == "" ||
 		len(request.IdempotencyKey) > 200 ||
+		request.StageAll ||
 		len(request.Changes) < 1 ||
 		len(request.Changes) > 100 {
 		return ErrInvalid
@@ -439,7 +440,8 @@ func (service Service) validateCommitRequest(
 	for _, change := range request.Changes {
 		if gitcli.ValidateRepoPath(change.Path, false) != nil ||
 			paths[change.Path] ||
-			(change.Operation != "put" && change.Operation != "delete") {
+			(change.Operation != "put" && change.Operation != "delete") ||
+			change.SourcePath != "" || change.ContentSHA256 != "" || change.SizeBytes != 0 {
 			return ErrInvalid
 		}
 		paths[change.Path] = true

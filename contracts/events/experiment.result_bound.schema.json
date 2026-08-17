@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/events/experiment.result_bound.schema.json",
+  "title": "experiment.result_bound payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["experiment_id", "result_commit_sha", "result_directory", "result_manifest_sha256"],
+  "properties": {
+    "experiment_id": { "type": "string", "format": "uuid" },
+    "result_commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "result_directory": { "type": "string", "maxLength": 4096 },
+    "result_manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -55,7 +55,15 @@ func (module Module) handleDeviceAuthorize(response http.ResponseWriter, request
 	if !httpx.RequireMethod(response, request, http.MethodPost) {
 		return
 	}
-	result, err := module.Service.StartDeviceAuthorization(request.Context())
+	var body contract.DeviceAuthorizationRequest
+	if !httpx.DecodeJSON(response, request, &body) {
+		return
+	}
+	if err := body.Validate(); err != nil {
+		writeDomainError(response, request, ErrInvalid)
+		return
+	}
+	result, err := module.Service.StartDeviceAuthorization(request.Context(), body.ClientKind)
 	if err != nil {
 		writeDomainError(response, request, err)
 		return
@@ -87,11 +95,15 @@ func (module Module) handleDeviceToken(response http.ResponseWriter, request *ht
 	if !httpx.RequireMethod(response, request, http.MethodPost) {
 		return
 	}
-	var body deviceTokenRequest
+	var body contract.DeviceTokenRequest
 	if !httpx.DecodeJSON(response, request, &body) {
 		return
 	}
-	result, err := module.Service.ExchangeDeviceAuthorization(request.Context(), body.DeviceCode)
+	if err := body.Validate(); err != nil {
+		writeDomainError(response, request, ErrInvalid)
+		return
+	}
+	result, err := module.Service.ExchangeDeviceAuthorization(request.Context(), body.DeviceCode, body.ClientKind)
 	if err != nil {
 		writeDomainError(response, request, err)
 		return
@@ -425,7 +437,4 @@ type refreshTokenRequest struct {
 type deviceVerificationRequest struct {
 	Approve  bool   `json:"approve"`
 	UserCode string `json:"user_code"`
-}
-type deviceTokenRequest struct {
-	DeviceCode string `json:"device_code"`
 }

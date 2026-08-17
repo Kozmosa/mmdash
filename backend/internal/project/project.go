@@ -355,9 +355,17 @@ type Service struct {
 	Auth           Authenticator
 	Artifacts      ArtifactReferenceValidator
 	Clock          interface{ Now() time.Time }
+	MemberRemoval  MemberRemovalHook
 	Store          Store
 	InvitationTTL  time.Duration
 	TrashRetention time.Duration
+}
+
+// MemberRemovalHook lets an owning module close Project-scoped resources
+// before membership is removed. Box Control uses it to force-unassign every
+// account-owned Box of the departing member without revoking the global Box.
+type MemberRemovalHook interface {
+	BeforeProjectMemberRemoval(context.Context, string, string) error
 }
 
 // AgentGrantResolver is implemented by the Agent module without importing it
@@ -580,8 +588,14 @@ func (service Service) RemoveMember(
 	projectID string,
 	userID string,
 ) error {
-	if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
-		return err
+	if identity.User.ID == "" {
+		return ErrForbidden
+	}
+	selfRemoval := identity.User.ID == userID
+	if !selfRemoval {
+		if err := service.Authorize(ctx, identity, projectID, PermissionMembersManage); err != nil {
+			return err
+		}
 	}
 	if _, err := service.Store.FindRole(ctx, identity.User.ID, projectID); err != nil {
 		return ErrForbidden
@@ -592,6 +606,11 @@ func (service Service) RemoveMember(
 	}
 	if targetRole == RoleOwner {
 		return ErrForbidden
+	}
+	if service.MemberRemoval != nil {
+		if err := service.MemberRemoval.BeforeProjectMemberRemoval(ctx, projectID, userID); err != nil {
+			return err
+		}
 	}
 	return service.Store.RemoveMember(ctx, identity.User.ID, projectID, userID)
 }

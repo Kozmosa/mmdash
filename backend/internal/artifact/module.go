@@ -24,6 +24,7 @@ func (Module) Name() string { return "artifact" }
 
 func (module Module) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/artifact-transfers/", module.handleTransfer)
+	mux.HandleFunc("/v1/box/releases", module.handleBoxReleases)
 	mux.HandleFunc(
 		"/v1/internal/artifact-preview-jobs/",
 		module.handlePreviewJobTransfer,
@@ -32,6 +33,30 @@ func (module Module) RegisterRoutes(mux *http.ServeMux) {
 		"/v1/internal/artifact-semantic-jobs/",
 		module.handleSemanticJobExecute,
 	)
+}
+
+func (module Module) handleBoxReleases(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodGet) {
+		return
+	}
+	identity, ok := module.identity(response, request)
+	if !ok {
+		return
+	}
+	if identity.Kind != "session" && identity.Kind != "api" {
+		writeArtifactError(response, request, project.ErrForbidden)
+		return
+	}
+	catalog, err := module.Service.ListBoxReleases(request.Context())
+	if err != nil {
+		writeArtifactError(response, request, err)
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSON(response, http.StatusOK, catalog)
 }
 
 // ProjectHandler is mounted by Project so the shared /v1/projects/ subtree

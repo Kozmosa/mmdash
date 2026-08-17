@@ -132,7 +132,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Start a CLI device authorization */
+    /** Start a CLI or Box device authorization */
     post: operations["auth.device.authorize"];
     delete?: never;
     options?: never;
@@ -149,7 +149,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Approve or deny a CLI device authorization */
+    /** Approve or deny a CLI or Box device authorization */
     post: operations["auth.device.verify"];
     delete?: never;
     options?: never;
@@ -166,7 +166,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Exchange an approved device code for a CLI session */
+    /** Exchange an approved device code for a CLI session or Box registration grant */
     post: operations["auth.device.token"];
     delete?: never;
     options?: never;
@@ -3123,6 +3123,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/experiments/settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read Project Experiment defaults */
+    get: operations["experiment.settings.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Project Experiment defaults */
+    patch: operations["experiment.settings.update"];
+    trace?: never;
+  };
   "/v1/projects/{projectId}/experiments": {
     parameters: {
       query?: never;
@@ -3244,6 +3264,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/experiments/{experimentId}/rerun": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a frozen human-requested rerun with a new Exp ID */
+    post: operations["experiment.rerun"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/experiments/{experimentId}/result/bind": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Verify and bind a pushed self-run result Commit */
+    post: operations["experiment.result.bind"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/experiments/{experimentId}/logs": {
     parameters: {
       query?: never;
@@ -3274,8 +3334,27 @@ export interface paths {
       };
       cookie?: never;
     };
-    /** Read the primary result bundle pointer and manifest summary */
+    /** Read the verified result Commit, read-only tree, Bundle metadata, and retry guidance */
     get: operations["result.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/box-source-transfers/{token}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: string;
+      };
+      cookie?: never;
+    };
+    /** Download one immutable Repo-owned source commit using a short-lived Box grant */
+    get: operations["box.source.download"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3291,10 +3370,9 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List registered Boxes visible to the caller */
-    get: operations["box.list"];
+    get?: never;
     put?: never;
-    /** Register a Box and issue its one-time bootstrap token */
+    /** Consume a Box registration grant and issue an account-level Box Token */
     post: operations["box.register"];
     delete?: never;
     options?: never;
@@ -3302,7 +3380,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v1/boxes/{boxId}": {
+  "/v1/box/releases": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the published Box Gateway installers from the system Artifact project */
+    get: operations["box.releases.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/users/me/boxes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Boxes owned by the current user */
+    get: operations["box.personal.list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/users/me/boxes/{boxId}": {
     parameters: {
       query?: never;
       header?: never;
@@ -3311,12 +3423,31 @@ export interface paths {
       };
       cookie?: never;
     };
-    /** Read one Box status and capabilities */
-    get: operations["box.get"];
+    /** Read one Box owned by the current user */
+    get: operations["box.personal.get"];
     put?: never;
     post?: never;
-    /** Revoke one Box, remove its binding, and revoke its credential */
-    delete: operations["box.revoke"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Rename one Box owned by the current user */
+    patch: operations["box.personal.update"];
+    trace?: never;
+  };
+  "/v1/users/me/boxes/{boxId}/revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Drain or force-revoke an owned Box */
+    post: operations["box.revoke"];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -3341,7 +3472,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v1/projects/{projectId}/box": {
+  "/v1/projects/{projectId}/boxes": {
     parameters: {
       query?: never;
       header?: never;
@@ -3350,12 +3481,32 @@ export interface paths {
       };
       cookie?: never;
     };
-    get?: never;
-    /** Bind one Box to a Project */
-    put: operations["box.binding.set"];
+    /** List Boxes assigned to a Project */
+    get: operations["box.project.list"];
+    put?: never;
     post?: never;
-    /** Remove the Project Box binding */
-    delete: operations["box.binding.delete"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/boxes/{boxId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /** Assign a Box to a Project idempotently */
+    put: operations["box.project.assign"];
+    post?: never;
+    /** Remove a Box assignment from a Project */
+    delete: operations["box.project.remove"];
     options?: never;
     head?: never;
     patch?: never;
@@ -3372,7 +3523,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Atomically claim one queued Box task using SKIP LOCKED */
+    /** Long-poll and atomically claim one eligible task using SKIP LOCKED */
     post: operations["box.tasks.claim"];
     delete?: never;
     options?: never;
@@ -3380,7 +3531,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v1/boxes/{boxId}/tasks/{taskId}/heartbeat": {
+  "/v1/boxes/{boxId}/tasks/{taskId}/resume": {
     parameters: {
       query?: never;
       header?: never;
@@ -3392,8 +3543,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Renew a Box task lease and receive cancellation state */
-    post: operations["box.tasks.heartbeat"];
+    /** Resume an offline or restarted Box task from acknowledged state */
+    post: operations["box.tasks.resume"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3412,8 +3563,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Append a bounded Box task log line */
-    post: operations["box.tasks.logs.append"];
+    /** Append an idempotent bounded ordered Box task log batch */
+    post: operations["box.tasks.logs.append_batch"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3452,7 +3603,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Submit a validated standalone artifact.zip result bundle */
+    /** Submit the accepted Execution Bundle and Manifest hash for server-side result processing */
     post: operations["box.tasks.result"];
     delete?: never;
     options?: never;
@@ -3472,7 +3623,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Stream one verified artifact.zip into the Core Artifact boundary */
+    /** Stream one verified execution-bundle.zip into the Core Artifact boundary */
     post: operations["box.tasks.artifact.upload"];
     delete?: never;
     options?: never;
@@ -3969,6 +4120,44 @@ export interface paths {
     put?: never;
     /** Stream one verified build output through Core into Artifact */
     post: operations["article.build_jobs.outputs.upload"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/experiment-result-jobs/{jobId}/input": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    /** Get a Job-scoped immutable Experiment Bundle transfer */
+    get: operations["experiment.result_jobs.input.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/internal/experiment-result-jobs/{jobId}/finalize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Finalize a Worker-validated Experiment Bundle through Artifact and Repo */
+    post: operations["experiment.result_jobs.finalize"];
     delete?: never;
     options?: never;
     head?: never;
@@ -4491,17 +4680,30 @@ export interface components {
       | "queued"
       | "preparing"
       | "running"
+      | "uploading"
+      | "processing_result"
+      | "awaiting_result"
+      | "verifying_result"
       | "succeeded"
       | "failed"
       | "canceled"
+      | "timed_out"
       | "archived";
     /** @enum {string} */
-    BoxStatus: "registering" | "online" | "offline" | "revoked";
+    ExperimentConnectivityStatus: "online" | "box_offline";
+    /** @enum {string} */
+    ExperimentType: "box" | "box-re" | "self";
+    /** @enum {string} */
+    RuntimePolicy: "auto" | "e2b" | "local-docker";
+    /** @enum {string} */
+    BoxStatus: "registering" | "online" | "offline" | "draining" | "revoked";
     /** @enum {string} */
     BoxTaskStatus:
       | "queued"
       | "preparing"
       | "running"
+      | "uploading"
+      | "processing_result"
       | "succeeded"
       | "failed"
       | "canceled"
@@ -4532,11 +4734,23 @@ export interface components {
       cpu_millis: number;
       memory_bytes: number;
     };
+    ProjectBoxBinding: {
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      box_id: string;
+      /** Format: uuid */
+      assigned_by: string;
+      /** Format: date-time */
+      assigned_at: string;
+      /** Format: date-time */
+      force_unbound_at?: string;
+    };
     Box: {
       /** Format: uuid */
       box_id: string;
       /** Format: uuid */
-      project_id: string;
+      owner_user_id: string;
       name: string;
       status: components["schemas"]["BoxStatus"];
       version: string;
@@ -4544,10 +4758,16 @@ export interface components {
       runtimes: components["schemas"]["BoxRuntime"][];
       limits: components["schemas"]["BoxResourceLimits"];
       load: components["schemas"]["BoxLoad"];
+      project_assignments: components["schemas"]["ProjectBoxBinding"][];
       /** Format: date-time */
       last_heartbeat_at?: string;
       /** Format: date-time */
-      disconnected_at?: string;
+      offline_since?: string;
+      /** Format: date-time */
+      drain_requested_at?: string;
+      /** Format: date-time */
+      revoked_at?: string;
+      legacy_reauthorization_required: boolean;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
@@ -4556,19 +4776,54 @@ export interface components {
     BoxList: {
       items: components["schemas"]["Box"][];
     };
-    RegisterBoxRequest: {
+    BoxReleaseList: {
+      items: components["schemas"]["BoxRelease"][];
+    };
+    BoxRelease: {
+      /** @enum {string} */
+      platform: "windows" | "linux";
+      version: string;
       /** Format: uuid */
-      project_id: string;
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      filename: string;
+      sha256: string;
+      size_bytes: number;
+      download: components["schemas"]["ArtifactTransferGrant"];
+      install_command: string;
+      instructions: string;
+    };
+    ProjectBoxList: {
+      items: components["schemas"]["Box"][];
+    };
+    RegisterBoxRequest: {
+      registration_grant: string;
+      installation_id: string;
       name: string;
       version: string;
-      capabilities: components["schemas"]["BoxCapability"][];
-      runtimes: components["schemas"]["BoxRuntime"][];
-      limits: components["schemas"]["BoxResourceLimits"];
-      idempotency_key: string;
+      capabilities?: components["schemas"]["BoxCapability"][];
+      runtimes?: components["schemas"]["BoxRuntime"][];
+      limits?: components["schemas"]["BoxResourceLimits"];
     };
     BoxRegistration: {
       box: components["schemas"]["Box"];
-      token: string;
+      box_token: string;
+      /** Format: date-time */
+      token_expires_at?: string;
+    };
+    UpdateBoxRequest: {
+      name: string;
+    };
+    RevokeBoxRequest: {
+      /** @enum {string} */
+      mode: "drain" | "force";
+    };
+    BoxRevocation: {
+      box: components["schemas"]["Box"];
+      /** @enum {string} */
+      mode: "drain" | "force";
+      active_experiments: number;
     };
     BoxHeartbeatRequest: {
       version: string;
@@ -4581,31 +4836,90 @@ export interface components {
       box: components["schemas"]["Box"];
       cancel_task_ids: string[];
     };
-    BoxBindingRequest: {
-      /** Format: uuid */
-      box_id: string;
-    };
     ClaimBoxTaskRequest: {
-      /** @default 60 */
-      lease_seconds: number;
+      /** @default 30 */
+      wait_seconds: number;
     };
-    BoxTaskHeartbeatRequest: {
-      /** @default 60 */
-      lease_seconds: number;
-    };
-    BoxTaskLogRequest: {
+    ResumeBoxTaskRequest: {
+      /** Format: uuid */
+      execution_epoch: string;
+      local_phase: components["schemas"]["BoxTaskStatus"];
+      /** Format: int64 */
+      last_local_sequence: number;
       /** @enum {string} */
-      level: "debug" | "info" | "warning" | "error";
+      bundle_state: "none" | "collecting" | "ready" | "uploaded";
+      acknowledged_callbacks: string[];
+    };
+    BoxTaskResume: {
+      /** @enum {string} */
+      action: "continue" | "stop_failed" | "stop_canceled" | "cleanup";
+      accepted_phase: components["schemas"]["BoxTaskStatus"];
+      /** Format: int64 */
+      accepted_through_sequence: number;
+    };
+    BoxTaskLogEntry: {
+      /** Format: int64 */
+      sequence: number;
+      /** @enum {string} */
+      stream: "stdout" | "stderr" | "system";
+      /** Format: date-time */
+      occurred_at: string;
       message: string;
       fields?: {
         [key: string]: unknown;
       };
     };
+    BoxTaskLogRequest: {
+      /** Format: uuid */
+      execution_epoch: string;
+      /** Format: int64 */
+      first_sequence: number;
+      entries: components["schemas"]["BoxTaskLogEntry"][];
+      logs_truncated: boolean;
+      /** Format: date-time */
+      logs_truncated_at?: string;
+    };
+    BoxTaskLogAcknowledgement: {
+      /** Format: int64 */
+      accepted_through_sequence: number;
+    };
+    ExperimentFailure: {
+      /** @enum {string} */
+      stage:
+        | "scheduling"
+        | "box_preparation"
+        | "runtime_execution"
+        | "result_upload"
+        | "bundle_validation"
+        | "artifact_storage"
+        | "result_processing"
+        | "repo_commit"
+        | "repo_push"
+        | "result_binding"
+        | "box_revocation";
+      code: string;
+      message: string;
+      /** Format: date-time */
+      failed_at: string;
+      /** Format: uuid */
+      box_id?: string;
+      /** @enum {string} */
+      runtime?: "local-docker" | "e2b";
+      attempt: number;
+      retryable: boolean;
+      cleanup_result: {
+        [key: string]: unknown;
+      };
+    };
     BoxTaskStatusRequest: {
+      /** Format: uuid */
+      execution_epoch: string;
       status: components["schemas"]["BoxTaskStatus"];
+      /** Format: date-time */
+      occurred_at: string;
+      runtime_version?: string;
       exit_code?: number;
-      error_code?: string;
-      error_message?: string;
+      failure?: components["schemas"]["ExperimentFailure"];
       resource_usage?: {
         [key: string]: unknown;
       };
@@ -4617,22 +4931,15 @@ export interface components {
       /** Format: uuid */
       version_id: string;
       /** @constant */
-      filename: "artifact.zip";
+      filename: "execution-bundle.zip";
       sha256: string;
       size_bytes: number;
     };
     BoxTaskResultRequest: {
-      manifest: {
-        [key: string]: unknown;
-      };
-      artifact: components["schemas"]["ArtifactPointer"];
-    };
-    BoxTaskLease: {
       /** Format: uuid */
-      task_id: string;
-      /** Format: date-time */
-      lease_expires_at: string;
-      cancel_requested: boolean;
+      execution_epoch: string;
+      manifest_sha256: string;
+      execution_bundle: components["schemas"]["ArtifactPointer"];
     };
     BoxTask: {
       /** Format: uuid */
@@ -4641,22 +4948,52 @@ export interface components {
       experiment_id: string;
       /** Format: uuid */
       project_id: string;
+      /** Format: uuid */
+      box_id: string;
+      /** Format: uuid */
+      execution_epoch: string;
       status: components["schemas"]["BoxTaskStatus"];
       attempt: number;
-      max_attempts: number;
-      /** Format: date-time */
-      lease_expires_at?: string;
       cancel_requested?: boolean;
       run_spec: {
         [key: string]: unknown;
       };
+      /** @enum {string} */
+      actual_runtime: "local-docker" | "e2b";
+      runtime_version: string;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
       updated_at: string;
     };
+    ExperimentSettings: {
+      /** Format: uuid */
+      project_id: string;
+      /**
+       * @description IANA timezone used to freeze new result-directory timestamps.
+       * @example Asia/Shanghai
+       */
+      timezone: string;
+      default_runtime_policy: components["schemas"]["RuntimePolicy"];
+      default_limits: components["schemas"]["BoxResourceLimits"];
+      /** Format: int64 */
+      git_large_file_threshold_bytes: number;
+      /** Format: uuid */
+      updated_by: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    UpdateExperimentSettingsRequest: {
+      timezone?: string;
+      default_runtime_policy?: components["schemas"]["RuntimePolicy"];
+      default_limits?: components["schemas"]["BoxResourceLimits"];
+      /** Format: int64 */
+      git_large_file_threshold_bytes?: number;
+    };
     CreateExperimentRequest: {
       name: string;
+      /** @enum {string} */
+      experiment_type: "box" | "self";
       source_commit: string;
       entrypoint: string;
       parameters: {
@@ -4668,15 +5005,103 @@ export interface components {
       inputs: {
         [key: string]: unknown;
       };
-      /** @enum {string} */
-      runtime: "local-docker" | "e2b";
-      limits: components["schemas"]["BoxResourceLimits"];
+      runtime_policy?: components["schemas"]["RuntimePolicy"];
+      /** Format: uuid */
+      requested_box_id?: string;
+      limits_override?: components["schemas"]["BoxResourceLimits"];
       idempotency_key: string;
-      /** @default 1 */
-      max_attempts: number;
     };
     RunExperimentRequest: {
-      idempotency_key?: string;
+      idempotency_key: string;
+    };
+    RerunExperimentRequest: {
+      name?: string;
+      source_commit?: string;
+      entrypoint?: string;
+      parameters?: {
+        [key: string]: unknown;
+      };
+      environment?: {
+        [key: string]: string;
+      };
+      inputs?: {
+        [key: string]: unknown;
+      };
+      runtime_policy?: components["schemas"]["RuntimePolicy"];
+      /** Format: uuid */
+      requested_box_id?: string;
+      limits_override?: components["schemas"]["BoxResourceLimits"];
+      idempotency_key: string;
+    };
+    BindExperimentResultRequest: {
+      commit_sha: string;
+      idempotency_key: string;
+    };
+    ExperimentResultContract: {
+      branch: string;
+      directory: string;
+      /** Format: uri */
+      manifest_schema: string;
+      /** Format: int64 */
+      git_large_file_threshold_bytes: number;
+      /** @constant */
+      artifact_pointer_path: ".mmdash/artifacts.json";
+      /** @constant */
+      push_required: true;
+      /** @constant */
+      bind_tool: "experiment.result.bind";
+      instructions: string;
+    };
+    ExperimentRetry: {
+      /** Format: uuid */
+      retry_of_experiment_id?: string;
+      /** Format: uuid */
+      root_experiment_id: string;
+      /** Format: uuid */
+      superseded_by_experiment_id?: string;
+      /** Format: uuid */
+      latest_experiment_id: string;
+      retry_sequence: number;
+      /** @enum {string} */
+      warning_code?: "EXPERIMENT_HAS_NEWER_RETRY";
+    };
+    ExperimentPreparedResultFile: {
+      path: string;
+      sha256: string;
+      /** Format: int64 */
+      size_bytes: number;
+      /** @enum {string} */
+      kind: "file" | "log" | "figure" | "table" | "data" | "model" | "summary";
+      media_type: string;
+    };
+    ExperimentResultJobInput: {
+      /** Format: uuid */
+      experiment_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      artifact_id: string;
+      /** Format: uuid */
+      version_id: string;
+      bundle_sha256: string;
+      /** Format: int64 */
+      bundle_size_bytes: number;
+      manifest_sha256: string;
+      result_directory: string;
+      /** Format: int64 */
+      git_large_file_threshold_bytes: number;
+      transfer: components["schemas"]["ArtifactTransferGrant"];
+    };
+    FinalizeExperimentResultRequest: {
+      manifest_sha256: string;
+      files: components["schemas"]["ExperimentPreparedResultFile"][];
+      summary?: string;
+      analysis?: string;
+    };
+    FinalizeExperimentResultResponse: {
+      /** Format: uuid */
+      experiment_id: string;
+      result_commit_sha: string;
     };
     Experiment: {
       /** Format: uuid */
@@ -4684,7 +5109,9 @@ export interface components {
       /** Format: uuid */
       project_id: string;
       name: string;
-      status: components["schemas"]["ExperimentStatus"];
+      experiment_type: components["schemas"]["ExperimentType"];
+      execution_status: components["schemas"]["ExperimentStatus"];
+      connectivity_status?: components["schemas"]["ExperimentConnectivityStatus"];
       /** Format: uuid */
       created_by: string;
       source_commit: string;
@@ -4698,21 +5125,34 @@ export interface components {
       inputs: {
         [key: string]: unknown;
       };
+      requested_runtime_policy: components["schemas"]["RuntimePolicy"];
+      /** Format: uuid */
+      requested_box_id?: string;
       /** @enum {string} */
-      runtime: "local-docker" | "e2b";
+      actual_runtime?: "local-docker" | "e2b";
+      runtime_version?: string;
       limits: components["schemas"]["BoxResourceLimits"];
       /** Format: uuid */
       box_id?: string;
       /** Format: uuid */
       task_id?: string;
       exit_code?: number;
-      failure_code?: string;
-      failure_message?: string;
+      failure?: components["schemas"]["ExperimentFailure"];
       resource_usage?: {
         [key: string]: unknown;
       };
       summary?: string;
-      result?: components["schemas"]["ResultBundle"];
+      project_timezone: string;
+      result_directory: string;
+      result_commit_sha?: string;
+      execution_bundle?: components["schemas"]["ArtifactPointer"];
+      result_manifest_sha256?: string;
+      result_contract?: components["schemas"]["ExperimentResultContract"];
+      retry: components["schemas"]["ExperimentRetry"];
+      logs_truncated: boolean;
+      /** Format: date-time */
+      logs_truncated_at?: string;
+      progress: number;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
@@ -4732,25 +5172,52 @@ export interface components {
       log_id: string;
       /** Format: uuid */
       experiment_id: string;
+      /** Format: int64 */
+      sequence: number;
       /** @enum {string} */
-      level: "debug" | "info" | "warning" | "error";
+      stream: "stdout" | "stderr" | "system";
       message: string;
       fields?: {
         [key: string]: unknown;
       };
       /** Format: date-time */
       occurred_at: string;
+      /** Format: date-time */
+      received_at: string;
+      late_after_failure: boolean;
     };
     ExperimentLogPage: {
       items: components["schemas"]["ExperimentLog"][];
       has_more: boolean;
       next_cursor?: string;
     };
+    ResultFile: {
+      path: string;
+      /** @enum {string} */
+      storage_kind: "git" | "artifact";
+      sha256: string;
+      /** Format: int64 */
+      size_bytes: number;
+      media_type: string;
+      /** Format: uuid */
+      artifact_id?: string;
+      /** Format: uuid */
+      artifact_version_id?: string;
+      repository_path?: string;
+    };
     ResultBundle: {
-      manifest: {
+      /** Format: uuid */
+      experiment_id: string;
+      execution_status: components["schemas"]["ExperimentStatus"];
+      result_directory: string;
+      result_commit_sha?: string;
+      result_manifest_sha256?: string;
+      manifest?: {
         [key: string]: unknown;
       };
-      artifact: components["schemas"]["ArtifactPointer"];
+      execution_bundle?: components["schemas"]["ArtifactPointer"];
+      files: components["schemas"]["ResultFile"][];
+      retry: components["schemas"]["ExperimentRetry"];
       summary?: string;
       analysis?: string;
     };
@@ -4778,7 +5245,13 @@ export interface components {
     RefreshTokenRequest: {
       refresh_token: string;
     };
+    DeviceAuthorizationRequest: {
+      /** @enum {string} */
+      client_kind: "cli" | "box";
+    };
     DeviceAuthorization: {
+      /** @enum {string} */
+      client_kind: "cli" | "box";
       device_code: string;
       user_code: string;
       /** Format: uri */
@@ -4795,6 +5268,13 @@ export interface components {
     };
     DeviceTokenRequest: {
       device_code: string;
+      /** @enum {string} */
+      client_kind: "cli" | "box";
+    };
+    BoxRegistrationGrant: {
+      registration_grant: string;
+      /** Format: date-time */
+      grant_expires_at: string;
     };
     RegisterRequest: {
       /** Format: email */
@@ -4860,7 +5340,7 @@ export interface components {
     };
     CreateTokenRequest: {
       /**
-       * @description `agent` is retained only for request-contract compatibility and is rejected by this generic endpoint. Product Agent Tokens must be issued through the project-scoped Agent credential lifecycle.
+       * @description `agent` and `box` are retained only for request-contract compatibility and are rejected by this generic endpoint. Product Agent Tokens must be issued through the project-scoped Agent credential lifecycle. Box Tokens are issued only by consuming a browser-approved Box registration grant at `box.register`.
        * @enum {string}
        */
       kind: "api" | "agent" | "box";
@@ -7861,7 +8341,11 @@ export interface operations {
       path?: never;
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeviceAuthorizationRequest"];
+      };
+    };
     responses: {
       /** @description One-time device and user codes were created. */
       201: {
@@ -7919,7 +8403,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["LoginResult"];
+          "application/json":
+            | components["schemas"]["LoginResult"]
+            | components["schemas"]["BoxRegistrationGrant"];
         };
       };
       400: components["responses"]["Error"];
@@ -12634,12 +13120,62 @@ export interface operations {
       409: components["responses"]["Error"];
     };
   };
+  "experiment.settings.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Frozen defaults used when new Experiments omit overrides. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentSettings"];
+        };
+      };
+    };
+  };
+  "experiment.settings.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateExperimentSettingsRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Experiment defaults. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentSettings"];
+        };
+      };
+    };
+  };
   "experiment.list": {
     parameters: {
       query?: {
         cursor?: components["parameters"]["Cursor"];
         limit?: components["parameters"]["ExperimentLimit"];
-        status?: components["schemas"]["ExperimentStatus"];
+        /** @description Return the newest bounded window in ascending sequence order; cannot be combined with cursor. */
+        tail?: boolean;
+        execution_status?: components["schemas"]["ExperimentStatus"];
       };
       header?: never;
       path: {
@@ -12806,6 +13342,62 @@ export interface operations {
       };
     };
   };
+  "experiment.rerun": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RerunExperimentRequest"];
+      };
+    };
+    responses: {
+      /** @description New box-re Experiment. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "experiment.result.bind": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        experimentId: components["parameters"]["ExperimentId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BindExperimentResultRequest"];
+      };
+    };
+    responses: {
+      /** @description Result verification started or completed idempotently. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Experiment"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
   "experiment.logs.list": {
     parameters: {
       query?: {
@@ -12844,7 +13436,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Result bundle metadata; file content is transferred through Artifact. */
+      /** @description Result metadata and tree; Artifact-backed file bytes use Artifact transfers. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -12855,26 +13447,29 @@ export interface operations {
       };
     };
   };
-  "box.list": {
+  "box.source.download": {
     parameters: {
-      query?: {
-        project_id?: string;
-      };
+      query?: never;
       header?: never;
-      path?: never;
+      path: {
+        token: string;
+      };
       cookie?: never;
     };
     requestBody?: never;
     responses: {
-      /** @description Box list. */
+      /** @description Immutable source tree without Git administrative data or provider credentials. */
       200: {
         headers: {
+          "Cache-Control"?: string;
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["BoxList"];
+          "application/zip": string;
         };
       };
+      404: components["responses"]["Error"];
+      410: components["responses"]["Error"];
     };
   };
   "box.register": {
@@ -12901,7 +13496,47 @@ export interface operations {
       };
     };
   };
-  "box.get": {
+  "box.releases.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current immutable installer versions for supported platforms. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxReleaseList"];
+        };
+      };
+    };
+  };
+  "box.personal.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Personal Box inventory. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoxList"];
+        };
+      };
+    };
+  };
+  "box.personal.get": {
     parameters: {
       query?: never;
       header?: never;
@@ -12923,6 +13558,32 @@ export interface operations {
       };
     };
   };
+  "box.personal.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateBoxRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Box. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Box"];
+        };
+      };
+    };
+  };
   "box.revoke": {
     parameters: {
       query?: never;
@@ -12932,14 +13593,20 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RevokeBoxRequest"];
+      };
+    };
     responses: {
-      /** @description Box and credential revoked. */
-      204: {
+      /** @description Revocation state and drain progress. */
+      202: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          "application/json": components["schemas"]["BoxRevocation"];
+        };
       };
     };
   };
@@ -12969,7 +13636,7 @@ export interface operations {
       };
     };
   };
-  "box.binding.set": {
+  "box.project.list": {
     parameters: {
       query?: never;
       header?: never;
@@ -12978,29 +13645,51 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["BoxBindingRequest"];
-      };
-    };
+    requestBody?: never;
     responses: {
-      /** @description Project Box binding. */
+      /** @description Assigned Box inventory. */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Box"];
+          "application/json": components["schemas"]["ProjectBoxList"];
         };
       };
     };
   };
-  "box.binding.delete": {
+  "box.project.assign": {
     parameters: {
       query?: never;
       header?: never;
       path: {
         projectId: components["parameters"]["ProjectId"];
+        boxId: components["parameters"]["BoxId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Authoritative Project Box assignment. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectBoxBinding"];
+        };
+      };
+    };
+  };
+  "box.project.remove": {
+    parameters: {
+      query?: {
+        force?: boolean;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        boxId: components["parameters"]["BoxId"];
       };
       cookie?: never;
     };
@@ -13048,7 +13737,7 @@ export interface operations {
       };
     };
   };
-  "box.tasks.heartbeat": {
+  "box.tasks.resume": {
     parameters: {
       query?: never;
       header?: never;
@@ -13060,22 +13749,22 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        "application/json": components["schemas"]["BoxTaskHeartbeatRequest"];
+        "application/json": components["schemas"]["ResumeBoxTaskRequest"];
       };
     };
     responses: {
-      /** @description Lease state. */
+      /** @description Authoritative resume action and log acknowledgement. */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["BoxTaskLease"];
+          "application/json": components["schemas"]["BoxTaskResume"];
         };
       };
     };
   };
-  "box.tasks.logs.append": {
+  "box.tasks.logs.append_batch": {
     parameters: {
       query?: never;
       header?: never;
@@ -13091,13 +13780,13 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Appended log line. */
-      201: {
+      /** @description Highest contiguous accepted log sequence. */
+      200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ExperimentLog"];
+          "application/json": components["schemas"]["BoxTaskLogAcknowledgement"];
         };
       };
     };
@@ -13161,6 +13850,8 @@ export interface operations {
       query?: never;
       header: {
         "X-Mmdash-Artifact-SHA256": string;
+        "X-Mmdash-Execution-Epoch": string;
+        "X-Mmdash-Artifact-Size": number;
       };
       path: {
         boxId: components["parameters"]["BoxId"];
@@ -13975,6 +14666,54 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ArticleBuildOutput"];
+        };
+      };
+    };
+  };
+  "experiment.result_jobs.input.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Frozen Experiment metadata and short-lived Bundle transfer. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentResultJobInput"];
+        };
+      };
+    };
+  };
+  "experiment.result_jobs.finalize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FinalizeExperimentResultRequest"];
+      };
+    };
+    responses: {
+      /** @description Result Commit was pushed, verified, and bound. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FinalizeExperimentResultResponse"];
         };
       };
     };

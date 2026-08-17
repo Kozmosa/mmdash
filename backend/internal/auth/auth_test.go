@@ -16,6 +16,7 @@ type memoryStore struct {
 	activatedRemoteAccessID string
 	agentTokens             map[string]AgentToken
 	devices                 map[string]DeviceAuthorization
+	grants                  map[string]BoxRegistrationGrant
 	passwordHash            string
 	sessions                map[string]Session
 	tokens                  map[string]Token
@@ -90,6 +91,7 @@ func newMemoryStore() *memoryStore {
 	return &memoryStore{
 		agentTokens: map[string]AgentToken{},
 		devices:     map[string]DeviceAuthorization{},
+		grants:      map[string]BoxRegistrationGrant{},
 		sessions:    map[string]Session{},
 		tokens:      map[string]Token{},
 	}
@@ -225,31 +227,39 @@ func (store *memoryStore) DecideDeviceAuthorization(_ context.Context, userCodeH
 	return ErrNotFound
 }
 
-func (store *memoryStore) ExchangeDeviceAuthorization(_ context.Context, deviceCodeHash string, now time.Time, createSession func(User) (Session, error)) (Session, User, error) {
+func (store *memoryStore) ExchangeDeviceAuthorization(_ context.Context, deviceCodeHash string, clientKind string, now time.Time, createExchange func(User) (DeviceExchange, error)) (DeviceExchange, User, error) {
 	authorization, ok := store.devices[deviceCodeHash]
 	if !ok {
-		return Session{}, User{}, ErrNotFound
+		return DeviceExchange{}, User{}, ErrNotFound
 	}
 	if !authorization.ExpiresAt.After(now) {
-		return Session{}, User{}, ErrAuthorizationExpired
+		return DeviceExchange{}, User{}, ErrAuthorizationExpired
+	}
+	if authorization.ClientKind != clientKind {
+		return DeviceExchange{}, User{}, ErrConflict
 	}
 	if authorization.Status == "pending" {
-		return Session{}, User{}, ErrAuthorizationPending
+		return DeviceExchange{}, User{}, ErrAuthorizationPending
 	}
 	if authorization.Status == "denied" {
-		return Session{}, User{}, ErrAuthorizationDenied
+		return DeviceExchange{}, User{}, ErrAuthorizationDenied
 	}
 	if authorization.Status != "approved" {
-		return Session{}, User{}, ErrConflict
+		return DeviceExchange{}, User{}, ErrConflict
 	}
-	session, err := createSession(store.user)
+	exchange, err := createExchange(store.user)
 	if err != nil {
-		return Session{}, User{}, err
+		return DeviceExchange{}, User{}, err
 	}
 	authorization.Status = "consumed"
 	store.devices[deviceCodeHash] = authorization
-	store.sessions[session.ID] = session
-	return session, store.user, nil
+	if exchange.Session != nil {
+		store.sessions[exchange.Session.ID] = *exchange.Session
+	}
+	if exchange.Grant != nil {
+		store.grants[exchange.Grant.ID] = *exchange.Grant
+	}
+	return exchange, store.user, nil
 }
 
 func (store *memoryStore) RotateSession(_ context.Context, refreshTokenHash string, tokenHash string, newRefreshTokenHash string, now time.Time) (Session, User, error) {
@@ -401,6 +411,46 @@ func (store *memoryStore) RevokeSession(
 func (store *memoryStore) CreateToken(_ context.Context, token Token) error {
 	store.tokens[token.TokenHash] = token
 	return nil
+}
+
+func (store *memoryStore) ConsumeBoxRegistrationGrant(
+	ctx context.Context,
+	grantHash string,
+	token Token,
+	now time.Time,
+	register func(context.Context, transaction.Tx, Token) error,
+) (Token, error) {
+	for id, grant := range store.grants {
+		if grant.GrantHash != grantHash {
+			continue
+		}
+		if grant.ConsumedAt != nil {
+			return Token{}, ErrConflict
+		}
+		if !grant.ExpiresAt.After(now) {
+			return Token{}, ErrAuthorizationExpired
+		}
+		token.UserID = grant.UserID
+		if err := register(ctx, nil, token); err != nil {
+			return Token{}, err
+		}
+		grant.ConsumedAt = &now
+		store.grants[id] = grant
+		store.tokens[token.TokenHash] = token
+		return token, nil
+	}
+	return Token{}, ErrNotFound
+}
+
+func (store *memoryStore) RevokeBoxToken(_ context.Context, tokenID string, ownerUserID string, now time.Time) error {
+	for hash, token := range store.tokens {
+		if token.ID == tokenID && token.UserID == ownerUserID && token.Kind == "box" && token.ProjectID == "" {
+			token.RevokedAt = &now
+			store.tokens[hash] = token
+			return nil
+		}
+	}
+	return ErrNotFound
 }
 
 func (store *memoryStore) FindToken(
@@ -834,22 +884,26 @@ func TestDeviceAuthorizationAndRefreshRotation(t *testing.T) {
 		Store:                  store,
 	}
 
-	authorization, err := service.StartDeviceAuthorization(context.Background())
+	authorization, err := service.StartDeviceAuthorization(context.Background(), DeviceClientCLI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if authorization.Interval != 2 || authorization.UserCode == "" || authorization.DeviceCode == "" {
 		t.Fatalf("unexpected authorization: %#v", authorization)
 	}
-	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode); !errors.Is(err, ErrAuthorizationPending) {
+	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode, DeviceClientCLI); !errors.Is(err, ErrAuthorizationPending) {
 		t.Fatalf("expected pending exchange, got %v", err)
 	}
 	if err := service.DecideDeviceAuthorization(context.Background(), Identity{Kind: "session", User: store.user}, authorization.UserCode, true); err != nil {
 		t.Fatal(err)
 	}
-	login, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode)
+	result, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode, DeviceClientCLI)
 	if err != nil {
 		t.Fatal(err)
+	}
+	login, ok := result.(LoginResult)
+	if !ok {
+		t.Fatalf("unexpected device exchange result: %#v", result)
 	}
 	if login.RefreshToken == "" || login.AccessToken == "" {
 		t.Fatal("device exchange did not return both session secrets")
@@ -857,7 +911,7 @@ func TestDeviceAuthorizationAndRefreshRotation(t *testing.T) {
 	if _, err := service.Authenticate(context.Background(), "Bearer "+login.AccessToken); err != nil {
 		t.Fatalf("authenticate device session: %v", err)
 	}
-	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode); !errors.Is(err, ErrConflict) {
+	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode, DeviceClientCLI); !errors.Is(err, ErrConflict) {
 		t.Fatalf("device code was not single-use: %v", err)
 	}
 	refreshed, err := service.Refresh(context.Background(), login.RefreshToken)
@@ -872,5 +926,64 @@ func TestDeviceAuthorizationAndRefreshRotation(t *testing.T) {
 	}
 	if _, err := service.Refresh(context.Background(), login.RefreshToken); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("old refresh token remained valid: %v", err)
+	}
+}
+
+func TestBoxDeviceAuthorizationReturnsOneTimeGrantWithoutUserSession(t *testing.T) {
+	now := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC)
+	store := newMemoryStore()
+	store.user = User{ID: "user-1", Email: "user@example.com", DisplayName: "User", Status: "active", SystemRole: "member", CreatedAt: now}
+	service := Service{
+		BoxRegistrationGrantTTL: 5 * time.Minute,
+		Clock:                   clock.Fixed{Time: now},
+		DeviceAuthorizationTTL:  10 * time.Minute,
+		DeviceVerificationURI:   "https://mmdash.example/cli/authorize",
+		Generator:               identity.Generator{Reader: bytes.NewReader(make([]byte, 64))},
+		Store:                   store,
+	}
+
+	authorization, err := service.StartDeviceAuthorization(context.Background(), DeviceClientBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorization.ClientKind != DeviceClientBox {
+		t.Fatalf("unexpected client kind: %#v", authorization)
+	}
+	if err := service.DecideDeviceAuthorization(context.Background(), Identity{Kind: "session", User: store.user}, authorization.UserCode, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode, DeviceClientCLI); !errors.Is(err, ErrConflict) {
+		t.Fatalf("client-kind confusion was accepted: %v", err)
+	}
+	result, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode, DeviceClientBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, ok := result.(BoxRegistrationGrantResult)
+	if !ok || grant.RegistrationGrant == "" || !grant.ExpiresAt.Equal(now.Add(5*time.Minute)) {
+		t.Fatalf("unexpected Box grant: %#v", result)
+	}
+	if len(store.sessions) != 0 || len(store.grants) != 1 {
+		t.Fatalf("Box exchange created wrong credentials: sessions=%d grants=%d", len(store.sessions), len(store.grants))
+	}
+	registered := false
+	issued, err := service.IssueBoxTokenFromRegistrationGrant(
+		context.Background(), grant.RegistrationGrant, "test Box",
+		func(_ context.Context, _ transaction.Tx, token Token) error {
+			registered = token.Kind == "box" && token.UserID == store.user.ID && token.ProjectID == ""
+			return nil
+		},
+	)
+	if err != nil || !registered || issued.Secret == "" || issued.Token.UserID != store.user.ID {
+		t.Fatalf("issue account Box credential: %#v registered=%v err=%v", issued, registered, err)
+	}
+	if _, err := service.IssueBoxTokenFromRegistrationGrant(
+		context.Background(), grant.RegistrationGrant, "test Box",
+		func(context.Context, transaction.Tx, Token) error { return nil },
+	); !errors.Is(err, ErrConflict) {
+		t.Fatalf("registration grant was not single-use: %v", err)
+	}
+	if _, err := service.ExchangeDeviceAuthorization(context.Background(), authorization.DeviceCode, DeviceClientBox); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Box device code was not single-use: %v", err)
 	}
 }

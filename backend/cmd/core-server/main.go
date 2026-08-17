@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -60,6 +61,18 @@ func main() {
 type registrationSettingsPolicy struct{ Store settings.Store }
 
 type modelArtifactImporter struct{ Service *artifact.Service }
+
+type projectPurgeArtifactStore struct{ artifact.BlobStore }
+
+func (store projectPurgeArtifactStore) AbortMultipart(ctx context.Context, objectKey, providerUploadID string) error {
+	err := store.BlobStore.AbortMultipart(ctx, artifact.MultipartUpload{
+		ObjectKey: objectKey, ProviderUploadID: providerUploadID,
+	})
+	if errors.Is(err, artifact.ErrUploadNotFound) {
+		return nil
+	}
+	return err
+}
 
 type repoCommitValidator struct{ Service *repo.Service }
 
@@ -152,6 +165,9 @@ func run(logger *logging.Logger) error {
 	if err := authService.EnsureBootstrapUser(startupContext, processConfig.Auth.BootstrapEmail, processConfig.Auth.BootstrapDisplayName, processConfig.Auth.BootstrapPassword); err != nil {
 		return fmt.Errorf("ensure bootstrap user: %w", err)
 	}
+	if err := ensureBoxReleaseProject(startupContext, db, systemBoxReleaseProjectID(), processConfig.Auth.BootstrapEmail, systemClock.Now()); err != nil {
+		return fmt.Errorf("ensure Box release project: %w", err)
+	}
 	eventStore := outbox.PostgresStore{
 		Clock:       systemClock,
 		DB:          db,
@@ -227,6 +243,7 @@ func run(logger *logging.Logger) error {
 		TransferTTL:      processConfig.Artifact.MultipartURLTTL,
 		UploadSessionTTL: processConfig.Artifact.MultipartSessionTTL,
 		WorkerSigner:     artifactWorkerSigner,
+		SystemProjectID:  systemBoxReleaseProjectID(),
 	}
 	previewHook := artifactService
 	jobStore.Hooks = []jobs.LifecycleHook{previewHook}
@@ -574,6 +591,27 @@ func run(logger *logging.Logger) error {
 		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
 		Webhooks: repoStore, Writer: repoWriter,
 	}
+	syncOwnerID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Repo sync owner identity: %w", err)
+	}
+	repoCoordinator := repo.Coordinator{
+		BatchSize: processConfig.Repo.MaxConcurrentGit,
+		Clock:     systemClock,
+		Lease:     processConfig.Repo.SyncLease,
+		Metrics:   metricRegistry,
+		OnError: func(syncErr error) {
+			logger.Error("repo.sync.failed", map[string]interface{}{
+				"error": syncErr.Error(),
+			})
+		},
+		Owner:     "core-" + syncOwnerID,
+		Poll:      processConfig.Repo.SyncPollInterval,
+		Providers: repoProviders,
+		Runtime:   repoRuntime,
+		Settings:  settingsService,
+		Store:     repoStore,
+	}
 	artifactService.Git = artifact.RepoGitContentReader{Service: &repoService}
 	artifactModule.Service = artifactService
 	projectService.Artifacts = artifactService
@@ -599,18 +637,42 @@ func run(logger *logging.Logger) error {
 	articleModule := article.Module{Service: articleService}
 	dataService.Article = articleService
 	boxStore := boxcontrol.PostgresStore{Audit: auditRecorder, DB: db, Generator: idGenerator, Outbox: outboxWriter, Transaction: transactionManager}
+	boxSourceSigner, err := boxcontrol.NewSourceTransferSigner(processConfig.Auth.JWTSecret, processConfig.PublicURL)
+	if err != nil {
+		return fmt.Errorf("initialize Box source transfer signer: %w", err)
+	}
 	boxService := &boxcontrol.Service{
 		Access: projectService, Clock: systemClock, Generator: idGenerator,
 		Issuer: authService, Revoker: authService, Store: boxStore,
+		SourceSigner: boxSourceSigner,
+		Sources: repo.SourceArchiveService{
+			Generator: idGenerator, Repositories: repoStore, Runtime: repoRuntime, Storage: repoStorage,
+		},
 	}
-	experimentStore := experiment.PostgresStore{Audit: auditRecorder, DB: db, Generator: idGenerator, Outbox: outboxWriter, Transaction: transactionManager}
+	experimentStore := experiment.PostgresStore{
+		Audit: auditRecorder, DB: db, Generator: idGenerator, Jobs: jobStore,
+		Outbox: outboxWriter, Transaction: transactionManager,
+	}
+	experimentResultRepo := repo.ResultWorkspaceService{
+		Coordinator: &repoCoordinator, Reader: repoService.Reads,
+		Repositories: repoStore, Service: &repoService,
+	}
 	experimentService := &experiment.Service{
 		Access: projectService, Artifacts: &artifactService, Boxes: boxService, Clock: systemClock,
 		Commit: repoCommitValidator{Service: &repoService}, Generator: idGenerator,
+		JobAccess: jobService, ResultArtifacts: &artifactService,
+		ResultRepo: experimentResultRepo,
+		Results: experiment.SelfResultVerifier{
+			Artifacts: &artifactService, Repo: experimentResultRepo,
+		},
 		Store: experimentStore,
 	}
+	jobStore.Hooks = append(jobStore.Hooks, experimentService)
+	jobService.Hooks = append(jobService.Hooks, experimentService)
+	jobService.Store = jobStore
 	boxService.Observer = experimentService
 	boxService.Artifacts = experimentService
+	projectService.MemberRemoval = boxService
 	boxModule := boxcontrol.Module{Service: boxService}
 	experimentModule := experiment.Module{Service: experimentService}
 	for _, definition := range []struct {
@@ -626,13 +688,6 @@ func run(logger *logging.Logger) error {
 		{"result_bundle", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
 			return experimentService.Result(ctx, caller, projectID, sourceID)
 		}},
-		{"box", func(ctx context.Context, caller auth.Identity, projectID, sourceID string) (interface{}, error) {
-			box, err := boxService.Get(ctx, caller, sourceID)
-			if err != nil || box.ProjectID != projectID {
-				return nil, datahub.ErrNotFound
-			}
-			return box, nil
-		}},
 	} {
 		definition := definition
 		if err := dataAdapters.Register(definition.objectType, datahub.ReaderFunc(func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
@@ -640,6 +695,19 @@ func run(logger *logging.Logger) error {
 		})); err != nil {
 			return err
 		}
+	}
+	if err := dataAdapters.Register("box", datahub.ReaderFunc(func(ctx context.Context, caller auth.Identity, object datahub.Object) (interface{}, error) {
+		boxID, _ := object.Metadata["box_id"].(string)
+		if boxID == "" {
+			return nil, datahub.ErrNotFound
+		}
+		box, err := boxService.GetProject(ctx, caller, object.ProjectID, boxID)
+		if err != nil {
+			return nil, datahub.ErrNotFound
+		}
+		return box, nil
+	})); err != nil {
+		return err
 	}
 	artifactDataReader := artifact.DataHubReaderAdapter{
 		Registry: artifactStore, Service: &artifactService,
@@ -742,9 +810,10 @@ func run(logger *logging.Logger) error {
 		}
 	}
 	for _, eventType := range []string{
-		"experiment.created", "experiment.started", "experiment.succeeded",
+		"experiment.created", "experiment.started", "experiment.phase_changed",
+		"experiment.result_bound", "experiment.rerun_created", "experiment.succeeded",
 		"experiment.failed", "experiment.canceled", "experiment.archived",
-		"box.registered", "box.heartbeat.received", "box.revoked",
+		"box.assigned", "box.unassigned", "box.offline", "box.recovered", "box.revoked",
 	} {
 		if err := projections.Register(eventType, datahub.ProjectorFunc(dataStore.ProjectStage8)); err != nil {
 			return err
@@ -1000,32 +1069,11 @@ func run(logger *logging.Logger) error {
 	go (notification.DeliveryProcessor{Adapters: notificationAdapters, Deliveries: notificationStore, Lease: processConfig.Outbox.DeliveryLease, Owner: "core-notification-" + notificationProcessorID, Settings: settingsService, Metrics: metricRegistry}).Run(ctx, func(processorErr error) {
 		logger.Error("notification.delivery.failed", map[string]interface{}{"error": processorErr.Error()})
 	})
-	syncOwnerID, err := idGenerator.New()
-	if err != nil {
-		return fmt.Errorf("create Repo sync owner identity: %w", err)
-	}
 	if err := (repo.Reconciler{
 		Checkouts: repoStore, Clock: systemClock,
 		Repositories: repoStore, Runtime: repoRuntime,
 	}).Run(ctx); err != nil {
 		return fmt.Errorf("reconcile Repo worktrees: %w", err)
-	}
-	repoCoordinator := repo.Coordinator{
-		BatchSize: processConfig.Repo.MaxConcurrentGit,
-		Clock:     systemClock,
-		Lease:     processConfig.Repo.SyncLease,
-		Metrics:   metricRegistry,
-		OnError: func(syncErr error) {
-			logger.Error("repo.sync.failed", map[string]interface{}{
-				"error": syncErr.Error(),
-			})
-		},
-		Owner:     "core-" + syncOwnerID,
-		Poll:      processConfig.Repo.SyncPollInterval,
-		Providers: repoProviders,
-		Runtime:   repoRuntime,
-		Settings:  settingsService,
-		Store:     repoStore,
 	}
 	go repoCoordinator.Run(ctx)
 	go (repo.CheckoutReaper{
@@ -1067,6 +1115,16 @@ func run(logger *logging.Logger) error {
 		},
 		Service: artifactService,
 	}).Run(ctx)
+	go (project.Stage8Purger{
+		Artifacts: projectPurgeArtifactStore{BlobStore: storage}, Clock: systemClock, DB: db,
+		Interval: time.Minute, Lease: 10 * time.Minute,
+		OnError: func(purgeErr error) {
+			logger.Error("project.stage8.purge.failed", map[string]interface{}{
+				"error": purgeErr.Error(),
+			})
+		},
+		Repositories: repoStorage,
+	}).Run(ctx)
 	modelSchedulerID, err := idGenerator.New()
 	if err != nil {
 		return fmt.Errorf("create Model scheduler identity: %w", err)
@@ -1079,6 +1137,33 @@ func run(logger *logging.Logger) error {
 		logger,
 		processConfig.ShutdownTimeout,
 	).Run(ctx)
+}
+
+func systemBoxReleaseProjectID() string {
+	if value := strings.TrimSpace(os.Getenv("MMDASH_BOX_RELEASE_PROJECT_ID")); value != "" {
+		return value
+	}
+	return artifact.DefaultBoxReleaseProjectID
+}
+
+func ensureBoxReleaseProject(ctx context.Context, db *sql.DB, projectID, bootstrapEmail string, now time.Time) error {
+	if db == nil || strings.TrimSpace(projectID) == "" || strings.TrimSpace(bootstrapEmail) == "" {
+		return errors.New("Box release project configuration is incomplete")
+	}
+	var userID string
+	if err := db.QueryRowContext(ctx, `SELECT user_id FROM auth_users WHERE LOWER(email)=LOWER($1)`, bootstrapEmail).Scan(&userID); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO projects (
+			project_id, name, problem_title, problem_summary,
+			project_constraints, source_artifact_ids, created_by, created_at, updated_at
+		) VALUES ($1, 'mmdash System Artifacts', 'mmdash-managed files',
+			'Internal immutable artifacts maintained by mmdash.', '[]'::jsonb,
+			'[]'::jsonb, $2, $3, $3)
+		ON CONFLICT (project_id) DO NOTHING
+	`, projectID, userID, now.UTC())
+	return err
 }
 
 func runModelScheduler(ctx context.Context, service *model.Service, owner string, logger *logging.Logger) {
@@ -1107,8 +1192,8 @@ func runBoxMaintenance(ctx context.Context, service *boxcontrol.Service, logger 
 		if _, err := service.MarkOffline(maintenanceContext, now, now.Add(-45*time.Second), 100); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("box.offline.detect.failed", map[string]interface{}{"error": err.Error()})
 		}
-		if _, err := service.RecoverExpired(maintenanceContext, now, 100); err != nil && !errors.Is(err, context.Canceled) {
-			logger.Error("box.task.recovery.failed", map[string]interface{}{"error": err.Error()})
+		if _, err := service.FailOfflineTimeouts(maintenanceContext, now, now.Add(-72*time.Hour), 100); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("box.task.offline_timeout.failed", map[string]interface{}{"error": err.Error()})
 		}
 		select {
 		case <-ctx.Done():
