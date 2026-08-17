@@ -18,6 +18,10 @@ const (
 	SourceAgent      = "agent"
 	SourceSystem     = "system"
 
+	// DefaultBoxReleaseProjectID is the hidden system Project that owns
+	// versioned Box Gateway installers. It is created during Core startup.
+	DefaultBoxReleaseProjectID = "00000000-0000-4000-8000-000000000900"
+
 	StatusPendingUpload = "pending_upload"
 	StatusVerifying     = "verifying"
 	StatusAvailable     = "available"
@@ -107,6 +111,26 @@ type Page struct {
 	Items      []Detail `json:"items"`
 	HasMore    bool     `json:"has_more"`
 	NextCursor *string  `json:"next_cursor"`
+}
+
+// BoxRelease is a published Box Gateway installer backed by an immutable
+// Version in the mmdash system Artifact project.
+type BoxRelease struct {
+	Platform       string        `json:"platform"`
+	Version        string        `json:"version"`
+	ArtifactID     string        `json:"artifact_id"`
+	VersionID      string        `json:"version_id"`
+	Filename       string        `json:"filename"`
+	SHA256         string        `json:"sha256"`
+	SizeBytes      int64         `json:"size_bytes"`
+	Download       TransferGrant `json:"download"`
+	InstallCommand string        `json:"install_command"`
+	Instructions   string        `json:"instructions"`
+}
+
+// BoxReleaseList is the bounded release catalog returned to Box management.
+type BoxReleaseList struct {
+	Items []BoxRelease `json:"items"`
 }
 
 // VersionList contains every retained immutable Version.

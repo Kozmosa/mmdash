@@ -13,6 +13,7 @@ const publicOperations = new Set([
   "POST /v1/auth/login",
   "POST /v1/auth/refresh",
   "POST /v1/auth/register",
+  "POST /v1/boxes",
 ]);
 
 const forwardedRequestHeaders = [
@@ -59,7 +60,9 @@ export function registerPublicCoreApiProxy(
       const isPublic = isPublicOperation(request.method, path);
       const accessToken = isPublic
         ? undefined
-        : await requireUserOrApiToken(request, coreClient);
+        : isBoxControlOperation(request.method, path)
+          ? requireBearer(request)
+          : await requireUserOrApiToken(request, coreClient);
       const headers = new Headers();
       for (const name of forwardedRequestHeaders) {
         const value = readHeader(request, name);
@@ -119,7 +122,33 @@ async function requireUserOrApiToken(
 function isPublicOperation(method: string, path: string): boolean {
   if (publicOperations.has(`${method} ${path}`)) return true;
   if (/^\/v1\/artifact-transfers\/[^/]+$/.test(path)) return true;
-  return method === "POST" && /^\/v1\/repo\/webhooks\/github\/[^/]+$/.test(path);
+  return (
+    method === "POST" && /^\/v1\/repo\/webhooks\/github\/[^/]+$/.test(path)
+  );
+}
+
+function isBoxControlOperation(method: string, path: string): boolean {
+  if (method !== "POST") return false;
+  return (
+    /^\/v1\/boxes\/[^/]+\/heartbeat$/.test(path) ||
+    /^\/v1\/boxes\/[^/]+\/tasks\/claim$/.test(path) ||
+    /^\/v1\/boxes\/[^/]+\/tasks\/[^/]+\/(?:resume|logs|status|artifact|result)$/.test(
+      path,
+    )
+  );
+}
+
+function requireBearer(request: FastifyRequest): string {
+  const authorization = readHeader(request, "authorization")?.trim() ?? "";
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization);
+  if (!match) {
+    throw new BffError({
+      code: "UNAUTHENTICATED",
+      message: "A Box bearer token is required",
+      status: 401,
+    });
+  }
+  return match[1]!;
 }
 
 function targetPath(request: FastifyRequest): string {

@@ -1900,6 +1900,12 @@ export class CoreClient {
     return this.request("/v1/users/me/boxes", { method: "GET" }, context);
   }
 
+  async listBoxReleases(
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["BoxReleaseList"]> {
+    return this.request("/v1/box/releases", { method: "GET" }, context);
+  }
+
   async getPersonalBox(
     boxId: string,
     context: CoreRequestContext,

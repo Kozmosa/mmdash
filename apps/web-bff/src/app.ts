@@ -31,6 +31,7 @@ import { registerAgentRoutes } from "./routes/agent.js";
 import { registerExperimentRoutes } from "./routes/experiments.js";
 import { ArticleCollaboration, registerArticleCollaboration } from "./article/collaboration.js";
 import { registerArticleRoutes } from "./routes/article.js";
+import { registerBoxRoutes } from "./routes/box.js";
 
 export type BuildAppOptions = {
   config?: BffConfig;
@@ -84,6 +85,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerAuthRoutes(app, coreClient, config);
   registerExampleRoutes(app, coreClient);
   registerArtifactRoutes(app, coreClient);
+  registerBoxRoutes(app, coreClient);
   registerAgentRoutes(app, coreClient);
   registerExperimentRoutes(app, coreClient);
   const articleCollaboration = new ArticleCollaboration(coreClient);

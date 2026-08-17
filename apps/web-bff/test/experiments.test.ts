@@ -134,4 +134,38 @@ describe("Experiment and Box BFF routes", () => {
       expect(new Headers(options?.headers).get("x-mmdash-project-id")).toBeNull();
     }
   });
+
+  it("rewrites system Box installer transfers to the browser BFF path", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [{
+          platform: "windows",
+          version: "0.1.0",
+          artifact_id: "00000000-0000-4000-8000-000000000010",
+          version_id: "00000000-0000-4000-8000-000000000011",
+          filename: "mmdash-box-windows-amd64.exe",
+          sha256: "a".repeat(64),
+          size_bytes: 10,
+          download: {
+            method: "GET",
+            url: "http://core.test/v1/artifact-transfers/token.signature",
+            headers: {},
+            expires_at: "2026-08-16T00:00:00Z",
+          },
+          install_command: ".\\mmdash-box-windows-amd64.exe",
+          instructions: "Install",
+        }],
+      }),
+    );
+    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const response = await app.inject({ headers: { cookie }, method: "GET", url: "/api/box/releases" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json().items[0].download.url).toBe("/api/artifact-transfers/token.signature");
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe("http://core.test/v1/box/releases");
+  });
 });
