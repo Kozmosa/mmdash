@@ -27,6 +27,7 @@ spools, outputs, and transferred sources.
 ## Administration
 
 ```text
+mbox gateway --root PATH
 mbox account status
 mbox account logout
 mbox config show
@@ -52,8 +53,8 @@ status`, and `service remove` from an elevated PowerShell or Command Prompt.
 After replacing `mbox.exe`, run `mbox service remove` and then `mbox service
 init` once to register the new executable with the Service Control Manager.
 Windows service diagnostics are appended to `logs/service.log`; use `mbox
-service logs` to print them. To keep Gateway output attached to the terminal,
-run `mbox --gateway --root PATH` directly.
+service logs` to print them. For development, use `mbox gateway --root PATH`
+to run the Gateway in the foreground with live terminal output.
 
 The E2B adapter accepts a hosted E2B account or a self-deployed E2B API and
 Sandbox URL. Provider secrets are kept on the Box host and are never included
@@ -64,3 +65,7 @@ Local Docker does not build or publish the configured image. The image named by
 with `docker image inspect IMAGE`. If the default image is not available, set
 an image that contains the entrypoint runtimes you use, for example:
 `mbox config set local-docker.image=python:3.12-slim`.
+
+This repository includes a development image definition at
+`box/runtimes/local-docker/sandbox.Dockerfile`. Build it locally with
+`docker build -t mmdash/sandbox:latest -f box/runtimes/local-docker/sandbox.Dockerfile box/runtimes/local-docker`.

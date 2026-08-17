@@ -580,14 +580,16 @@ func printHelp(out io.Writer) {
 	fmt.Fprintln(out, `mbox - mmdash Box 管理命令
 
 用法：
+  mbox gateway [--root PATH]
   mbox setup [--root PATH] [--control-url URL] [--name NAME]
   mbox account login|status|logout [--root PATH]
   mbox config show|set key=value [--root PATH]
-	mbox service init|start|stop|status|logs|remove [--root PATH]
+  mbox service init|start|stop|status|logs|remove [--root PATH]
   mbox uninstall [--root PATH] [--yes]
 
 setup 会引导配置 mmdash 公网地址（支持 HTTP/HTTPS）、Box 名称、Local Docker
 和 E2B。配置、Token、日志、离线任务和输出都保存在 Box 根目录内。
+gateway 会在当前终端以前台方式运行 Gateway 并输出启动、Runtime 探测和停止日志。
 service init 会注册开机启动服务；uninstall 会停止并移除服务后清理 Box 根目录。`)
 }
 
