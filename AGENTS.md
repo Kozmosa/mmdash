@@ -165,53 +165,69 @@ make a check pass.
 
 ## 5. Local development environment
 
-Prerequisites:
+There are two local paths that start the full development stack. When
+`pixi` is available, always prefer the Docker-free Pixi path; use the
+Docker-based wrapper only as a fallback.
 
-- Node.js 24 or newer and pnpm 11;
-- Go 1.26 or newer; the backend, workspace, CI, and Stage 3 CLI all target the
-  repository-pinned Go 1.26 toolchain;
-- Python 3.11 or newer and `uv`;
-- a running Docker daemon with Docker Compose.
+### Preferred: Pixi isolated environment (Docker-free)
 
-The Stage 3 CLI uses its own Go module but must remain aligned with the
-repository's Go 1.26 workspace and CI toolchain. A CLI dependency must not
-silently introduce a second Go version or bypass the workspace checks.
-
-On this workstation, the authoritative one-command development entry point is
-the ignored local wrapper:
+`pixi` is the only global prerequisite. It provides Node.js 24, Go 1.26,
+Python 3.13, `uv`, PostgreSQL 16, MinIO, and Caddy entirely under the
+repository-local `.testenv/` directory (`.testenv/pixi.toml` and
+`.testenv/pixi.lock` are tracked in git). No Docker daemon, global Node, or
+global Go install is required. Read `docs/development/native-environment.md`
+before changing anything on this path.
 
 ```powershell
-.\.localscripts\dev.ps1
+.\scripts\testenv.ps1 install   # one-time: toolchain + workspace dependencies
+.\scripts\testenv.ps1 doctor    # verify tool versions and port availability
+.\scripts\testenv.ps1 dev       # start everything in the foreground
 ```
 
-Check that Docker is running before invoking it. The wrapper installs frozen
-pnpm and uv workspaces, starts PostgreSQL and MinIO in Docker, applies
-migrations, builds the generated Core client, starts the application services
-and waits for health endpoints, and issues a temporary Worker API token when
-necessary. Go Core is launched once with `go run` and is not file-watched, so
-restart the local development environment after changing Go code to rebuild
-and run the updated Core process.
+Bash equivalent: `./scripts/testenv.sh <task>`. Available tasks: `install`,
+`doctor`, `check`, `test`, `dev`, `smoke`, `stop`, `reset`. Stop the dev
+environment with Ctrl+C in its terminal or `testenv.ps1 stop`; `reset`
+recreates the isolated state and deletes `.testenv` service data.
 
-Useful local wrapper options are:
+### Fallback: Docker-based local wrapper
+
+Requires a running Docker daemon plus Node.js 24/pnpm 11, Go 1.26, and
+Python 3.11+/`uv` on PATH. The Stage 3 CLI uses its own Go module but must
+remain aligned with the repository's Go 1.26 workspace and CI toolchain. A
+CLI dependency must not silently introduce a second Go version or bypass the
+workspace checks.
 
 ```powershell
-.\.localscripts\dev.ps1 --check
-.\.localscripts\dev.ps1 --skip-install
-.\.localscripts\dev.ps1 --skip-worker
-.\.localscripts\dev.ps1 --down
+node .localscripts\dev.mjs [--check | --skip-install | --skip-worker | --down]
 ```
+
+The wrapper installs frozen pnpm and uv workspaces, starts PostgreSQL and
+MinIO in Docker, applies migrations, builds the generated Core client, starts
+the application services and waits for health endpoints, and issues a
+temporary Worker API token when necessary. Go Core is launched once with
+`go run` and is not file-watched, so restart the wrapper after changing Go
+code to rebuild and run the updated Core process.
+
+On this workstation the gitignored `.env` pins `POSTGRES_HOST_PORT=15432`
+(Windows WinNAT reserves TCP 5355-5454, which blocks the default 5432) and
+sets `GOPROXY=https://goproxy.cn,direct` because `proxy.golang.org` is
+unreachable. Check `.env` before debugging port or module-download failures
+on this path.
 
 After a successful start, report the reachable services to the user:
 
-| Service       | Local address           |
-| ------------- | ----------------------- |
-| Web           | `http://localhost:3000` |
-| Web BFF       | `http://localhost:3001` |
-| Core          | `http://localhost:8080` |
-| MCP Gateway   | `http://localhost:3002` |
-| PostgreSQL    | `localhost:5432`        |
-| MinIO API     | `http://localhost:9000` |
-| MinIO Console | `http://localhost:9001` |
+| Service       | Pixi path (preferred)      | Docker wrapper fallback  |
+| ------------- | -------------------------- | ------------------------ |
+| Web           | `http://127.0.0.1:13000`   | `http://localhost:3000`  |
+| Web BFF       | `http://127.0.0.1:13001`   | `http://localhost:3001`  |
+| Core          | `http://127.0.0.1:18080`   | `http://localhost:8080`  |
+| MCP Gateway   | `http://127.0.0.1:13002`   | `http://localhost:3002`  |
+| PostgreSQL    | `127.0.0.1:15432`          | `localhost:15432` (*)    |
+| MinIO API     | `http://127.0.0.1:19000`   | `http://localhost:9000`  |
+| MinIO Console | `http://127.0.0.1:19001`   | `http://localhost:9001`  |
+
+(*) Docker wrapper: 5432 by default, 15432 with the local `.env` override
+described above.
 
 Also report the local bootstrap login:
 
@@ -224,10 +240,12 @@ These are development defaults only. If `.env` overrides the bootstrap
 credentials, state that the defaults do not apply and name the relevant
 variables without copying secret values into chat or logs.
 
-Stopping the wrapper leaves PostgreSQL and MinIO available for fast restarts.
-Use `--down` to stop that infrastructure. Never delete volumes unless the user
-explicitly approves deleting the persisted PostgreSQL and MinIO development
-data.
+Stopping the Docker wrapper leaves its PostgreSQL and MinIO containers
+available for fast restarts; use `--down` to stop that infrastructure. Never
+delete volumes unless the user explicitly approves deleting the persisted
+PostgreSQL and MinIO development data. Never run both paths at the same time:
+they share no ports except PostgreSQL 15432, where a collision breaks the
+newer process.
 
 ## 6. Network and dependency downloads
 
@@ -335,4 +353,4 @@ Validate commit subjects when preparing a commit:
 pnpm commit:check -- "feat(scope): concise summary"
 ```
 
-Remember to update handoff.md if you have kust complete a module or complete a stage
+Remember to update handoff.md if you have just completed a module or completed a stage
