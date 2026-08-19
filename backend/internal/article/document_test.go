@@ -70,3 +70,66 @@ func TestBibliographyFreezesStableVersionPointers(t *testing.T) {
 		t.Fatalf("bibliography is not deterministic/frozen:\n%s", value)
 	}
 }
+
+func TestNormalizeDocumentRendersGFMTableCodeAndOfficialMathNodes(t *testing.T) {
+	text := func(value string) map[string]interface{} {
+		return map[string]interface{}{"type": "text", "text": value}
+	}
+	paragraph := func(content ...interface{}) map[string]interface{} {
+		return map[string]interface{}{"type": "paragraph", "content": content}
+	}
+	cell := func(kind string, content ...interface{}) map[string]interface{} {
+		return map[string]interface{}{"type": kind, "content": []interface{}{paragraph(content...)}}
+	}
+	document := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{"type": "table", "attrs": map[string]interface{}{"id": "table-1"}, "content": []interface{}{
+			map[string]interface{}{"type": "tableRow", "content": []interface{}{
+				cell("tableHeader", text("Name")),
+				cell("tableHeader", text("Value")),
+			}},
+			map[string]interface{}{"type": "tableRow", "content": []interface{}{
+				cell("tableCell", text("A|B")),
+				cell("tableCell", map[string]interface{}{"type": "inlineMath", "attrs": map[string]interface{}{"latex": "x^2"}}),
+			}},
+		}},
+		map[string]interface{}{"type": "codeBlock", "attrs": map[string]interface{}{"id": "code-1", "language": "python"}, "content": []interface{}{text("print('ok')")}},
+		map[string]interface{}{"type": "blockMath", "attrs": map[string]interface{}{"id": "math-1", "latex": "\\sum_i x_i"}},
+	}}
+
+	markdown, _, err := NormalizeDocument(document, nil, "human", map[string]interface{}{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "| Name | Value |\n| --- | --- |\n| A\\|B | $x^2$ |\n\n```python\nprint('ok')\n```\n\n$$\n\\sum_i x_i\n$$\n"
+	if markdown != want {
+		t.Fatalf("unexpected rich markdown:\n%s", markdown)
+	}
+}
+
+func TestReconcileBlockTagsPreservesReviewAndMarksEditedBlocksAsRevisions(t *testing.T) {
+	oldTime := time.Date(2026, 8, 18, 9, 0, 0, 0, time.UTC)
+	now := oldTime.Add(time.Hour)
+	previousJSON := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{"type": "paragraph", "attrs": map[string]interface{}{"id": "stable"}, "content": []interface{}{map[string]interface{}{"type": "text", "text": "unchanged"}}},
+		map[string]interface{}{"type": "paragraph", "attrs": map[string]interface{}{"id": "edited"}, "content": []interface{}{map[string]interface{}{"type": "text", "text": "before"}}},
+	}}
+	currentJSON := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{"type": "paragraph", "attrs": map[string]interface{}{"id": "stable", "tag": "human_draft"}, "content": []interface{}{map[string]interface{}{"type": "text", "text": "unchanged"}}},
+		map[string]interface{}{"type": "paragraph", "attrs": map[string]interface{}{"id": "edited", "tag": "reviewed"}, "content": []interface{}{map[string]interface{}{"type": "text", "text": "after"}}},
+	}}
+	_, current, err := NormalizeDocument(currentJSON, nil, "human", map[string]interface{}{"session_id": "current"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := Draft{TiptapJSON: previousJSON, Blocks: []Block{
+		{BlockID: "stable", Tag: "reviewed", UpdatedAt: oldTime, Provenance: map[string]interface{}{"reviewed_by": "user-1"}},
+		{BlockID: "edited", Tag: "reviewed", UpdatedAt: oldTime, Provenance: map[string]interface{}{"reviewed_by": "user-1"}},
+	}}
+	result := ReconcileBlockTags(currentJSON, previous, current, "human", map[string]interface{}{"session_id": "current"}, now)
+	if result[0].Tag != "reviewed" || !result[0].UpdatedAt.Equal(oldTime) || result[0].Provenance["reviewed_by"] != "user-1" {
+		t.Fatalf("unchanged review was not preserved: %#v", result[0])
+	}
+	if result[1].Tag != "human_revision" || !result[1].UpdatedAt.Equal(now) || result[1].Provenance["session_id"] != "current" {
+		t.Fatalf("edited reviewed block was not reclassified: %#v", result[1])
+	}
+}

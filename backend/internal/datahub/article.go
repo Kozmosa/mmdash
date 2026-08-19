@@ -111,6 +111,9 @@ func articleProjection(event contract.EventEnvelope) articleProjectionObject {
 	case "article.draft.flushed":
 		id := fmt.Sprint(payload["draft_revision"])
 		return articleProjectionObject{"article_draft", id, "Article draft r" + id, "Collaborative Markdown draft", "active", metadata}
+	case "article.block.reviewed":
+		id, _ := payload["block_id"].(string)
+		return articleProjectionObject{"article_block", id, "Reviewed Article block", "Human-reviewed block", "active", metadata}
 	case "article.patch.proposed", "article.patch.reviewed":
 		id, _ := payload["patch_id"].(string)
 		status, _ := payload["status"].(string)

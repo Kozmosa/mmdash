@@ -65,6 +65,30 @@ describe("Article browser routes", () => {
       `http://core.test/v1/projects/${projectId}/article/commits`,
     ]);
   });
+
+  it("proxies block review and preserves actionable repository conflicts", async () => {
+    const blockId = "00000000-0000-4000-8000-000000000002";
+    const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/permissions")) return Response.json({ permissions: ["project.article.read", "project.article.edit"], project_id: projectId, role: "editor" });
+      if (url.endsWith(`/article/blocks/${blockId}/review`)) return Response.json({ block_id: blockId, tag: "reviewed" });
+      if (url.endsWith("/article/draft")) return Response.json(draft(1));
+      if (url.endsWith("/article/draft/flush")) return Response.json(draft(2));
+      if (url.endsWith("/article/commits")) return Response.json({ code: "ARTICLE_REPOSITORY_NOT_CONFIGURED", message: "Configure the project repository before creating an Article commit" }, { status: 409 });
+      throw new Error(`unexpected Core request: ${url}`);
+    });
+    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const review = await app.inject({ headers: { cookie }, method: "POST", url: `/api/projects/${projectId}/article/blocks/${blockId}/review` });
+    expect(review.statusCode, review.body).toBe(200);
+    expect(review.json()).toMatchObject({ block_id: blockId, tag: "reviewed" });
+
+    const commit = await app.inject({ headers: { cookie }, method: "POST", payload: { draft_revision: 1, message: "checkpoint" }, url: `/api/projects/${projectId}/article/commits` });
+    expect(commit.statusCode, commit.body).toBe(409);
+    expect(commit.json()).toMatchObject({ code: "ARTICLE_REPOSITORY_NOT_CONFIGURED" });
+  });
 });
 
 describe("Article collaboration", () => {

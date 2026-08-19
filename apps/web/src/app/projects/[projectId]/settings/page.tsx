@@ -11,6 +11,7 @@ import { AgentSettingsPanel } from "@/features/agent/agent-settings-panel";
 import { ProgressSettingsPanel } from "@/features/progress/progress-settings-panel";
 import { ExperimentSettingsPanel } from "@/features/experiment/experiment-settings-panel";
 import { ProjectBoxSettingsPanel } from "@/features/experiment/project-box-settings-panel";
+import { ArticleSettingsPanel } from "@/features/article/article-settings-panel";
 
 export default function SettingsPage() {
   return (
@@ -36,6 +37,7 @@ export default function SettingsPage() {
       <NotificationSettingsPanel />
       <ProjectBoxSettingsPanel />
       <ExperimentSettingsPanel />
+      <ArticleSettingsPanel />
       <SettingsSlotGrid
         slots={settingsSlots
           .list()
@@ -45,7 +47,8 @@ export default function SettingsPage() {
               slot.id !== "model" &&
               slot.id !== "agent" &&
               slot.id !== "progress" &&
-              slot.id !== "experiment",
+              slot.id !== "experiment" &&
+              slot.id !== "article",
           )}
       />
       <MemberManagement />

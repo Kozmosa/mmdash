@@ -78,6 +78,9 @@ function versionedReference(name: string, dataAttribute: string) {
     atom: true,
     addAttributes() {
       return {
+        referenceId: { default: "" },
+        artifactId: { default: "" },
+        experimentId: { default: "" },
         objectId: { default: "" },
         title: { default: "固定版本引用" },
         versionId: { default: "" },
