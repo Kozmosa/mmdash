@@ -3,7 +3,7 @@
 Stage 9 Article operations:
 
 - Core collaborative source and review: `article.get`, `article.draft.get`,
-  `article.draft.flush`, `article.patches.list`, `article.patches.create`,
+  `article.draft.flush`, `article.blocks.review`, `article.patches.list`, `article.patches.create`,
   `article.patches.review`, `article.references.list`,
   `article.references.create`, and `article.references.delete`.
 - Core immutable history: `article.commits.list`, `article.commits.create`,
@@ -18,7 +18,7 @@ Stage 9 Article operations:
   `article.artifacts.describe`, `article.artifact_semantic_jobs.execute`,
   `article.build_jobs.input.get`, and `article.build_jobs.outputs.upload`.
 - Browser BFF: `bff.article.get`, `bff.article.collaboration.connect`,
-  `bff.article.draft.get`, `bff.article.draft.flush`,
+  `bff.article.draft.get`, `bff.article.draft.flush`, `bff.article.blocks.review`,
   `bff.article.patches.list`, `bff.article.patches.create`,
   `bff.article.patches.review`, `bff.article.references.list`,
   `bff.article.references.create`, `bff.article.references.delete`,
@@ -64,7 +64,7 @@ Stage 8 Experiment and Box operations:
 - MCP Gateway and CLI expose the frozen `experiment.create`, `experiment.run`,
   `experiment.status`, `experiment.result.bind`, and `result.get` tools through
   the same Core RBAC and Audit boundary.
-Stage 7 Model operations:
+  Stage 7 Model operations:
 
 - Core: `model.get`, `model.source.get`, `model.source.sync`,
   `model.notion.oauth.get`, `model.notion.oauth.start`,

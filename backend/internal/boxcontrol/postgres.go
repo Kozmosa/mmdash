@@ -941,7 +941,7 @@ func (store PostgresStore) FailOfflineTimeouts(
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		query := `
 			WITH expired AS (
-				SELECT task.task_id
+				SELECT task.task_id AS expired_task_id
 				FROM box_tasks task
 				JOIN box_nodes box ON box.box_id=task.box_id
 				WHERE task.status IN ('preparing','running','uploading')
@@ -964,7 +964,7 @@ func (store PostgresStore) FailOfflineTimeouts(
 				failure_cleanup_result='{}'::jsonb,
 				finished_at=$1,lease_expires_at=NULL,updated_at=$1
 			FROM expired
-			WHERE task.task_id=expired.task_id
+			WHERE task.task_id=expired.expired_task_id
 			RETURNING ` + taskReturnColumns
 		rows, err := tx.QueryContext(ctx, query, now, offlineBefore, limit)
 		if err != nil {

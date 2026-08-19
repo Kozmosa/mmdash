@@ -2,6 +2,7 @@ import { apiClient } from "@/lib/api-client";
 
 import type {
   ArticleAggregate,
+  ArticleBlock,
   ArticleBuild,
   ArticleCommit,
   ArticleDraft,
@@ -32,6 +33,12 @@ export const articleApi = {
       method: "POST",
     });
   },
+  reviewBlock(projectId: string, blockId: string) {
+    return apiClient.request<ArticleBlock>(
+      `${base(projectId)}/blocks/${encodeURIComponent(blockId)}/review`,
+      { method: "POST" },
+    );
+  },
   restoreCommit(projectId: string, commitId: string) {
     return apiClient.request<ArticleDraft>(
       `${base(projectId)}/commits/${encodeURIComponent(commitId)}/restore`,
@@ -47,10 +54,13 @@ export const articleApi = {
       template_id: string;
     },
   ) {
-    return apiClient.request<ArticleBuild>(`${base(projectId)}/preview-builds`, {
-      body: input,
-      method: "POST",
-    });
+    return apiClient.request<ArticleBuild>(
+      `${base(projectId)}/preview-builds`,
+      {
+        body: input,
+        method: "POST",
+      },
+    );
   },
   createBuild(
     projectId: string,
@@ -102,19 +112,28 @@ export const articleApi = {
       title: string;
     },
   ) {
-    return apiClient.request<ArticlePublication>(`${base(projectId)}/publications`, {
-      body: input,
-      method: "POST",
-    });
+    return apiClient.request<ArticlePublication>(
+      `${base(projectId)}/publications`,
+      {
+        body: input,
+        method: "POST",
+      },
+    );
   },
   addReference(
     projectId: string,
-    input: Omit<ArticleReference, "created_at" | "created_by" | "project_id" | "reference_id">,
+    input: Omit<
+      ArticleReference,
+      "created_at" | "created_by" | "project_id" | "reference_id"
+    >,
   ) {
-    return apiClient.request<ArticleReference>(`${base(projectId)}/references`, {
-      body: input,
-      method: "POST",
-    });
+    return apiClient.request<ArticleReference>(
+      `${base(projectId)}/references`,
+      {
+        body: input,
+        method: "POST",
+      },
+    );
   },
   removeReference(projectId: string, referenceId: string) {
     return apiClient.request<void>(

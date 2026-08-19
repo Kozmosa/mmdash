@@ -1,6 +1,7 @@
 package article
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -70,6 +71,77 @@ func NormalizeDocument(document map[string]interface{}, generator idGenerator, a
 	return strings.TrimSpace(strings.Join(markdown, "\n\n")) + trailingNewline(markdown), blocks, nil
 }
 
+// ReconcileBlockTags preserves review decisions for unchanged stable blocks
+// and turns an edited draft block into a revision. Client-provided tag and
+// provenance attributes are never trusted as the authoritative review state.
+func ReconcileBlockTags(document map[string]interface{}, previous Draft, blocks []Block, actorKind string, provenance map[string]interface{}, now time.Time) []Block {
+	previousNodes := blockNodesByID(previous.TiptapJSON)
+	currentNodes := blockNodesByID(document)
+	previousBlocks := make(map[string]Block, len(previous.Blocks))
+	for _, block := range previous.Blocks {
+		previousBlocks[block.BlockID] = block
+	}
+	for index := range blocks {
+		block := &blocks[index]
+		prior, existed := previousBlocks[block.BlockID]
+		same := existed && semanticNodeHash(previousNodes[block.BlockID]) == semanticNodeHash(currentNodes[block.BlockID])
+		if same {
+			block.Tag = tagForActor("", map[string]interface{}{"tag": prior.Tag})
+			block.Provenance = cloneObject(prior.Provenance)
+			block.UpdatedAt = prior.UpdatedAt
+		} else {
+			block.Tag = actorTag(actorKind, existed)
+			block.Provenance = cloneObject(provenance)
+			block.UpdatedAt = now
+		}
+		block.Attrs["tag"] = block.Tag
+		block.Attrs["provenance"] = block.Provenance
+	}
+	return blocks
+}
+
+func actorTag(actorKind string, revision bool) string {
+	prefix := "human"
+	if actorKind == "ai" {
+		prefix = "ai"
+	}
+	if revision {
+		return prefix + "_revision"
+	}
+	return prefix + "_draft"
+}
+
+func blockNodesByID(document map[string]interface{}) map[string]map[string]interface{} {
+	result := map[string]map[string]interface{}{}
+	content, _ := interfaceSlice(document["content"])
+	for _, raw := range content {
+		node, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, _ := object(node["attrs"])["id"].(string)
+		if id != "" {
+			result[id] = node
+		}
+	}
+	return result
+}
+
+func semanticNodeHash(node map[string]interface{}) [32]byte {
+	if node == nil {
+		return [32]byte{}
+	}
+	encoded, _ := json.Marshal(node)
+	var clean map[string]interface{}
+	_ = json.Unmarshal(encoded, &clean)
+	attrs := object(clean["attrs"])
+	delete(attrs, "tag")
+	delete(attrs, "provenance")
+	clean["attrs"] = attrs
+	encoded, _ = json.Marshal(clean)
+	return sha256.Sum256(encoded)
+}
+
 func tagForActor(actorKind string, attrs map[string]interface{}) string {
 	if existing, ok := attrs["tag"].(string); ok {
 		switch existing {
@@ -109,16 +181,22 @@ func renderBlock(node map[string]interface{}) (string, error) {
 	case "codeBlock":
 		language, _ := attrs["language"].(string)
 		return "```" + safeFenceInfo(language) + "\n" + plainText(node) + "\n```", nil
+	case "table":
+		return renderTable(node), nil
 	case "horizontalRule":
 		return "---", nil
 	case "hardBreak":
 		return "  \n", nil
-	case "mathBlock":
+	case "mathBlock", "blockMath":
 		return "$$\n" + stringAttr(attrs, "latex") + "\n$$", nil
 	case "image":
 		return "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")", nil
 	case "artifactReference":
-		return fmt.Sprintf("[Artifact %s@%s](mmdash://artifact/%s/versions/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(stringAttr(attrs, "artifactId")), safeID(stringAttr(attrs, "versionId"))), nil
+		artifactID := stringAttr(attrs, "artifactId")
+		if artifactID == "" {
+			artifactID = stringAttr(attrs, "objectId")
+		}
+		return fmt.Sprintf("[Artifact %s@%s](mmdash://artifact/%s/versions/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(artifactID), safeID(stringAttr(attrs, "versionId"))), nil
 	case "experimentResult":
 		return fmt.Sprintf("[Experiment result %s@%s](mmdash://experiment/%s/results/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(stringAttr(attrs, "experimentId")), safeID(stringAttr(attrs, "versionId"))), nil
 	default:
@@ -178,7 +256,7 @@ func renderInlineChildren(node map[string]interface{}) string {
 			value = escapeMarkdown(value)
 		case "hardBreak":
 			value = "  \n"
-		case "mathInline":
+		case "mathInline", "inlineMath":
 			value = "$" + stringAttr(attrs, "latex") + "$"
 		case "citation":
 			value = "[@" + safeCitationKey(stringAttr(attrs, "citationKey")) + "]"
@@ -189,6 +267,54 @@ func renderInlineChildren(node map[string]interface{}) string {
 		result.WriteString(value)
 	}
 	return result.String()
+}
+
+func renderTable(node map[string]interface{}) string {
+	rows, _ := interfaceSlice(node["content"])
+	if len(rows) == 0 {
+		return ""
+	}
+	values := make([][]string, 0, len(rows))
+	columns := 0
+	for _, rawRow := range rows {
+		row, ok := rawRow.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cells, _ := interfaceSlice(row["content"])
+		value := make([]string, 0, len(cells))
+		for _, rawCell := range cells {
+			cell, ok := rawCell.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			text := strings.TrimSpace(renderChildren(cell))
+			text = strings.ReplaceAll(text, "|", `\|`)
+			text = strings.ReplaceAll(text, "\n", "<br>")
+			value = append(value, text)
+		}
+		if len(value) > columns {
+			columns = len(value)
+		}
+		values = append(values, value)
+	}
+	if len(values) == 0 || columns == 0 {
+		return ""
+	}
+	line := func(cells []string) string {
+		padded := make([]string, columns)
+		copy(padded, cells)
+		return "| " + strings.Join(padded, " | ") + " |"
+	}
+	separator := make([]string, columns)
+	for index := range separator {
+		separator[index] = "---"
+	}
+	lines := []string{line(values[0]), line(separator)}
+	for _, row := range values[1:] {
+		lines = append(lines, line(row))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func applyMarks(value string, raw interface{}) string {
