@@ -13,6 +13,13 @@ vi.mock("@/features/agent/agent-settings-panel", () => ({
     <section data-testid="agent-settings-panel">Agent 设置面板</section>
   ),
 }));
+vi.mock("@/features/article/article-settings-panel", () => ({
+  ArticleSettingsPanel: () => (
+    <section data-testid="article-settings-panel">
+      Article Zotero 设置面板
+    </section>
+  ),
+}));
 vi.mock("@/features/model/model-settings-panel", () => ({
   ModelSettingsPanel: () => null,
 }));
@@ -34,12 +41,16 @@ vi.mock("@/features/progress/progress-settings-panel", () => ({
 }));
 vi.mock("@/features/experiment/experiment-settings-panel", () => ({
   ExperimentSettingsPanel: () => (
-    <section data-testid="experiment-settings-panel">Experiment 设置面板</section>
+    <section data-testid="experiment-settings-panel">
+      Experiment 设置面板
+    </section>
   ),
 }));
 vi.mock("@/features/experiment/project-box-settings-panel", () => ({
   ProjectBoxSettingsPanel: () => (
-    <section data-testid="project-box-settings-panel">Project Box 设置面板</section>
+    <section data-testid="project-box-settings-panel">
+      Project Box 设置面板
+    </section>
   ),
 }));
 vi.mock("@/features/settings/registered-settings-panel", () => ({
@@ -64,9 +75,15 @@ describe("Project settings page", () => {
       screen.queryByText("等待 progress 模块注册设置面板"),
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("experiment-settings-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("project-box-settings-panel")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("project-box-settings-panel"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("article-settings-panel")).toBeInTheDocument();
     expect(
       screen.queryByText("等待 experiment 模块注册设置面板"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("等待 article 模块注册设置面板"),
     ).not.toBeInTheDocument();
     expect(
       settingsSlots.list().find((slot) => slot.id === "agent")?.description,

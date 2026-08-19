@@ -13,6 +13,7 @@ func TestArticleProjectionCoversThePublicDataHubTypes(t *testing.T) {
 	for _, item := range []struct {
 		eventType, idField, objectType, status string
 	}{
+		{"article.block.reviewed", "block_id", "article_block", "active"},
 		{"article.commit.created", "commit_id", "article_commit", "committed"},
 		{"article.build.completed", "build_id", "article_build", "succeeded"},
 		{"article.release.created", "release_id", "article_release", "released"},

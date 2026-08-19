@@ -4150,7 +4150,7 @@ paths:
           description: Registered Box and opaque token returned once.
           content:
             application/json:
-               schema: { $ref: "#/components/schemas/BoxRegistration" }
+              schema: { $ref: "#/components/schemas/BoxRegistration" }
   /v1/box/releases:
     get:
       tags: [Box, Artifact]
@@ -4450,6 +4450,24 @@ paths:
                 { schema: { $ref: "#/components/schemas/ArticleDraft" } },
             }
         "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/blocks/{blockId}/review:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - name: blockId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Article]
+      summary: Mark one stable Article block as human reviewed
+      operationId: article.blocks.review
+      responses:
+        "200":
+          description: Reviewed block with reviewer provenance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleBlock" }
+        "404": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/patches:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -6333,7 +6351,18 @@ components:
       type: object
       additionalProperties: false
       required:
-        [platform, version, artifact_id, version_id, filename, sha256, size_bytes, download, install_command, instructions]
+        [
+          platform,
+          version,
+          artifact_id,
+          version_id,
+          filename,
+          sha256,
+          size_bytes,
+          download,
+          install_command,
+          instructions,
+        ]
       properties:
         platform: { type: string, enum: [windows, linux] }
         version: { type: string, minLength: 1, maxLength: 100 }

@@ -306,5 +306,23 @@
       "updated_by": "06353678-91db-4e22-9dfb-2d4218546e22",
       "updated_at": "2026-08-10T10:00:00Z"
     }
+  },
+  "article.blocks.review": {
+    "method": "POST",
+    "path": "/v1/projects/{projectId}/article/blocks/{blockId}/review",
+    "status": 200,
+    "body": {
+      "block_id": "8f29fd16-b7d0-4892-94b9-d731f017e0e8",
+      "node_type": "paragraph",
+      "ordinal": 0,
+      "text": "Reviewed paragraph",
+      "attrs": { "tag": "reviewed" },
+      "tag": "reviewed",
+      "provenance": {
+        "reviewed_by": "06353678-91db-4e22-9dfb-2d4218546e22",
+        "reviewed_at": "2026-08-19T03:00:00Z"
+      },
+      "updated_at": "2026-08-19T03:00:00Z"
+    }
   }
 }

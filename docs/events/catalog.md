@@ -35,6 +35,7 @@ All entries currently use envelope schema version `1`.
 | `artifact.available`          | artifact | yes            | `artifact_id`, `version_id`, `version_no`, `sha256`, `size_bytes`, `mime_type`, `reason`, `available_at`        | `datahub.projections`          |
 | `artifact.deleted`            | artifact | yes            | `artifact_id`, `current_version_id`, `reason`, `trashed_at`                                                     | `datahub.projections`          |
 | `article.draft.flushed`       | article  | yes            | `resource_id`, `resource_type=article_draft`, `draft_revision`, `actor_kind`, `status`                          | `datahub.projections`          |
+| `article.block.reviewed`      | article  | yes            | `resource_id`, `resource_type=article_block`, `block_id`, `status=reviewed`                                    | `datahub.projections`          |
 | `article.patch.proposed`      | article  | yes            | `resource_id`, `resource_type=article_block`, `patch_id`, `base_revision`, `status`                             | `datahub.projections`          |
 | `article.patch.reviewed`      | article  | yes            | `resource_id`, `resource_type=article_block`, `patch_id`, `decision`, optional accepted revision               | `datahub.projections`          |
 | `article.commit.created`      | article  | yes            | `resource_id`, `resource_type=article_commit`, `commit_id`, `git_commit_sha`, `draft_revision`                  | `datahub.projections`          |
