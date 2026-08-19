@@ -1,6 +1,7 @@
 package localdocker
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -32,9 +33,20 @@ func TestBuildArgsKeepsAllDockerOptionsBeforeImage(t *testing.T) {
 	if indexOf(args, "--rm") >= 0 {
 		t.Fatalf("durable task container must not use --rm: %#v", args)
 	}
-	for _, option := range []string{"--env", "MODE=test", "--network", "none", "--storage-opt", "size=1048576", "--user", "1000:1000"} {
+	for _, option := range []string{"--env", "MODE=test", "--network", "none", "--user", "1000:1000"} {
 		if indexOf(args, option) > imageIndex {
 			t.Fatalf("Docker option %q appears after image: %#v", option, args)
+		}
+	}
+	storageOptIndex := indexOf(args, "--storage-opt")
+	if runtime.GOOS == "windows" {
+		if storageOptIndex >= 0 {
+			t.Fatalf("Windows Docker invocation must not use --storage-opt: %#v", args)
+		}
+	} else {
+		sizeIndex := indexOf(args, "size=1048576")
+		if storageOptIndex < 0 || sizeIndex < 0 || sizeIndex > imageIndex {
+			t.Fatalf("non-Windows Docker invocation must enforce the disk limit: %#v", args)
 		}
 	}
 	if indexOf(args, "--entrypoint") < 0 || args[indexOf(args, "--entrypoint")+1] != "python3" {

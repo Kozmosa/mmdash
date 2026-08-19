@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -100,11 +101,19 @@ func buildArgs(image, user string, request sandbox.RunRequest, command []string)
 		"--memory", strconv.FormatInt(request.Spec.Limits.MemoryBytes, 10),
 		"--pids-limit", strconv.Itoa(request.Spec.Limits.PIDs),
 		"--network", networkMode(request.Spec.Limits.Network),
-		"--storage-opt", "size=" + strconv.FormatInt(request.Spec.Limits.DiskBytes, 10),
-		"--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864",
-		"-v", request.Workspace + ":/workspace:ro",
-		"-v", request.OutputDir + ":/output:rw",
 	}
+	// Docker Desktop on Windows commonly uses an overlay filesystem without
+	// XFS project quotas, so --storage-opt=size=... is rejected by the daemon.
+	// Keep the other frozen limits enforced and let the Gateway's output/log
+	// budget guard the remaining disk usage on that platform.
+	if runtime.GOOS != "windows" {
+		args = append(args, "--storage-opt", "size="+strconv.FormatInt(request.Spec.Limits.DiskBytes, 10))
+	}
+	args = append(args,
+		"--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864",
+		"-v", request.Workspace+":/workspace:ro",
+		"-v", request.OutputDir+":/output:rw",
+	)
 	for key, value := range request.Spec.Environment {
 		if key == "" || strings.ContainsAny(key, "=\x00 \t\r\n") {
 			return nil, errors.New("invalid environment variable name")

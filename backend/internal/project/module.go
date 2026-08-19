@@ -113,7 +113,7 @@ func (module Module) handleResource(response http.ResponseWriter, request *http.
 			module.Agent.ServeHTTP(response, request)
 			return
 		}
-	case "box":
+	case "box", "boxes":
 		if module.Box != nil {
 			module.Box.ServeHTTP(response, request)
 			return

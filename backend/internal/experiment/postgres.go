@@ -181,7 +181,7 @@ func (store PostgresStore) CreateRerun(
 		if err := store.recordCreated(ctx, tx, next); err != nil {
 			return err
 		}
-		if err := store.recordMutationAudit(ctx, tx, "experiment.rerun_created", next.ProjectID, next.ID, map[string]interface{}{
+		if err := store.recordMutationAudit(ctx, tx, "experiment.rerun.created", next.ProjectID, next.ID, map[string]interface{}{
 			"retry_of_experiment_id": previous.ID, "retry_sequence": next.Retry.RetrySequence,
 		}, next.CreatedBy, now); err != nil {
 			return err
