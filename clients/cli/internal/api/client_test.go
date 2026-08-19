@@ -76,6 +76,13 @@ func TestClientRetriesOnlySafeRequests(t *testing.T) {
 		requests := 0
 		server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 			requests++
+			var body map[string]string
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode device authorization request: %v", err)
+			}
+			if body["client_kind"] != "cli" {
+				t.Fatalf("unexpected device client kind: %q", body["client_kind"])
+			}
 			response.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		defer server.Close()
@@ -85,6 +92,24 @@ func TestClientRetriesOnlySafeRequests(t *testing.T) {
 		}
 		if requests != 1 {
 			t.Fatalf("device authorization was replayed %d times", requests)
+		}
+	})
+
+	t.Run("device token exchange identifies the CLI client", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			var body map[string]string
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode device token request: %v", err)
+			}
+			if body["client_kind"] != "cli" || body["device_code"] != "device-code" {
+				t.Fatalf("unexpected device token request: %#v", body)
+			}
+			response.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+
+		if _, err := NewClient(server.URL).ExchangeDeviceAuthorization(context.Background(), "device-code"); err == nil {
+			t.Fatal("expected device token exchange failure")
 		}
 	})
 }

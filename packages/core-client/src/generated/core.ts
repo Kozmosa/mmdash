@@ -3688,6 +3688,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/article/blocks/{blockId}/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        blockId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark one stable Article block as human reviewed */
+    post: operations["article.blocks.review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/article/patches": {
     parameters: {
       query?: never;
@@ -13945,6 +13965,30 @@ export interface operations {
         };
       };
       409: components["responses"]["Error"];
+    };
+  };
+  "article.blocks.review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        blockId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Reviewed block with reviewer provenance. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBlock"];
+        };
+      };
+      404: components["responses"]["Error"];
     };
   };
   "article.patches.list": {

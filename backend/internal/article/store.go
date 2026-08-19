@@ -11,6 +11,7 @@ import (
 type Store interface {
 	GetDraft(context.Context, string) (Draft, error)
 	PersistDraft(context.Context, string, string, PersistDraftInput, string, []Block, map[string]interface{}, string) (Draft, error)
+	ReviewBlock(context.Context, string, string, string) (Block, error)
 	CreatePatch(context.Context, Patch) (Patch, error)
 	ListPatches(context.Context, string, string) ([]Patch, error)
 	ReviewPatch(context.Context, string, string, string, string, *int64) (Patch, error)

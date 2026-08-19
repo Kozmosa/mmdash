@@ -200,12 +200,27 @@ func (service *Service) prepareProjectDraft(ctx context.Context, projectID strin
 	if err != nil {
 		return "", nil, nil, "", err
 	}
+	previous, err := service.Store.GetDraft(ctx, projectID)
+	if err != nil {
+		return "", nil, nil, "", err
+	}
+	blocks = ReconcileBlockTags(input.TiptapJSON, previous, blocks, input.ActorKind, input.Provenance, service.now())
 	references, err := service.Store.ListReferences(ctx, projectID)
 	if err != nil {
 		return "", nil, nil, "", err
 	}
 	manifest := map[string]interface{}{"schema_version": "1.0", "draft_revision": input.ExpectedRevision + 1, "state_vector": input.StateVector, "format": "markdown", "editable_files": []string{"manuscript.md", "references.bib", ".mmdash/article.json"}}
 	return markdown, blocks, manifest, Bibliography(references), nil
+}
+
+func (service *Service) ReviewBlock(ctx context.Context, caller auth.Identity, projectID, blockID string) (Block, error) {
+	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleEdit); err != nil {
+		return Block{}, err
+	}
+	if strings.TrimSpace(blockID) == "" {
+		return Block{}, ErrInvalid
+	}
+	return service.Store.ReviewBlock(ctx, projectID, blockID, caller.ActorID())
 }
 
 func (service *Service) ListPatches(ctx context.Context, caller auth.Identity, projectID, status string) ([]Patch, error) {
@@ -767,16 +782,23 @@ func (service *Service) UpdateZotero(ctx context.Context, caller auth.Identity, 
 	if libraryType != "user" && libraryType != "group" || libraryID == "" || apiKey == "" {
 		return ZoteroBinding{}, ErrInvalid
 	}
-	if _, err := service.Settings.Update(ctx, caller, settings.ScopeProject, projectID, SettingTypeZotero, map[string]interface{}{"api_key": apiKey}); err != nil {
+	values := map[string]interface{}{"library_type": libraryType, "library_id": strings.TrimSpace(libraryID), "api_key": apiKey}
+	if strings.TrimSpace(collectionKey) != "" {
+		values["collection_key"] = strings.TrimSpace(collectionKey)
+	} else {
+		values["collection_key"] = nil
+	}
+	if _, err := service.Settings.Update(ctx, caller, settings.ScopeProject, projectID, SettingTypeZotero, values); err != nil {
 		return ZoteroBinding{}, err
 	}
-	return service.Store.UpsertZoteroBinding(ctx, ZoteroBinding{ProjectID: projectID, LibraryType: libraryType, LibraryID: libraryID, CollectionKey: collectionKey, APIKeyConfigured: true, ReadOnly: true}, caller.ActorID())
+	return service.Store.UpsertZoteroBinding(ctx, ZoteroBinding{ProjectID: projectID, LibraryType: libraryType, LibraryID: strings.TrimSpace(libraryID), CollectionKey: strings.TrimSpace(collectionKey), APIKeyConfigured: true, ReadOnly: true}, caller.ActorID())
 }
 func (service *Service) GetZotero(ctx context.Context, caller auth.Identity, projectID string) (ZoteroBinding, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleRead); err != nil {
 		return ZoteroBinding{}, err
 	}
-	return service.Store.GetZoteroBinding(ctx, projectID)
+	binding, _, err := service.resolveZotero(ctx, projectID)
+	return binding, err
 }
 func (service *Service) DeleteZotero(ctx context.Context, caller auth.Identity, projectID string) error {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleZotero); err != nil {
@@ -791,15 +813,10 @@ func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, 
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleRead); err != nil {
 		return nil, err
 	}
-	binding, err := service.Store.GetZoteroBinding(ctx, projectID)
+	binding, apiKey, err := service.resolveZotero(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := service.Settings.Resolve(ctx, settings.ScopeProject, projectID, SettingTypeZotero)
-	if err != nil {
-		return nil, err
-	}
-	apiKey, _ := resolved.Values["api_key"].(string)
 	if apiKey == "" {
 		return nil, ErrNotReady
 	}
@@ -850,6 +867,38 @@ func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, 
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (service *Service) resolveZotero(ctx context.Context, projectID string) (ZoteroBinding, string, error) {
+	resolved, err := service.Settings.Resolve(ctx, settings.ScopeProject, projectID, SettingTypeZotero)
+	if err == nil {
+		libraryType, _ := resolved.Values["library_type"].(string)
+		libraryID, _ := resolved.Values["library_id"].(string)
+		collectionKey, _ := resolved.Values["collection_key"].(string)
+		apiKey, _ := resolved.Values["api_key"].(string)
+		if strings.TrimSpace(apiKey) == "" {
+			return ZoteroBinding{}, "", ErrNotReady
+		}
+		if (libraryType != "user" && libraryType != "group") || strings.TrimSpace(libraryID) == "" {
+			legacy, legacyErr := service.Store.GetZoteroBinding(ctx, projectID)
+			if legacyErr != nil {
+				return ZoteroBinding{}, "", ErrNotReady
+			}
+			legacy.APIKeyConfigured = true
+			return legacy, apiKey, nil
+		}
+		return ZoteroBinding{ProjectID: projectID, LibraryType: libraryType, LibraryID: strings.TrimSpace(libraryID), CollectionKey: strings.TrimSpace(collectionKey), APIKeyConfigured: true, ReadOnly: true}, apiKey, nil
+	}
+	if !errors.Is(err, settings.ErrNotFound) {
+		return ZoteroBinding{}, "", err
+	}
+	// A binding without any Settings record is readable for upgrade diagnostics,
+	// but cannot search until its encrypted key is saved through Settings.
+	binding, storeErr := service.Store.GetZoteroBinding(ctx, projectID)
+	if storeErr != nil {
+		return ZoteroBinding{}, "", storeErr
+	}
+	return binding, "", nil
 }
 
 func (service *Service) authorize(ctx context.Context, caller auth.Identity, projectID string, permission project.Permission) error {
