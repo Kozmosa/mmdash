@@ -160,13 +160,13 @@ func NewClient(baseURL string) *Client {
 
 func (client *Client) StartDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error) {
 	var result DeviceAuthorization
-	err := client.do(ctx, http.MethodPost, "/v1/auth/device/authorize", nil, "", &result, false)
+	err := client.do(ctx, http.MethodPost, "/v1/auth/device/authorize", map[string]string{"client_kind": "cli"}, "", &result, false)
 	return result, err
 }
 
 func (client *Client) ExchangeDeviceAuthorization(ctx context.Context, code string) (LoginResult, error) {
 	var result LoginResult
-	err := client.do(ctx, http.MethodPost, "/v1/auth/device/token", map[string]string{"device_code": code}, "", &result, false)
+	err := client.do(ctx, http.MethodPost, "/v1/auth/device/token", map[string]string{"client_kind": "cli", "device_code": code}, "", &result, false)
 	return result, err
 }
 

@@ -941,7 +941,7 @@ func (store PostgresStore) FailOfflineTimeouts(
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		query := `
 			WITH expired AS (
-				SELECT task.task_id
+				SELECT task.task_id AS expired_task_id
 				FROM box_tasks task
 				JOIN box_nodes box ON box.box_id=task.box_id
 				WHERE task.status IN ('preparing','running','uploading')
@@ -964,7 +964,7 @@ func (store PostgresStore) FailOfflineTimeouts(
 				failure_cleanup_result='{}'::jsonb,
 				finished_at=$1,lease_expires_at=NULL,updated_at=$1
 			FROM expired
-			WHERE task.task_id=expired.task_id
+			WHERE task.task_id=expired.expired_task_id
 			RETURNING ` + taskReturnColumns
 		rows, err := tx.QueryContext(ctx, query, now, offlineBefore, limit)
 		if err != nil {
@@ -1031,7 +1031,9 @@ func (store PostgresStore) ClaimTask(
 
 		query := `
 			WITH selected AS (
-				SELECT task.task_id,chosen.actual_runtime,chosen.runtime_version
+				SELECT task.task_id AS selected_task_id,
+					chosen.actual_runtime AS selected_actual_runtime,
+					chosen.runtime_version AS selected_runtime_version
 				FROM box_tasks task
 				JOIN LATERAL (
 					SELECT candidate.box_id,
@@ -1126,12 +1128,12 @@ func (store PostgresStore) ClaimTask(
 			)
 			UPDATE box_tasks task
 			SET status='preparing',box_id=$1,execution_epoch=$2::uuid,
-				attempt=task.attempt+1,actual_runtime=selected.actual_runtime,
-				runtime_version=selected.runtime_version,claimed_at=$3,
+				attempt=task.attempt+1,actual_runtime=selected.selected_actual_runtime,
+				runtime_version=selected.selected_runtime_version,claimed_at=$3,
 				started_at=COALESCE(task.started_at,$3),last_callback_at=$3,
 				lease_expires_at=NULL,updated_at=$3
 			FROM selected
-			WHERE task.task_id=selected.task_id
+			WHERE task.task_id=selected.selected_task_id
 			RETURNING ` + taskReturnColumns
 		var scanErr error
 		item, scanErr = scanTask(tx.QueryRowContext(ctx, query, boxID, epoch, now))
