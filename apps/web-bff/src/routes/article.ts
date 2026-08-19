@@ -9,14 +9,19 @@ const identifier = z.string().uuid();
 const project = z.object({ projectId: identifier });
 const resource = project.extend({ resourceId: identifier });
 const objectBody = z.record(z.string(), z.unknown());
-const options = { config: { auth: "required" as const, project: "required" as const } };
+const options = {
+  config: { auth: "required" as const, project: "required" as const },
+};
 
 export function registerArticleRoutes(
   app: FastifyInstance,
   coreClient: CoreClient,
   collaboration: ArticleCollaboration,
 ): void {
-  const collection = (name: string, methods: ("GET" | "POST" | "PUT" | "DELETE")[]) => {
+  const collection = (
+    name: string,
+    methods: ("GET" | "POST" | "PUT" | "DELETE")[],
+  ) => {
     for (const method of methods) {
       app.route({
         ...options,
@@ -32,21 +37,35 @@ export function registerArticleRoutes(
             method === "POST" &&
             ["commits", "preview-builds", "publications"].includes(name)
           ) {
-            const draft = await collaboration.flush(await roomContext(coreClient, request));
+            const draft = await collaboration.flush(
+              await roomContext(coreClient, request),
+            );
             body = {
               ...objectBody.parse(request.body ?? {}),
               draft_revision: draft.draft_revision,
             };
           }
-          return proxy(coreClient, request, reply, projectId, `/${name}`, method, body);
+          return proxy(
+            coreClient,
+            request,
+            reply,
+            projectId,
+            `/${name}`,
+            method,
+            body,
+          );
         },
       });
     }
   };
-  app.get("/api/projects/:projectId/article", options, async (request, reply) => {
-    const { projectId } = project.parse(request.params);
-    return proxy(coreClient, request, reply, projectId, "", "GET");
-  });
+  app.get(
+    "/api/projects/:projectId/article",
+    options,
+    async (request, reply) => {
+      const { projectId } = project.parse(request.params);
+      return proxy(coreClient, request, reply, projectId, "", "GET");
+    },
+  );
   collection("draft", ["GET"]);
   collection("draft/flush", ["POST"]);
   collection("patches", ["GET", "POST"]);
@@ -60,6 +79,7 @@ export function registerArticleRoutes(
   collection("zotero", ["GET", "PUT", "DELETE"]);
   collection("zotero/search", ["GET"]);
   for (const [name, suffix, methods] of [
+    ["blocks", "review", ["POST"]],
     ["patches", "review", ["POST"]],
     ["commits", "", ["GET"]],
     ["commits", "restore", ["POST"]],
@@ -127,10 +147,18 @@ async function proxy(
     },
   );
   if (method === "DELETE") return reply.code(204).send();
-  if (method === "POST" && ["/builds", "/preview-builds", "/publications", "/templates"].includes(suffix)) {
+  if (
+    method === "POST" &&
+    ["/builds", "/preview-builds", "/publications", "/templates"].includes(
+      suffix,
+    )
+  ) {
     return reply.code(202).send(value);
   }
-  if (method === "POST" && ["/commits", "/references", "/patches", "/releases"].includes(suffix)) {
+  if (
+    method === "POST" &&
+    ["/commits", "/references", "/patches", "/releases"].includes(suffix)
+  ) {
     return reply.code(201).send(value);
   }
   return value;

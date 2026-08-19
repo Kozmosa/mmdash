@@ -10,6 +10,7 @@ import (
 	contract "github.com/mmdash/mmdash/backend/internal/contract/generated"
 	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
 	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
+	"github.com/mmdash/mmdash/backend/internal/repo"
 )
 
 type Module struct{ Service *Service }
@@ -212,6 +213,11 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
+	if len(tail) == 3 && tail[0] == "blocks" && tail[2] == "review" && r.Method == http.MethodPost {
+		value, err := module.Service.ReviewBlock(r.Context(), caller, projectID, tail[1])
+		writeResult(w, r, http.StatusOK, value, err)
+		return
+	}
 	if len(tail) == 2 && tail[0] == "builds" && r.Method == http.MethodGet {
 		value, err := module.Service.GetBuild(r.Context(), caller, projectID, tail[1])
 		writeResult(w, r, http.StatusOK, value, err)
@@ -222,7 +228,7 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, http.StatusAccepted, value, err)
 		return
 	}
-	if len(tail) == 3 && tail[0] == "builds" && tail[2] == "retry" && r.Method == http.MethodPost {
+	if len(tail) == 3 && tail[0] == "publications" && tail[2] == "retry" && r.Method == http.MethodPost {
 		value, err := module.Service.RetryPublication(r.Context(), caller, projectID, tail[1])
 		writeResult(w, r, http.StatusAccepted, value, err)
 		return
@@ -317,6 +323,12 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusConflict, "ARTICLE_NOT_READY", "Article object is not ready"
 	case errors.Is(err, ErrUnavailable):
 		status, code, message = http.StatusServiceUnavailable, "ARTICLE_INTEGRATION_UNAVAILABLE", "Article integration is unavailable"
+	case errors.Is(err, repo.ErrNotConfigured):
+		status, code, message = http.StatusConflict, "ARTICLE_REPOSITORY_NOT_CONFIGURED", "Configure the project repository before creating an Article commit"
+	case errors.Is(err, repo.ErrNotReady):
+		status, code, message = http.StatusConflict, "ARTICLE_REPOSITORY_NOT_READY", "The Article repository branch is not ready; synchronize Repository settings and retry"
+	case errors.Is(err, repo.ErrHeadChanged), errors.Is(err, repo.ErrConflict), errors.Is(err, repo.ErrLocked):
+		status, code, message = http.StatusConflict, "ARTICLE_REPOSITORY_CONFLICT", "The Article repository changed; synchronize and retry"
 	}
 	httpx.WriteError(w, r, apperror.New(status, code, message))
 }

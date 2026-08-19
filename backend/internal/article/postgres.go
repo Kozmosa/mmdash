@@ -84,7 +84,7 @@ func (store PostgresStore) persistDraftInTransaction(ctx context.Context, tx tra
 	}
 	for _, block := range blocks {
 		attrs, _ := json.Marshal(block.Attrs)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO article_blocks(block_id,project_id,draft_revision,position,block_type,text_content,attributes,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, block.BlockID, projectID, revision, block.Ordinal, block.NodeType, block.Text, attrs, now); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO article_blocks(block_id,project_id,draft_revision,position,block_type,text_content,attributes,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, block.BlockID, projectID, revision, block.Ordinal, block.NodeType, block.Text, attrs, block.UpdatedAt); err != nil {
 			return 0, err
 		}
 	}
@@ -93,6 +93,34 @@ func (store PostgresStore) persistDraftInTransaction(ctx context.Context, tx tra
 		return 0, err
 	}
 	return revision, nil
+}
+
+func (store PostgresStore) ReviewBlock(ctx context.Context, projectID, blockID, actorID string) (Block, error) {
+	var reviewed Block
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var attrsJSON []byte
+		if err := tx.QueryRowContext(ctx, `SELECT block_type,position,text_content,attributes,updated_at FROM article_blocks WHERE project_id=$1 AND block_id=$2 FOR UPDATE`, projectID, blockID).Scan(&reviewed.NodeType, &reviewed.Ordinal, &reviewed.Text, &attrsJSON, &reviewed.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		reviewed.BlockID = blockID
+		_ = json.Unmarshal(attrsJSON, &reviewed.Attrs)
+		now := store.now()
+		reviewed.Tag = "reviewed"
+		reviewed.UpdatedAt = now
+		reviewed.Provenance = object(reviewed.Attrs["provenance"])
+		reviewed.Provenance["reviewed_by"] = actorID
+		reviewed.Provenance["reviewed_at"] = now.UTC().Format(time.RFC3339Nano)
+		reviewed.Attrs["tag"] = reviewed.Tag
+		reviewed.Attrs["provenance"] = reviewed.Provenance
+		encoded, _ := json.Marshal(reviewed.Attrs)
+		if _, err := tx.ExecContext(ctx, `UPDATE article_blocks SET attributes=$3,updated_at=$4 WHERE project_id=$1 AND block_id=$2`, projectID, blockID, encoded, now); err != nil {
+			return err
+		}
+		return store.record(ctx, tx, "article.block.reviewed", projectID, actorID, "article_block", blockID, map[string]interface{}{"block_id": blockID, "status": "reviewed"})
+	})
+	return reviewed, err
 }
 
 func (store PostgresStore) listBlocks(ctx context.Context, projectID string) ([]Block, error) {
