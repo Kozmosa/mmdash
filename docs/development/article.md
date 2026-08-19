@@ -2,6 +2,17 @@
 
 Article 是 Stage 9 的 Core 领域模块，拥有协作草稿、块、Patch/Tag、固定引用、Commit、Preview、Build、模板、Zotero 绑定和不可变 Release。
 
+## 写作工作流与手测
+
+1. 在 Project Settings 的 Repo 区连接仓库并确认 Article 分支映射；未配置或分支未就绪时，Commit 返回稳定的 `ARTICLE_REPOSITORY_NOT_CONFIGURED` / `ARTICLE_REPOSITORY_NOT_READY` 409 错误，Web 会给出设置入口。
+2. 在 Article 的模板页导入 Overleaf ZIP，或登记标准模板 Artifact Version，等待真实测试 Build 进入 `ready`。没有 ready 模板时 Commit 对话框明确显示空状态，但仍允许“仅提交”。
+3. 写作页支持块拖拽手柄、`/` 命令、代码块、GFM 表格和 KaTeX 公式。Artifact 卡可拖到编辑器；系统先按 immutable Artifact Version 幂等固定引用，再插入 `artifactReference` 块。
+4. 保存同步后检查“行级与章节 tags”：新块标为 draft，已存在且内容改变的块自动标为 revision；人工点击“审阅”会写入审阅人/时间并产生 `article.block.reviewed` 审计与 Outbox 事件。未改动的 reviewed 块在后续 flush 中保留，重新编辑则回到 revision。
+5. `Commit…` 先强制刷新 Yjs 房间，再由 Repo 的 `ArticleWorkspaceService` 写入唯一三个可编辑文件。可选择“提交并发布”，按 Commit → formal Build → Release 执行；Build 失败保留 Commit，可从版本历史重试同一固定 Commit。
+6. Zotero 凭据在 Project Settings 的 Article · Zotero 区配置。公开字段与加密 API key 均由 Settings Registry 管理，读取时只返回脱敏占位；写作页仅执行只读搜索并固定条目版本。
+
+手测 Issue #41 时至少验证：同一块拖动排序后 ID 不变；重复拖入同一 Artifact Version 只产生一个引用；数学公式可视化且 Markdown 投影使用 `$`/`$$`；表格、代码与 `/` 菜单可用；reviewed 块编辑后变为 revision；未配置 Repo 和缺少模板均有可执行引导；Zotero key 从不回显明文。
+
 ## 所有权
 
 - Web：Tiptap 编辑器、两栏写作体验、历史和只读 Release 详情。
@@ -24,4 +35,4 @@ pnpm smoke:article-worker
 
 这条验收补充 `pnpm smoke`：整仓 smoke 验证 Core/BFF/Job 与 Worker 传输，`smoke:article-worker` 则实际执行 Pandoc、latexmk、BibTeX、pdfTeX 和 SyncTeX，不 mock 排版进程。
 
-协作测试至少连接两个真实 WebSocket 客户端，并覆盖 viewer 只读、断线重连、Ctrl+S flush 和 Commit revision 隔离。Build 测试覆盖 preview latest-only、同 Commit 多 Build、失败保留 Commit、成功产物下载、Release 不可变和源码 ZIP 校验。
+协作测试至少连接两个真实 WebSocket 客户端，并覆盖 viewer 只读、断线重连、Ctrl+S flush、块排序和 Commit revision 隔离。Build 测试覆盖 preview latest-only、同 Commit 多 Build、失败保留 Commit、成功产物下载、Publication retry 路由、Release 不可变和源码 ZIP 校验。
