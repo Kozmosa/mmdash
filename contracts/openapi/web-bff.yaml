@@ -3638,6 +3638,23 @@ paths:
                   },
               },
           }
+  /api/projects/{projectId}/article/blocks/{blockId}/review:
+    post:
+      tags: [Article]
+      summary: Mark one stable Article block as human reviewed
+      operationId: bff.article.blocks.review
+      parameters:
+        - { $ref: "./core.yaml#/components/parameters/ProjectId" }
+        - name: blockId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Reviewed Article block.
+          content:
+            application/json:
+              schema: { $ref: "./core.yaml#/components/schemas/ArticleBlock" }
   /api/projects/{projectId}/article/patches:
     get:
       tags: [Article]

@@ -370,6 +370,7 @@ func run(logger *logging.Logger) error {
 		return fmt.Errorf("initialize settings encryption: %w", err)
 	}
 	settingsRegistry := settings.NewRegistry()
+	zoteroHTTPClient := &http.Client{Timeout: 15 * time.Second}
 	notionClient := model.NotionClient{}
 	notionOAuthClient := &model.NotionOAuthClient{
 		ClientID: processConfig.Notion.OAuthClientID, ClientSecret: processConfig.Notion.OAuthClientSecret,
@@ -390,11 +391,7 @@ func run(logger *logging.Logger) error {
 	if err := settingsRegistry.Register(agent.SettingDefinition()); err != nil {
 		return err
 	}
-	if err := settingsRegistry.Register(settings.TypeDefinition{
-		Description: "Read-only Zotero library access for freezing cited items into Article commits.",
-		Fields:      []settings.FieldDefinition{{Key: "api_key", Kind: settings.FieldSecret, Label: "Zotero API key", Required: true}},
-		Key:         article.SettingTypeZotero, Order: 65, Owner: "article", Scopes: []settings.Scope{settings.ScopeProject}, Title: "Article Zotero",
-	}); err != nil {
+	if err := settingsRegistry.Register(article.SettingDefinitionZotero(zoteroHTTPClient)); err != nil {
 		return err
 	}
 	if err := settingsRegistry.Register(settings.TypeDefinition{
@@ -622,7 +619,7 @@ func run(logger *logging.Logger) error {
 	articleStore := article.PostgresStore{Audit: auditRecorder, Clock: systemClock, DB: db, Generator: idGenerator, Outbox: outboxWriter, Transaction: transactionManager}
 	articleService := &article.Service{
 		Access: projectService, Artifacts: artifactService, Clock: systemClock,
-		Generator: idGenerator, HTTPClient: http.DefaultClient, JobAccess: jobService,
+		Generator: idGenerator, HTTPClient: zoteroHTTPClient, JobAccess: jobService,
 		JobWriter: jobStore, Settings: &settingsService, Store: articleStore,
 		Workspace: repo.ArticleWorkspaceService{Reader: repoService.Reads, Repositories: repoStore, Service: &repoService},
 	}
@@ -804,7 +801,7 @@ func run(logger *logging.Logger) error {
 		}
 	}
 	articleProjector := datahub.ArticleProjector{Reader: articleService, Store: dataStore}
-	for _, eventType := range []string{"article.draft.flushed", "article.patch.proposed", "article.patch.reviewed", "article.commit.created", "article.build.queued", "article.build.completed", "article.build.failed", "article.release.created"} {
+	for _, eventType := range []string{"article.draft.flushed", "article.block.reviewed", "article.patch.proposed", "article.patch.reviewed", "article.commit.created", "article.build.queued", "article.build.completed", "article.build.failed", "article.release.created"} {
 		if err := projections.Register(eventType, datahub.ProjectorFunc(articleProjector.Project)); err != nil {
 			return err
 		}

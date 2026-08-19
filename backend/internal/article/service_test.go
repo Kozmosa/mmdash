@@ -56,6 +56,16 @@ func (store *articleTestStore) PersistDraft(_ context.Context, projectID, _ stri
 	store.draft = Draft{ProjectID: projectID, DraftRevision: input.ExpectedRevision + 1, StateVector: input.StateVector, YjsUpdate: input.YjsUpdate, TiptapJSON: input.TiptapJSON, Markdown: markdown, Blocks: blocks, Manifest: manifest, ReferencesBIB: references}
 	return store.draft, nil
 }
+func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID, actorID string) (Block, error) {
+	for index := range store.draft.Blocks {
+		if store.draft.Blocks[index].BlockID == blockID {
+			store.draft.Blocks[index].Tag = "reviewed"
+			store.draft.Blocks[index].Provenance = map[string]interface{}{"reviewed_by": actorID}
+			return store.draft.Blocks[index], nil
+		}
+	}
+	return Block{}, ErrNotFound
+}
 func (store *articleTestStore) CreateCommit(_ context.Context, item Commit) (Commit, bool, error) {
 	store.createdCommit = item
 	store.commit = item
@@ -239,6 +249,19 @@ func TestAcceptedPatchPersistsDraftAndReviewAtomicallyThroughStore(t *testing.T)
 	}
 	if !store.accepted || patch.Status != "accepted" || store.persisted.ActorKind != "ai" || store.persisted.Provenance["patch_id"] != "patch-1" || store.persisted.Provenance["reviewed_by"] != "user-1" {
 		t.Fatalf("patch acceptance lost atomicity/provenance: %#v %#v", patch, store.persisted)
+	}
+}
+
+func TestReviewBlockIsExplicitAndPermissionChecked(t *testing.T) {
+	store := &articleTestStore{draft: Draft{Blocks: []Block{{BlockID: "block-1", Tag: "human_draft"}}}}
+	service := testService(store, &articleTestWorkspace{})
+	block, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1")
+	if err != nil || block.Tag != "reviewed" || block.Provenance["reviewed_by"] != "user-1" {
+		t.Fatalf("review was not persisted with actor provenance: %#v %v", block, err)
+	}
+	service.Access = articleTestAccess{denied: project.PermissionArticleEdit}
+	if _, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("review bypassed article edit permission: %v", err)
 	}
 }
 

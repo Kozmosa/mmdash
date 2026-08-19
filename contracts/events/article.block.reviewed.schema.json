@@ -1,0 +1,12 @@
+{
+  "$id": "https://mmdash.moe/contracts/events/article.block.reviewed.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "article.block.reviewed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["block_id", "status"],
+  "properties": {
+    "block_id": { "type": "string", "format": "uuid" },
+    "status": { "const": "reviewed" }
+  }
+}
