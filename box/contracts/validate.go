@@ -67,6 +67,24 @@ func (manifest Manifest) Validate() error {
 	if len(manifest.Files) > 10000 {
 		return errors.New("manifest contains too many files")
 	}
+	if environment := manifest.Environment; environment != nil {
+		if environment.EnvironmentKey == "" || environment.BaseImageID == "" ||
+			environment.EnvironmentImageID == "" || environment.BuilderVersion == "" ||
+			len(environment.ManifestPaths) != len(environment.ManifestHashes) {
+			return errors.New("invalid manifest environment evidence")
+		}
+		seenPaths := map[string]struct{}{}
+		for _, manifestPath := range environment.ManifestPaths {
+			digest, exists := environment.ManifestHashes[manifestPath]
+			if !exists || ValidateRelativePath(manifestPath) != nil || !shaPattern.MatchString(digest) {
+				return errors.New("invalid manifest environment evidence")
+			}
+			if _, exists := seenPaths[manifestPath]; exists {
+				return errors.New("duplicate manifest environment path")
+			}
+			seenPaths[manifestPath] = struct{}{}
+		}
+	}
 	seen := map[string]struct{}{}
 	for _, file := range manifest.Files {
 		if err := ValidateRelativePath(file.Path); err != nil || !shaPattern.MatchString(file.SHA256) || file.Size < 0 || file.Size > 10<<30 {

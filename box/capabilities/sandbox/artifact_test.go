@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mmdash/mmdash/box/contracts"
 )
 
 func TestGenerateManifestOwnsIdentityStatusAndFileMetadata(t *testing.T) {
@@ -30,12 +32,21 @@ func TestGenerateManifestOwnsIdentityStatusAndFileMetadata(t *testing.T) {
 		ResultDirectory: "experiments/experiment-1_20260815_1200", Status: "succeeded",
 		StartedAt: now, FinishedAt: now.Add(time.Second), Runtime: "local-docker",
 		RuntimeVersion: "1", ExitCode: &exitCode,
+		Environment: &contracts.ManifestEnvironment{
+			EnvironmentKey: strings.Repeat("b", 64), BaseImageID: "sha256:base",
+			EnvironmentImageID: "sha256:environment", ManifestPaths: []string{"requirements.lock"},
+			ManifestHashes: map[string]string{"requirements.lock": strings.Repeat("c", 64)},
+			BuilderVersion: "1", CacheHit: false,
+		},
 	}, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if manifest.ExperimentID != "experiment-1" || manifest.Status != "succeeded" || manifest.ExitCode == nil || *manifest.ExitCode != 0 || manifest.Summary != "accepted\n" {
 		t.Fatalf("unexpected manifest header: %#v", manifest)
+	}
+	if manifest.Environment == nil || manifest.Environment.EnvironmentImageID != "sha256:environment" {
+		t.Fatalf("missing environment evidence: %#v", manifest.Environment)
 	}
 	if len(manifest.Files) != 2 || manifest.Files[0].Path != "summary.md" || manifest.Files[0].Kind != "summary" || manifest.Files[1].Path != "tables/result.csv" || manifest.Files[1].Kind != "table" {
 		t.Fatalf("unexpected generated files: %#v", manifest.Files)

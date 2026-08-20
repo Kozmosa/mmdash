@@ -1,18 +1,113 @@
-# mmdash v0.1 Stage 8 Box / Experiment refactor handoff
+# mmdash v0.1 Stage 8 Box / Experiment environment-preparation handoff
 
-- Updated: 2026-08-17
+- Updated: 2026-08-20
 - Branch: `main`
-- Base: `origin/main@bef9531` after the mbox merge
-- Delivery state: Stage 8 refactor and the first cross-platform mbox management
-  workflow are implemented; Docker acceptance was explicitly
-  waived by the user because of the remaining weekly quota.
+- Base: `2cb81e6` (`feat(repo): add repository previews`)
+- Delivery state: Stage 8 now includes deterministic Local Docker environment
+  preparation, immutable environment evidence, cache reuse and managed-image
+  expiry. A full Coding Agent MCP experiment passed on the account-bound local
+  Box `iznnyaku` with non-empty NumPy and Matplotlib dependencies.
 - Follow-up fixes (2026-08-16): the Experiment list is now card-only and links
   to an independent detail route for Terminal/result-tree views; Box Management
   now lists platform-specific installers from the hidden mmdash system Artifact
   Project and includes browser/device-auth installation guidance. Repo source
   archives skip Git symlinks instead of failing CI's frozen-tree test.
 
+## Proposed follow-up: `local-process` bare-metal Runtime
+
+This section records an approved design direction only; it is not implemented.
+Some Box hosts cannot use Docker because nested virtualization is unavailable.
+Add a `local-process` Sandbox Runtime Adapter that executes a task as a direct
+host process. Display it as “裸机进程”, classify it as `trusted-host`, disable
+it by default, and require both Box-owner opt-in and explicit Experiment
+selection. `auto` must continue to select only E2B and Local Docker and must
+never silently fall back to `local-process`.
+
+- Repo/Core freezes the Commit and provides a short-lived source transfer.
+  Gateway verifies and expands it into a disposable Box-managed workspace
+  before environment preparation. The Runtime must not clone inside the task,
+  receive Git credentials, or execute against the user's canonical checkout.
+- Add a small per-task `mmdash-task-runner` supervisor. It directly starts the
+  fixed entrypoint without a shell, owns the process group (Linux) or Job Object
+  (Windows), enforces timeout/cancellation across the complete process tree,
+  durably writes PID/status/exit state and stdout/stderr, and lets Gateway
+  reconnect after a Gateway restart. A host reboot is terminal
+  `HOST_RESTARTED`; it must not replay the same execution automatically.
+- Gateway spools ordered stdout/stderr locally and uploads by sequence through
+  the existing Core/BFF SSE path. A network disconnect does not stop the task;
+  the existing log budget and `logs_truncated` behavior remain authoritative.
+- Use a dedicated low-privilege OS account, a minimal environment, isolated
+  `HOME`/temporary/cache directories, a disposable workspace and separate
+  output directory. Never inherit Gateway, Git, SSH, cloud-provider or Box
+  credentials. This is trusted-code execution, not container-equivalent
+  isolation.
+- Runtime probing must advertise actual enforcement. Timeout and process-tree
+  termination are mandatory. CPU/memory/PID limits may use Linux cgroup v2 or
+  Windows Job Objects. Output size is enforced at collection. If the host
+  cannot enforce a requested network or resource policy, scheduling must reject
+  the task instead of claiming that an advisory limit is enforced.
+
+### Python environment discovery and caching
+
+The first implementation should support common Python environment families,
+not only root `requirements.lock`:
+
+- `requirements.lock` and `requirements.txt` through a controlled `pip`
+  builder; use `--require-hashes` when the file is fully hash-pinned;
+- `pyproject.toml` plus `uv.lock` through `uv sync --frozen
+  --no-install-project` so the cached environment contains dependencies but
+  never copies Project source;
+- `pyproject.toml` plus `poetry.lock` through an equally frozen, no-project
+  installation path;
+- `Pipfile` plus `Pipfile.lock` through locked synchronization;
+- Conda-style `environment.yml`/`environment.yaml` only in a later adapter
+  after an exact solver/toolchain contract is defined; until then return the
+  stable `ENVIRONMENT_MANIFEST_UNSUPPORTED` error.
+
+Recognize manifests only from a documented allowlist and validate every path.
+If more than one environment family is present, do not guess precedence:
+require an explicit environment selection in the frozen RunSpec or fail with
+`ENVIRONMENT_MANIFEST_AMBIGUOUS`. A plain `requirements.txt` is accepted for
+compatibility but is only best-effort reproducible unless every dependency is
+pinned and hashed; persist the resolved package set in result evidence.
+
+Build a content-addressed virtual environment under
+`<box-root>/environments/local-process/python/<environment-key>`. The key must
+include OS/architecture, interpreter path and version, Runtime/builder version,
+installer version and all selected manifest paths/content hashes. Build in a
+temporary directory and atomically publish only a successful environment.
+Persist the selected manifests, their hashes, the resolved dependency set,
+environment identity and cache-hit state in resource usage and the immutable
+result Manifest.
+
+Update `last_used_at` under a cache-entry lock. An environment built by Box is
+eligible for ordinary, non-forced removal only after 96 hours without use and
+when its active reference count is zero. Also apply a configured total cache
+budget with LRU eviction; failed or partial builds are never reusable.
+
+Implementation requires a vertical contract change: add `local-process` to
+OpenAPI/JSON Schema and append-only database constraints, add Box configuration
+and capability/enforcement metadata, extend explicit scheduler matching,
+generalize environment evidence away from Docker-only terminology, add the Web
+warning/selection flow, and cover source staging, every supported manifest
+family, ambiguity, cache/GC, process-tree cancellation, Gateway restart,
+offline log replay and unsupported-limit rejection.
+
 ## Delivered Stage 8 vertical slice
+
+- Local Docker inspects the frozen source transfer for supported environment
+  manifests before execution. The first complete slice accepts a hash-pinned
+  root `requirements.lock`, derives a content-addressed environment key from
+  the lock, base-image identity, Runtime/platform and builder inputs, and
+  builds an environment-only image without copying Project source into it.
+- Cache hits reuse the prior image; failed builds are not cached. Images
+  carrying the exact mmdash management labels become eligible for ordinary,
+  non-forced deletion after 96 hours without use. Environment key, image IDs,
+  manifest paths/hashes, builder version and cache-hit state are persisted in
+  resource usage and the immutable result Manifest.
+- The Box continues to clone no Git repository inside a container: Repo/Core
+  freezes and transfers source first, the host-side Gateway prepares the
+  environment, and only then is source mounted read-only for execution.
 
 - Account-owned Box device authorization and dedicated Box Tokens; many-to-many
   Project assignment, personal Box management, Project Box/Experiment settings,
@@ -44,6 +139,18 @@
   `dev.mjs` builds both binaries on every startup.
 
 ## Verification evidence
+
+- On 2026-08-20, Coding Agent acceptance created Experiment
+  `09ecacd9-9b92-4e6b-a4c8-a28f3622847e` in Project
+  `9d4c937d-8332-475e-9c88-62dc8d5c8a60`; Box `iznnyaku` executed NumPy
+  2.5.2 and Matplotlib 3.11.1, produced the expected plot/stdout/summary,
+  reused environment key `435a16fca498...` with `cache_hit=true`, and bound
+  result Commit `ede87738a2fd4afbfc1773b8cab5129d97f90bfb`.
+- Focused Local Docker/Box, Artifact, Experiment and Worker suites passed.
+  Contract generation/check and API catalog checks passed earlier in the same
+  change. The repository-wide `pnpm check` was intentionally not rerun after
+  the final focused fixes because the user requested a fast experiment and no
+  additional broad testing.
 
 - Focused Core, Box, Repo, Artifact, Experiment, Data Hub, Project and CLI Go
   suites passed; Web 134 tests/build, Web BFF 63 tests/build, MCP Gateway 38

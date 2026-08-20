@@ -130,19 +130,32 @@ type Resume struct {
 }
 
 type Manifest struct {
-	SchemaVersion   string         `json:"schema_version"`
-	ExperimentID    string         `json:"experiment_id"`
-	SourceCommit    string         `json:"source_commit"`
-	ResultDirectory string         `json:"result_directory"`
-	Status          string         `json:"status"`
-	StartedAt       time.Time      `json:"started_at"`
-	FinishedAt      time.Time      `json:"finished_at"`
-	Runtime         string         `json:"runtime"`
-	RuntimeVersion  string         `json:"runtime_version"`
-	LogsTruncated   bool           `json:"logs_truncated"`
-	Summary         string         `json:"summary,omitempty"`
-	ExitCode        *int           `json:"exit_code,omitempty"`
-	Files           []ManifestFile `json:"files"`
+	SchemaVersion   string               `json:"schema_version"`
+	ExperimentID    string               `json:"experiment_id"`
+	SourceCommit    string               `json:"source_commit"`
+	ResultDirectory string               `json:"result_directory"`
+	Status          string               `json:"status"`
+	StartedAt       time.Time            `json:"started_at"`
+	FinishedAt      time.Time            `json:"finished_at"`
+	Runtime         string               `json:"runtime"`
+	RuntimeVersion  string               `json:"runtime_version"`
+	LogsTruncated   bool                 `json:"logs_truncated"`
+	Summary         string               `json:"summary,omitempty"`
+	ExitCode        *int                 `json:"exit_code,omitempty"`
+	Environment     *ManifestEnvironment `json:"environment,omitempty"`
+	Files           []ManifestFile       `json:"files"`
+}
+
+// ManifestEnvironment is the durable, provider-neutral evidence needed to
+// reproduce the dependency environment after a Box-local cache entry is gone.
+type ManifestEnvironment struct {
+	EnvironmentKey     string            `json:"environment_key"`
+	BaseImageID        string            `json:"base_image_id"`
+	EnvironmentImageID string            `json:"environment_image_id"`
+	ManifestPaths      []string          `json:"manifest_paths"`
+	ManifestHashes     map[string]string `json:"manifest_hashes"`
+	BuilderVersion     string            `json:"builder_version"`
+	CacheHit           bool              `json:"cache_hit"`
 }
 
 type ManifestFile struct {

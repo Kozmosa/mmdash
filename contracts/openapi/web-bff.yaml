@@ -2998,6 +2998,42 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/RepoFileContent"
+  /api/projects/{projectId}/repository/raw:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: Read one bounded regular-file body from a fixed commit SHA
+      operationId: bff.repo.content.raw
+      parameters:
+        - name: workspace
+          in: query
+          required: true
+          schema:
+            $ref: "./core.yaml#/components/schemas/RepoWorkspaceKind"
+        - name: revision
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 4096
+      responses:
+        "200":
+          description: Immutable regular-file bytes for an inline preview.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "413":
+          $ref: "./core.yaml#/components/responses/Error"
   /api/webhooks/github/{hookId}:
     parameters:
       - name: hookId

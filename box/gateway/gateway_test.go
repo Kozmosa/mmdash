@@ -110,7 +110,11 @@ func (runtime recordingRuntime) Run(_ context.Context, request sandbox.RunReques
 	if err := os.WriteFile(filepath.Join(request.OutputDir, "summary.md"), []byte("summary"), 0o600); err != nil {
 		return sandbox.RunResult{}, err
 	}
-	return sandbox.RunResult{ResourceUsage: map[string]interface{}{}}, nil
+	return sandbox.RunResult{ResourceUsage: map[string]interface{}{
+		"environment_key": strings.Repeat("a", 64), "base_image_id": "sha256:base",
+		"image_id": "sha256:environment", "cache_hit": true, "builder_version": "1",
+		"environment_manifest_paths": []string{}, "environment_manifest_hashes": map[string]string{},
+	}}, nil
 }
 func (recordingRuntime) Cancel(context.Context, string) error  { return nil }
 func (recordingRuntime) Destroy(context.Context, string) error { return nil }

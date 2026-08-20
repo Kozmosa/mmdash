@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"os"
 	"path"
 	"path/filepath"
@@ -51,7 +50,7 @@ type ResultJobInput struct {
 // Core repeats every security-sensitive validation against immutable bytes.
 type PreparedResultFile struct {
 	Kind      string `json:"kind"`
-	MediaType string `json:"media_type"`
+	MediaType string `json:"mime_type"`
 	Path      string `json:"path"`
 	SHA256    string `json:"sha256"`
 	SizeBytes int64  `json:"size_bytes"`
@@ -95,19 +94,30 @@ func repoProcessingError(cause error) error {
 }
 
 type resultManifest struct {
-	SchemaVersion   string               `json:"schema_version"`
-	ExperimentID    string               `json:"experiment_id"`
-	SourceCommit    string               `json:"source_commit"`
-	ResultDirectory string               `json:"result_directory"`
-	Status          string               `json:"status"`
-	StartedAt       time.Time            `json:"started_at"`
-	FinishedAt      time.Time            `json:"finished_at"`
-	Runtime         string               `json:"runtime"`
-	RuntimeVersion  string               `json:"runtime_version"`
-	LogsTruncated   bool                 `json:"logs_truncated"`
-	Summary         string               `json:"summary,omitempty"`
-	ExitCode        *int                 `json:"exit_code,omitempty"`
-	Files           []PreparedResultFile `json:"files"`
+	SchemaVersion   string                     `json:"schema_version"`
+	ExperimentID    string                     `json:"experiment_id"`
+	SourceCommit    string                     `json:"source_commit"`
+	ResultDirectory string                     `json:"result_directory"`
+	Status          string                     `json:"status"`
+	StartedAt       time.Time                  `json:"started_at"`
+	FinishedAt      time.Time                  `json:"finished_at"`
+	Runtime         string                     `json:"runtime"`
+	RuntimeVersion  string                     `json:"runtime_version"`
+	LogsTruncated   bool                       `json:"logs_truncated"`
+	Summary         string                     `json:"summary,omitempty"`
+	ExitCode        *int                       `json:"exit_code,omitempty"`
+	Environment     *resultManifestEnvironment `json:"environment,omitempty"`
+	Files           []PreparedResultFile       `json:"files"`
+}
+
+type resultManifestEnvironment struct {
+	EnvironmentKey     string            `json:"environment_key"`
+	BaseImageID        string            `json:"base_image_id"`
+	EnvironmentImageID string            `json:"environment_image_id"`
+	ManifestPaths      []string          `json:"manifest_paths"`
+	ManifestHashes     map[string]string `json:"manifest_hashes"`
+	BuilderVersion     string            `json:"builder_version"`
+	CacheHit           bool              `json:"cache_hit"`
 }
 
 type verifiedBundle struct {
@@ -449,7 +459,7 @@ func verifyResultBundle(filename string, item Experiment, expectedManifestSHA st
 		manifest.LogsTruncated != item.LogsTruncated || manifest.StartedAt.IsZero() ||
 		manifest.FinishedAt.IsZero() || manifest.FinishedAt.Before(manifest.StartedAt) ||
 		manifest.ExitCode == nil || *manifest.ExitCode != 0 || len(manifest.Files) != len(files) ||
-		len(manifest.Files) > maxBundleFiles {
+		len(manifest.Files) > maxBundleFiles || !validResultEnvironment(manifest.Runtime, manifest.Environment) {
 		return fail()
 	}
 	seen := map[string]bool{}
@@ -482,6 +492,29 @@ func verifyResultBundle(filename string, item Experiment, expectedManifestSHA st
 		Archive: archive, Files: files, Manifest: manifest,
 		ManifestBytes: manifestBytes, ManifestMap: manifestMap,
 	}, nil
+}
+
+func validResultEnvironment(runtimeName string, environment *resultManifestEnvironment) bool {
+	if environment == nil {
+		return runtimeName != "local-docker"
+	}
+	if environment.EnvironmentKey == "" || environment.BaseImageID == "" ||
+		environment.EnvironmentImageID == "" || environment.BuilderVersion == "" ||
+		len(environment.ManifestPaths) > 32 || len(environment.ManifestPaths) != len(environment.ManifestHashes) {
+		return false
+	}
+	seen := map[string]struct{}{}
+	for _, manifestPath := range environment.ManifestPaths {
+		digest, exists := environment.ManifestHashes[manifestPath]
+		if !exists || !safeResultPath(manifestPath) || !sha256Pattern.MatchString(digest) {
+			return false
+		}
+		if _, exists := seen[manifestPath]; exists {
+			return false
+		}
+		seen[manifestPath] = struct{}{}
+	}
+	return true
 }
 
 func (service *Service) prepareResultFiles(
@@ -607,11 +640,8 @@ func validResultKind(value string) bool {
 	}
 }
 
-func normalizeMediaType(value, filename string) string {
+func normalizeMediaType(value, _ string) string {
 	value = strings.TrimSpace(value)
-	if value == "" {
-		value = mime.TypeByExtension(path.Ext(filename))
-	}
 	if value == "" || len(value) > 255 {
 		return "application/octet-stream"
 	}

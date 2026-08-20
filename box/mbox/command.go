@@ -26,7 +26,7 @@ import (
 	"github.com/mmdash/mmdash/box/gateway"
 )
 
-const serviceName = "MmdashBox"
+const ServiceName = "MmdashBox"
 
 var defaultLimits = contracts.ResourceLimits{
 	CPUMillis: 1000, MemoryBytes: 1 << 30, TimeoutSecond: 3600,
@@ -309,11 +309,30 @@ func service(args []string, stdout io.Writer) error {
 		return serviceAction("start", stdout)
 	case "stop":
 		return serviceAction("stop", stdout)
+	case "remove":
+		return removeService(root, stdout)
 	case "status", "":
 		return serviceAction("status", stdout)
+	case "logs":
+		return serviceLogs(root, stdout)
 	default:
-		return fmt.Errorf("unknown service command %q (use init, start, stop or status)", command)
+		return fmt.Errorf("unknown service command %q (use init, start, stop, status, logs or remove)", command)
 	}
+}
+
+func serviceLogs(root string, stdout io.Writer) error {
+	path := filepath.Join(root, "logs", "service.log")
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintln(stdout, "尚无服务日志；可直接运行 mbox gateway --root PATH 查看启动日志")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = io.Copy(stdout, file)
+	return err
 }
 
 func serviceInit(root string, stdout io.Writer) error {
@@ -326,10 +345,10 @@ func serviceInit(root string, stdout io.Writer) error {
 	}
 	if runtime.GOOS == "windows" {
 		binPath := fmt.Sprintf(`"%s" --gateway --root "%s"`, executable, root)
-		if err := runSystemCommand("sc.exe", "create", serviceName, "binPath=", binPath, "start=", "auto", "DisplayName=", "mmdash Box Gateway"); err != nil {
+		if err := runSystemCommand("sc.exe", "create", ServiceName, "binPath=", binPath, "start=", "auto", "DisplayName=", "mmdash Box Gateway"); err != nil {
 			return err
 		}
-		_ = runSystemCommand("sc.exe", "description", serviceName, "mmdash outbound Box Gateway")
+		_ = runSystemCommand("sc.exe", "description", ServiceName, "mmdash outbound Box Gateway")
 	} else {
 		unitPath := "/etc/systemd/system/mmdash-box.service"
 		unit := fmt.Sprintf("[Unit]\nDescription=mmdash Box Gateway\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart=%s --gateway --root %s\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n", shellQuote(executable), shellQuote(root))
@@ -343,7 +362,7 @@ func serviceInit(root string, stdout io.Writer) error {
 			return err
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "service.json"), []byte(fmt.Sprintf("{\"name\":%q,\"root\":%q}\n", serviceName, root)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "service.json"), []byte(fmt.Sprintf("{\"name\":%q,\"root\":%q}\n", ServiceName, root)), 0o600); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, "Box 服务已注册并设置为开机启动")
@@ -353,14 +372,57 @@ func serviceInit(root string, stdout io.Writer) error {
 func serviceAction(action string, stdout io.Writer) error {
 	if runtime.GOOS == "windows" {
 		if action == "status" {
-			return runSystemCommand("sc.exe", "query", serviceName)
+			return runSystemCommand("sc.exe", "query", ServiceName)
 		}
-		return runSystemCommand("sc.exe", action, serviceName)
+		return runSystemCommand("sc.exe", action, ServiceName)
 	}
 	if action == "status" {
 		return runSystemCommand("systemctl", "status", "mmdash-box.service", "--no-pager")
 	}
 	return runSystemCommand("systemctl", action, "mmdash-box.service")
+}
+
+func removeService(root string, stdout io.Writer) error {
+	marker := filepath.Join(root, "service.json")
+	if _, err := os.Stat(marker); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(stdout, "未发现已注册的 Box 服务")
+			return nil
+		}
+		return err
+	}
+	if err := removeRegisteredService(); err != nil {
+		return err
+	}
+	if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	fmt.Fprintf(stdout, "Box 服务已移除，配置和数据保留：%s\n", root)
+	return nil
+}
+
+func removeRegisteredService() error {
+	if runtime.GOOS == "windows" {
+		if err := runSystemCommand("sc.exe", "stop", ServiceName); err != nil && !isServiceStateError(err, 1062) {
+			return err
+		}
+		if err := runSystemCommand("sc.exe", "delete", ServiceName); err != nil && !isServiceStateError(err, 1060) {
+			return err
+		}
+		return nil
+	}
+	if err := runSystemCommand("systemctl", "disable", "--now", "mmdash-box.service"); err != nil {
+		return err
+	}
+	if err := os.Remove("/etc/systemd/system/mmdash-box.service"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove systemd unit: %w", err)
+	}
+	return runSystemCommand("systemctl", "daemon-reload")
+}
+
+func isServiceStateError(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ProcessState.ExitCode() == code
 }
 
 func uninstall(args []string, stdout io.Writer) error {
@@ -389,23 +451,8 @@ func uninstall(args []string, stdout io.Writer) error {
 	}
 	serviceMarker := filepath.Join(root, "service.json")
 	if _, markerErr := os.Stat(serviceMarker); markerErr == nil {
-		if err := serviceAction("stop", io.Discard); err != nil {
+		if err := removeRegisteredService(); err != nil {
 			return err
-		}
-		if runtime.GOOS == "windows" {
-			if err := runSystemCommand("sc.exe", "delete", serviceName); err != nil {
-				return err
-			}
-		} else {
-			if err := runSystemCommand("systemctl", "disable", "--now", "mmdash-box.service"); err != nil {
-				return err
-			}
-			if err := os.Remove("/etc/systemd/system/mmdash-box.service"); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("remove systemd unit: %w", err)
-			}
-			if err := runSystemCommand("systemctl", "daemon-reload"); err != nil {
-				return err
-			}
 		}
 	}
 	if err := os.RemoveAll(root); err != nil {
@@ -533,14 +580,16 @@ func printHelp(out io.Writer) {
 	fmt.Fprintln(out, `mbox - mmdash Box 管理命令
 
 用法：
+  mbox gateway [--root PATH]
   mbox setup [--root PATH] [--control-url URL] [--name NAME]
   mbox account login|status|logout [--root PATH]
   mbox config show|set key=value [--root PATH]
-  mbox service init|start|stop|status [--root PATH]
+  mbox service init|start|stop|status|logs|remove [--root PATH]
   mbox uninstall [--root PATH] [--yes]
 
 setup 会引导配置 mmdash 公网地址（支持 HTTP/HTTPS）、Box 名称、Local Docker
 和 E2B。配置、Token、日志、离线任务和输出都保存在 Box 根目录内。
+gateway 会在当前终端以前台方式运行 Gateway 并输出启动、Runtime 探测和停止日志。
 service init 会注册开机启动服务；uninstall 会停止并移除服务后清理 Box 根目录。`)
 }
 

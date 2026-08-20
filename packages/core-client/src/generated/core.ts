@@ -1097,6 +1097,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/repository/raw": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read one bounded regular-file body from a fixed commit */
+    get: operations["repo.content.raw"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/repository/checkouts": {
     parameters: {
       query?: never;
@@ -9938,6 +9957,34 @@ export interface operations {
           "application/json": components["schemas"]["RepoFileContent"];
         };
       };
+    };
+  };
+  "repo.content.raw": {
+    parameters: {
+      query: {
+        workspace: components["parameters"]["RepoWorkspace"];
+        /** @description A full commit SHA after the initial workspace resolution. */
+        revision: components["parameters"]["RepoRevision"];
+        path: components["parameters"]["RequiredRepoPath"];
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Immutable regular-file bytes for an inline preview. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/octet-stream": string;
+        };
+      };
+      413: components["responses"]["Error"];
     };
   };
   "repo.checkouts.create": {

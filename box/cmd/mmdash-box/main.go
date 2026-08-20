@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"os/user"
@@ -23,8 +24,27 @@ import (
 )
 
 func main() {
+	if handled, err := runAsServiceIfNeeded(os.Args[1:]); handled {
+		if err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "gateway" {
+		options, err := parseGatewayOptions(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if err := runWithRoot(ctx, options.root); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintf(os.Stderr, "[box] Gateway stopped: %s\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if handled, err := mbox.Execute(ctx, os.Args[1:], os.Stdout, os.Stderr); handled {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(os.Stderr, err)
@@ -38,7 +58,8 @@ func main() {
 		os.Exit(2)
 	}
 	if err := runWithRoot(ctx, options.root); err != nil && !errors.Is(err, context.Canceled) {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "[box] Gateway stopped: %s\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -67,6 +88,10 @@ func parseGatewayOptions(args []string) (gatewayOptions, error) {
 }
 
 func runWithRoot(ctx context.Context, rootOverride string) error {
+	return runWithRootOutput(ctx, rootOverride, os.Stdout, os.Stderr)
+}
+
+func runWithRootOutput(ctx context.Context, rootOverride string, stdout, stderr io.Writer) error {
 	root := rootOverride
 	if root == "" {
 		root = config.DefaultRoot()
@@ -74,6 +99,7 @@ func runWithRoot(ctx context.Context, rootOverride string) error {
 	if absolute, err := filepath.Abs(root); err == nil {
 		root = absolute
 	}
+	fmt.Fprintf(stdout, "[box] Gateway starting; root=%s\n", root)
 	settings, err := config.Load(root)
 	if err != nil {
 		return err
@@ -93,13 +119,18 @@ func runWithRoot(ctx context.Context, rootOverride string) error {
 		controlURL = "http://localhost:8080"
 	}
 	client := gateway.HTTPClient{BaseURL: controlURL}
-	runtimes, runtimeFactory, probeErrors, err := configuredRuntimesWithSettings(ctx, limits, probeRuntimeAdapter, settings)
+	runtimes, runtimeFactory, probeErrors, err := configuredRuntimesWithSettingsAt(ctx, limits, probeRuntimeAdapter, settings, filepath.Join(root, "environments"))
+	for _, probeErr := range probeErrors {
+		fmt.Fprintf(stderr, "[box] Runtime unavailable: %s\n", probeErr)
+	}
 	if err != nil {
 		return err
 	}
-	for _, probeErr := range probeErrors {
-		_, _ = fmt.Fprintf(os.Stderr, "Box Runtime unavailable: %s\n", probeErr)
+	runtimeNames := make([]string, 0, len(runtimes))
+	for _, runtime := range runtimes {
+		runtimeNames = append(runtimeNames, runtime.Name)
 	}
+	fmt.Fprintf(stdout, "[box] Runtime ready: %s; control=%s\n", strings.Join(runtimeNames, ", "), controlURL)
 	config := gateway.Config{
 		InstallationID: os.Getenv("MMDASH_BOX_INSTALLATION_ID"), Name: getenv("MMDASH_BOX_NAME", settings.Name), Version: getenv("MMDASH_BOX_VERSION", "dev"),
 		BoxID: os.Getenv("MMDASH_BOX_ID"), BoxToken: os.Getenv("MMDASH_BOX_TOKEN"),
@@ -113,8 +144,12 @@ func runWithRoot(ctx context.Context, rootOverride string) error {
 	if staticRoot := strings.TrimSpace(os.Getenv("MMDASH_BOX_WORKSPACE")); staticRoot != "" {
 		workspace = gateway.StaticWorkspace{Root: staticRoot, Commit: os.Getenv("MMDASH_BOX_WORKSPACE_COMMIT")}
 	}
-	runner := &gateway.Gateway{Client: client, Config: config, Workspace: workspace, Runtime: runtimeFactory}
-	return runner.Run(ctx)
+	runner := &gateway.Gateway{
+		Client: client, Config: config, Workspace: workspace, Runtime: runtimeFactory,
+		Stdout: stdout, Stderr: stderr,
+	}
+	err = runner.Run(ctx)
+	return err
 }
 
 type runtimeProbe func(context.Context, sandbox.Runtime) error
@@ -137,13 +172,17 @@ func configuredRuntimes(ctx context.Context, limits contracts.ResourceLimits, pr
 }
 
 func configuredRuntimesWithSettings(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe, settings config.Config) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
+	return configuredRuntimesWithSettingsAt(ctx, limits, probe, settings, getenv("MMDASH_BOX_ENV_ROOT", ""))
+}
+
+func configuredRuntimesWithSettingsAt(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe, settings config.Config, environmentRoot string) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
 	localImage := getenv("MMDASH_BOX_LOCAL_IMAGE", settings.LocalDocker.Image)
 	localUser := localDockerUser()
 	candidates := make([]runtimeCandidate, 0, 2)
 	if settings.LocalDocker.Enabled && !boolEnv("MMDASH_BOX_LOCAL_DOCKER_DISABLED", false) {
 		candidates = append(candidates, runtimeCandidate{
-			descriptor: contracts.Runtime{Name: "local-docker", Version: "1", Image: localImage},
-			runtime:    localdocker.Runtime{Image: localImage, User: localUser},
+			descriptor: contracts.Runtime{Name: "local-docker", Version: "2", Image: localImage},
+			runtime:    &localdocker.Runtime{Image: localImage, User: localUser, Environment: localdocker.NewEnvironmentManager(environmentRoot, localImage)},
 		})
 	}
 	if apiKey := getenv("E2B_API_KEY", settings.E2B.APIKey); strings.TrimSpace(apiKey) != "" {

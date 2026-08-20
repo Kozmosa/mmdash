@@ -159,6 +159,9 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	if err != nil || resultDetail.CurrentVersion == nil || resultDetail.CurrentVersion.Filename != "artifact.zip" || resultDetail.Artifact.Kind != KindExperimentResult {
 		t.Fatalf("archive experiment result: %#v, %v", resultDetail, err)
 	}
+	if resultDetail.Artifact.SourceObjectID == nil || *resultDetail.Artifact.SourceObjectID != resultExperimentID {
+		t.Fatalf("archive experiment result source relation: %#v", resultDetail.Artifact.SourceObjectID)
+	}
 	owner := auth.Identity{
 		Kind: "session", User: auth.User{ID: userID},
 	}

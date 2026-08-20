@@ -21,6 +21,7 @@ Every Experiment freezes:
 
 - `experiment_id`, Project, creator, name, and `experiment_type`;
 - source commit, fixed entrypoint, parameters, environment, inputs, and limits;
+- environment manifest selection and preparation policy;
 - requested Runtime policy and optional requested Box;
 - Project timezone and `experiments/{exp_id}_{yyyymmdd_hhmm}/` result directory;
 - idempotency key and creation time.
@@ -93,6 +94,8 @@ Every terminal failure stores:
 Minimum new codes are `NO_ELIGIBLE_BOX`, `BOX_OFFLINE_TIMEOUT`,
 `BOX_FORCE_REVOKED`, `RUNTIME_UNAVAILABLE`, `RUNTIME_EXIT_NONZERO`,
 `RUNTIME_TIMED_OUT`, `RESULT_UPLOAD_FAILED`, `RESULT_INVALID`,
+`ENVIRONMENT_MANIFEST_INVALID`, `ENVIRONMENT_BUILD_FAILED`,
+`ENVIRONMENT_UNAVAILABLE`,
 `ARTIFACT_ARCHIVE_FAILED`, `RESULT_PROCESSING_FAILED`, `REPO_COMMIT_FAILED`,
 `REPO_PUSH_FAILED`, and `RESULT_BINDING_FAILED`.
 
@@ -109,6 +112,31 @@ An Experiment may override defaults within Box capability. `auto` tries an
 E2B-capable Box first and falls back to Local Docker only before scheduling is
 frozen. Explicit `e2b` or `local-docker` never falls back. Among eligible bound
 Boxes the scheduler chooses the lowest load unless the caller pins one Box.
+
+## Environment preparation contract
+
+For a managed Box run, `preparing` is an explicit stage between queue claim and
+runtime execution. The Gateway uses the short-lived, read-only
+`source_transfer` to download and verify the exact frozen `source_commit` on
+the Box host, scans only allowlisted environment manifests, then calculates an
+environment key. The verified source is mounted read-only into the execution
+container; it is never cloned inside the container or copied into an
+environment image.
+
+For Local Docker, the key includes the immutable base-image identity,
+platform/architecture, runtime version, manifest paths and content hashes,
+builder version, and package-index configuration version. Same-key tasks use a
+single-flight build or cache hit. A failed build never replaces a ready image.
+Build/dependency output is a `system` stream and appears in the read-only
+Terminal. E2B always uses a published Template and does not dynamically build
+an image in this stage.
+
+The run summary and `manifest.json` must retain reproducibility evidence in the
+Execution Bundle: `environment_key`, base image ID/digest, final environment
+image ID/digest (or E2B Template ID/version), manifest paths/hashes,
+`builder_version`, and `cache_hit`. Thus local cache GC cannot remove the
+audit trail. Box may GC only Box-managed Local Docker images with no active
+reference and no use for four consecutive days.
 
 ## Managed result pipeline
 
@@ -208,6 +236,11 @@ requested_box_id?: uuid                          # box only
 limits_override?: cpu/memory/timeout/disk/pids/network
 idempotency_key
 ```
+
+`source_transfer` is derived by Core/Repo for each claimed Box task rather
+than supplied by an Experiment caller. Environment manifest selection is
+likewise derived by Box from the frozen source snapshot and its versioned
+allowlist; callers cannot point preparation at an arbitrary file or command.
 
 Core derives creator, Project, creation time, Project IANA timezone and frozen
 `experiments/{exp_id}_{yyyymmdd_hhmm}/`; callers cannot supply the Exp ID or

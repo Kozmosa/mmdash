@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -68,5 +69,45 @@ func TestModuleServesImmutableReadRoutesAndValidatesQueries(t *testing.T) {
 				testCase.status, testCase.contains,
 			)
 		}
+	}
+
+	rawRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/projects/project-1/repository/raw?"+url.Values{
+			"workspace": {"code"}, "revision": {head},
+			"path": {"binary.bin"},
+		}.Encode(),
+		nil,
+	)
+	rawRequest.Header.Set("Authorization", "Bearer test")
+	rawResponse := httptest.NewRecorder()
+	handler.ServeHTTP(rawResponse, rawRequest)
+	if rawResponse.Code != http.StatusOK ||
+		!bytes.Equal(rawResponse.Body.Bytes(), []byte{'a', 0, 'b'}) {
+		t.Fatalf("raw binary: got %d %v", rawResponse.Code, rawResponse.Body.Bytes())
+	}
+	if got := rawResponse.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Fatalf("raw binary content type: got %q", got)
+	}
+	if got := rawResponse.Header().Get("Content-Security-Policy"); got != "sandbox" {
+		t.Fatalf("raw binary CSP: got %q", got)
+	}
+	if got := rawResponse.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("raw binary nosniff: got %q", got)
+	}
+
+	lfsRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/projects/project-1/repository/raw?"+url.Values{
+			"workspace": {"code"}, "revision": {head},
+			"path": {"pointer.lfs"},
+		}.Encode(),
+		nil,
+	)
+	lfsRequest.Header.Set("Authorization", "Bearer test")
+	lfsResponse := httptest.NewRecorder()
+	handler.ServeHTTP(lfsResponse, lfsRequest)
+	if lfsResponse.Code != http.StatusNotFound {
+		t.Fatalf("LFS pointer raw response: got %d %s", lfsResponse.Code, lfsResponse.Body.String())
 	}
 }

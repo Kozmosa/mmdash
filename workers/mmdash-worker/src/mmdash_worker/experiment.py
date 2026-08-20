@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import mimetypes
 import stat
 import tempfile
 import zipfile
@@ -142,9 +141,9 @@ def _extract_bundle(
         allowed = {
             "schema_version", "experiment_id", "source_commit", "result_directory",
             "status", "started_at", "finished_at", "runtime", "runtime_version",
-            "logs_truncated", "summary", "exit_code", "files",
+            "logs_truncated", "summary", "exit_code", "environment", "files",
         }
-        required = allowed - {"summary", "exit_code"}
+        required = allowed - {"summary", "exit_code", "environment"}
         if (
             set(manifest) - allowed
             or not required.issubset(manifest)
@@ -154,6 +153,13 @@ def _extract_bundle(
             or manifest.get("status") != "succeeded"
         ):
             raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest identity is invalid")
+        environment = manifest.get("environment")
+        if (
+            manifest.get("runtime") == "local-docker" and environment is None
+        ) or (
+            environment is not None and not _valid_environment_evidence(environment)
+        ):
+            raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest environment is invalid")
         raw_files = manifest.get("files")
         if not isinstance(raw_files, list) or len(raw_files) != len(by_name):
             raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest file list is invalid")
@@ -200,7 +206,7 @@ def _extract_bundle(
                 raise HandlerError("RESULT_MANIFEST_INVALID", "Result file hash does not match")
             media_type = raw.get("mime_type")
             if not isinstance(media_type, str) or not media_type.strip() or len(media_type) > 255:
-                media_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+                media_type = "application/octet-stream"
             prepared.append(
                 {
                     "path": name,
@@ -212,6 +218,41 @@ def _extract_bundle(
             )
             seen.add(name)
         return manifest, manifest_hash, prepared
+
+
+def _valid_environment_evidence(value: Any) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {
+        "environment_key", "base_image_id", "environment_image_id",
+        "manifest_paths", "manifest_hashes", "builder_version", "cache_hit",
+    }:
+        return False
+    paths = value.get("manifest_paths")
+    hashes = value.get("manifest_hashes")
+    if (
+        not all(isinstance(value.get(name), str) and value[name].strip() for name in (
+            "environment_key", "base_image_id", "environment_image_id", "builder_version",
+        ))
+        or not isinstance(value.get("cache_hit"), bool)
+        or not isinstance(paths, list)
+        or not isinstance(hashes, Mapping)
+        or len(paths) != len(hashes)
+        or len(paths) > 32
+    ):
+        return False
+    seen: set[str] = set()
+    for path in paths:
+        digest = hashes.get(path) if isinstance(path, str) else None
+        if (
+            not isinstance(path, str)
+            or not _safe_result_path(path)
+            or path in seen
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            return False
+        seen.add(path)
+    return True
 
 
 def _safe_result_path(value: str) -> bool:
