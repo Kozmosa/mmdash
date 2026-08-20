@@ -27,6 +27,12 @@ func TestVerifyResultBundleBindsFrozenIdentityAndFileHashes(t *testing.T) {
 		FinishedAt: time.Date(2026, 8, 16, 4, 0, 1, 0, time.UTC),
 		Runtime:    item.ActualRuntime, RuntimeVersion: item.RuntimeVersion,
 		LogsTruncated: false, ExitCode: intPointer(0),
+		Environment: &resultManifestEnvironment{
+			EnvironmentKey: strings.Repeat("b", 64), BaseImageID: "sha256:base",
+			EnvironmentImageID: "sha256:environment", ManifestPaths: []string{"requirements.lock"},
+			ManifestHashes: map[string]string{"requirements.lock": strings.Repeat("c", 64)},
+			BuilderVersion: "1", CacheHit: false,
+		},
 		Files: []PreparedResultFile{{
 			Path: "summary.txt", SHA256: hex.EncodeToString(digest[:]),
 			SizeBytes: int64(len(contents)), Kind: "summary", MediaType: "text/plain",

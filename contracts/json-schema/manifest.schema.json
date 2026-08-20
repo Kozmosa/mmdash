@@ -18,6 +18,29 @@
     "logs_truncated": { "type": "boolean" },
     "summary": { "type": "string", "maxLength": 20000 },
     "exit_code": { "type": "integer", "minimum": -255, "maximum": 255 },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment_key", "base_image_id", "environment_image_id", "manifest_paths", "manifest_hashes", "builder_version", "cache_hit"],
+      "properties": {
+        "environment_key": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "base_image_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "environment_image_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "manifest_paths": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*(?:^|/)\\.\\.\\s*$)[^\\x00]+$", "maxLength": 4096 }
+        },
+        "manifest_hashes": {
+          "type": "object",
+          "maxProperties": 32,
+          "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "builder_version": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "cache_hit": { "type": "boolean" }
+      }
+    },
     "files": {
       "type": "array",
       "maxItems": 10000,

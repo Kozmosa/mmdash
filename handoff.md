@@ -1,11 +1,12 @@
-# mmdash v0.1 Stage 8 Box / Experiment refactor handoff
+# mmdash v0.1 Stage 8 Box / Experiment environment-preparation handoff
 
-- Updated: 2026-08-17
+- Updated: 2026-08-20
 - Branch: `main`
-- Base: `origin/main@bef9531` after the mbox merge
-- Delivery state: Stage 8 refactor and the first cross-platform mbox management
-  workflow are implemented; Docker acceptance was explicitly
-  waived by the user because of the remaining weekly quota.
+- Base: `dfd7b33` (`Merge branch 'main' of https://github.com/imouup/mmdash-fork`)
+- Delivery state: Stage 8 now includes deterministic Local Docker environment
+  preparation, immutable environment evidence, cache reuse and managed-image
+  expiry. A full Coding Agent MCP experiment passed on the account-bound local
+  Box `iznnyaku` with non-empty NumPy and Matplotlib dependencies.
 - Follow-up fixes (2026-08-16): the Experiment list is now card-only and links
   to an independent detail route for Terminal/result-tree views; Box Management
   now lists platform-specific installers from the hidden mmdash system Artifact
@@ -13,6 +14,20 @@
   archives skip Git symlinks instead of failing CI's frozen-tree test.
 
 ## Delivered Stage 8 vertical slice
+
+- Local Docker inspects the frozen source transfer for supported environment
+  manifests before execution. The first complete slice accepts a hash-pinned
+  root `requirements.lock`, derives a content-addressed environment key from
+  the lock, base-image identity, Runtime/platform and builder inputs, and
+  builds an environment-only image without copying Project source into it.
+- Cache hits reuse the prior image; failed builds are not cached. Images
+  carrying the exact mmdash management labels become eligible for ordinary,
+  non-forced deletion after 96 hours without use. Environment key, image IDs,
+  manifest paths/hashes, builder version and cache-hit state are persisted in
+  resource usage and the immutable result Manifest.
+- The Box continues to clone no Git repository inside a container: Repo/Core
+  freezes and transfers source first, the host-side Gateway prepares the
+  environment, and only then is source mounted read-only for execution.
 
 - Account-owned Box device authorization and dedicated Box Tokens; many-to-many
   Project assignment, personal Box management, Project Box/Experiment settings,
@@ -44,6 +59,18 @@
   `dev.mjs` builds both binaries on every startup.
 
 ## Verification evidence
+
+- On 2026-08-20, Coding Agent acceptance created Experiment
+  `09ecacd9-9b92-4e6b-a4c8-a28f3622847e` in Project
+  `9d4c937d-8332-475e-9c88-62dc8d5c8a60`; Box `iznnyaku` executed NumPy
+  2.5.2 and Matplotlib 3.11.1, produced the expected plot/stdout/summary,
+  reused environment key `435a16fca498...` with `cache_hit=true`, and bound
+  result Commit `ede87738a2fd4afbfc1773b8cab5129d97f90bfb`.
+- Focused Local Docker/Box, Artifact, Experiment and Worker suites passed.
+  Contract generation/check and API catalog checks passed earlier in the same
+  change. The repository-wide `pnpm check` was intentionally not rerun after
+  the final focused fixes because the user requested a fast experiment and no
+  additional broad testing.
 
 - Focused Core, Box, Repo, Artifact, Experiment, Data Hub, Project and CLI Go
   suites passed; Web 134 tests/build, Web BFF 63 tests/build, MCP Gateway 38
