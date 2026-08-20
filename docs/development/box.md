@@ -161,14 +161,90 @@ Adapters are compiled into Box but advertised only after availability probes.
 - E2B is preferred for `auto`. The same Adapter supports hosted E2B and a full
   self-hosted E2B deployment through local API/Sandbox URL, domain, Template,
   and API Key configuration. Secrets never leave Box.
-- Local Docker is a development and explicitly configured fallback. It needs a
-  local Docker daemon and preconfigured image; ordinary Box installation does
-  not require Docker.
+- Local Docker is a development, lightweight self-hosted, and explicitly
+  configured fallback. It needs a local Docker daemon; ordinary Box
+  installation does not require Docker.
 
 The Local Docker Adapter retains read-only source, dropped capabilities,
 `no-new-privileges`, CPU/memory/PID/time/network/disk bounds, a bounded output
 mount, and fixed ENTRYPOINT replacement. Docker socket access remains an
 explicit high-privilege deployment choice.
+
+## Environment preparation and Local Docker cache
+
+`preparing` is a durable task phase owned by the Gateway. After a claim, the
+Gateway uses the short-lived, read-only `source_transfer` from Repo/Core to
+download the exact frozen `source_commit` into the Box host's task workspace.
+It verifies the Commit, transfer digest, and path boundaries before the
+workspace can be used. The Runtime never receives Git credentials and never
+clones the repository from inside a container. The verified source directory
+is mounted into the execution container as `/workspace:ro`; it is not copied
+into an environment image.
+
+The Gateway scans only a versioned allowlist of environment manifests. The
+first complete Local Docker slice supports:
+
+- Python: a hash-pinned `requirements.lock`.
+
+Known but not yet implemented combinations such as `pyproject.toml` with
+`uv.lock`, Node lockfiles, `go.mod`/`go.sum`, and a controlled
+`.mmdash/environment.yaml` must fail with `ENVIRONMENT_MANIFEST_INVALID`
+instead of being ignored or interpreted heuristically. They can be added as
+separate builder versions with their own lockfile and integrity rules.
+
+Files outside this allowlist, arbitrary Dockerfiles, CI scripts, shell setup
+commands, and unrecognized package-manager files do not affect preparation.
+Conflicting manifests fail preparation with an auditable reason instead of
+choosing implicitly.
+
+For Local Docker, the cache key contains at least:
+
+```text
+base_image_id_or_digest
+platform_and_architecture
+runtime_version
+environment_manifest_paths_and_content_hashes
+builder_version
+package_index_configuration_version
+```
+
+The key is scoped to the Box and its build configuration. A single-flight lock
+ensures concurrent tasks build one environment per key and wait for that
+result. The image is usable only after a successful build and minimal probe;
+the final image ID/digest and `last_used_at` are recorded. A failed build never
+replaces a previous ready image and never enters the reusable cache. Build and
+dependency-install output is emitted as `system` stream entries, persisted in
+the durable spool, and visible in the read-only Experiment Terminal.
+
+The resulting image contains runtime and dependencies only. The source and
+result mounts remain separate. Dependency installation may use a bounded,
+temporary package-index network during preparation according to Box policy;
+the run phase returns to the requested network restriction. Lockfiles and
+integrity hashes remain mandatory.
+
+Every successful preparation writes reproducibility evidence to the run
+summary and `manifest.json`, which is included in the Execution Bundle and
+therefore persisted by Core/Artifact:
+
+```text
+environment.environment_key
+environment.base_image_id
+environment.environment_image_id
+environment.manifest_paths / environment.manifest_hashes
+environment.builder_version
+environment.cache_hit
+```
+
+For E2B, the final environment fields identify the configured Template and its
+version/digest. E2B always creates from a published Template and never invokes
+Local Docker's dynamic image builder or its local cache/GC path.
+
+Box GC runs independently of task execution. It may delete only an image built
+and marked as managed by that Box, using its exact image ID, when it has had no
+reference for four consecutive days. Images under build, running, uploading,
+or any other active task reference are retained. User-provided base images and
+images owned by another tool are never GC targets. Removing a local cache entry
+does not remove the environment evidence already stored in an Execution Bundle.
 
 ## Target API delta
 
@@ -220,8 +296,8 @@ POST /v1/boxes/{boxId}/tasks/{taskId}/result
 ```
 
 - claim accepts `{wait_seconds}` with `0..60`; `200` returns a frozen task with
-  `execution_epoch`, RunSpec, transfer grant and result contract, while `204`
-  means no work;
+  `execution_epoch`, RunSpec, source transfer grant, environment descriptor and
+  result contract, while `204` means no work;
 - resume accepts `{execution_epoch, local_phase, last_local_sequence,
 bundle_state, acknowledged_callbacks}` and returns `{action, accepted_phase,
 accepted_through_sequence}` where `action` is `continue | stop_failed |
@@ -276,11 +352,16 @@ does not delete the user-owned Box. Global Box revoke removes all assignments.
 4. Refactor Core ownership, many-to-many assignment, scheduling, drain/force,
    offline timeout, resume, and log acknowledgement.
 5. Refactor Gateway state storage and remove lease-loss Runtime cancellation.
-6. Add hosted/self-hosted E2B probes and explicit Local Docker availability.
-7. Add personal and Project Box management UI/BFF.
-8. Integrate Experiment settings and result flow.
-9. Run full Box offline/restart/reconnect, multi-Project fairness, revoke, purge,
-   hosted E2B, self-hosted route mock, and Local Docker acceptance.
+6. Add host-side source transfer verification, allowlisted environment
+   preparation, Local Docker single-flight image cache/GC, and reproducibility
+   evidence in Manifest/Execution Bundle.
+7. Add hosted/self-hosted E2B probes and explicit Local Docker availability;
+   E2B remains Template-based and does not use dynamic image preparation.
+8. Add personal and Project Box management UI/BFF.
+9. Integrate Experiment settings and result flow.
+10. Run full Box offline/restart/reconnect, multi-Project fairness, revoke, purge,
+    environment cache hit/miss/failure/GC, hosted E2B, self-hosted route mock,
+    and Local Docker acceptance.
 
 ## Verification
 

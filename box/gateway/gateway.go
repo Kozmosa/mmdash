@@ -430,6 +430,27 @@ func (gateway *Gateway) execute(ctx context.Context, taskID string) error {
 		gateway.failTask(taskID, "preparing", "RUNTIME_UNAVAILABLE", err.Error(), false, nil)
 		return nil
 	}
+	if preparer, ok := runtime.(sandbox.EnvironmentPreparer); ok {
+		if err := preparer.PrepareEnvironment(ctx, sandbox.EnvironmentRequest{
+			ID: taskID, Spec: spec, Workspace: workspace,
+			System: io.MultiWriter(gateway.logWriter(taskID, "system"), stdoutFile),
+			SystemFields: func(message string, fields map[string]interface{}) error {
+				_, err := gateway.logWriter(taskID, "system").WriteFields([]byte(message), fields)
+				return err
+			},
+		}); err != nil {
+			if releaser, releaseOK := runtime.(sandbox.EnvironmentReleaser); releaseOK {
+				_ = releaser.ReleaseEnvironment(context.Background(), taskID)
+			}
+			code := "ENVIRONMENT_UNAVAILABLE"
+			var coded interface{ EnvironmentCode() string }
+			if errors.As(err, &coded) && coded.EnvironmentCode() != "" {
+				code = coded.EnvironmentCode()
+			}
+			gateway.failTask(taskID, "preparing", code, err.Error(), true, nil)
+			return nil
+		}
+	}
 	if gateway.attachRuntime(taskID, runtime) {
 		cancelCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		_ = runtime.Cancel(cancelCtx, taskID)
@@ -487,12 +508,17 @@ func (gateway *Gateway) execute(ctx context.Context, taskID string) error {
 	startedAt := state.StartedAt
 	logsTruncated := state.LogsTruncated
 	gateway.mu.Unlock()
+	environment, err := manifestEnvironment(spec.Runtime, result.ResourceUsage)
+	if err != nil {
+		gateway.failTask(taskID, "uploading", "MANIFEST_INVALID", err.Error(), false, cleanupResult)
+		return nil
+	}
 	manifest, err := sandbox.GenerateManifest(output, sandbox.ManifestInput{
 		ExperimentID: spec.ExperimentID, SourceCommit: spec.SourceCommit,
 		ResultDirectory: spec.ResultContract.Directory, Status: "succeeded",
 		StartedAt: startedAt, FinishedAt: finishedAt, Runtime: spec.Runtime,
 		RuntimeVersion: spec.RuntimeVersion, LogsTruncated: logsTruncated,
-		ExitCode: &result.ExitCode,
+		ExitCode: &result.ExitCode, Environment: environment,
 	}, spec.Limits.DiskBytes)
 	if err != nil {
 		gateway.failTask(taskID, "uploading", "MANIFEST_INVALID", err.Error(), false, cleanupResult)
@@ -520,6 +546,31 @@ func (gateway *Gateway) execute(ctx context.Context, taskID string) error {
 	gateway.mu.Unlock()
 	gateway.syncAll(context.Background())
 	return nil
+}
+
+func manifestEnvironment(runtimeName string, usage map[string]interface{}) (*contracts.ManifestEnvironment, error) {
+	if runtimeName != "local-docker" {
+		return nil, nil
+	}
+	stringValue := func(name string) (string, bool) {
+		value, ok := usage[name].(string)
+		return value, ok && strings.TrimSpace(value) != ""
+	}
+	environmentKey, keyOK := stringValue("environment_key")
+	baseImageID, baseOK := stringValue("base_image_id")
+	imageID, imageOK := stringValue("image_id")
+	builderVersion, builderOK := stringValue("builder_version")
+	cacheHit, cacheOK := usage["cache_hit"].(bool)
+	paths, pathsOK := usage["environment_manifest_paths"].([]string)
+	hashes, hashesOK := usage["environment_manifest_hashes"].(map[string]string)
+	if !keyOK || !baseOK || !imageOK || !builderOK || !cacheOK || !pathsOK || !hashesOK {
+		return nil, errors.New("Local Docker environment evidence is incomplete")
+	}
+	return &contracts.ManifestEnvironment{
+		EnvironmentKey: environmentKey, BaseImageID: baseImageID,
+		EnvironmentImageID: imageID, ManifestPaths: paths,
+		ManifestHashes: hashes, BuilderVersion: builderVersion, CacheHit: cacheHit,
+	}, nil
 }
 
 func decodeRunSpec(value map[string]interface{}) (contracts.RunSpec, error) {
@@ -830,6 +881,14 @@ type logWriter struct {
 }
 
 func (writer logWriter) Write(contents []byte) (int, error) {
+	return writer.write(contents, nil)
+}
+
+func (writer logWriter) WriteFields(contents []byte, fields map[string]interface{}) (int, error) {
+	return writer.write(contents, fields)
+}
+
+func (writer logWriter) write(contents []byte, fields map[string]interface{}) (int, error) {
 	original := len(contents)
 	message := strings.ToValidUTF8(string(contents), "")
 	if len(message) > maximumLogChunk {
@@ -853,7 +912,7 @@ func (writer logWriter) Write(contents []byte) (int, error) {
 	}
 	entry := contracts.LogEntry{
 		Sequence: state.NextSequence, Stream: writer.stream,
-		OccurredAt: time.Now().UTC(), Message: message,
+		OccurredAt: time.Now().UTC(), Message: message, Fields: fields,
 	}
 	state.NextSequence++
 	state.LogBytes += int64(len(message))
@@ -867,7 +926,7 @@ func (writer logWriter) Write(contents []byte) (int, error) {
 	return original, nil
 }
 
-func (gateway *Gateway) logWriter(taskID, stream string) io.Writer {
+func (gateway *Gateway) logWriter(taskID, stream string) logWriter {
 	return logWriter{gateway: gateway, taskID: taskID, stream: stream}
 }
 

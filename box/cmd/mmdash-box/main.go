@@ -119,7 +119,7 @@ func runWithRootOutput(ctx context.Context, rootOverride string, stdout, stderr 
 		controlURL = "http://localhost:8080"
 	}
 	client := gateway.HTTPClient{BaseURL: controlURL}
-	runtimes, runtimeFactory, probeErrors, err := configuredRuntimesWithSettings(ctx, limits, probeRuntimeAdapter, settings)
+	runtimes, runtimeFactory, probeErrors, err := configuredRuntimesWithSettingsAt(ctx, limits, probeRuntimeAdapter, settings, filepath.Join(root, "environments"))
 	for _, probeErr := range probeErrors {
 		fmt.Fprintf(stderr, "[box] Runtime unavailable: %s\n", probeErr)
 	}
@@ -172,13 +172,17 @@ func configuredRuntimes(ctx context.Context, limits contracts.ResourceLimits, pr
 }
 
 func configuredRuntimesWithSettings(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe, settings config.Config) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
+	return configuredRuntimesWithSettingsAt(ctx, limits, probe, settings, getenv("MMDASH_BOX_ENV_ROOT", ""))
+}
+
+func configuredRuntimesWithSettingsAt(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe, settings config.Config, environmentRoot string) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
 	localImage := getenv("MMDASH_BOX_LOCAL_IMAGE", settings.LocalDocker.Image)
 	localUser := localDockerUser()
 	candidates := make([]runtimeCandidate, 0, 2)
 	if settings.LocalDocker.Enabled && !boolEnv("MMDASH_BOX_LOCAL_DOCKER_DISABLED", false) {
 		candidates = append(candidates, runtimeCandidate{
-			descriptor: contracts.Runtime{Name: "local-docker", Version: "1", Image: localImage},
-			runtime:    localdocker.Runtime{Image: localImage, User: localUser},
+			descriptor: contracts.Runtime{Name: "local-docker", Version: "2", Image: localImage},
+			runtime:    &localdocker.Runtime{Image: localImage, User: localUser, Environment: localdocker.NewEnvironmentManager(environmentRoot, localImage)},
 		})
 	}
 	if apiKey := getenv("E2B_API_KEY", settings.E2B.APIKey); strings.TrimSpace(apiKey) != "" {
