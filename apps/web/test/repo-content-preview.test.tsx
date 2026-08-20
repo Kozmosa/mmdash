@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/ui/code-editor", () => ({
@@ -9,6 +9,13 @@ vi.mock("@/components/ui/code-editor", () => ({
     onChange?: (value: string) => void;
     value: string;
   }) => <pre data-read-only={String(onChange === undefined)}>{value}</pre>,
+}));
+
+vi.mock("next/image", () => ({
+  default: ({ unoptimized, ...properties }: Record<string, unknown>) => {
+    void unoptimized;
+    return <img {...properties} />;
+  },
 }));
 
 import { ContentPreview } from "@/features/repo-browser/content-preview";
@@ -47,6 +54,66 @@ describe("Repo safe content states", () => {
     expect(screen.getByText("package main")).toHaveAttribute(
       "data-read-only",
       "true",
+    );
+  });
+
+  it("renders CSV with a table mode", () => {
+    render(
+      <ContentPreview
+        content={{
+          ...fixture,
+          content: "name,value\nalpha,1\nbeta,2",
+          encoding: "utf-8",
+          path: "summary.csv",
+          preview_status: "text",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "表格" }));
+    expect(screen.getByText("alpha")).toBeInTheDocument();
+    expect(screen.getByText("beta")).toBeInTheDocument();
+  });
+
+  it("renders Markdown with a rendered mode", () => {
+    render(
+      <ContentPreview
+        content={{
+          ...fixture,
+          content: "# Summary\n\nRendered content",
+          encoding: "utf-8",
+          path: "README.md",
+          preview_status: "text",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "渲染" }));
+    expect(
+      screen.getByRole("heading", { name: "Summary" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Rendered content")).toBeInTheDocument();
+  });
+
+  it("renders an image through the fixed repository object URL", () => {
+    render(
+      <ContentPreview
+        content={{
+          ...fixture,
+          path: "figures/dependency-plot.png",
+        }}
+        projectId="project-1"
+      />,
+    );
+
+    const image = screen.getByRole("img", {
+      name: "figures/dependency-plot.png",
+    });
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/projects/project-1/repository/raw?path=figures%2Fdependency-plot.png&revision=" +
+        "b".repeat(40) +
+        "&workspace=code",
     );
   });
 

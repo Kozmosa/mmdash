@@ -28,10 +28,11 @@ const (
 
 // Reader serves immutable Git object reads from Core-managed bare repositories.
 type Reader struct {
-	Clock        interface{ Now() time.Time }
-	Git          *gitcli.Client
-	MaxTextBytes int64
-	Storage      *gitcli.Storage
+	Clock          interface{ Now() time.Time }
+	Git            *gitcli.Client
+	MaxBinaryBytes int64
+	MaxTextBytes   int64
+	Storage        *gitcli.Storage
 }
 
 func (reader Reader) ListBranches(
@@ -424,6 +425,84 @@ func (reader Reader) ReadFile(
 	response.Encoding = &encoding
 	response.PreviewStatus = "text"
 	return response, nil
+}
+
+// ReadRawFile reads one bounded regular Git blob pinned to a full commit.
+// Symlinks, submodules, LFS pointers, and oversized objects are not exposed.
+func (reader Reader) ReadRawFile(
+	ctx context.Context,
+	repository Repository,
+	workspaceKind WorkspaceKind,
+	revision string,
+	repositoryPath string,
+) (RawFile, error) {
+	layout, err := reader.readyLayout(repository)
+	if err != nil {
+		return RawFile{}, err
+	}
+	_, err = findWorkspace(repository, workspaceKind)
+	if err != nil {
+		return RawFile{}, err
+	}
+	if gitcli.ValidateRepoPath(repositoryPath, false) != nil {
+		return RawFile{}, ErrInvalid
+	}
+	revision, err = reader.resolveCommit(ctx, layout, revision)
+	if err != nil {
+		return RawFile{}, err
+	}
+	result, err := reader.Git.Run(ctx, gitcli.Command{
+		Args: []string{
+			"--git-dir=" + layout.Bare,
+			"ls-tree", "-z", "-l", revision,
+			"--", ":(top,literal)" + repositoryPath,
+		},
+		Directory: layout.Repository, Operation: "repo.raw.lookup",
+	})
+	if err != nil {
+		return RawFile{}, ErrObjectNotFound
+	}
+	entries, err := gitcli.ParseTree(result.Stdout)
+	if err != nil || len(entries) != 1 || entries[0].Path != repositoryPath {
+		return RawFile{}, ErrObjectNotFound
+	}
+	entry := entries[0]
+	if treeEntryKind(entry) != "file" {
+		return RawFile{}, ErrObjectNotFound
+	}
+	size := int64(0)
+	if entry.Size != nil {
+		size = *entry.Size
+	}
+	maxBytes := reader.MaxBinaryBytes
+	if maxBytes <= 0 {
+		maxBytes = 8 * 1024 * 1024
+	}
+	if size > maxBytes {
+		return RawFile{}, ErrTooLarge
+	}
+	var contents bytes.Buffer
+	stream, err := reader.Git.RunStream(ctx, gitcli.Command{
+		Args: []string{
+			"--git-dir=" + layout.Bare,
+			"cat-file", "blob", entry.ObjectID,
+		},
+		Directory: layout.Repository, Operation: "repo.raw.read",
+	}, &contents, maxBytes)
+	if err != nil || stream.Bytes != size {
+		if err != nil {
+			return RawFile{}, err
+		}
+		return RawFile{}, ErrObjectNotFound
+	}
+	if isLFSPointer(contents.Bytes()) {
+		return RawFile{}, ErrObjectNotFound
+	}
+	return RawFile{
+		Content: contents.Bytes(), Mode: entry.Mode, ObjectID: entry.ObjectID,
+		Path: repositoryPath, ResolvedRevision: revision, Size: size,
+		Workspace: workspaceKind,
+	}, nil
 }
 
 // HashBlob streams one immutable regular-file blob through SHA-256 without

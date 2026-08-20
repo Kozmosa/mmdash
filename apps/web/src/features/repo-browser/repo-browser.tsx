@@ -353,7 +353,7 @@ export function RepoBrowser() {
                   title="无法读取文件"
                 />
               ) : content.data ? (
-                <ContentPreview content={content.data} />
+                <ContentPreview content={content.data} projectId={project.id} />
               ) : null}
             </div>
           </div>

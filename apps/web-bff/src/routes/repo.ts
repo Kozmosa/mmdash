@@ -182,6 +182,46 @@ export function registerRepoRoutes(
       );
     },
   );
+
+  app.get(
+    "/api/projects/:projectId/repository/raw",
+    { config: { auth: "required", project: "required" } },
+    async (request, reply) => {
+      const query = contentQuerySchema.parse(request.query);
+      const params = new URLSearchParams({
+        path: query.path,
+        revision: query.revision,
+        workspace: query.workspace,
+      });
+      const response = await coreClient.fetch(
+        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/repository/raw?${params.toString()}`,
+        { headers: { accept: "*/*" }, method: "GET" },
+        coreContext(request),
+      );
+      const body = Buffer.from(await response.arrayBuffer());
+      const contentType = response.headers.get("content-type");
+      if (contentType) reply.header("content-type", contentType);
+      const contentLength = response.headers.get("content-length");
+      if (contentLength) reply.header("content-length", contentLength);
+      const cacheControl = response.headers.get("cache-control");
+      if (cacheControl) reply.header("cache-control", cacheControl);
+      const contentSecurityPolicy = response.headers.get(
+        "content-security-policy",
+      );
+      if (contentSecurityPolicy) {
+        reply.header("content-security-policy", contentSecurityPolicy);
+      }
+      const contentDisposition = response.headers.get("content-disposition");
+      if (contentDisposition) {
+        reply.header("content-disposition", contentDisposition);
+      }
+      const contentTypeOptions = response.headers.get("x-content-type-options");
+      if (contentTypeOptions) {
+        reply.header("x-content-type-options", contentTypeOptions);
+      }
+      return reply.code(response.status).send(body);
+    },
+  );
 }
 
 function coreContext(request: {
