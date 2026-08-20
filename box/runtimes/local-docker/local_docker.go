@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mmdash/mmdash/box/capabilities/sandbox"
@@ -19,12 +21,15 @@ import (
 var taskIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 type Runtime struct {
-	Image string
-	User  string
+	Image        string
+	User         string
+	Environment  *EnvironmentManager
+	mu           sync.Mutex
+	environments map[string]EnvironmentResult
 }
 
-func (runtime Runtime) Run(ctx context.Context, request sandbox.RunRequest) (sandbox.RunResult, error) {
-	if runtime.Image == "" || !taskIDPattern.MatchString(request.ID) {
+func (runtime *Runtime) Run(ctx context.Context, request sandbox.RunRequest) (sandbox.RunResult, error) {
+	if runtime == nil || runtime.Image == "" || !taskIDPattern.MatchString(request.ID) {
 		return sandbox.RunResult{}, errors.New("local Docker image and task ID are required")
 	}
 	if request.Spec.Validate() != nil {
@@ -37,17 +42,26 @@ func (runtime Runtime) Run(ctx context.Context, request sandbox.RunRequest) (san
 	if err := ensureOutput(request.OutputDir); err != nil {
 		return sandbox.RunResult{}, err
 	}
+	image := runtime.Image
+	environment := EnvironmentResult{Image: image, ImageID: image, BuilderVersion: EnvironmentBuilderVersion}
+	if runtime.Environment != nil {
+		environment = runtime.environment(request.ID)
+		if environment.Image == "" {
+			return sandbox.RunResult{}, errors.New("Local Docker environment was not prepared")
+		}
+		image = environment.Image
+	}
 	name := containerName(request.ID)
 	state, exitCode, exists, err := inspectContainer(ctx, name)
 	if err != nil {
 		return sandbox.RunResult{}, err
 	}
 	if exists && state == "exited" {
-		return sandbox.RunResult{ExitCode: exitCode, ResourceUsage: map[string]interface{}{}}, nil
+		return sandbox.RunResult{ExitCode: exitCode, ResourceUsage: environmentFields(environment)}, nil
 	}
 	created := false
 	if !exists {
-		args, err := buildArgs(runtime.Image, runtime.User, request, command)
+		args, err := buildArgs(image, runtime.User, request, command)
 		if err != nil {
 			return sandbox.RunResult{}, err
 		}
@@ -68,12 +82,12 @@ func (runtime Runtime) Run(ctx context.Context, request sandbox.RunRequest) (san
 	runErr := process.Run()
 	if errors.Is(executionCtx.Err(), context.DeadlineExceeded) {
 		_ = stopContainer(context.Background(), name, 10*time.Second)
-		return sandbox.RunResult{TimedOut: true, ResourceUsage: map[string]interface{}{}}, nil
+		return sandbox.RunResult{TimedOut: true, ResourceUsage: environmentFields(environment)}, nil
 	}
 	if errors.Is(executionCtx.Err(), context.Canceled) {
 		status, code, stillExists, inspectErr := inspectContainer(context.Background(), name)
 		if inspectErr == nil && stillExists && status == "exited" {
-			return sandbox.RunResult{ExitCode: code, Canceled: true, ResourceUsage: map[string]interface{}{}}, nil
+			return sandbox.RunResult{ExitCode: code, Canceled: true, ResourceUsage: environmentFields(environment)}, nil
 		}
 		return sandbox.RunResult{}, sandbox.ErrExecutionDetached
 	}
@@ -87,7 +101,55 @@ func (runtime Runtime) Run(ctx context.Context, request sandbox.RunRequest) (san
 		}
 		return sandbox.RunResult{}, errors.New("local Docker sandbox did not reach a terminal state")
 	}
-	return sandbox.RunResult{ExitCode: code, ResourceUsage: map[string]interface{}{}}, nil
+	return sandbox.RunResult{ExitCode: code, ResourceUsage: environmentFields(environment)}, nil
+}
+
+func (runtime *Runtime) PrepareEnvironment(ctx context.Context, request sandbox.EnvironmentRequest) error {
+	if runtime == nil || runtime.Environment == nil {
+		return nil
+	}
+	result, err := runtime.Environment.Prepare(ctx, request)
+	if err != nil {
+		return err
+	}
+	runtime.mu.Lock()
+	if runtime.environments == nil {
+		runtime.environments = map[string]EnvironmentResult{}
+	}
+	runtime.environments[request.ID] = result
+	runtime.mu.Unlock()
+	return nil
+}
+
+func (runtime *Runtime) ReleaseEnvironment(ctx context.Context, taskID string) error {
+	if runtime == nil || runtime.Environment == nil {
+		return nil
+	}
+	runtime.mu.Lock()
+	delete(runtime.environments, taskID)
+	runtime.mu.Unlock()
+	return runtime.Environment.Release(ctx, taskID)
+}
+
+func (runtime *Runtime) environment(taskID string) EnvironmentResult {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.environments == nil {
+		runtime.environments = map[string]EnvironmentResult{}
+	}
+	return runtime.environments[taskID]
+}
+
+func environmentFields(environment EnvironmentResult) map[string]interface{} {
+	return map[string]interface{}{
+		"environment_key":             environment.EnvironmentKey,
+		"base_image_id":               environment.BaseImageID,
+		"image_id":                    environment.ImageID,
+		"cache_hit":                   environment.CacheHit,
+		"builder_version":             environment.BuilderVersion,
+		"environment_manifest_paths":  environment.ManifestPaths,
+		"environment_manifest_hashes": environment.ManifestHashes,
+	}
 }
 
 func buildArgs(image, user string, request sandbox.RunRequest, command []string) ([]string, error) {
@@ -100,11 +162,19 @@ func buildArgs(image, user string, request sandbox.RunRequest, command []string)
 		"--memory", strconv.FormatInt(request.Spec.Limits.MemoryBytes, 10),
 		"--pids-limit", strconv.Itoa(request.Spec.Limits.PIDs),
 		"--network", networkMode(request.Spec.Limits.Network),
-		"--storage-opt", "size=" + strconv.FormatInt(request.Spec.Limits.DiskBytes, 10),
-		"--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864",
-		"-v", request.Workspace + ":/workspace:ro",
-		"-v", request.OutputDir + ":/output:rw",
 	}
+	// Docker Desktop on Windows commonly uses an overlay filesystem without
+	// XFS project quotas, so --storage-opt=size=... is rejected by the daemon.
+	// Keep the other frozen limits enforced and let the Gateway's output/log
+	// budget guard the remaining disk usage on that platform.
+	if runtime.GOOS != "windows" {
+		args = append(args, "--storage-opt", "size="+strconv.FormatInt(request.Spec.Limits.DiskBytes, 10))
+	}
+	args = append(args,
+		"--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864",
+		"-v", request.Workspace+":/workspace:ro",
+		"-v", request.OutputDir+":/output:rw",
+	)
 	for key, value := range request.Spec.Environment {
 		if key == "" || strings.ContainsAny(key, "=\x00 \t\r\n") {
 			return nil, errors.New("invalid environment variable name")
@@ -119,8 +189,8 @@ func buildArgs(image, user string, request sandbox.RunRequest, command []string)
 	return args, nil
 }
 
-func (runtime Runtime) Probe(ctx context.Context) error {
-	if strings.TrimSpace(runtime.Image) == "" {
+func (runtime *Runtime) Probe(ctx context.Context) error {
+	if runtime == nil || strings.TrimSpace(runtime.Image) == "" {
 		return errors.New("local Docker image is required")
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -136,23 +206,29 @@ func (runtime Runtime) Probe(ctx context.Context) error {
 	if output, err := exec.CommandContext(probeCtx, "docker", "start", "--attach", name).CombinedOutput(); err != nil {
 		return fmt.Errorf("probe local Docker lifecycle: %w: %s", err, boundedDockerOutput(output))
 	}
+	if runtime.Environment != nil {
+		_ = runtime.Environment.GC(context.Background(), time.Now().UTC())
+	}
 	return nil
 }
 
-func (Runtime) Cancel(ctx context.Context, id string) error {
+func (*Runtime) Cancel(ctx context.Context, id string) error {
 	if !taskIDPattern.MatchString(id) {
 		return errors.New("invalid local Docker task ID")
 	}
 	return stopContainer(ctx, containerName(id), 30*time.Second)
 }
 
-func (Runtime) Destroy(ctx context.Context, id string) error {
+func (runtime *Runtime) Destroy(ctx context.Context, id string) error {
 	if !taskIDPattern.MatchString(id) {
 		return errors.New("invalid local Docker task ID")
 	}
 	output, err := exec.CommandContext(ctx, "docker", "rm", "--force", containerName(id)).CombinedOutput()
 	if err != nil && !strings.Contains(strings.ToLower(string(output)), "no such container") {
 		return fmt.Errorf("remove local Docker sandbox: %w: %s", err, boundedDockerOutput(output))
+	}
+	if runtime != nil && runtime.Environment != nil {
+		return runtime.ReleaseEnvironment(ctx, id)
 	}
 	return nil
 }

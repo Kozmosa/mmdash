@@ -42,8 +42,38 @@ type RunRequest struct {
 	Spec      contracts.RunSpec
 	Workspace string
 	OutputDir string
-	Stdout    io.Writer
-	Stderr    io.Writer
+	// System receives controller-owned preparation and lifecycle output. It is
+	// intentionally separate from the experiment's stdout/stderr streams.
+	System io.Writer
+	Stdout io.Writer
+	Stderr io.Writer
+}
+
+// EnvironmentRequest is passed to optional Runtime adapters before the
+// execution container is started. The workspace has already been transferred
+// and validated by Box at this point. Adapters must never clone a repository.
+type EnvironmentRequest struct {
+	ID        string
+	Spec      contracts.RunSpec
+	Workspace string
+	System    io.Writer
+	// SystemFields is optional because some embedders only expose a plain
+	// writer. Gateway uses it to retain an auditable structured environment
+	// record in the durable system log.
+	SystemFields func(message string, fields map[string]interface{}) error
+}
+
+// EnvironmentPreparer lets a Runtime build or select a reproducible execution
+// environment before Gateway reports the task as running. Runtime adapters
+// that use a preconfigured immutable image do not need to implement it.
+type EnvironmentPreparer interface {
+	PrepareEnvironment(context.Context, EnvironmentRequest) error
+}
+
+// EnvironmentReleaser releases any durable environment reference acquired for
+// a task. It is called for preparation failures and terminal cleanup.
+type EnvironmentReleaser interface {
+	ReleaseEnvironment(context.Context, string) error
 }
 
 type RunResult struct {

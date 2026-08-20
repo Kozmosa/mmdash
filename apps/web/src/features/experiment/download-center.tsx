@@ -85,9 +85,142 @@ export function DownloadCenter() {
         </article>
       </section>
 
+      <section aria-labelledby="install-guide-title" className="space-y-6">
+        <div>
+          <p className="text-sm font-medium text-primary">安装教程</p>
+          <h2
+            className="mt-2 text-2xl font-semibold tracking-tight"
+            id="install-guide-title"
+          >
+            安装 Box 和 CLI
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            两个平台都使用同一套命令：Box 负责常驻运行，CLI 用于项目和 MCP
+            操作。
+          </p>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <InstallGuide
+            commands={[
+              {
+                description:
+                  "将下载的 Box 文件改名为 mbox.exe，将 CLI 文件改名为 mmdash.exe，并放入同一个目录。推荐使用当前用户目录下的 bin 文件夹：",
+                code: String.raw`New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\mmdash\bin"
+Move-Item .\mmdash-box-win32-x64.exe "$env:LOCALAPPDATA\mmdash\bin\mbox.exe"
+Move-Item .\mmdash-cli-win32-x64.exe "$env:LOCALAPPDATA\mmdash\bin\mmdash.exe"`,
+                title: "放置并重命名文件",
+              },
+              {
+                description:
+                  "将 %LocalAppData%\\mmdash\\bin 添加到当前用户的 PATH。添加后重新打开 PowerShell：",
+                code: String.raw`$bin = "$env:LOCALAPPDATA\mmdash\bin"
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";" + $bin, "User")
+mbox --help
+mmdash --help`,
+                title: "添加到 PATH",
+              },
+              {
+                description:
+                  "先在普通 PowerShell 初始化 Box 并完成浏览器登录。Local Docker 的镜像必须已经存在于 Docker Desktop；然后右键 PowerShell，选择“以管理员身份运行”，再注册和启动 Windows 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置。服务停止时用 mbox service logs 查看日志，前台排查可直接运行 mbox gateway：",
+                code: String.raw`mbox setup
+mbox account login
+# 以下命令必须在“管理员 PowerShell”中运行
+mbox service init
+mbox service start
+mbox service status
+mbox service logs
+# 前台查看完整启动输出（PATH 中的 mbox 可直接运行）
+mbox gateway --root "$env:LOCALAPPDATA\MMDash Box"`,
+                title: "初始化并启动服务",
+              },
+              {
+                description:
+                  "CLI 登录是独立的用户命令行认证；如果只使用 Box，可以跳过这一步：",
+                code: "mmdash login\nmmdash doctor",
+                title: "登录 CLI（可选）",
+              },
+            ]}
+            title="Windows"
+          />
+          <InstallGuide
+            commands={[
+              {
+                description:
+                  "将下载的 Box 文件改名为 mbox，将 CLI 文件改名为 mmdash，放入用户级 ~/.local/bin：",
+                code: String.raw`mkdir -p ~/.local/bin
+mv ./mmdash-box-linux-x64 ~/.local/bin/mbox
+mv ./mmdash-cli-linux-x64 ~/.local/bin/mmdash
+chmod +x ~/.local/bin/mbox ~/.local/bin/mmdash`,
+                title: "放置并重命名文件",
+              },
+              {
+                description:
+                  "将 ~/.local/bin 加入当前用户的 PATH。根据你使用的 Shell 选择对应配置文件，然后重新打开终端：",
+                code: String.raw`echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile
+export PATH="$HOME/.local/bin:$PATH"
+mbox --help
+mmdash --help`,
+                title: "添加到 PATH",
+              },
+              {
+                description:
+                  "初始化 Box 并完成浏览器登录，然后使用 sudo 注册和启动 systemd 服务。setup 会询问 mmdash 地址、Box 名称和 Runtime 设置。只移除服务而保留数据时，执行 sudo mbox service remove：",
+                code: String.raw`mbox setup
+mbox account login
+sudo mbox service init --root "$HOME/.local/share/mmdash-box"
+sudo mbox service start
+sudo mbox service status`,
+                title: "初始化并启动服务",
+              },
+              {
+                description:
+                  "CLI 登录是独立的用户命令行认证；如果只使用 Box，可以跳过这一步：",
+                code: "mmdash login\nmmdash doctor",
+                title: "登录 CLI（可选）",
+              },
+            ]}
+            title="Linux"
+          />
+        </div>
+      </section>
+
       <p className="text-sm text-muted-foreground">
         这是开发下载页；正式版本发布后会在相同位置提供版本化下载。
       </p>
     </div>
+  );
+}
+
+function InstallGuide({
+  commands,
+  title,
+}: Readonly<{
+  commands: Array<{
+    code: string;
+    description: string;
+    title: string;
+  }>;
+  title: string;
+}>) {
+  return (
+    <article className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <h3 className="text-xl font-semibold">{title}</h3>
+      <ol className="mt-5 space-y-5">
+        {commands.map((command, index) => (
+          <li key={command.title}>
+            <p className="text-sm font-medium">
+              {index + 1}. {command.title}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {command.description}
+            </p>
+            <pre className="mt-3 overflow-x-auto rounded-lg bg-muted p-3 text-xs leading-5">
+              <code>{command.code}</code>
+            </pre>
+          </li>
+        ))}
+      </ol>
+    </article>
   );
 }

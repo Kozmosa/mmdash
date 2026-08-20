@@ -187,6 +187,23 @@ func (service Service) ReadFile(
 	)
 }
 
+func (service Service) ReadRawFile(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	workspace WorkspaceKind,
+	revision string,
+	path string,
+) (RawFile, error) {
+	repository, err := service.readRepository(ctx, identity, projectID)
+	if err != nil {
+		return RawFile{}, err
+	}
+	return service.Reads.ReadRawFile(
+		ctx, repository, workspace, revision, path,
+	)
+}
+
 func (service Service) CreateCheckout(
 	ctx context.Context,
 	identity auth.Identity,

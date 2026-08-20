@@ -79,6 +79,15 @@ def _bundle(tmp_path: Path, *, result_name: str = "summary.txt") -> tuple[Path, 
         "runtime_version": "1",
         "logs_truncated": False,
         "exit_code": 0,
+        "environment": {
+            "environment_key": "c" * 64,
+            "base_image_id": "sha256:base",
+            "environment_image_id": "sha256:environment",
+            "manifest_paths": ["requirements.lock"],
+            "manifest_hashes": {"requirements.lock": "d" * 64},
+            "builder_version": "1",
+            "cache_hit": False,
+        },
         "files": [
             {
                 "path": result_name,

@@ -17,6 +17,7 @@ var (
 	ErrNotConfigured      = errors.New("repository not configured")
 	ErrNotReady           = errors.New("repository not ready")
 	ErrObjectNotFound     = errors.New("repository object not found")
+	ErrTooLarge           = errors.New("repository object is too large")
 	ErrReconnectExpired   = errors.New("repository reconnect window expired")
 	ErrReconnectMismatch  = errors.New("repository reconnect remote mismatch")
 	ErrReplacementCleanup = errors.New("repository replacement cleanup failed")

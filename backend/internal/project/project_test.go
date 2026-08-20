@@ -456,6 +456,31 @@ func TestModuleRoutesProjectAndMemberMutationsToTheirHandlers(t *testing.T) {
 	}
 }
 
+func TestModuleRoutesPluralProjectBoxesToBoxHandler(t *testing.T) {
+	called := false
+	module := Module{
+		Box: http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			called = true
+			response.WriteHeader(http.StatusNoContent)
+		}),
+		Service: Service{
+			Auth:  authStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}}},
+			Store: &roleStoreStub{roles: map[string]Role{"user-1": RoleOwner}},
+		},
+	}
+	mux := http.NewServeMux()
+	module.RegisterRoutes(mux)
+
+	request := httptest.NewRequest(http.MethodPut, "/v1/projects/project-1/boxes/box-1", nil)
+	request.Header.Set("Authorization", "Bearer test")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent || !called {
+		t.Fatalf("plural project Box route was not delegated: status=%d called=%v body=%s", response.Code, called, response.Body.String())
+	}
+}
+
 func TestModuleRoutesInboxInvitationAcceptByID(t *testing.T) {
 	module := Module{Service: Service{
 		Auth:  authStub{identity: auth.Identity{Kind: "session", User: auth.User{ID: "user-2", Email: "invitee@example.com"}}},

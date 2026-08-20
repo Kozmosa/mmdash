@@ -1031,7 +1031,9 @@ func (store PostgresStore) ClaimTask(
 
 		query := `
 			WITH selected AS (
-				SELECT task.task_id,chosen.actual_runtime,chosen.runtime_version
+				SELECT task.task_id AS selected_task_id,
+					chosen.actual_runtime AS selected_actual_runtime,
+					chosen.runtime_version AS selected_runtime_version
 				FROM box_tasks task
 				JOIN LATERAL (
 					SELECT candidate.box_id,
@@ -1126,12 +1128,12 @@ func (store PostgresStore) ClaimTask(
 			)
 			UPDATE box_tasks task
 			SET status='preparing',box_id=$1,execution_epoch=$2::uuid,
-				attempt=task.attempt+1,actual_runtime=selected.actual_runtime,
-				runtime_version=selected.runtime_version,claimed_at=$3,
+				attempt=task.attempt+1,actual_runtime=selected.selected_actual_runtime,
+				runtime_version=selected.selected_runtime_version,claimed_at=$3,
 				started_at=COALESCE(task.started_at,$3),last_callback_at=$3,
 				lease_expires_at=NULL,updated_at=$3
 			FROM selected
-			WHERE task.task_id=selected.task_id
+			WHERE task.task_id=selected.selected_task_id
 			RETURNING ` + taskReturnColumns
 		var scanErr error
 		item, scanErr = scanTask(tx.QueryRowContext(ctx, query, boxID, epoch, now))

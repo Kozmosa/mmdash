@@ -39,6 +39,7 @@ type ManifestInput struct {
 	RuntimeVersion  string
 	LogsTruncated   bool
 	ExitCode        *int
+	Environment     *contracts.ManifestEnvironment
 }
 
 func GenerateManifest(root string, input ManifestInput, diskLimit int64) (contracts.Manifest, error) {
@@ -69,6 +70,7 @@ func GenerateManifest(root string, input ManifestInput, diskLimit int64) (contra
 		RuntimeVersion:  input.RuntimeVersion,
 		LogsTruncated:   input.LogsTruncated,
 		ExitCode:        input.ExitCode,
+		Environment:     input.Environment,
 		Files:           []contracts.ManifestFile{},
 	}
 	var total int64
