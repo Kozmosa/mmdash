@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -81,6 +83,11 @@ func (module Module) handleProjectResource(
 	case "content":
 		if len(segments) == 3 {
 			module.handleContent(response, request, identity, projectID)
+			return
+		}
+	case "raw":
+		if len(segments) == 3 {
+			module.handleRawContent(response, request, identity, projectID)
 			return
 		}
 	case "checkouts":
@@ -574,6 +581,47 @@ func (module Module) handleContent(
 	httpx.WriteJSON(response, http.StatusOK, content)
 }
 
+func (module Module) handleRawContent(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodGet) {
+		return
+	}
+	workspace, ok := queryWorkspace(response, request)
+	if !ok {
+		return
+	}
+	revision := request.URL.Query().Get("revision")
+	repositoryPath := request.URL.Query().Get("path")
+	if revision == "" || repositoryPath == "" {
+		writeRepoError(response, request, ErrInvalid)
+		return
+	}
+	raw, err := module.Service.ReadRawFile(
+		request.Context(), identity, projectID, workspace,
+		revision, repositoryPath,
+	)
+	if err != nil {
+		writeRepoError(response, request, err)
+		return
+	}
+	contentType := mime.TypeByExtension(path.Ext(repositoryPath))
+	if contentType == "" {
+		contentType = http.DetectContentType(raw.Content)
+	}
+	response.Header().Set("Content-Type", contentType)
+	response.Header().Set("Content-Length", strconv.FormatInt(raw.Size, 10))
+	response.Header().Set("Cache-Control", "private, no-store")
+	response.Header().Set("Content-Disposition", "inline")
+	response.Header().Set("Content-Security-Policy", "sandbox")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(http.StatusOK)
+	_, _ = response.Write(raw.Content)
+}
+
 func queryWorkspace(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -644,6 +692,10 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 	case errors.Is(err, ErrNotConfigured):
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusNotFound, "REPOSITORY_NOT_CONFIGURED", "Repository is not configured",
+		))
+	case errors.Is(err, ErrTooLarge):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusRequestEntityTooLarge, "REPO_OBJECT_TOO_LARGE", "Repository object is too large to preview",
 		))
 	case errors.Is(err, ErrObjectNotFound):
 		httpx.WriteError(response, request, apperror.New(

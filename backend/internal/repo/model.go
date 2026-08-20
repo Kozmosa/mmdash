@@ -231,6 +231,18 @@ type FileContent struct {
 	Workspace        WorkspaceKind `json:"workspace"`
 }
 
+// RawFile is one bounded immutable regular-file body for safe inline previews.
+// It deliberately omits managed repository paths and is never serialized as JSON.
+type RawFile struct {
+	Content          []byte
+	Mode             string
+	ObjectID         string
+	Path             string
+	ResolvedRevision string
+	Size             int64
+	Workspace        WorkspaceKind
+}
+
 // Checkout is a detached, leased worktree without a public server path.
 type Checkout struct {
 	CheckoutID      string     `json:"checkout_id"`

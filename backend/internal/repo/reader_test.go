@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -126,6 +127,27 @@ func TestReaderPinsPaginationAndClassifiesImmutableObjects(t *testing.T) {
 
 	assertPreview(t, reader, repository, head, "dir/中文 #.txt", "text", "你好\n")
 	assertPreview(t, reader, repository, head, "binary.bin", "binary", "")
+	raw, err := reader.ReadRawFile(
+		ctx, repository, WorkspaceCode, head, "binary.bin",
+	)
+	if err != nil || !bytes.Equal(raw.Content, []byte{'a', 0, 'b'}) {
+		t.Fatalf("read raw binary: err=%v content=%v", err, raw.Content)
+	}
+	if raw.Path != "binary.bin" || raw.ResolvedRevision != head || raw.Size != 3 {
+		t.Fatalf("raw metadata mismatch: %+v", raw)
+	}
+	nestedRaw, err := reader.ReadRawFile(
+		ctx, repository, WorkspaceResult, head,
+		"experiments/demo/figures/dependency-plot.png",
+	)
+	if err != nil || !bytes.Equal(nestedRaw.Content, []byte{'p', 0, 'n', 'g'}) {
+		t.Fatalf("read nested raw image: err=%v content=%v", err, nestedRaw.Content)
+	}
+	if _, err := reader.ReadRawFile(
+		ctx, repository, WorkspaceCode, head, "pointer.lfs",
+	); err != ErrObjectNotFound {
+		t.Fatalf("LFS pointer must not be served as raw content, got %v", err)
+	}
 	assertPreview(t, reader, repository, head, "large.txt", "too_large", "")
 	assertPreview(t, reader, repository, head, "pointer.lfs", "lfs_not_materialized", "")
 	assertPreview(t, reader, repository, head, "link", "symlink", "README.md")
@@ -196,6 +218,7 @@ func readerFixture(t *testing.T) (Reader, Repository, string) {
 
 	writeFixtureFile(t, source, "dir/中文 #.txt", []byte("你好\n"))
 	writeFixtureFile(t, source, "binary.bin", []byte{'a', 0, 'b'})
+	writeFixtureFile(t, source, "experiments/demo/figures/dependency-plot.png", []byte{'p', 0, 'n', 'g'})
 	writeFixtureFile(t, source, "large.txt", []byte(strings.Repeat("large", 100)))
 	writeFixtureFile(t, source, "pointer.lfs", []byte(
 		"version https://git-lfs.github.com/spec/v1\n"+
