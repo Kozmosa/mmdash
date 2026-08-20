@@ -62,6 +62,7 @@ uploads/
 .claude/
 .DS_Store
 Thumbs.db
+.codex/
 
 # Go
 .tmp/
