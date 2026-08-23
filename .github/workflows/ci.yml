@@ -84,7 +84,8 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           version: 11.9.0
-      - uses: astral-sh/setup-uv@v10
+      # astral-sh/setup-uv publishes no floating major tag; pin exactly.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
       - run: uv sync --all-packages --frozen
