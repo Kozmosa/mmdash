@@ -85,7 +85,7 @@ docker compose -f deploy/compose/compose.yaml down
 | Outbox delivery               | `system.test.emitted` reaches successful delivery                                                   |
 | Data Hub object               | `project.created` projection plus `data.read` routing                                               |
 | Request ID and Audit          | BFF-preserved ID queried from append-only Core Audit                                                |
-| CI                            | Node 24 workflow and `pnpm check`                                                                   |
+| CI                            | Node 24 workflow; parallel `ts`/`go`/`python`/`contracts` jobs running the same package scripts     |
 
 Smoke creates isolated records with a timestamped name and idempotency key. It
 polls asynchronous state once per second and stops after 30 attempts.
