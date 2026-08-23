@@ -23,14 +23,14 @@ running:
 
 ```powershell
 $env:REPO_LOCAL_ALLOWED_ROOTS = (Join-Path (Get-Location) ".tmp")
-.\.localscripts\dev.ps1
+node .localscripts\dev.mjs
 ```
 
 The native Core process disables the Local Git provider when
 `REPO_LOCAL_ALLOWED_ROOTS` is empty. The acceptance script creates its
 temporary bare remote below `.tmp`, so the allowlist must be present before
 starting the supervisor. This is the only extra development prerequisite; the
-stack is still started by `.\.localscripts\dev.ps1`.
+stack is still started by `node .localscripts\dev.mjs`.
 
 The supervisor prints the compiled Box path, normally
 `.tmp\dev-tools\mmdash-box.exe`. In terminal 2, from the repository root:
@@ -94,5 +94,5 @@ and a successful result containing both `summary.md` and
 error message; inspect the Box output printed by the script for preparation
 failures, then stop the supervisor with Ctrl+C. PostgreSQL and MinIO remain
 available as documented by `.localscripts/dev.mjs`; use
-`.\.localscripts\dev.ps1 --down` only when those development containers should
-also be stopped.
+`node .localscripts\dev.mjs --down` only when those development containers
+should also be stopped.

@@ -36,7 +36,8 @@ PostgreSQL, Worker Job handling, Outbox delivery, Data Hub routing,
 Audit/request IDs, MCP health, CLI startup, and metrics. Set
 `MMDASH_SMOKE_REPO_MODE=docker` to add the managed Local Git Stage 1 E2E
 described in the [Repo guide](repo.md). Local ports are Web `3000`, BFF `3001`,
-Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO Console `9001`.
+MCP Gateway `3002`, Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO
+Console `9001`.
 
 The current Stage 8 implementation still exposes a legacy opt-in Box profile.
 It requires an operator-provided Core registration credential and a Repo-owned
@@ -55,8 +56,8 @@ Experiment. The optional Stage 8 smoke first creates the managed Local Git
 fixture and then creates and reads a frozen Experiment from its fixed code commit; set
 `MMDASH_SMOKE_STAGE8_RUN=1` only when a registered online Box is available.
 `MMDASH_SMOKE_STAGE8_COMMIT` may override the fixture commit for a separately
-prepared Repo project. Do not use `down -v`; the Box, PostgreSQL, MinIO, and
-Repo data volumes are intentionally preserved.
+prepared Repo project. Do not use `down -v`; the Box, Artifact, PostgreSQL,
+MinIO, and Repo data volumes are intentionally preserved.
 
 The legacy Box advertises E2B only when `E2B_API_KEY` is injected. Do not carry
 that single-variable availability rule into the redesign: the target Adapter
@@ -71,8 +72,8 @@ global prerequisite and keeps service data and toolchains under `.testenv`.
 
 The production-shaped public entry is defined only in the repository-root
 `Caddyfile`, using `mmdash.moe`. Browser traffic uses `/api`, the native CLI
-uses the authenticated Core `/v1` surface and `/mcp`, and Box remains under
-`/box`. Validate it without starting services:
+uses the authenticated `/v1` user API surface and `/mcp`, and Core is never
+exposed publicly. Validate it without starting services:
 
 ```bash
 caddy validate --config Caddyfile --adapter caddyfile

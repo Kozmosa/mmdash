@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/schemas/mcp-tools/project.member.list.json",
+  "title": "project.member.list MCP tool",
+  "description": "Lists members and roles for an authorized project.",
+  "x-operation-id": "project.member.list",
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id"],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "output": { "type": "object" }
+  }
+}

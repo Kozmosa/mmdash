@@ -39,6 +39,8 @@ mmdash v0.1 是面向数学建模与研究型项目的协作工作台。
 ├── workers/                   # Python 异步任务
 ├── box/                       # 独立能力节点
 ├── deploy/                    # 本地与单机部署
+├── scripts/                   # 仓库级校验、smoke 与脚手架脚本
+├── templates/                 # 模块脚手架模板
 └── docs/                      # 架构、API、事件与开发文档
 ```
 
