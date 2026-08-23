@@ -36,7 +36,7 @@ Run Core, BFF, Web, and MCP Gateway in separate terminals using their guides
 under `docs/development/`. Verify the Worker shell:
 
 ```powershell
-$env:UV_CACHE_DIR = "I:\Project\mmdash\.uv-cache"
+$env:UV_CACHE_DIR = ".\.uv-cache"
 uv run --offline --package mmdash-worker mmdash-worker --status
 ```
 

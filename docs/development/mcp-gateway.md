@@ -115,4 +115,5 @@ pnpm --filter @mmdash/mcp-gateway test
 pnpm --filter @mmdash/mcp-gateway build
 ```
 
-`GET /health/live` is public. `/mcp` and `/mcp/*` require a token.
+`GET /health/live` and `GET /mcp/health/live` are public. Every other `/mcp`
+and `/mcp/*` request requires a token.
