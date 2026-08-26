@@ -1,3 +1,42 @@
+# mmdash v0.1 Stage 9 Article repair candidate
+
+- Updated: 2026-08-24
+- Branch: `main`
+- Scope: Article/Artifact vertical repair defined by `TODO.md`; changes remain
+  uncommitted for user review.
+- Delivery: Core/BFF/Web/Worker now share the rich Article document contract;
+  legacy Core Tiptap drafts are restored into Yjs before collaboration starts;
+  captions, immutable references, Artifact images and Zotero citations survive
+  flush/Commit and serialize to Pandoc-compatible Markdown.
+- Editing: the writing surface has Notion-style single-block selection,
+  Delete/Backspace deletion, drag/reorder, insert/duplicate/cut/convert/review
+  menus, image upload/paste/drop and preview, image/table hover menus, image
+  width/alignment/source actions, resizable table row/column actions, and `/`
+  commands for rich blocks and every reference source.
+- Writing layout: the editor has fixed internal scrolling, a collapsible and
+  resizable two-column left workspace, a live collapsible/current-section
+  outline at bottom-left, and an in-editor right tag rail. Chapter tags are an
+  independent persisted Core model; block and chapter review state no longer
+  share the old detached card panel.
+- Supporting modules: the project-persisted MD/LaTeX rendering setting loads
+  Noto Serif SC and LaTeX-style numbering/three-line tables; Artifact Folder is
+  a formal Core domain with shared Web/Article navigation; Model/Experiment/
+  Problem references use real version navigation and previews; Zotero remains
+  configured only in Settings and its entries can be frozen and dragged into
+  the visible editor.
+- Build path: a deterministic server-side mmdash default XeLaTeX/ctex/booktabs
+  template is idempotently provisioned as a protected system Artifact. Worker
+  build output, error reporting and the startup crash caused by a failed error
+  callback were repaired. Actual PDF and account-bound Zotero E2E were not run:
+  the user prohibited Docker, `scripts/testenv.ps1 doctor` reports that Pixi is
+  not installed, and this host has no Pandoc/latexmk/XeLaTeX binaries.
+- Verification: repository lint passed; TypeScript suites passed (Web 166,
+  Web BFF 69, MCP Gateway 38 plus package/script suites); all Go/backend/Box/CLI
+  tests passed; Worker 44 tests passed after pinning pytest's temporary root to
+  `.testenv`; production Web/BFF/Gateway/Go/Python builds passed; contracts and
+  compatibility passed; API docs cover 526 operations. Docker/Compose and
+  Caddy-via-Docker checks were intentionally not run.
+
 # mmdash v0.1 Stage 8 Box / Experiment environment-preparation handoff
 
 - Updated: 2026-08-20
@@ -55,7 +94,7 @@ not only root `requirements.lock`:
 - `requirements.lock` and `requirements.txt` through a controlled `pip`
   builder; use `--require-hashes` when the file is fully hash-pinned;
 - `pyproject.toml` plus `uv.lock` through `uv sync --frozen
-  --no-install-project` so the cached environment contains dependencies but
+--no-install-project` so the cached environment contains dependencies but
   never copies Project source;
 - `pyproject.toml` plus `poetry.lock` through an equally frozen, no-project
   installation path;
@@ -233,7 +272,7 @@ vertical refactor.
   retry chain; old-ID reads return old data plus latest-ID guidance.
 - Managed success is
   `created -> queued -> preparing -> running -> uploading ->
-  processing_result -> succeeded`. Self success is
+processing_result -> succeeded`. Self success is
   `created -> awaiting_result -> verifying_result -> succeeded`. Success means
   Repo fetched/verified the remote result Commit and Experiment bound it.
 - Result paths use Experiment creation time in the Project IANA timezone:

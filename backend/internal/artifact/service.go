@@ -362,8 +362,12 @@ func (service Service) InitializeVersion(
 	if identity.Kind == "agent" {
 		return PublicUploadSession{}, ErrForbidden
 	}
-	if _, err := service.Store.GetDetail(ctx, projectID, artifactID, false); err != nil {
+	detail, err := service.Store.GetDetail(ctx, projectID, artifactID, false)
+	if err != nil {
 		return PublicUploadSession{}, err
+	}
+	if isBuiltInArticleTemplate(detail.Artifact) {
+		return PublicUploadSession{}, ErrForbidden
 	}
 	plan, err := service.normalizeVersionInitialize(&input)
 	if err != nil {
@@ -850,6 +854,117 @@ func (service Service) List(
 	return service.Store.List(ctx, projectID, filter)
 }
 
+func validFolderUUID(value string) bool {
+	return uuidPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
+}
+
+func validFolderName(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && len(value) <= 255 && !strings.ContainsAny(value, "\r\n")
+}
+
+func (service Service) ListFolders(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (FolderTree, error) {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactRead); err != nil {
+		return FolderTree{}, err
+	}
+	if !validFolderUUID(projectID) {
+		return FolderTree{}, ErrInvalid
+	}
+	return service.Store.GetFolderTree(ctx, projectID)
+}
+
+func (service Service) CreateFolder(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+	input CreateFolderInput,
+) (Folder, error) {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactUpload); err != nil {
+		return Folder{}, err
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if !validFolderUUID(projectID) || !validFolderName(input.Name) ||
+		(input.ParentFolderID != nil && !validFolderUUID(*input.ParentFolderID)) {
+		return Folder{}, ErrInvalid
+	}
+	id, err := service.Generator.New()
+	if err != nil {
+		return Folder{}, err
+	}
+	folder := Folder{
+		ID: id, ProjectID: projectID, ParentFolderID: input.ParentFolderID,
+		Name: input.Name, Children: []Folder{},
+	}
+	return service.Store.CreateFolder(ctx, folder)
+}
+
+func (service Service) RenameFolder(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID, folderID, name string,
+) (Folder, error) {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactUpload); err != nil {
+		return Folder{}, err
+	}
+	name = strings.TrimSpace(name)
+	if !validFolderUUID(projectID) || !validFolderUUID(folderID) || !validFolderName(name) {
+		return Folder{}, ErrInvalid
+	}
+	return service.Store.RenameFolder(ctx, projectID, folderID, name, service.now())
+}
+
+func (service Service) MoveFolder(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID, folderID string,
+	input MoveFolderInput,
+) (Folder, error) {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactUpload); err != nil {
+		return Folder{}, err
+	}
+	if !validFolderUUID(projectID) || !validFolderUUID(folderID) ||
+		(input.ParentFolderID != nil && !validFolderUUID(*input.ParentFolderID)) ||
+		(input.Position != nil && *input.Position < 0) {
+		return Folder{}, ErrInvalid
+	}
+	return service.Store.MoveFolder(ctx, projectID, folderID, input.ParentFolderID, input.Position, service.now())
+}
+
+func (service Service) DeleteFolder(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID, folderID string,
+	recursive bool,
+) error {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactDelete); err != nil {
+		return err
+	}
+	if !validFolderUUID(projectID) || !validFolderUUID(folderID) {
+		return ErrInvalid
+	}
+	return service.Store.DeleteFolder(ctx, projectID, folderID, recursive, service.now())
+}
+
+func (service Service) MoveArtifact(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID, artifactID string,
+	folderID *string,
+) (Detail, error) {
+	if err := service.authorize(ctx, identity, projectID, project.PermissionArtifactUpload); err != nil {
+		return Detail{}, err
+	}
+	if !validFolderUUID(projectID) || !validFolderUUID(artifactID) ||
+		(folderID != nil && !validFolderUUID(*folderID)) {
+		return Detail{}, ErrInvalid
+	}
+	return service.Store.MoveArtifact(ctx, projectID, artifactID, folderID, service.now())
+}
+
 func (service Service) Get(
 	ctx context.Context,
 	identity auth.Identity,
@@ -879,6 +994,13 @@ func (service Service) Update(
 	}
 	if err := normalizeUpdate(&input); err != nil {
 		return Detail{}, err
+	}
+	existing, err := service.Store.GetDetail(ctx, projectID, artifactID, false)
+	if err != nil {
+		return Detail{}, err
+	}
+	if isBuiltInArticleTemplate(existing.Artifact) {
+		return Detail{}, ErrForbidden
 	}
 	detail, err := service.Store.Update(
 		ctx, projectID, artifactID, input, service.now(),
@@ -916,6 +1038,13 @@ func (service Service) RestoreVersion(
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if idempotencyKey == "" || len(idempotencyKey) > 200 {
 		return Detail{}, ErrInvalid
+	}
+	existing, err := service.Store.GetDetail(ctx, projectID, artifactID, false)
+	if err != nil {
+		return Detail{}, err
+	}
+	if isBuiltInArticleTemplate(existing.Artifact) {
+		return Detail{}, ErrForbidden
 	}
 	newVersionID, err := service.Generator.New()
 	if err != nil {
@@ -1182,6 +1311,9 @@ func (service Service) Trash(
 	if detail.Artifact.Status == StatusTrashed {
 		return nil
 	}
+	if isBuiltInArticleTemplate(detail.Artifact) {
+		return ErrForbidden
+	}
 	if err := service.Store.Trash(
 		ctx, projectID, artifactID, identity.User.ID, service.now(),
 	); err != nil {
@@ -1233,6 +1365,13 @@ func (service Service) Purge(
 		ctx, identity, projectID, project.PermissionArtifactDelete,
 	); err != nil {
 		return err
+	}
+	detail, err := service.Store.GetDetail(ctx, projectID, artifactID, true)
+	if err != nil {
+		return err
+	}
+	if isBuiltInArticleTemplate(detail.Artifact) {
+		return ErrForbidden
 	}
 	if err := service.Store.Purge(
 		ctx, projectID, artifactID,

@@ -203,4 +203,81 @@ describe("Artifact BFF routes", () => {
       expect(headers.get("x-mmdash-project-id")).toBe(projectId);
     }
   });
+
+  it("proxies the durable folder tree and folder assignments", async () => {
+    const folderId = "00000000-0000-4000-8000-000000000005";
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockImplementation((input, options) => {
+        const url = String(input);
+        if (url.endsWith("/artifacts/folders") && options?.method === "GET") {
+          return Promise.resolve(
+            Response.json({
+              items: [
+                {
+                  children: [],
+                  folder_id: folderId,
+                  name: "Data",
+                  parent_folder_id: null,
+                  position: 0,
+                  project_id: projectId,
+                },
+              ],
+            }),
+          );
+        }
+        if (
+          url.endsWith(`/artifacts/folders/${folderId}?recursive=true`) &&
+          options?.method === "DELETE"
+        ) {
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        return Promise.resolve(
+          Response.json({
+            artifact: { artifact_id: artifactId, folder_id: folderId },
+          }),
+        );
+      });
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const tree = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: `/api/projects/${projectId}/artifacts/folders`,
+    });
+    expect(tree.statusCode).toBe(200);
+    expect(tree.json().items[0].name).toBe("Data");
+
+    const moved = await app.inject({
+      headers: { cookie },
+      method: "PUT",
+      payload: { folder_id: folderId },
+      url: `/api/projects/${projectId}/artifacts/${artifactId}/folder`,
+    });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json().artifact.folder_id).toBe(folderId);
+    const [url, options] = fetchImplementation.mock.calls.at(-1)!;
+    expect(url).toBe(
+      `http://core.test/v1/projects/${projectId}/artifacts/${artifactId}/folder`,
+    );
+    expect(options?.method).toBe("PUT");
+
+    const deleted = await app.inject({
+      headers: { cookie },
+      method: "DELETE",
+      url: `/api/projects/${projectId}/artifacts/folders/${folderId}?recursive=true`,
+    });
+    expect(deleted.statusCode).toBe(204);
+    const [deleteUrl, deleteOptions] = fetchImplementation.mock.calls.at(-1)!;
+    expect(deleteUrl).toBe(
+      `http://core.test/v1/projects/${projectId}/artifacts/folders/${folderId}?recursive=true`,
+    );
+    expect(deleteOptions?.method).toBe("DELETE");
+  });
 });

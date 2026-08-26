@@ -4,6 +4,7 @@ import type {
   ArticleAggregate,
   ArticleBlock,
   ArticleBuild,
+  ArticleChapterTag,
   ArticleCommit,
   ArticleDraft,
   ArticleReference,
@@ -36,6 +37,12 @@ export const articleApi = {
   reviewBlock(projectId: string, blockId: string) {
     return apiClient.request<ArticleBlock>(
       `${base(projectId)}/blocks/${encodeURIComponent(blockId)}/review`,
+      { method: "POST" },
+    );
+  },
+  reviewChapter(projectId: string, chapterTagId: string) {
+    return apiClient.request<ArticleChapterTag>(
+      `${base(projectId)}/chapter-tags/${encodeURIComponent(chapterTagId)}/review`,
       { method: "POST" },
     );
   },

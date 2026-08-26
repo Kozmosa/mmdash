@@ -382,16 +382,44 @@ type ResultTreeNode = {
   path: string;
 };
 
-function ResultFileTree({
+export function ResultFileTree({
   files,
   onSelect,
   selectedPath,
+  storageKey,
 }: Readonly<{
   files: ResultFile[];
   onSelect: (path: string) => void;
   selectedPath?: string;
+  storageKey?: string;
 }>) {
   const root = useMemo(() => buildResultTree(files), [files]);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
+    const defaults = new Set(
+      root.children
+        .filter((node) => node.children.length > 0)
+        .map((node) => node.path),
+    );
+    if (!storageKey || typeof window === "undefined") return defaults;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw === null) return defaults;
+      const value = JSON.parse(raw);
+      return new Set(Array.isArray(value) ? value.map(String) : []);
+    } catch {
+      return defaults;
+    }
+  });
+  const setExpanded = (path: string, expanded: boolean) => {
+    setExpandedPaths((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(path);
+      else next.delete(path);
+      if (storageKey)
+        window.localStorage.setItem(storageKey, JSON.stringify([...next]));
+      return next;
+    });
+  };
   return (
     <div
       aria-label="结果文件树"
@@ -399,8 +427,10 @@ function ResultFileTree({
       role="tree"
     >
       <ResultTreeLevel
+        expandedPaths={expandedPaths}
         nodes={root.children}
         onSelect={onSelect}
+        onSetExpanded={setExpanded}
         selectedPath={selectedPath}
       />
     </div>
@@ -408,13 +438,17 @@ function ResultFileTree({
 }
 
 function ResultTreeLevel({
+  expandedPaths,
   nodes,
   onSelect,
+  onSetExpanded,
   selectedPath,
   level = 1,
 }: Readonly<{
+  expandedPaths: Set<string>;
   nodes: ResultTreeNode[];
   onSelect: (path: string) => void;
+  onSetExpanded: (path: string, expanded: boolean) => void;
   selectedPath?: string;
   level?: number;
 }>) {
@@ -425,10 +459,12 @@ function ResultTreeLevel({
     >
       {nodes.map((node) => (
         <ResultTreeItem
+          expandedPaths={expandedPaths}
           key={node.path}
           level={level}
           node={node}
           onSelect={onSelect}
+          onSetExpanded={onSetExpanded}
           selectedPath={selectedPath}
         />
       ))}
@@ -437,18 +473,22 @@ function ResultTreeLevel({
 }
 
 function ResultTreeItem({
+  expandedPaths,
   level,
   node,
   onSelect,
+  onSetExpanded,
   selectedPath,
 }: Readonly<{
+  expandedPaths: Set<string>;
   level: number;
   node: ResultTreeNode;
   onSelect: (path: string) => void;
+  onSetExpanded: (path: string, expanded: boolean) => void;
   selectedPath?: string;
 }>) {
   const directory = node.children.length > 0;
-  const [expanded, setExpanded] = useState(level < 2);
+  const expanded = expandedPaths.has(node.path);
   const selected = Boolean(node.file && node.file.path === selectedPath);
   return (
     <div role="none">
@@ -461,7 +501,7 @@ function ResultTreeItem({
           selected ? "bg-accent font-medium" : null,
         )}
         onClick={() => {
-          if (directory) setExpanded((value) => !value);
+          if (directory) onSetExpanded(node.path, !expanded);
           else onSelect(node.file!.path);
         }}
         role="treeitem"
@@ -496,9 +536,11 @@ function ResultTreeItem({
       </button>
       {directory && expanded ? (
         <ResultTreeLevel
+          expandedPaths={expandedPaths}
           level={level + 1}
           nodes={node.children}
           onSelect={onSelect}
+          onSetExpanded={onSetExpanded}
           selectedPath={selectedPath}
         />
       ) : null}
@@ -536,7 +578,7 @@ function sortResultTree(node: ResultTreeNode) {
   node.children.forEach(sortResultTree);
 }
 
-function ResultFilePreview({
+export function ResultFilePreview({
   current,
   file,
   projectId,

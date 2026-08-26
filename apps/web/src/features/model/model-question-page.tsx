@@ -116,7 +116,7 @@ function DiffVersionPicker({ fromId, onFromChange, onToChange, snapshots, toId }
 
 type ModelAsset = ModelSnapshot["assets"][number];
 
-function ModelDocument({ assets, blocks, onArtifactOpen, projectId }: { assets: ModelAsset[]; blocks: ModelBlock[]; onArtifactOpen: (artifactId: string) => void; projectId: string }) {
+export function ModelDocument({ assets, blocks, onArtifactOpen, projectId }: { assets: ModelAsset[]; blocks: ModelBlock[]; onArtifactOpen: (artifactId: string) => void; projectId: string }) {
   const assetsByBlock = useMemo(() => new Map(assets.map((asset) => [asset.source_block_id, asset])), [assets]);
   return <ModelBlocks assetsByBlock={assetsByBlock} blocks={blocks} onArtifactOpen={onArtifactOpen} projectId={projectId} />;
 }

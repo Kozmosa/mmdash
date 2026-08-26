@@ -18,14 +18,18 @@ var (
 )
 
 const (
-	BuildFormal       = "formal"
-	BuildPreview      = "preview"
-	BuildTemplateTest = "template_test"
-	BuildQueued       = "queued"
-	BuildRunning      = "running"
-	BuildSucceeded    = "succeeded"
-	BuildFailed       = "failed"
-	BuildSuperseded   = "superseded"
+	BuildFormal           = "formal"
+	BuildPreview          = "preview"
+	BuildTemplateTest     = "template_test"
+	BuildQueued           = "queued"
+	BuildRunning          = "running"
+	BuildSucceeded        = "succeeded"
+	BuildFailed           = "failed"
+	BuildSuperseded       = "superseded"
+	ChapterTagUnedited    = "unedited"
+	ChapterTagUnreviewed  = "unreviewed"
+	ChapterTagReviewed    = "reviewed"
+	ChapterTagNeedsReview = "needs_review"
 )
 
 type Block struct {
@@ -37,6 +41,23 @@ type Block struct {
 	Tag        string                 `json:"tag"`
 	Text       string                 `json:"text"`
 	UpdatedAt  time.Time              `json:"updated_at"`
+}
+
+// ChapterTag is independent from the tag carried by an Article block. It is
+// anchored to the stable heading block identity and keeps its own review
+// provenance so heading edits cannot silently inherit a review decision.
+type ChapterTag struct {
+	ChapterTagID       string     `json:"chapter_tag_id"`
+	HeadingBlockID     string     `json:"heading_block_id"`
+	HeadingBlockType   string     `json:"heading_block_type"`
+	HeadingFingerprint string     `json:"heading_fingerprint"`
+	ProjectID          string     `json:"project_id"`
+	ReviewedAt         *time.Time `json:"reviewed_at,omitempty"`
+	ReviewedBy         *string    `json:"reviewed_by,omitempty"`
+	StaleReason        string     `json:"stale_reason,omitempty"`
+	Status             string     `json:"status"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	UpdatedBy          string     `json:"updated_by"`
 }
 
 type Draft struct {
@@ -227,14 +248,25 @@ type ZoteroItem struct {
 }
 
 type Aggregate struct {
-	Builds            []Build     `json:"builds"`
-	Commits           []Commit    `json:"commits"`
-	Draft             Draft       `json:"draft"`
-	References        []Reference `json:"references"`
-	Releases          []Release   `json:"releases"`
-	SectionCompletion float64     `json:"section_completion"`
-	Templates         []Template  `json:"templates"`
-	UnreviewedBlocks  int         `json:"unreviewed_blocks"`
+	Builds            []Build            `json:"builds"`
+	ChapterTags       []ChapterTag       `json:"chapter_tags"`
+	Commits           []Commit           `json:"commits"`
+	Draft             Draft              `json:"draft"`
+	References        []Reference        `json:"references"`
+	Releases          []Release          `json:"releases"`
+	SectionCompletion float64            `json:"section_completion"`
+	Templates         []Template         `json:"templates"`
+	UnreviewedBlocks  int                `json:"unreviewed_blocks"`
+	Warnings          []AggregateWarning `json:"warnings"`
+}
+
+// AggregateWarning keeps the usable draft available when a secondary Article
+// projection is temporarily unavailable. It exposes stable product metadata,
+// never an internal database or adapter error.
+type AggregateWarning struct {
+	Code      string `json:"code"`
+	Component string `json:"component"`
+	Message   string `json:"message"`
 }
 
 type CommitDetail struct {

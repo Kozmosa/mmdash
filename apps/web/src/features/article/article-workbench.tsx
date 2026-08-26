@@ -1,28 +1,37 @@
 "use client";
 
 import { HocuspocusProvider, WebSocketStatus } from "@hocuspocus/provider";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  type InfiniteData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { gunzipSync, strFromU8, unzipSync } from "fflate";
 import {
-  BookOpen,
   Boxes,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   Clock3,
+  Copy,
   Download,
   FileArchive,
   FileCode2,
   FilePenLine,
   FileUp,
   FileText,
-  Link2,
+  FolderPlus,
+  ListTree,
   LoaderCircle,
   RefreshCw,
   Search,
   Users,
 } from "lucide-react";
+import Image from "next/image";
 import {
   useCallback,
   useEffect,
@@ -38,19 +47,41 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { artifactApi } from "@/features/artifact/artifact-api";
+import { ArtifactFolderDeleteActions } from "@/features/artifact/artifact-folder-delete-actions";
+import {
+  ArtifactFolderBrowser,
+  artifactMoveMime,
+} from "@/features/artifact/artifact-folder-browser";
+import { findArtifactFolder } from "@/features/artifact/artifact-folders";
 import { MultipartUploadTask } from "@/features/artifact/multipart-upload";
-import type { ArtifactDetail } from "@/features/artifact/types";
+import type { ArtifactDetail, ArtifactPage } from "@/features/artifact/types";
 import type { ProjectPermissions } from "@/features/repo/types";
 import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-client";
 
 import { articleApi } from "./api";
+import { ArticleAggregateWarnings } from "./article-aggregate-warnings";
+import { ArticleReferencePanel } from "./article-reference-panel";
+import { visibleArticleOutline } from "./article-outline";
+import { availableThumbnailURL } from "./article-image-utils";
+import {
+  articleSidebarDefaultWidth,
+  clampArticleSidebarWidth,
+} from "./article-layout";
+import { ArticleSidebarResizeHandle } from "./article-sidebar-resize-handle";
+import {
+  copiedTemplateManifest,
+  copyArticleTemplateToArtifact,
+} from "./article-template-copy";
 import {
   ArticleEditor,
+  articleOutlineActiveEvent,
+  articleOutlineNavigateEvent,
   articleArtifactMime,
   type ArticleArtifactDrop,
+  type ArticleOutlineItem,
+  type ArticleZoteroDrop,
 } from "./article-editor";
-import { ArticleTagPanel } from "./article-tag-panel";
 import { convertOverleafZip, inspectOverleafZip } from "./overleaf-import";
 import {
   forwardSyncPoint,
@@ -66,9 +97,12 @@ import type {
   ArticleTemplateManifest,
   ZoteroItem,
 } from "./types";
-import { openArtifactLibraryEvent } from "./slash-command";
+import {
+  openArticleSidebarEvent,
+  openArtifactLibraryEvent,
+} from "./slash-command";
 
-type WorkspaceTab = "write" | "history" | "templates" | "zotero";
+type WorkspaceTab = "write" | "history" | "templates";
 type ConnectionState =
   WebSocketStatus | "offline" | "syncing" | "synced" | "failed";
 type PresenceUser = { clientId: number; color: string; name: string };
@@ -123,9 +157,6 @@ export function ArticleWorkbench() {
     permissions.data?.permissions.includes("project.article.release") ?? false;
   const canManageTemplate =
     permissions.data?.permissions.includes("project.article.template.manage") ??
-    false;
-  const canManageZotero =
-    permissions.data?.permissions.includes("project.article.zotero.manage") ??
     false;
   const collaborator = useMemo(
     () => ({
@@ -209,7 +240,13 @@ export function ArticleWorkbench() {
   }
   if (aggregate.error || !aggregate.data) {
     return (
-      <ErrorState message={aggregate.error?.message ?? "论文工作区不可用"} />
+      <ErrorState
+        message={
+          aggregate.error
+            ? articleActionMessage(aggregate.error)
+            : "论文工作区不可用"
+        }
+      />
     );
   }
 
@@ -244,7 +281,6 @@ export function ArticleWorkbench() {
             ["write", "写作"],
             ["history", "版本历史"],
             ["templates", "模板"],
-            ["zotero", "Zotero"],
           ] as const
         ).map(([value, label]) => (
           <Button
@@ -264,6 +300,7 @@ export function ArticleWorkbench() {
           {error}
         </div>
       ) : null}
+      <ArticleAggregateWarnings warnings={data.warnings} />
       {tab === "write" ? (
         <WritingWorkspace
           canEdit={canEdit}
@@ -290,14 +327,6 @@ export function ArticleWorkbench() {
       {tab === "templates" ? (
         <TemplateWorkspace
           canManage={canManageTemplate}
-          data={data}
-          onRefresh={refresh}
-          projectId={project.id}
-        />
-      ) : null}
-      {tab === "zotero" ? (
-        <ZoteroWorkspace
-          canManage={canManageZotero}
           data={data}
           onRefresh={refresh}
           projectId={project.id}
@@ -334,18 +363,61 @@ function WritingWorkspace({
     "reference" | "artifact" | "zotero" | "pdf"
   >("reference");
   const [collapsed, setCollapsed] = useState(false);
-  const [width, setWidth] = useState(320);
+  const [width, setWidth] = useState(articleSidebarDefaultWidth);
+  const [outline, setOutline] = useState<ArticleOutlineItem[]>([]);
+  const [activeOutlineId, setActiveOutlineId] = useState("");
+  const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [referenceKind, setReferenceKind] = useState<
+    "experiment_result" | "model_snapshot" | "problem"
+  >("model_snapshot");
   const [commitOpen, setCommitOpen] = useState(false);
   const projectId = data.draft.project_id;
+  const widthPreferenceKey = `mmdash-article-sidebar-width:${projectId}`;
+  useEffect(() => {
+    const saved = Number(window.localStorage.getItem(widthPreferenceKey));
+    if (Number.isFinite(saved)) setWidth(clampArticleSidebarWidth(saved));
+  }, [widthPreferenceKey]);
   useEffect(() => {
     const openArtifact = () => {
       setCollapsed(false);
       setPanel("artifact");
     };
+    const openSidebar = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          panel?: "reference" | "artifact" | "zotero" | "pdf";
+          referenceKind?: "experiment_result" | "model_snapshot" | "problem";
+        }>
+      ).detail;
+      if (!detail?.panel) return;
+      setCollapsed(false);
+      setPanel(detail.panel);
+      if (detail.referenceKind) setReferenceKind(detail.referenceKind);
+    };
     window.addEventListener(openArtifactLibraryEvent, openArtifact);
-    return () =>
+    window.addEventListener(openArticleSidebarEvent, openSidebar);
+    return () => {
       window.removeEventListener(openArtifactLibraryEvent, openArtifact);
+      window.removeEventListener(openArticleSidebarEvent, openSidebar);
+    };
   }, []);
+  useEffect(() => {
+    const activate = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) setActiveOutlineId(id);
+    };
+    window.addEventListener(articleOutlineActiveEvent, activate);
+    return () =>
+      window.removeEventListener(articleOutlineActiveEvent, activate);
+  }, []);
+  const visibleOutline = visibleArticleOutline(outline, collapsedOutlineIds);
+  const persistSidebarWidth = (next: number) => {
+    const normalized = clampArticleSidebarWidth(next);
+    setWidth(normalized);
+    window.localStorage.setItem(widthPreferenceKey, String(normalized));
+  };
   const insertArtifact = useCallback(
     async (artifact: ArticleArtifactDrop) => {
       const reference = await articleApi.addReference(projectId, {
@@ -368,14 +440,44 @@ function WritingWorkspace({
     },
     [onRefresh, projectId],
   );
+  const reviewChapter = useCallback(
+    async (chapterTagId: string) => {
+      await articleApi.flush(projectId);
+      await articleApi.reviewChapter(projectId, chapterTagId);
+      await onRefresh();
+    },
+    [onRefresh, projectId],
+  );
+  const insertZotero = useCallback(
+    async (item: ArticleZoteroDrop) => {
+      const existing = data.references.find(
+        (reference) =>
+          reference.reference_type === "zotero" &&
+          reference.source_object_id === item.itemKey &&
+          reference.source_version_id === String(item.version),
+      );
+      if (existing) return existing;
+      const reference = await articleApi.addReference(projectId, {
+        citation_key: item.citationKey,
+        metadata: item.raw,
+        reference_type: "zotero",
+        source_object_id: item.itemKey,
+        source_version_id: String(item.version),
+        title: item.title,
+      });
+      await onRefresh();
+      return reference;
+    },
+    [data.references, onRefresh, projectId],
+  );
   return (
     <>
       <div className="flex min-h-[44rem] gap-3">
         <aside
-          className={`shrink-0 overflow-hidden rounded-lg border bg-card ${collapsed ? "w-12" : ""}`}
+          className={`relative flex h-[44rem] shrink-0 flex-col overflow-hidden rounded-lg border bg-card ${collapsed ? "w-12" : ""}`}
           style={collapsed ? undefined : { width }}
         >
-          <div className="flex items-center gap-1 border-b p-2">
+          <div className="flex items-center gap-1 overflow-x-auto border-b p-2">
             {!collapsed
               ? (
                   [
@@ -409,22 +511,30 @@ function WritingWorkspace({
               )}
             </Button>
           </div>
+          {collapsed ? (
+            <Button
+              aria-label="展开论文目录"
+              className="mx-auto mt-auto mb-2"
+              onClick={() => setCollapsed(false)}
+              size="icon"
+              title="论文目录"
+              variant="ghost"
+            >
+              <ListTree className="size-4" />
+            </Button>
+          ) : null}
           {!collapsed ? (
-            <div className="max-h-[48rem] overflow-auto p-3">
+            <div className="min-h-0 flex-1 overflow-auto p-3">
               {panel === "reference" ? (
-                <ReferencePanel
+                <ArticleReferencePanel
                   canEdit={canEdit}
                   data={data}
+                  initialKind={referenceKind}
                   onRefresh={onRefresh}
                 />
               ) : null}
               {panel === "artifact" ? (
-                <ArtifactPanel
-                  canEdit={canEdit}
-                  data={data}
-                  onRefresh={onRefresh}
-                  projectId={projectId}
-                />
+                <ArtifactPanel canEdit={canEdit} projectId={projectId} />
               ) : null}
               {panel === "zotero" ? (
                 <WritingZoteroPanel
@@ -445,18 +555,76 @@ function WritingWorkspace({
             </div>
           ) : null}
           {!collapsed ? (
-            <label className="block border-t p-2 text-[11px] text-muted-foreground">
-              左栏宽度
-              <input
-                aria-label="左栏宽度"
-                className="ml-2 w-28 align-middle"
-                max={520}
-                min={260}
-                onChange={(event) => setWidth(Number(event.target.value))}
-                type="range"
-                value={width}
-              />
-            </label>
+            <nav
+              aria-label="论文目录"
+              className="h-52 shrink-0 overflow-auto border-t p-3"
+            >
+              <p className="mb-2 text-xs font-medium">目录</p>
+              {outline.length ? (
+                <div className="grid gap-0.5">
+                  {visibleOutline.map((item) => {
+                    const itemIndex = outline.indexOf(item);
+                    const hasChildren =
+                      (outline[itemIndex + 1]?.level ?? 0) > item.level;
+                    const folded = collapsedOutlineIds.has(item.id);
+                    return (
+                      <div className="flex min-w-0 items-center" key={item.id}>
+                        <button
+                          aria-label={folded ? "展开章节" : "折叠章节"}
+                          className={`flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted ${hasChildren ? "visible" : "invisible"}`}
+                          onClick={() =>
+                            setCollapsedOutlineIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(item.id)) next.delete(item.id);
+                              else next.add(item.id);
+                              return next;
+                            })
+                          }
+                          style={{
+                            marginLeft: `${Math.max(0, item.level - 1) * 0.65}rem`,
+                          }}
+                          type="button"
+                        >
+                          {folded ? (
+                            <ChevronRight className="size-3" />
+                          ) : (
+                            <ChevronDown className="size-3" />
+                          )}
+                        </button>
+                        <button
+                          aria-current={
+                            activeOutlineId === item.id ? "location" : undefined
+                          }
+                          className="min-w-0 flex-1 truncate rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=location]:bg-primary/10 aria-[current=location]:font-medium aria-[current=location]:text-foreground"
+                          onClick={() =>
+                            window.dispatchEvent(
+                              new CustomEvent(articleOutlineNavigateEvent, {
+                                detail: { id: item.id },
+                              }),
+                            )
+                          }
+                          title={item.text}
+                          type="button"
+                        >
+                          {item.text}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  添加标题后将在此生成目录
+                </p>
+              )}
+            </nav>
+          ) : null}
+          {!collapsed ? (
+            <ArticleSidebarResizeHandle
+              onResize={setWidth}
+              onResizeEnd={persistSidebarWidth}
+              width={width}
+            />
           ) : null}
         </aside>
         <main className="min-w-0 flex-1 space-y-3">
@@ -475,17 +643,19 @@ function WritingWorkspace({
               Commit…
             </Button>
           </div>
-          <ArticleTagPanel
-            blocks={data.draft.blocks}
-            canEdit={canEdit}
-            onReview={reviewBlock}
-          />
           {provider && synced ? (
             <ArticleEditor
+              blocks={data.draft.blocks}
               canEdit={canEdit}
+              chapterTags={data.chapter_tags}
               collaborator={collaborator}
               onFlush={onFlush}
               onInsertArtifact={insertArtifact}
+              onInsertZotero={insertZotero}
+              onOutlineChange={setOutline}
+              onReviewBlock={reviewBlock}
+              onReviewChapter={reviewChapter}
+              projectId={projectId}
               provider={provider}
             />
           ) : (
@@ -510,152 +680,306 @@ function WritingWorkspace({
   );
 }
 
-function ReferencePanel({
+function ArtifactPanel({
   canEdit,
-  data,
-  onRefresh,
+  projectId,
 }: Readonly<{
   canEdit: boolean;
-  data: ArticleAggregate;
-  onRefresh: () => Promise<void>;
+  projectId: string;
 }>) {
-  const [kind, setKind] = useState<
-    "problem" | "model_snapshot" | "experiment_result"
-  >("problem");
-  const remove = useMutation({
-    mutationFn: (id: string) =>
-      articleApi.removeReference(data.draft.project_id, id),
-    onSuccess: onRefresh,
+  const queryClient = useQueryClient();
+  const [folder, setFolder] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const artifacts = useInfiniteQuery<
+    ArtifactPage,
+    Error,
+    InfiniteData<ArtifactPage, string | undefined>,
+    readonly unknown[],
+    string | undefined
+  >({
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? (lastPage.next_cursor ?? undefined) : undefined,
+    initialPageParam: undefined,
+    queryFn: ({ pageParam }) =>
+      artifactApi.list(projectId, {
+        cursor: pageParam,
+        limit: 50,
+        status: "available",
+      }),
+    queryKey: ["article-artifacts", projectId],
   });
-  const items = data.references.filter((item) => item.reference_type === kind);
+  const folderTree = useQuery({
+    queryFn: () => artifactApi.listFolders(projectId),
+    queryKey: ["artifact-folders", projectId],
+  });
+  const selectedFolder = findArtifactFolder(
+    folderTree.data?.items ?? [],
+    folder,
+  );
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["artifact-folders", projectId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["article-artifacts", projectId],
+      }),
+      queryClient.invalidateQueries({ queryKey: ["artifacts", projectId] }),
+    ]);
+  };
+  const createFolder = useMutation({
+    mutationFn: (name: string) =>
+      artifactApi.createFolder(
+        projectId,
+        name,
+        selectedFolder?.folder_id ?? null,
+      ),
+    onSuccess: async (created) => {
+      await refresh();
+      setFolder(created.folder_id);
+    },
+  });
+  const moveArtifact = useMutation({
+    mutationFn: ({
+      artifactId,
+      folderId,
+    }: {
+      artifactId: string;
+      folderId: string | null;
+    }) => artifactApi.moveArtifact(projectId, artifactId, folderId),
+    onSuccess: refresh,
+  });
+  const renameFolder = useMutation({
+    mutationFn: (name: string) =>
+      artifactApi.renameFolder(projectId, selectedFolder!.folder_id, name),
+    onSuccess: refresh,
+  });
+  const moveFolder = useMutation({
+    mutationFn: ({
+      folderId,
+      parentFolderId,
+    }: {
+      folderId: string;
+      parentFolderId: string | null;
+    }) => artifactApi.moveFolder(projectId, folderId, parentFolderId),
+    onSuccess: refresh,
+  });
+  const deleteFolder = useMutation({
+    mutationFn: (recursive: boolean) =>
+      artifactApi.deleteFolder(projectId, selectedFolder!.folder_id, recursive),
+    onSuccess: async () => {
+      setFolder(null);
+      await refresh();
+    },
+  });
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const visibleArtifacts = (artifacts.data?.pages ?? [])
+    .flatMap((page) => page.items)
+    .filter((item) => {
+      const inFolder = item.artifact.folder_id === folder;
+      const matchesSearch =
+        !normalizedSearch ||
+        item.artifact.name.toLocaleLowerCase().includes(normalizedSearch) ||
+        item.current_version?.filename
+          .toLocaleLowerCase()
+          .includes(normalizedSearch);
+      return inFolder && matchesSearch;
+    });
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-1">
-        {(["problem", "model_snapshot", "experiment_result"] as const).map(
-          (value) => (
-            <Button
-              key={value}
-              onClick={() => setKind(value)}
-              size="sm"
-              variant={kind === value ? "secondary" : "ghost"}
-            >
-              {value === "problem"
-                ? "Problem"
-                : value === "model_snapshot"
-                  ? "Model"
-                  : "Experiment"}
-            </Button>
-          ),
-        )}
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        拖入时自动固定当前不可变 Version；文件夹由项目共享。
+      </p>
+      <Input
+        aria-label="搜索 Article Artifact"
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="搜索标题或文件名"
+        value={search}
+      />
+      <div className="flex justify-end gap-2">
+        <Button
+          aria-label="新建 Artifact 文件夹"
+          disabled={!canEdit || createFolder.isPending}
+          onClick={() => {
+            const name = window.prompt(
+              selectedFolder
+                ? `在“${selectedFolder.name}”中新建文件夹`
+                : "在项目根目录新建文件夹",
+            );
+            if (name?.trim()) createFolder.mutate(name.trim());
+          }}
+          size="sm"
+          variant="outline"
+        >
+          <FolderPlus className="size-3.5" />
+        </Button>
       </div>
-      {items.map((reference) => (
-        <PinnedReference
+      {selectedFolder ? (
+        <div className="grid grid-cols-2 gap-1">
+          <Button
+            disabled={!canEdit || renameFolder.isPending}
+            onClick={() => {
+              const name = window.prompt("重命名文件夹", selectedFolder.name);
+              if (name?.trim() && name.trim() !== selectedFolder.name) {
+                renameFolder.mutate(name.trim());
+              }
+            }}
+            size="sm"
+            variant="outline"
+          >
+            重命名
+          </Button>
+          <ArtifactFolderDeleteActions
+            compact
+            folderName={selectedFolder.name}
+            onDelete={(recursive) => deleteFolder.mutate(recursive)}
+            pending={!canEdit || deleteFolder.isPending}
+          />
+        </div>
+      ) : null}
+      <ArtifactFolderBrowser
+        canManage={canEdit}
+        compact
+        currentFolderId={folder}
+        folders={folderTree.data?.items ?? []}
+        onMoveArtifact={(artifactId, folderId) =>
+          moveArtifact.mutate({ artifactId, folderId })
+        }
+        onMoveFolder={(folderId, parentFolderId) =>
+          moveFolder.mutate({ folderId, parentFolderId })
+        }
+        onNavigate={setFolder}
+      />
+      {createFolder.error ||
+      renameFolder.error ||
+      moveFolder.error ||
+      deleteFolder.error ? (
+        <p className="text-xs text-destructive">
+          {
+            (
+              createFolder.error ??
+              renameFolder.error ??
+              moveFolder.error ??
+              deleteFolder.error
+            )?.message
+          }
+        </p>
+      ) : null}
+      {visibleArtifacts.map((item) => (
+        <ArticleArtifactCard
           canEdit={canEdit}
-          key={reference.reference_id}
-          onRemove={() => remove.mutate(reference.reference_id)}
-          reference={reference}
+          item={item}
+          key={item.artifact.artifact_id}
         />
       ))}
-      {!items.length ? <Empty label="此类引用尚未固定版本" /> : null}
+      {artifacts.isPending || folderTree.isPending ? (
+        <LoadingState label="正在读取 Artifact…" />
+      ) : null}
+      {artifacts.error || folderTree.error || moveArtifact.error ? (
+        <p className="text-sm text-destructive">
+          {(artifacts.error ?? folderTree.error ?? moveArtifact.error)?.message}
+        </p>
+      ) : null}
+      {artifacts.hasNextPage ? (
+        <Button
+          className="w-full"
+          disabled={artifacts.isFetchingNextPage}
+          onClick={() => void artifacts.fetchNextPage()}
+          size="sm"
+          variant="outline"
+        >
+          {artifacts.isFetchingNextPage ? "正在加载…" : "加载更多"}
+        </Button>
+      ) : null}
     </div>
   );
 }
 
-function ArtifactPanel({
+function ArticleArtifactCard({
   canEdit,
-  data,
-  onRefresh,
-  projectId,
+  item,
 }: Readonly<{
   canEdit: boolean;
-  data: ArticleAggregate;
-  onRefresh: () => Promise<void>;
-  projectId: string;
+  item: ArtifactDetail;
 }>) {
-  const artifacts = useQuery({
-    queryFn: () =>
-      artifactApi.list(projectId, { limit: 50, status: "available" }),
-    queryKey: ["article-artifacts", projectId],
-  });
-  const add = useMutation({
-    mutationFn: (item: ArtifactDetail) => {
-      if (!item.current_version) throw new Error("Artifact 没有可用版本");
-      return articleApi.addReference(projectId, {
-        metadata: {
-          filename: item.current_version.filename,
-          mime_type: item.current_version.mime_type,
-        },
-        reference_type: "artifact",
-        source_object_id: item.artifact.artifact_id,
-        source_version_id: item.current_version.version_id,
-        title: item.artifact.name,
-      });
+  const version = item.current_version;
+  const image = version?.mime_type.startsWith("image/") ?? false;
+  const download = useQuery({
+    enabled: image && Boolean(version),
+    queryFn: async () => {
+      try {
+        const previews = await artifactApi.listPreviews(
+          item.artifact.project_id,
+          item.artifact.artifact_id,
+          version!.version_id,
+        );
+        const thumbnailURL = availableThumbnailURL(previews.items);
+        if (thumbnailURL) return { transfer: { url: thumbnailURL } };
+      } catch {
+        // Preview generation is best effort; fall back to the immutable source.
+      }
+      return artifactApi.download(
+        item.artifact.project_id,
+        item.artifact.artifact_id,
+        version!.version_id,
+      );
     },
-    onSuccess: onRefresh,
+    queryKey: [
+      "article-artifact-preview",
+      item.artifact.artifact_id,
+      version?.version_id,
+    ],
   });
-  const remove = useMutation({
-    mutationFn: (id: string) => articleApi.removeReference(projectId, id),
-    onSuccess: onRefresh,
-  });
+  const drag = (event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !version) return;
+    const payload: ArticleArtifactDrop = {
+      artifactId: item.artifact.artifact_id,
+      filename: version.filename,
+      mimeType: version.mime_type,
+      title: item.artifact.name,
+      versionId: version.version_id,
+    };
+    event.dataTransfer.effectAllowed = "copyMove";
+    event.dataTransfer.setData(
+      artifactMoveMime,
+      JSON.stringify({ artifactId: item.artifact.artifact_id }),
+    );
+    event.dataTransfer.setData(articleArtifactMime, JSON.stringify(payload));
+  };
   return (
-    <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">
-        加入时固定当前不可变 Version；正式 Build 不追随新版本。
-      </p>
-      {artifacts.data?.items.map((item) => {
-        const pinned = data.references.find(
-          (reference) =>
-            reference.reference_type === "artifact" &&
-            reference.source_object_id === item.artifact.artifact_id &&
-            reference.source_version_id === item.current_version?.version_id,
-        );
-        const drag = (event: DragEvent<HTMLDivElement>) => {
-          if (!canEdit || !item.current_version) return;
-          const payload: ArticleArtifactDrop = {
-            artifactId: item.artifact.artifact_id,
-            filename: item.current_version.filename,
-            mimeType: item.current_version.mime_type,
-            title: item.artifact.name,
-            versionId: item.current_version.version_id,
-          };
-          event.dataTransfer.effectAllowed = "copy";
-          event.dataTransfer.setData(
-            articleArtifactMime,
-            JSON.stringify(payload),
-          );
-        };
-        return (
-          <div
-            className="cursor-grab rounded-md border p-3 active:cursor-grabbing"
-            draggable={canEdit && Boolean(item.current_version)}
-            key={item.artifact.artifact_id}
-            onDragStart={drag}
-          >
-            <p className="truncate text-sm font-medium">{item.artifact.name}</p>
-            <p className="truncate text-[11px] text-muted-foreground">
-              {item.current_version?.filename} · {item.artifact.kind}
-            </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              拖到右侧编辑器可固定版本并插入块
-            </p>
-            <Button
-              className="mt-2"
-              disabled={!canEdit || add.isPending || remove.isPending}
-              onClick={() =>
-                pinned ? remove.mutate(pinned.reference_id) : add.mutate(item)
-              }
-              size="sm"
-              variant="outline"
-            >
-              {pinned ? "移除固定引用" : "固定并加入"}
-            </Button>
-          </div>
-        );
-      })}
-      {artifacts.isPending ? <LoadingState label="正在读取 Artifact…" /> : null}
-      {artifacts.error ? (
-        <p className="text-sm text-destructive">{artifacts.error.message}</p>
-      ) : null}
+    <div
+      className="cursor-grab overflow-hidden rounded-md border active:cursor-grabbing"
+      draggable={canEdit && Boolean(version)}
+      onDragStart={drag}
+    >
+      {image && download.data?.transfer.url ? (
+        <div className="relative h-32 bg-muted/30">
+          <Image
+            alt={item.artifact.name}
+            className="object-contain p-2"
+            fill
+            sizes="320px"
+            src={download.data.transfer.url}
+            unoptimized
+          />
+        </div>
+      ) : (
+        <div className="flex h-20 items-center justify-center bg-muted/30 text-xs text-muted-foreground">
+          {version?.mime_type ?? "无可用版本"}
+        </div>
+      )}
+      <div className="bg-white p-3 text-slate-900 dark:bg-card dark:text-card-foreground">
+        <p className="truncate text-sm font-medium">{item.artifact.name}</p>
+        <p className="truncate text-[11px] text-muted-foreground">
+          {version?.filename} · {item.artifact.kind}
+        </p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          拖到编辑器即可固定版本并插入块
+        </p>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          拖到文件夹可整理；拖到编辑器可插入
+        </p>
+      </div>
     </div>
   );
 }
@@ -714,7 +1038,24 @@ function WritingZoteroPanel({
             reference.source_version_id === String(item.version),
         );
         return (
-          <div className="rounded-md border p-3" key={item.item_key}>
+          <div
+            className="cursor-grab rounded-md border p-3 active:cursor-grabbing"
+            draggable={canEdit}
+            key={item.item_key}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "copy";
+              event.dataTransfer.setData(
+                "application/vnd.mmdash.zotero+json",
+                JSON.stringify({
+                  citationKey: item.citation_key,
+                  itemKey: item.item_key,
+                  title: item.title,
+                  version: item.version,
+                  raw: item.raw,
+                }),
+              );
+            }}
+          >
             <p className="text-sm font-medium">{item.title}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">
               {item.authors.join(", ")} · @{item.citation_key}
@@ -761,11 +1102,12 @@ function WritingPDFPanel({
       .then((grant) => setURL(grant.transfer.url));
   }, [pdf, projectId]);
   const preview = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!template) throw new Error("没有可用模板");
+      const draft = await articleApi.flush(projectId);
       return articleApi.createPreview(projectId, {
         bibliography_tool: "auto",
-        draft_revision: data.draft.draft_revision,
+        draft_revision: draft.draft_revision,
         engine: "auto",
         template_id: template.template_id,
       });
@@ -786,6 +1128,9 @@ function WritingPDFPanel({
         仅保留最新草稿预览，不进入正式 Build 历史，也不能创建 Release。
       </p>
       {latest ? <BuildStatus status={latest.status} /> : null}
+      {preview.error ? (
+        <p className="text-xs text-destructive">{preview.error.message}</p>
+      ) : null}
       {url ? (
         <iframe
           className="h-[34rem] w-full rounded-md border"
@@ -795,33 +1140,6 @@ function WritingPDFPanel({
       ) : (
         <Empty label="尚无可用草稿 PDF" />
       )}
-    </div>
-  );
-}
-
-function PinnedReference({
-  canEdit,
-  onRemove,
-  reference,
-}: Readonly<{
-  canEdit: boolean;
-  onRemove: () => void;
-  reference: ArticleAggregate["references"][number];
-}>) {
-  return (
-    <div className="rounded-md border p-3">
-      <div className="flex items-center gap-2">
-        <Link2 className="size-3.5" />
-        <span className="truncate text-sm font-medium">{reference.title}</span>
-      </div>
-      <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-        {reference.source_version_id}
-      </p>
-      {canEdit ? (
-        <Button className="mt-2" onClick={onRemove} size="sm" variant="ghost">
-          移除
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -1074,21 +1392,24 @@ function BuildWorkspace({
   );
   const [commitId, setCommitId] = useState(data.commits[0]?.commit_id ?? "");
   const action = useMutation({
-    mutationFn: (kind: "preview" | "formal") =>
-      kind === "preview"
-        ? articleApi.createPreview(projectId, {
-            bibliography_tool: "auto",
-            draft_revision: data.draft.draft_revision,
-            engine: "auto",
-            template_id: templateId,
-          })
-        : articleApi.createBuild(projectId, {
-            bibliography_tool: "auto",
-            commit_id: commitId,
-            engine: "auto",
-            idempotency_key: crypto.randomUUID(),
-            template_id: templateId,
-          }),
+    mutationFn: async (kind: "preview" | "formal") => {
+      if (kind === "preview") {
+        const draft = await articleApi.flush(projectId);
+        return articleApi.createPreview(projectId, {
+          bibliography_tool: "auto",
+          draft_revision: draft.draft_revision,
+          engine: "auto",
+          template_id: templateId,
+        });
+      }
+      return articleApi.createBuild(projectId, {
+        bibliography_tool: "auto",
+        commit_id: commitId,
+        engine: "auto",
+        idempotency_key: crypto.randomUUID(),
+        template_id: templateId,
+      });
+    },
     onSuccess: onRefresh,
   });
   const retry = useMutation({
@@ -1796,6 +2117,28 @@ function TemplateWorkspace({
     },
     onSuccess: onRefresh,
   });
+  const copyTemplate = useMutation({
+    mutationFn: async (template: ArticleAggregate["templates"][number]) => {
+      const detail = await copyArticleTemplateToArtifact(projectId, template);
+      const currentVersion = detail.current_version;
+      if (!currentVersion)
+        throw new Error("模板副本上传完成，但不可变版本尚不可用");
+      return { currentVersion, detail, template };
+    },
+    onSuccess: ({ currentVersion, detail, template }) => {
+      setMode("standard");
+      setArtifactId(detail.artifact.artifact_id);
+      setVersionId(currentVersion.version_id);
+      setManifest(copiedTemplateManifest(template));
+      setInspection(
+        "已复制为普通 Artifact；可在项目文件库下载修改或上传新版本，再返回此处校验注册。",
+      );
+    },
+  });
+  const retryTemplateTest = useMutation({
+    mutationFn: (buildId: string) => articleApi.retryBuild(projectId, buildId),
+    onSuccess: onRefresh,
+  });
   const choose = async (file?: File) => {
     setSource(file);
     setCandidates([]);
@@ -1888,6 +2231,11 @@ function TemplateWorkspace({
             </>
           ) : (
             <>
+              <p className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                mmdash 默认论文模板由 Core
+                自动、幂等地安装并验证；无需在浏览器生成或上传模板。下面的向导仅用于自定义
+                Overleaf 模板。
+              </p>
               <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed p-5 text-sm">
                 <FileUp className="size-4" />
                 选择普通 Overleaf ZIP
@@ -1964,179 +2312,69 @@ function TemplateWorkspace({
         </CardContent>
       </Card>
       <div className="space-y-3">
-        {data.templates.map((template) => (
-          <Card key={template.template_id}>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2">
-                <Badge>{template.status}</Badge>
-                <span className="font-medium">{template.manifest.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {template.manifest.version}
-                </span>
-              </div>
-              <p className="mt-2 font-mono text-xs text-muted-foreground">
-                {template.manifest.entrypoint} → {template.manifest.output}
-              </p>
-              {template.error_code ? (
-                <p className="mt-2 text-sm text-destructive">
-                  {template.error_code}
+        {data.templates.map((template) => {
+          const testBuild = data.builds.find(
+            (build) =>
+              build.build_kind === "template_test" &&
+              build.template_id === template.template_id,
+          );
+          return (
+            <Card key={template.template_id}>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2">
+                  <Badge>{template.status}</Badge>
+                  <span className="font-medium">{template.manifest.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {template.manifest.version}
+                  </span>
+                </div>
+                <p className="mt-2 font-mono text-xs text-muted-foreground">
+                  {template.manifest.entrypoint} → {template.manifest.output}
                 </p>
-              ) : null}
-            </CardContent>
-          </Card>
-        ))}
+                {template.error_code ? (
+                  <p className="mt-2 text-sm text-destructive">
+                    {template.error_code}
+                  </p>
+                ) : null}
+                <Button
+                  className="mt-3"
+                  disabled={!canManage || copyTemplate.isPending}
+                  onClick={() => copyTemplate.mutate(template)}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Copy className="size-3.5" />
+                  复制为可自定义 Artifact
+                </Button>
+                {template.status === "rejected" && testBuild ? (
+                  <Button
+                    className="ml-2 mt-3"
+                    disabled={!canManage || retryTemplateTest.isPending}
+                    onClick={() => retryTemplateTest.mutate(testBuild.build_id)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <RefreshCw className="size-3.5" />
+                    重新测试模板
+                  </Button>
+                ) : null}
+                {retryTemplateTest.error &&
+                retryTemplateTest.variables === testBuild?.build_id ? (
+                  <p className="mt-2 text-xs text-destructive">
+                    {retryTemplateTest.error.message}
+                  </p>
+                ) : null}
+                {copyTemplate.error &&
+                copyTemplate.variables?.template_id === template.template_id ? (
+                  <p className="mt-2 text-xs text-destructive">
+                    {copyTemplate.error.message}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          );
+        })}
         {!data.templates.length ? <Empty label="尚无 Article 模板" /> : null}
-      </div>
-    </div>
-  );
-}
-
-function ZoteroWorkspace({
-  canManage,
-  data,
-  onRefresh,
-  projectId,
-}: Readonly<{
-  canManage: boolean;
-  data: ArticleAggregate;
-  onRefresh: () => Promise<void>;
-  projectId: string;
-}>) {
-  const binding = useQuery({
-    queryFn: () => articleApi.getZotero(projectId),
-    queryKey: ["article-zotero", projectId],
-    retry: false,
-  });
-  const [libraryType, setLibraryType] = useState<"user" | "group">("user");
-  const [libraryId, setLibraryId] = useState("");
-  const [collectionKey, setCollectionKey] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ZoteroItem[]>([]);
-  const save = useMutation({
-    mutationFn: () =>
-      articleApi.updateZotero(projectId, {
-        api_key: apiKey,
-        collection_key: collectionKey || undefined,
-        library_id: libraryId,
-        library_type: libraryType,
-      }),
-    onSuccess: () => binding.refetch(),
-  });
-  const search = useMutation({
-    mutationFn: () => articleApi.searchZotero(projectId, query),
-    onSuccess: (value) => setResults(value.items),
-  });
-  const freeze = useMutation({
-    mutationFn: (item: ZoteroItem) =>
-      articleApi.addReference(projectId, {
-        citation_key: item.citation_key,
-        metadata: item.raw,
-        reference_type: "zotero",
-        source_object_id: item.item_key,
-        source_version_id: String(item.version),
-        title: item.title,
-      }),
-    onSuccess: onRefresh,
-  });
-  return (
-    <div className="grid gap-5 xl:grid-cols-[23rem_minmax(0,1fr)]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Zotero 只读绑定</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            {binding.data?.api_key_configured
-              ? `已配置 ${binding.data.library_type}/${binding.data.library_id}`
-              : "尚未配置"}
-          </p>
-          <select
-            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-            value={libraryType}
-            onChange={(event) =>
-              setLibraryType(event.target.value as "user" | "group")
-            }
-          >
-            <option value="user">User library</option>
-            <option value="group">Group library</option>
-          </select>
-          <Input
-            aria-label="Library ID"
-            placeholder="Library ID"
-            value={libraryId}
-            onChange={(event) => setLibraryId(event.target.value)}
-          />
-          <Input
-            aria-label="Collection key"
-            placeholder="Collection key（可选）"
-            value={collectionKey}
-            onChange={(event) => setCollectionKey(event.target.value)}
-          />
-          <Input
-            aria-label="Zotero API key"
-            placeholder="只读 API Key"
-            type="password"
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-          />
-          <Button
-            className="w-full"
-            disabled={!canManage || !libraryId || !apiKey || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            保存加密凭据
-          </Button>
-        </CardContent>
-      </Card>
-      <div className="space-y-4">
-        <Card>
-          <CardContent className="flex gap-2 pt-6">
-            <Input
-              aria-label="搜索 Zotero"
-              placeholder="标题、作者或 DOI"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <Button
-              disabled={!query.trim() || search.isPending}
-              onClick={() => search.mutate()}
-            >
-              <Search className="size-4" />
-              搜索
-            </Button>
-          </CardContent>
-        </Card>
-        {results.map((item) => (
-          <Card key={item.item_key}>
-            <CardContent className="pt-6">
-              <p className="font-medium">{item.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {item.authors.join(", ")} · {item.year} · @{item.citation_key}
-              </p>
-              <Button
-                className="mt-3"
-                disabled={
-                  freeze.isPending ||
-                  data.references.some(
-                    (reference) =>
-                      reference.source_object_id === item.item_key &&
-                      reference.source_version_id === String(item.version),
-                  )
-                }
-                onClick={() => freeze.mutate(item)}
-                size="sm"
-                variant="outline"
-              >
-                <BookOpen className="size-3.5" />
-                固定此版本
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-        {!results.length ? (
-          <Empty label="搜索 Zotero 后可将条目版本固定到论文" />
-        ) : null}
       </div>
     </div>
   );

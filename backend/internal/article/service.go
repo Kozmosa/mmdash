@@ -1,6 +1,7 @@
 package article
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -82,25 +83,48 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 	if err != nil {
 		return Aggregate{}, err
 	}
-	references, err := service.Store.ListReferences(ctx, projectID)
-	if err != nil {
-		return Aggregate{}, err
+	warnings := []AggregateWarning{}
+	if reconciler, ok := service.Store.(interface {
+		ReconcileBuildStates(context.Context, string) error
+	}); ok {
+		if reconcileErr := reconciler.ReconcileBuildStates(ctx, projectID); reconcileErr != nil {
+			warnings = appendAggregateWarning(warnings, "builds")
+		}
 	}
-	commits, err := service.Store.ListCommits(ctx, projectID)
-	if err != nil {
-		return Aggregate{}, err
+	references, _ := aggregateList("references", func() ([]Reference, error) {
+		return service.Store.ListReferences(ctx, projectID)
+	}, &warnings)
+	commits, _ := aggregateList("commits", func() ([]Commit, error) {
+		return service.Store.ListCommits(ctx, projectID)
+	}, &warnings)
+	builds, _ := aggregateList("builds", func() ([]Build, error) {
+		return service.Store.ListBuilds(ctx, projectID, "")
+	}, &warnings)
+	releases, _ := aggregateList("releases", func() ([]Release, error) {
+		return service.Store.ListReleases(ctx, projectID)
+	}, &warnings)
+	templates, templatesReady := aggregateList("templates", func() ([]Template, error) {
+		return service.Store.ListTemplates(ctx, projectID)
+	}, &warnings)
+	chapterTags, chapterTagsReady := aggregateList("chapter_tags", func() ([]ChapterTag, error) {
+		return service.Store.ListChapterTags(ctx, projectID)
+	}, &warnings)
+	if chapterTagsReady {
+		if ensured, ensureErr := service.ensureChapterTags(ctx, projectID, caller.ActorID(), draft, chapterTags); ensureErr == nil {
+			chapterTags = ensured
+		} else {
+			warnings = appendAggregateWarning(warnings, "chapter_tags.bootstrap")
+		}
 	}
-	builds, err := service.Store.ListBuilds(ctx, projectID, "")
-	if err != nil {
-		return Aggregate{}, err
-	}
-	releases, err := service.Store.ListReleases(ctx, projectID)
-	if err != nil {
-		return Aggregate{}, err
-	}
-	templates, err := service.Store.ListTemplates(ctx, projectID)
-	if err != nil {
-		return Aggregate{}, err
+	// Bootstrap is best-effort: a temporary object-store failure must not turn
+	// the entire Article aggregate into a 500. A later read retries the same
+	// deterministic idempotency key.
+	if templatesReady {
+		if ensured, ensureErr := service.ensureDefaultTemplate(ctx, caller.ActorID(), projectID, templates); ensureErr == nil {
+			templates = ensured
+		} else {
+			warnings = appendAggregateWarning(warnings, "templates.bootstrap")
+		}
 	}
 	unreviewed := 0
 	completed := 0
@@ -116,7 +140,27 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 	if len(draft.Blocks) > 0 {
 		completion = float64(completed) / float64(len(draft.Blocks))
 	}
-	return Aggregate{Draft: draft, References: references, Commits: commits, Builds: builds, Releases: releases, Templates: templates, UnreviewedBlocks: unreviewed, SectionCompletion: completion}, nil
+	return Aggregate{Draft: draft, References: references, Commits: commits, Builds: builds, Releases: releases, Templates: templates, ChapterTags: chapterTags, UnreviewedBlocks: unreviewed, SectionCompletion: completion, Warnings: warnings}, nil
+}
+
+func aggregateList[T any](component string, load func() ([]T, error), warnings *[]AggregateWarning) ([]T, bool) {
+	items, err := load()
+	if err == nil {
+		if items == nil {
+			items = []T{}
+		}
+		return items, true
+	}
+	*warnings = appendAggregateWarning(*warnings, component)
+	return []T{}, false
+}
+
+func appendAggregateWarning(warnings []AggregateWarning, component string) []AggregateWarning {
+	return append(warnings, AggregateWarning{
+		Code:      "ARTICLE_COMPONENT_UNAVAILABLE",
+		Component: component,
+		Message:   "该论文区域暂时不可用；草稿仍可继续编辑，请稍后重试。",
+	})
 }
 
 func (service *Service) ArticleHomeItems(ctx context.Context, caller auth.Identity, projectID string) ([]interface{}, error) {
@@ -482,22 +526,72 @@ func (service *Service) RegisterTemplate(ctx context.Context, caller auth.Identi
 	if _, err = service.Artifacts.ArticleTemplateGrant(ctx, projectID, artifactID, versionID); err != nil {
 		return Template{}, false, err
 	}
+	return service.registerTemplate(ctx, caller.ActorID(), projectID, artifactID, versionID, manifest)
+}
+
+func (service *Service) registerTemplate(ctx context.Context, actorID, projectID, artifactID, versionID string, manifest TemplateManifest) (Template, bool, error) {
 	id, err := service.Generator.New()
 	if err != nil {
 		return Template{}, false, err
 	}
 	now := service.now()
-	item, created, err := service.Store.CreateTemplate(ctx, Template{TemplateID: id, ProjectID: projectID, ArtifactID: artifactID, VersionID: versionID, Manifest: manifest, Status: "validating", CreatedBy: caller.ActorID(), CreatedAt: now, UpdatedAt: now})
-	if err != nil || !created {
+	item, created, err := service.Store.CreateTemplate(ctx, Template{TemplateID: id, ProjectID: projectID, ArtifactID: artifactID, VersionID: versionID, Manifest: manifest, Status: "validating", CreatedBy: actorID, CreatedAt: now, UpdatedAt: now})
+	if err != nil {
 		return item, created, err
 	}
+	if !created && item.Status != "validating" {
+		return item, false, nil
+	}
 	revision := int64(0)
-	build, _, err := service.createBuild(ctx, caller.ActorID(), projectID, BuildTemplateTest, "", &revision, item.TemplateID, manifest.Engine, manifest.BibliographyTool, "template-test:"+versionID)
+	build, _, err := service.createBuild(ctx, actorID, projectID, BuildTemplateTest, "", &revision, item.TemplateID, manifest.Engine, manifest.BibliographyTool, "template-test:"+versionID)
 	if err != nil {
 		return Template{}, false, err
 	}
 	item.TestBuildID = build.BuildID
-	return item, true, nil
+	return item, created, nil
+}
+
+func (service *Service) ensureDefaultTemplate(ctx context.Context, actorID, projectID string, templates []Template) ([]Template, error) {
+	manifest := defaultTemplateManifest()
+	archive, digest, err := defaultTemplateArchive()
+	if err != nil {
+		return templates, err
+	}
+	artifactID, versionID, err := service.Artifacts.ArchiveArticleTemplate(
+		ctx, projectID, actorID, defaultTemplateFilename,
+		defaultTemplateIdempotencyKey, digest, int64(len(archive)), bytes.NewReader(archive),
+	)
+	if err != nil {
+		return templates, err
+	}
+	custom := make([]Template, 0, len(templates))
+	var item Template
+	for _, candidate := range templates {
+		if candidate.Manifest.Name == manifest.Name && candidate.Manifest.Version == manifest.Version {
+			if candidate.VersionID == versionID {
+				item = candidate
+			}
+			// Older browser-generated copies predate the server-owned stable
+			// Artifact. Keep their immutable history, but do not expose several
+			// indistinguishable built-in templates in the product UI.
+			continue
+		}
+		custom = append(custom, candidate)
+	}
+	if item.TemplateID == "" {
+		item, _, err = service.registerTemplate(ctx, actorID, projectID, artifactID, versionID, manifest)
+		if err != nil {
+			return templates, err
+		}
+	} else if item.Status == "validating" && item.TestBuildID == "" {
+		revision := int64(0)
+		build, _, buildErr := service.createBuild(ctx, actorID, projectID, BuildTemplateTest, "", &revision, item.TemplateID, manifest.Engine, manifest.BibliographyTool, "template-test:"+item.VersionID)
+		if buildErr != nil {
+			return templates, buildErr
+		}
+		item.TestBuildID = build.BuildID
+	}
+	return append([]Template{item}, custom...), nil
 }
 func (service *Service) ListTemplates(ctx context.Context, caller auth.Identity, projectID string) ([]Template, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleRead); err != nil {

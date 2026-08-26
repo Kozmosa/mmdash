@@ -88,6 +88,9 @@ func (store PostgresStore) persistDraftInTransaction(ctx context.Context, tx tra
 			return 0, err
 		}
 	}
+	if err := store.reconcileChapterTagsInTransaction(ctx, tx, projectID, actorID, blocks); err != nil {
+		return 0, err
+	}
 	stateVectorDigest := sha256.Sum256([]byte(input.StateVector))
 	if err := store.record(ctx, tx, "article.draft.flushed", projectID, actorID, "draft", projectID, map[string]interface{}{"draft_revision": revision, "state_vector_sha256": fmt.Sprintf("%x", stateVectorDigest), "block_count": len(blocks), "status": "synced"}); err != nil {
 		return 0, err
@@ -491,6 +494,11 @@ func (store PostgresStore) createBuildInTransaction(ctx context.Context, tx tran
 	if _, err = tx.ExecContext(ctx, `UPDATE article_builds SET job_id=$2 WHERE build_id=$1`, item.BuildID, job.ID); err != nil {
 		return false, err
 	}
+	if item.BuildKind == BuildTemplateTest {
+		if _, err = tx.ExecContext(ctx, `UPDATE article_templates SET test_build_id=$1,updated_at=$2 WHERE template_id=$3`, item.BuildID, item.CreatedAt, item.TemplateID); err != nil {
+			return false, err
+		}
+	}
 	payload := map[string]interface{}{"build_id": item.BuildID, "build_kind": item.BuildKind, "job_id": job.ID, "template_version_id": item.TemplateVersionID, "status": "queued"}
 	if item.CommitID != "" {
 		payload["commit_id"] = item.CommitID
@@ -541,17 +549,100 @@ func (store PostgresStore) ListBuilds(ctx context.Context, projectID, commitID s
 	return items, rows.Err()
 }
 
+// ReconcileBuildStates repairs domain projections when a Worker disappears
+// after claiming a Job. Ordinary Worker failures update Article in the same
+// transaction through the Jobs lifecycle hook; lease expiry and timeout are
+// terminalized by the queue reaper and therefore need this idempotent repair
+// before the aggregate is presented to a user.
+func (store PostgresStore) ReconcileBuildStates(ctx context.Context, projectID string) error {
+	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			WITH latest AS (
+				SELECT DISTINCT ON (template_id) template_id,build_id,updated_at
+				FROM article_builds
+				WHERE project_id=$1 AND build_kind='template_test'
+				ORDER BY template_id,created_at DESC,build_id DESC
+			)
+			UPDATE article_templates AS template
+			SET test_build_id=latest.build_id,
+			    updated_at=GREATEST(template.updated_at,latest.updated_at)
+			FROM latest
+			WHERE template.project_id=$1
+			  AND template.template_id=latest.template_id
+			  AND template.test_build_id IS DISTINCT FROM latest.build_id
+		`, projectID); err != nil {
+			return err
+		}
+
+		rows, err := tx.QueryContext(ctx, `
+			SELECT build.job_id::text,job.status,
+			       COALESCE(job.error_code,''),COALESCE(job.error_message,'')
+			FROM article_builds AS build
+			JOIN jobs AS job ON job.job_id=build.job_id
+			WHERE build.project_id=$1
+			  AND build.status IN ('queued','running')
+			  AND job.status IN ('failed','timed_out','cancelled')
+			ORDER BY build.created_at,build.build_id
+			FOR UPDATE OF build
+		`, projectID)
+		if err != nil {
+			return err
+		}
+		type terminalBuild struct {
+			jobID   string
+			status  string
+			code    string
+			message string
+		}
+		items := []terminalBuild{}
+		for rows.Next() {
+			var item terminalBuild
+			if err = rows.Scan(&item.jobID, &item.status, &item.code, &item.message); err != nil {
+				rows.Close()
+				return err
+			}
+			items = append(items, item)
+		}
+		if err = rows.Close(); err != nil {
+			return err
+		}
+		for _, item := range items {
+			if item.code == "" {
+				switch item.status {
+				case "timed_out":
+					item.code = "JOB_TIMED_OUT"
+				case "cancelled":
+					item.code = "JOB_CANCELLED"
+				default:
+					item.code = "JOB_FAILED"
+				}
+			}
+			if item.message == "" {
+				item.message = "Article build job ended before a result was submitted"
+			}
+			if _, err = store.FailBuild(ctx, tx, item.jobID, item.code, item.message); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 const buildSelect = `SELECT b.build_id,b.project_id,b.build_kind,b.status,COALESCE(b.commit_id::text,''),c.git_commit_sha,b.draft_revision,COALESCE(b.job_id::text,''),b.template_id,t.artifact_id,b.template_version_id,b.engine,b.bibliography_tool,b.toolchain,COALESCE(b.error_code,''),COALESCE(b.error_message,''),b.created_by,b.created_at,b.updated_at,b.finished_at,COALESCE(b.idempotency_key,'') FROM article_builds b JOIN article_templates t ON t.template_id=b.template_id LEFT JOIN article_commits c ON c.commit_id=b.commit_id`
 
 func scanBuild(scan func(...interface{}) error) (Build, error) {
 	var item Build
 	var draft sql.NullInt64
+	var commitSHA sql.NullString
 	var toolchain []byte
-	if err := scan(&item.BuildID, &item.ProjectID, &item.BuildKind, &item.Status, &item.CommitID, &item.CommitSHA, &draft, &item.JobID, &item.TemplateID, &item.TemplateArtifactID, &item.TemplateVersionID, &item.Engine, &item.BibliographyTool, &toolchain, &item.ErrorCode, &item.ErrorMessage, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.FinishedAt, &item.IdempotencyKey); err != nil {
+	if err := scan(&item.BuildID, &item.ProjectID, &item.BuildKind, &item.Status, &item.CommitID, &commitSHA, &draft, &item.JobID, &item.TemplateID, &item.TemplateArtifactID, &item.TemplateVersionID, &item.Engine, &item.BibliographyTool, &toolchain, &item.ErrorCode, &item.ErrorMessage, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.FinishedAt, &item.IdempotencyKey); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Build{}, ErrNotFound
 		}
 		return Build{}, err
+	}
+	if commitSHA.Valid {
+		item.CommitSHA = commitSHA.String
 	}
 	if draft.Valid {
 		item.DraftRevision = &draft.Int64

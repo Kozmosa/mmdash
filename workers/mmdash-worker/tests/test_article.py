@@ -30,8 +30,10 @@ MANIFEST = {
     "bibliography_tool": "auto",
 }
 PINNED_TOOLCHAIN = {
-    "pandoc": "pandoc 2.17.1.1", "latexmk": "Latexmk Version 4.79",
-    "tex_engine": "pdfTeX 3.141592653 (TeX Live 2022/Debian)", "engine": "pdflatex",
+    "pandoc": "pandoc 2.17.1.1",
+    "latexmk": "Latexmk Version 4.79",
+    "tex_engine": "pdfTeX 3.141592653 (TeX Live 2022/Debian)",
+    "engine": "pdflatex",
 }
 
 
@@ -42,27 +44,42 @@ class FakeArticleClient:
 
     def get_article_build_input(self, _job_id: str) -> dict[str, Any]:
         return {
-            "build_id": "build-1", "project_id": "project-1", "build_kind": "formal",
-            "manuscript": "# Paper\n", "references_bib": "@misc{ref}\n",
+            "build_id": "build-1",
+            "project_id": "project-1",
+            "build_kind": "formal",
+            "manuscript": "# Paper\n",
+            "references_bib": "@misc{ref}\n",
             "article_manifest": {"draft_revision": 3},
-            "template": {"manifest": MANIFEST, "transfer": {"url": "job-scoped", "kind": "template"}},
-            "engine": "auto", "bibliography_tool": "auto",
+            "template": {
+                "manifest": MANIFEST,
+                "transfer": {"url": "job-scoped", "kind": "template"},
+            },
+            "engine": "auto",
+            "bibliography_tool": "auto",
             "toolchain": {
-                "pandoc": "pandoc 2.17.1.1", "latexmk": "Version 4.79",
+                "pandoc": "pandoc 2.17.1.1",
+                "latexmk": "Version 4.79",
                 "texlive": "TeX Live 2022/Debian",
             },
             "limits": {
-                "timeout_seconds": 600, "memory_bytes": 1024**3,
-                "disk_bytes": 2 * 1024**3, "output_bytes": 512 * 1024**2,
+                "timeout_seconds": 600,
+                "memory_bytes": 1024**3,
+                "disk_bytes": 2 * 1024**3,
+                "output_bytes": 512 * 1024**2,
                 "network": "none",
             },
-            "resources": [{
-                "artifact_id": "artifact-1", "version_id": "version-1",
-                "title": "calibration plot", "filename": "plot.png",
-                "mime_type": "image/png", "size_bytes": len(b"fixed-image"),
-                "sha256": hashlib.sha256(b"fixed-image").hexdigest(),
-                "transfer": {"url": "job-scoped-resource", "kind": "resource"},
-            }],
+            "resources": [
+                {
+                    "artifact_id": "artifact-1",
+                    "version_id": "version-1",
+                    "title": "calibration plot",
+                    "filename": "plot.png",
+                    "mime_type": "image/png",
+                    "size_bytes": len(b"fixed-image"),
+                    "sha256": hashlib.sha256(b"fixed-image").hexdigest(),
+                    "transfer": {"url": "job-scoped-resource", "kind": "resource"},
+                }
+            ],
         }
 
     def download_transfer(
@@ -76,8 +93,15 @@ class FakeArticleClient:
         return {"size_bytes": self.template_zip.stat().st_size}
 
     def upload_article_build_output(
-        self, _job_id: str, role: str, source: Path, *, filename: str,
-        mime_type: str, sha256: str, size_bytes: int,
+        self,
+        _job_id: str,
+        role: str,
+        source: Path,
+        *,
+        filename: str,
+        mime_type: str,
+        sha256: str,
+        size_bytes: int,
     ) -> dict[str, Any]:
         del filename, mime_type
         contents = source.read_bytes()
@@ -126,11 +150,17 @@ def test_successful_build_uploads_reproducible_overleaf_zip(tmp_path: Path) -> N
     client = FakeArticleClient(template_zip)
 
     def fake_command(
-        arguments: list[str], cwd: Path, *, timeout: int,
+        arguments: list[str],
+        cwd: Path,
+        *,
+        timeout: int,
         limits: Mapping[str, int] | None = None,
     ) -> str:
         del timeout, limits
         if arguments[0] == "pandoc":
+            assert (
+                "--from=markdown+tex_math_dollars+raw_tex+table_captions" in arguments
+            )
             output = Path(arguments[arguments.index("--output") + 1])
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("Generated TeX", encoding="utf-8")
@@ -143,22 +173,35 @@ def test_successful_build_uploads_reproducible_overleaf_zip(tmp_path: Path) -> N
         patch("mmdash_worker.article.handler._run_command", side_effect=fake_command),
         patch("mmdash_worker.article.handler._toolchain", return_value=PINNED_TOOLCHAIN),
     ):
-        result = asyncio.run(ArticleBuildHandler(client)(
-            HandlerContext(job_id="job-1", worker_id="worker-1"), {}
-        ))
+        result = asyncio.run(
+            ArticleBuildHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+        )
 
     assert result["build_id"] == "build-1"
     assert {item["role"] for item in result["outputs"]} == {
-        "pdf", "tex_source", "source_zip", "build_report", "log", "synctex"
+        "pdf",
+        "tex_source",
+        "source_zip",
+        "build_report",
+        "log",
+        "synctex",
     }
     source_zip = tmp_path / "result.zip"
     source_zip.write_bytes(client.uploads["source_zip"])
     with zipfile.ZipFile(source_zip) as archive:
         names = set(archive.namelist())
         assert {
-            "main.tex", "sections/generated-content.tex", "references.bib", "figures/",
-            "sections/", "tables/", "mmdash-template.json", "paper.pdf",
-            "build-manifest.json", "CHECKSUMS.sha256", "README.md",
+            "main.tex",
+            "sections/generated-content.tex",
+            "references.bib",
+            "figures/",
+            "sections/",
+            "tables/",
+            "mmdash-template.json",
+            "paper.pdf",
+            "build-manifest.json",
+            "CHECKSUMS.sha256",
+            "README.md",
         } <= names
         assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist())
         checksums = archive.read("CHECKSUMS.sha256").decode()
@@ -170,12 +213,16 @@ def test_failed_build_archives_sanitized_log_before_failing(tmp_path: Path) -> N
     client = FakeArticleClient(create_template(tmp_path / "template.zip"))
 
     def fail_command(
-        _arguments: list[str], cwd: Path, *, timeout: int,
+        _arguments: list[str],
+        cwd: Path,
+        *,
+        timeout: int,
         limits: Mapping[str, int] | None = None,
     ) -> str:
         del timeout, limits
         raise _CommandFailure(
-            "ARTICLE_BUILD_FAILED", "Article document compilation failed",
+            "ARTICLE_BUILD_FAILED",
+            "Article document compilation failed",
             f"{cwd}/private/work/main.tex:1: bad input",
         )
 
@@ -184,9 +231,9 @@ def test_failed_build_archives_sanitized_log_before_failing(tmp_path: Path) -> N
         patch("mmdash_worker.article.handler._toolchain", return_value=PINNED_TOOLCHAIN),
         pytest.raises(HandlerError) as caught,
     ):
-        asyncio.run(ArticleBuildHandler(client)(
-            HandlerContext(job_id="job-1", worker_id="worker-1"), {}
-        ))
+        asyncio.run(
+            ArticleBuildHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+        )
     assert caught.value.code == "ARTICLE_BUILD_FAILED"
     assert set(client.uploads) == {"log"}
     assert b"mmdash-article-" not in client.uploads["log"]
@@ -196,15 +243,19 @@ def test_failed_build_archives_sanitized_log_before_failing(tmp_path: Path) -> N
 def test_build_rejects_toolchain_drift_before_running_template(tmp_path: Path) -> None:
     client = FakeArticleClient(create_template(tmp_path / "template.zip"))
     with (
-        patch("mmdash_worker.article.handler._toolchain", return_value={
-            **PINNED_TOOLCHAIN, "pandoc": "pandoc 3.0",
-        }),
+        patch(
+            "mmdash_worker.article.handler._toolchain",
+            return_value={
+                **PINNED_TOOLCHAIN,
+                "pandoc": "pandoc 3.0",
+            },
+        ),
         patch("mmdash_worker.article.handler._run_command") as command,
         pytest.raises(HandlerError) as caught,
     ):
-        asyncio.run(ArticleBuildHandler(client)(
-            HandlerContext(job_id="job-1", worker_id="worker-1"), {}
-        ))
+        asyncio.run(
+            ArticleBuildHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+        )
     assert caught.value.code == "ARTICLE_TOOLCHAIN_MISMATCH"
     command.assert_not_called()
 

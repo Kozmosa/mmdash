@@ -43,6 +43,41 @@ type articleTestStore struct {
 	releases      []Release
 	template      Template
 	templateErr   error
+	templates     []Template
+}
+
+type aggregateTestStore struct {
+	*articleTestStore
+	draftErr    error
+	listErrors  map[string]error
+	chapterTags []ChapterTag
+	commits     []Commit
+	releases    []Release
+}
+
+func (store *aggregateTestStore) GetDraft(ctx context.Context, projectID string) (Draft, error) {
+	if store.draftErr != nil {
+		return Draft{}, store.draftErr
+	}
+	return store.articleTestStore.GetDraft(ctx, projectID)
+}
+func (store *aggregateTestStore) ListReferences(context.Context, string) ([]Reference, error) {
+	return store.references, store.listErrors["references"]
+}
+func (store *aggregateTestStore) ListCommits(context.Context, string) ([]Commit, error) {
+	return store.commits, store.listErrors["commits"]
+}
+func (store *aggregateTestStore) ListBuilds(context.Context, string, string) ([]Build, error) {
+	return store.builds, store.listErrors["builds"]
+}
+func (store *aggregateTestStore) ListReleases(context.Context, string) ([]Release, error) {
+	return store.releases, store.listErrors["releases"]
+}
+func (store *aggregateTestStore) ListTemplates(context.Context, string) ([]Template, error) {
+	return store.templates, store.listErrors["templates"]
+}
+func (store *aggregateTestStore) ListChapterTags(context.Context, string) ([]ChapterTag, error) {
+	return store.chapterTags, store.listErrors["chapter_tags"]
 }
 
 func (store *articleTestStore) GetDraft(context.Context, string) (Draft, error) {
@@ -85,11 +120,28 @@ func (store *articleTestStore) GetPublication(_ context.Context, _ string, id st
 	}
 	return Publication{}, ErrNotFound
 }
-func (store *articleTestStore) GetTemplate(context.Context, string, string) (Template, error) {
+func (store *articleTestStore) GetTemplate(_ context.Context, _ string, templateID string) (Template, error) {
 	if store.templateErr != nil {
 		return Template{}, store.templateErr
 	}
+	for _, item := range store.templates {
+		if item.TemplateID == templateID {
+			return item, nil
+		}
+	}
 	return store.template, nil
+}
+func (store *articleTestStore) ListTemplates(context.Context, string) ([]Template, error) {
+	return append([]Template(nil), store.templates...), nil
+}
+func (store *articleTestStore) CreateTemplate(_ context.Context, item Template) (Template, bool, error) {
+	for _, existing := range store.templates {
+		if existing.ProjectID == item.ProjectID && existing.VersionID == item.VersionID {
+			return existing, false, nil
+		}
+	}
+	store.templates = append(store.templates, item)
+	return item, true, nil
 }
 func (store *articleTestStore) GetBuild(_ context.Context, _ string, buildID string) (Build, error) {
 	for _, build := range store.builds {
@@ -100,6 +152,11 @@ func (store *articleTestStore) GetBuild(_ context.Context, _ string, buildID str
 	return Build{}, ErrNotFound
 }
 func (store *articleTestStore) CreateBuild(_ context.Context, item Build, _ jobs.CreateInput, _ jobs.TransactionalWriter) (Build, bool, error) {
+	for _, existing := range store.builds {
+		if item.IdempotencyKey != "" && existing.BuildKind == item.BuildKind && existing.IdempotencyKey == item.IdempotencyKey {
+			return existing, false, nil
+		}
+	}
 	if item.BuildKind == BuildPreview {
 		for index := range store.builds {
 			if store.builds[index].BuildKind == BuildPreview && (store.builds[index].Status == BuildQueued || store.builds[index].Status == BuildRunning) {
@@ -173,6 +230,16 @@ type articleTestArtifacts struct {
 
 func (*articleTestArtifacts) ArticleTemplateGrant(context.Context, string, string, string) (map[string]interface{}, error) {
 	return map[string]interface{}{"method": "GET", "url": "https://grant.test/template"}, nil
+}
+func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, _, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+	contents, err := io.ReadAll(input)
+	if err != nil {
+		return "", "", err
+	}
+	if int64(len(contents)) != expectedSize || hashBytes(contents) != expectedSHA {
+		return "", "", errors.New("template integrity mismatch")
+	}
+	return "artifact-default", "version-default", nil
 }
 func (artifacts *articleTestArtifacts) ArticleResourceGrant(_ context.Context, _, artifactID, versionID string) (map[string]interface{}, error) {
 	artifacts.resourceCalls = append(artifacts.resourceCalls, [2]string{artifactID, versionID})
@@ -416,7 +483,103 @@ func TestFormalWorkerInputUsesCommitFrozenArtifactVersion(t *testing.T) {
 	}
 }
 
-func testService(store *articleTestStore, workspace *articleTestWorkspace) *Service {
+func TestEnsureDefaultTemplateIsProjectIdempotentAndQueuesValidation(t *testing.T) {
+	store := &articleTestStore{}
+	service := testService(store, &articleTestWorkspace{})
+	service.Artifacts = &articleTestArtifacts{}
+
+	templates, err := service.ensureDefaultTemplate(context.Background(), "user-1", "project-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(templates) != 1 || len(store.templates) != 1 || len(store.builds) != 1 {
+		t.Fatalf("default template was not registered with one validation build: %#v %#v", store.templates, store.builds)
+	}
+	item := templates[0]
+	if item.Manifest != defaultTemplateManifest() || item.TestBuildID == "" || store.builds[0].BuildKind != BuildTemplateTest {
+		t.Fatalf("default template registration is incomplete: %#v %#v", item, store.builds[0])
+	}
+
+	templates, err = service.ensureDefaultTemplate(context.Background(), "user-1", "project-1", store.templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(templates) != 1 || len(store.templates) != 1 || len(store.builds) != 1 {
+		t.Fatalf("default template bootstrap was not idempotent: %#v %#v", store.templates, store.builds)
+	}
+}
+
+func TestEnsureDefaultTemplateReplacesLegacyBrowserCopiesInAggregate(t *testing.T) {
+	manifest := defaultTemplateManifest()
+	store := &articleTestStore{templates: []Template{
+		{TemplateID: "legacy-validating", ProjectID: "project-1", VersionID: "legacy-version-1", Manifest: manifest, Status: "validating"},
+		{TemplateID: "legacy-rejected", ProjectID: "project-1", VersionID: "legacy-version-2", Manifest: manifest, Status: "rejected"},
+		{TemplateID: "custom", ProjectID: "project-1", VersionID: "custom-version", Manifest: TemplateManifest{Name: "Custom", Version: "2.0.0"}, Status: "ready"},
+	}}
+	service := testService(store, &articleTestWorkspace{})
+	service.Artifacts = &articleTestArtifacts{}
+
+	templates, err := service.ensureDefaultTemplate(context.Background(), "user-1", "project-1", store.templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(templates) != 2 || templates[0].VersionID != "version-default" || templates[1].TemplateID != "custom" {
+		t.Fatalf("legacy built-in copies were not collapsed around the canonical server template: %#v", templates)
+	}
+	if len(store.builds) != 1 || store.builds[0].TemplateID != templates[0].TemplateID {
+		t.Fatalf("canonical default template did not receive exactly one test build: %#v", store.builds)
+	}
+}
+
+func TestAggregateKeepsDraftAvailableWhenSecondaryComponentsFail(t *testing.T) {
+	internal := errors.New("database connection detail must stay private")
+	store := &aggregateTestStore{
+		articleTestStore: &articleTestStore{draft: draftAt(3)},
+		listErrors: map[string]error{
+			"builds":       internal,
+			"chapter_tags": internal,
+			"commits":      internal,
+			"references":   internal,
+			"releases":     internal,
+			"templates":    internal,
+		},
+	}
+	service := testService(store, &articleTestWorkspace{})
+
+	aggregate, err := service.Aggregate(context.Background(), human(), "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aggregate.Draft.DraftRevision != 3 {
+		t.Fatalf("usable draft was not returned: %#v", aggregate.Draft)
+	}
+	if aggregate.References == nil || aggregate.Commits == nil || aggregate.Builds == nil || aggregate.Releases == nil || aggregate.Templates == nil || aggregate.ChapterTags == nil {
+		t.Fatalf("degraded lists must serialize as arrays: %#v", aggregate)
+	}
+	wantComponents := []string{"references", "commits", "builds", "releases", "templates", "chapter_tags"}
+	if len(aggregate.Warnings) != len(wantComponents) {
+		t.Fatalf("unexpected aggregate warnings: %#v", aggregate.Warnings)
+	}
+	for index, warning := range aggregate.Warnings {
+		if warning.Component != wantComponents[index] || warning.Code != "ARTICLE_COMPONENT_UNAVAILABLE" || strings.Contains(warning.Message, "database") {
+			t.Fatalf("unsafe or unstable warning: %#v", warning)
+		}
+	}
+}
+
+func TestAggregateStillFailsWhenAuthoritativeDraftCannotLoad(t *testing.T) {
+	store := &aggregateTestStore{
+		articleTestStore: &articleTestStore{},
+		draftErr:         errors.New("draft unavailable"),
+		listErrors:       map[string]error{},
+	}
+	service := testService(store, &articleTestWorkspace{})
+	if _, err := service.Aggregate(context.Background(), human(), "project-1"); err == nil {
+		t.Fatal("aggregate accepted an unavailable authoritative draft")
+	}
+}
+
+func testService(store Store, workspace *articleTestWorkspace) *Service {
 	seed := make([]byte, 16*32)
 	for index := range seed {
 		seed[index] = byte(index)

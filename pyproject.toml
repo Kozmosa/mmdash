@@ -11,6 +11,7 @@ members = ["workers/*"]
 package = false
 
 [tool.pytest.ini_options]
+addopts = ["--basetemp=.testenv/pytest-workspace", "-p", "no:cacheprovider"]
 testpaths = ["workers"]
 timeout = 30
 timeout_method = "thread"

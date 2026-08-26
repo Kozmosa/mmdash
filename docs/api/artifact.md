@@ -28,6 +28,13 @@ storage decision is [ADR 0002](../adr/0002-artifact-multipart-storage.md).
 - Provider upload IDs, object keys, credentials, and signed URLs are omitted
   from persistent projections, events, Audit, metrics, and logs.
 
+Project folders are authoritative Core data shared by the Artifact library and
+Article sidebar. Folder deletion never deletes Artifact data. The default
+`recursive=false` mode moves direct Artifacts to the project root and rejects a
+folder with children. `recursive=true` removes the complete descendant folder
+structure after moving every contained Artifact to the project root. Both
+choices are explicit in the browser UI.
+
 ## Multipart upload
 
 1. The browser or Agent runtime incrementally computes SHA-256 and initializes an upload with a
@@ -96,6 +103,28 @@ the business transaction; object bytes are deleted only if no Version still
 references the Project-local blob. Automatic cleanup is restricted to expired,
 unconfirmed staging uploads and regenerable preview caches.
 
+## Project Artifact folders
+
+Folders are durable, Project-scoped metadata owned by Core. A folder contains
+`folder_id`, `project_id`, an optional `parent_folder_id`, a display `name`,
+and a non-negative sibling `position`; it does not own or duplicate file
+bytes. `GET /v1/projects/{projectId}/artifacts/folders` returns the complete
+nested tree. `POST` creates a folder, `PATCH` renames it, and
+`POST /folders/{folderId}/move` changes its parent or makes it a root folder.
+Folder names are unique case-insensitively among siblings, including the
+project root.
+
+`PUT /v1/projects/{projectId}/artifacts/{artifactId}/folder` assigns an
+Artifact to a folder. Sending `{"folder_id": null}` moves it to the project
+root. The target folder must belong to the same Project, and all mutations are
+authorized by the Project Artifact permission boundary.
+
+Deleting a folder has an intentionally safe, non-recursive policy: direct
+Artifacts are moved to the root in the same transaction, but a folder with
+child folders returns `ARTIFACT_FOLDER_HAS_CHILDREN` and remains unchanged.
+Self/descendant moves return `ARTIFACT_FOLDER_CYCLE`; sibling name collisions
+return `ARTIFACT_FOLDER_CONFLICT`.
+
 ## Preview and semantic boundary
 
 Worker job `artifact.preview` produces bounded:
@@ -163,6 +192,9 @@ Version, upload, or transfer ID does not grant access.
 | `ARTIFACT_STORAGE_UNAVAILABLE` | Configured BlobStore operation is unavailable           |
 | `ARTIFACT_NOT_TRASHED`         | Restore/purge requires the corresponding trash state    |
 | `ARTIFACT_PURGE_CONFLICT`      | Purge conflicts with a concurrent reference change      |
+| `ARTIFACT_FOLDER_CONFLICT`     | Folder name conflicts with a sibling                    |
+| `ARTIFACT_FOLDER_HAS_CHILDREN` | Folder has child folders and cannot be deleted          |
+| `ARTIFACT_FOLDER_CYCLE`        | Folder move would create a parent cycle                 |
 
 Errors expose only the stable code, safe message, request ID, and bounded
 structured details. They never copy provider bodies, credentials, signed URLs,

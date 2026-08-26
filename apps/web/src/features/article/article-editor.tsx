@@ -1,34 +1,193 @@
 "use client";
 
 import type { HocuspocusProvider } from "@hocuspocus/provider";
+import type { Editor } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import DragHandle from "@tiptap/extension-drag-handle-react";
 import { Mathematics } from "@tiptap/extension-mathematics";
+import {
+  isNodeRangeSelection,
+  NodeRange,
+  NodeRangeSelection,
+} from "@tiptap/extension-node-range";
 import { TableKit } from "@tiptap/extension-table";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import UniqueID from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { useQuery } from "@tanstack/react-query";
 import StarterKit from "@tiptap/starter-kit";
 import {
   Bold,
+  Captions,
   Code2,
   GripVertical,
   Heading2,
+  ImagePlus,
   Italic,
+  MoreHorizontal,
+  Plus,
   Save,
   Sigma,
   Table2,
   Undo2,
 } from "lucide-react";
-import { useEffect, useState, type DragEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useRef,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
+import {
+  artifactApi,
+  ensureArtifactRootFolder,
+} from "@/features/artifact/artifact-api";
+import { MultipartUploadTask } from "@/features/artifact/multipart-upload";
+import { optionalRequest } from "@/features/repo/optional-request";
+import { apiClient } from "@/lib/api-client";
 
-import { articleNodes } from "./article-nodes";
-import { SlashCommand } from "./slash-command";
+import { createArticleNodes } from "./article-nodes";
+import {
+  convertArticleBlock,
+  deleteArticleBlock,
+  deleteSelectedArticleBlock,
+  duplicateArticleBlock,
+  insertArticleBlock,
+  moveArticleBlock,
+  replaceArticleImageWithArtifact,
+  selectArticleBlock,
+  type ArticleBlockConversion,
+} from "./article-block-commands";
+import { ArticleBlockMenu } from "./article-block-menu";
+import {
+  dropIndicatorOffset,
+  dropTargetPosition,
+  moveArrayItem,
+  rectangleFromPoints,
+  rectanglesIntersect,
+  type EditorRectangle,
+} from "./article-editor-interactions";
+import {
+  ArticleNodeMenu,
+  type ArticleImageAlignment,
+  type ArticleNodeMenuKind,
+} from "./article-node-menu";
+import {
+  articleImageGroupContext,
+  deleteArticleImageNode,
+  mergeArticleImageWithNeighbor,
+  removeArticleImageFromGroup,
+  ungroupArticleImages,
+  type ArticleImageGroupAction,
+} from "./article-image-group";
+import {
+  ArticleTableEdgeControls,
+  type ArticleTableEdgeAction,
+  type ArticleTableEdgeHandle,
+} from "./article-table-edge-controls";
+import { ArticleTagRail } from "./article-tag-rail";
+import {
+  isTransientImageURL,
+  normalizeImageWidth,
+} from "./article-image-utils";
+import { ArticleMathEditor } from "./article-math-editor";
+import {
+  ArticleMathShortcuts,
+  type ArticleMathKind,
+} from "./article-math-shortcuts";
+import { openArticleImageUploadEvent, SlashCommand } from "./slash-command";
+import {
+  ARTICLE_RENDER_THEME_EVENT,
+  type ArticleBlock,
+  type ArticleChapterTag,
+  type ArticleRenderTheme,
+} from "./types";
 
 export const articleArtifactMime =
   "application/vnd.mmdash.article-artifact+json";
+export const articleZoteroMime = "application/vnd.mmdash.zotero+json";
+export const articleOutlineNavigateEvent = "mmdash:article-outline-navigate";
+export const articleOutlineActiveEvent = "mmdash:article-outline-active";
+
+export function sameArticleOutline(
+  left: ArticleOutlineItem[],
+  right: ArticleOutlineItem[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (item, index) =>
+        item.id === right[index]?.id &&
+        item.level === right[index]?.level &&
+        item.text === right[index]?.text,
+    )
+  );
+}
+
+export function sameTagPositions(
+  left: Record<string, number>,
+  right: Record<string, number>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => Math.abs(left[key]! - (right[key] ?? NaN)) < 0.5)
+  );
+}
+
+export function migrateLegacyTableCaptions(editor: Editor): boolean {
+  const pairs: Array<{
+    captionPos: number;
+    captionSize: number;
+    tablePos: number;
+    tableAttrs: Record<string, unknown>;
+  }> = [];
+  editor.state.doc.forEach((node, offset, index) => {
+    const next = editor.state.doc.maybeChild(index + 1);
+    if (node.type.name !== "tableCaption" || next?.type.name !== "table")
+      return;
+    pairs.push({
+      captionPos: offset,
+      captionSize: node.nodeSize,
+      tablePos: offset + node.nodeSize,
+      tableAttrs: {
+        ...next.attrs,
+        caption: String(next.attrs.caption ?? "").trim() || node.attrs.caption,
+      },
+    });
+  });
+  if (!pairs.length) return false;
+  const transaction = editor.state.tr;
+  for (const pair of pairs.reverse()) {
+    transaction.setNodeMarkup(
+      pair.tablePos,
+      editor.schema.nodes.table,
+      pair.tableAttrs,
+    );
+    transaction.delete(pair.captionPos, pair.captionPos + pair.captionSize);
+  }
+  transaction.setMeta("addToHistory", false);
+  editor.view.dispatch(transaction);
+  return true;
+}
+export const articleInsertReferenceEvent = "mmdash:article-insert-reference";
+
+export type ArticleOutlineItem = {
+  id: string;
+  level: number;
+  text: string;
+};
 
 export type ArticleArtifactDrop = {
   artifactId: string;
@@ -37,6 +196,64 @@ export type ArticleArtifactDrop = {
   title: string;
   versionId: string;
 };
+
+export type ArticleVersionedReferenceInsert = {
+  mimeType?: string;
+  objectId: string;
+  referenceId: string;
+  referenceType: "experiment_result" | "model_snapshot" | "problem";
+  title: string;
+  versionId: string;
+};
+
+type ImageReplacementTarget = {
+  blockId: string;
+  fallbackPosition: number;
+};
+
+type TableDragIndicator = {
+  axis: "column" | "row";
+  left: number;
+  length: number;
+  top: number;
+};
+
+type ArticleDropIndicator = {
+  label: string;
+  position: number;
+  top: number;
+};
+
+type TableDragSession = {
+  active: boolean;
+  handle: ArticleTableEdgeHandle;
+  startX: number;
+  startY: number;
+  targetIndex: number;
+};
+
+function pointIsOverEditableText(
+  editorRoot: HTMLElement,
+  clientX: number,
+  clientY: number,
+): boolean {
+  const range = document.caretRangeFromPoint?.(clientX, clientY);
+  if (!range || !editorRoot.contains(range.startContainer)) return false;
+  const text = range.startContainer;
+  if (text.nodeType !== Node.TEXT_NODE || !text.textContent?.length)
+    return false;
+  const offset = Math.min(range.startOffset, text.textContent.length - 1);
+  const probe = document.createRange();
+  probe.setStart(text, Math.max(0, offset));
+  probe.setEnd(text, Math.min(text.textContent.length, offset + 1));
+  return Array.from(probe.getClientRects()).some(
+    (rect) =>
+      clientX >= rect.left - 2 &&
+      clientX <= rect.right + 2 &&
+      clientY >= rect.top - 2 &&
+      clientY <= rect.bottom + 2,
+  );
+}
 
 export function parseArticleArtifactDrop(raw: string): ArticleArtifactDrop {
   const value = JSON.parse(raw) as Partial<ArticleArtifactDrop>;
@@ -54,32 +271,163 @@ export function parseArticleArtifactDrop(raw: string): ArticleArtifactDrop {
   return value as ArticleArtifactDrop;
 }
 
+export type ArticleZoteroDrop = {
+  citationKey: string;
+  itemKey: string;
+  raw: Record<string, unknown>;
+  title: string;
+  version: number;
+};
+
+export function parseArticleZoteroDrop(raw: string): ArticleZoteroDrop {
+  const value = JSON.parse(raw) as Partial<ArticleZoteroDrop> & {
+    citation_key?: unknown;
+    item_key?: unknown;
+  };
+  const citationKey = value.citationKey ?? value.citation_key;
+  const itemKey = value.itemKey ?? value.item_key;
+  if (
+    typeof itemKey !== "string" ||
+    !itemKey.trim() ||
+    typeof value.title !== "string" ||
+    !value.title.trim() ||
+    typeof citationKey !== "string" ||
+    !citationKey.trim() ||
+    typeof value.version !== "number"
+  ) {
+    throw new Error("Zotero 条目拖拽数据不完整");
+  }
+  return {
+    citationKey: citationKey.trim(),
+    itemKey: itemKey.trim(),
+    title: value.title.trim(),
+    version: value.version,
+    raw:
+      value.raw && typeof value.raw === "object"
+        ? (value.raw as Record<string, unknown>)
+        : {},
+  };
+}
+
 type Collaborator = { color: string; name: string };
 
 export function ArticleEditor({
+  blocks,
   canEdit,
+  chapterTags,
   collaborator,
   onFlush,
   onInsertArtifact,
+  onOutlineChange,
+  onReviewBlock,
+  onReviewChapter,
+  onInsertZotero,
+  projectId,
   provider,
 }: Readonly<{
   canEdit: boolean;
+  chapterTags: ArticleChapterTag[];
   collaborator: Collaborator;
   onFlush: () => void;
   onInsertArtifact: (
     artifact: ArticleArtifactDrop,
   ) => Promise<{ reference_id: string }>;
+  onOutlineChange: (items: ArticleOutlineItem[]) => void;
+  onReviewBlock: (blockId: string) => Promise<void>;
+  onReviewChapter: (chapterTagId: string) => Promise<void>;
+  onInsertZotero: (
+    item: ArticleZoteroDrop,
+  ) => Promise<{ reference_id: string }>;
+  projectId: string;
   provider: HocuspocusProvider;
+  blocks: ArticleBlock[];
 }>) {
   const [dropError, setDropError] = useState<string>();
+  const [renderTheme, setRenderTheme] = useState<ArticleRenderTheme>("md");
+  const [hoverMenu, setHoverMenu] = useState<{
+    kind: ArticleNodeMenuKind;
+    left: number;
+    placement: "above" | "below";
+    pos: number;
+    top: number;
+  }>();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState("");
+  const [altDraft, setAltDraft] = useState("");
+  const [replaceDraft, setReplaceDraft] = useState("");
+  const [tagPositions, setTagPositions] = useState<Record<string, number>>({});
+  const [blockMenuAnchor, setBlockMenuAnchor] = useState<{
+    left: number;
+    pos: number;
+    top: number;
+  }>();
+  const [blockDraggingPos, setBlockDraggingPos] = useState<number>();
+  const [dropIndicator, setDropIndicator] = useState<ArticleDropIndicator>();
+  const [tableEdgeHandle, setTableEdgeHandle] =
+    useState<ArticleTableEdgeHandle>();
+  const [tableEdgeMenuOpen, setTableEdgeMenuOpen] = useState(false);
+  const [tableDragIndicator, setTableDragIndicator] =
+    useState<TableDragIndicator>();
+  const [mathEditorTarget, setMathEditorTarget] = useState<{
+    kind: ArticleMathKind;
+    pos: number;
+  }>();
+  const [mathDraft, setMathDraft] = useState("");
+  const dragHandlePos = useRef<number | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const replacementImageInputRef = useRef<HTMLInputElement>(null);
+  const replacementImageTargetRef = useRef<ImageReplacementTarget | undefined>(
+    undefined,
+  );
+  const activeOutlineIdRef = useRef("");
+  const outlineRef = useRef<ArticleOutlineItem[]>([]);
+  const blockDraggingPosRef = useRef<number | null>(null);
+  const dropIndicatorRef = useRef<ArticleDropIndicator | undefined>(undefined);
+  const marqueeRef = useRef<HTMLDivElement>(null);
+  const blockMenuOpenRef = useRef(false);
+  const editorSurfaceRef = useRef<HTMLDivElement>(null);
+  const tableDragSessionRef = useRef<TableDragSession | undefined>(undefined);
+  const tableDragCleanupRef = useRef<() => void>(() => undefined);
+  const suppressTableHandleClickRef = useRef(false);
+  const openMathEditor = useCallback(
+    (kind: ArticleMathKind, node: ProseMirrorNode, pos: number) => {
+      setMathDraft(String(node.attrs.latex ?? ""));
+      setMathEditorTarget({ kind, pos });
+    },
+    [],
+  );
+  const renderingSetting = useQuery({
+    queryFn: () =>
+      optionalRequest<{ values: Record<string, unknown> }>(
+        apiClient,
+        `/projects/${encodeURIComponent(projectId)}/settings/article.rendering`,
+      ),
+    queryKey: ["article-rendering-setting", projectId],
+    retry: false,
+  });
   const editor = useEditor(
     {
       editable: canEdit,
       extensions: [
-        StarterKit.configure({ undoRedo: false }),
-        ...articleNodes,
-        Mathematics.configure({ katexOptions: { throwOnError: false } }),
-        TableKit.configure({ table: { resizable: true } }),
+        StarterKit.configure({ dropcursor: false, undoRedo: false }),
+        ...createArticleNodes(projectId),
+        Mathematics.configure({
+          blockOptions: {
+            onClick: (node, pos) => openMathEditor("block", node, pos),
+          },
+          inlineOptions: {
+            onClick: (node, pos) => openMathEditor("inline", node, pos),
+          },
+          katexOptions: { throwOnError: false },
+        }),
+        ArticleMathShortcuts.configure({
+          onCreate: (kind, pos) => {
+            setMathDraft("x");
+            setMathEditorTarget({ kind, pos });
+          },
+        }),
+        NodeRange.configure({ depth: 0, key: null }),
+        TableKit.configure({ table: false }),
         SlashCommand,
         UniqueID.configure({
           types: [
@@ -90,8 +438,11 @@ export function ArticleEditor({
             "mathBlock",
             "blockMath",
             "table",
+            "articleImage",
+            "articleImageGroup",
             "artifactReference",
             "experimentResult",
+            "modelReference",
           ],
         }),
         Collaboration.configure({
@@ -100,14 +451,565 @@ export function ArticleEditor({
         }),
         CollaborationCaret.configure({ provider, user: collaborator }),
       ],
+      editorProps: {
+        handleKeyDown: (view, event) => {
+          if (
+            event.key === "Escape" &&
+            (blockMenuOpenRef.current ||
+              view.state.selection instanceof NodeSelection ||
+              isNodeRangeSelection(view.state.selection))
+          ) {
+            blockMenuOpenRef.current = false;
+            setBlockMenuAnchor(undefined);
+            if (
+              view.state.selection instanceof NodeSelection ||
+              isNodeRangeSelection(view.state.selection)
+            ) {
+              const position = view.state.selection.from;
+              view.dispatch(
+                view.state.tr
+                  .setSelection(
+                    TextSelection.near(
+                      view.state.doc.resolve(
+                        Math.min(position + 1, view.state.doc.content.size),
+                      ),
+                      1,
+                    ),
+                  )
+                  .scrollIntoView(),
+              );
+              view.focus();
+            }
+            return true;
+          }
+          if (
+            view.editable &&
+            (event.key === "Backspace" || event.key === "Delete") &&
+            (view.state.selection instanceof NodeSelection ||
+              isNodeRangeSelection(view.state.selection))
+          ) {
+            return deleteSelectedArticleBlock(view);
+          }
+          return false;
+        },
+      },
       immediatelyRender: false,
     },
-    [provider],
+    [openMathEditor, projectId, provider],
   );
+
+  useEffect(() => {
+    const readTheme = () => void renderingSetting.refetch();
+    const value = renderingSetting.data?.values.theme;
+    setRenderTheme(value === "latex" ? "latex" : "md");
+    window.addEventListener(ARTICLE_RENDER_THEME_EVENT, readTheme);
+    return () => {
+      window.removeEventListener(ARTICLE_RENDER_THEME_EVENT, readTheme);
+    };
+  }, [renderingSetting.data, renderingSetting.refetch]);
 
   useEffect(() => {
     editor?.setEditable(canEdit);
   }, [canEdit, editor]);
+
+  useEffect(() => {
+    if (!editor || !canEdit) return;
+    const surface = editorSurfaceRef.current;
+    if (!surface) return;
+    type SelectableBlock = {
+      pos: number;
+      rectangle: EditorRectangle;
+      size: number;
+    };
+    let session:
+      | {
+          active: boolean;
+          blocks?: SelectableBlock[];
+          latest?: { clientX: number; clientY: number };
+          pointerId: number;
+          start: { x: number; y: number };
+        }
+      | undefined;
+    let frame = 0;
+
+    const contentPoint = (
+      clientX: number,
+      clientY: number,
+      surfaceRect = surface.getBoundingClientRect(),
+    ) => {
+      return {
+        x: clientX - surfaceRect.left + surface.scrollLeft,
+        y: clientY - surfaceRect.top + surface.scrollTop,
+      };
+    };
+    const measureBlocks = (surfaceRect: DOMRect): SelectableBlock[] => {
+      const measured: SelectableBlock[] = [];
+      for (const child of Array.from(editor.view.dom.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        const childRect = child.getBoundingClientRect();
+        try {
+          const pos = editor.view.posAtDOM(child, 0);
+          const node = editor.state.doc.nodeAt(pos);
+          if (node) {
+            measured.push({
+              pos,
+              rectangle: {
+                bottom: childRect.bottom - surfaceRect.top + surface.scrollTop,
+                left: childRect.left - surfaceRect.left + surface.scrollLeft,
+                right: childRect.right - surfaceRect.left + surface.scrollLeft,
+                top: childRect.top - surfaceRect.top + surface.scrollTop,
+              },
+              size: node.nodeSize,
+            });
+          }
+        } catch {
+          // Ignore non-document decoration nodes.
+        }
+      }
+      return measured;
+    };
+    const updateSelection = (
+      selectionRectangle: EditorRectangle,
+      blocks: SelectableBlock[],
+    ) => {
+      const matches = blocks.filter(({ rectangle }) =>
+        rectanglesIntersect(selectionRectangle, rectangle),
+      );
+      if (!matches.length) return;
+      const first = matches[0]!;
+      const last = matches[matches.length - 1]!;
+      const nextSelection = NodeRangeSelection.create(
+        editor.state.doc,
+        first.pos,
+        last.pos + last.size,
+        0,
+      );
+      if (!editor.state.selection.eq(nextSelection)) {
+        editor.view.dispatch(editor.state.tr.setSelection(nextSelection));
+      }
+    };
+    const drawMarquee = (rectangle?: EditorRectangle) => {
+      const marquee = marqueeRef.current;
+      if (!marquee) return;
+      if (!rectangle) {
+        marquee.hidden = true;
+        return;
+      }
+      marquee.hidden = false;
+      marquee.style.cssText = `width:${rectangle.right - rectangle.left}px;height:${rectangle.bottom - rectangle.top}px;transform:translate3d(${rectangle.left}px,${rectangle.top}px,0)`;
+    };
+    const clearBlockSelection = () => {
+      const { selection } = editor.state;
+      if (
+        !(selection instanceof NodeSelection) &&
+        !isNodeRangeSelection(selection)
+      ) {
+        return;
+      }
+      const position = Math.min(
+        selection.from + 1,
+        editor.state.doc.content.size,
+      );
+      editor.view.dispatch(
+        editor.state.tr.setSelection(
+          TextSelection.near(editor.state.doc.resolve(position), 1),
+        ),
+      );
+      editor.view.focus();
+    };
+    const placeCaretAtBlankPoint = (clientX: number, clientY: number) => {
+      const target = document.elementFromPoint(clientX, clientY);
+      if (!(target instanceof Element) || !editor.view.dom.contains(target))
+        return false;
+      const textBlockSelector =
+        "p, h1, h2, h3, h4, h5, h6, pre, [data-type='codeBlock']";
+      let textBlock = target.closest(textBlockSelector);
+      if (!textBlock || !editor.view.dom.contains(textBlock)) {
+        let topLevel: Element | null = target;
+        while (
+          topLevel?.parentElement &&
+          topLevel.parentElement !== editor.view.dom
+        ) {
+          topLevel = topLevel.parentElement;
+        }
+        const candidates = topLevel
+          ? Array.from(topLevel.querySelectorAll(textBlockSelector))
+          : [];
+        textBlock =
+          candidates.find((candidate) => {
+            const rect = candidate.getBoundingClientRect();
+            return clientY >= rect.top && clientY <= rect.bottom;
+          }) ??
+          candidates.at(-1) ??
+          null;
+      }
+      if (!textBlock) return false;
+      try {
+        const endPosition = editor.view.posAtDOM(
+          textBlock,
+          textBlock.childNodes.length,
+        );
+        editor.view.dispatch(
+          editor.state.tr.setSelection(
+            TextSelection.near(editor.state.doc.resolve(endPosition), -1),
+          ),
+        );
+        editor.view.focus();
+        return true;
+      } catch {
+        // The target may disappear after a concurrent collaboration update.
+        return false;
+      }
+    };
+    const processPointerFrame = () => {
+      frame = 0;
+      if (!session?.latest) return;
+      let surfaceRect = surface.getBoundingClientRect();
+      let current = contentPoint(
+        session.latest.clientX,
+        session.latest.clientY,
+        surfaceRect,
+      );
+      if (
+        !session.active &&
+        Math.hypot(current.x - session.start.x, current.y - session.start.y) < 4
+      ) {
+        return;
+      }
+      if (!session.active) {
+        session.active = true;
+        session.blocks = measureBlocks(surfaceRect);
+      }
+      const edge = 48;
+      let scrolled = false;
+      if (session.latest.clientY < surfaceRect.top + edge) {
+        const previous = surface.scrollTop;
+        surface.scrollTop -= 12;
+        scrolled = surface.scrollTop !== previous;
+      } else if (session.latest.clientY > surfaceRect.bottom - edge) {
+        const previous = surface.scrollTop;
+        surface.scrollTop += 12;
+        scrolled = surface.scrollTop !== previous;
+      }
+      if (scrolled) {
+        surfaceRect = surface.getBoundingClientRect();
+        current = contentPoint(
+          session.latest.clientX,
+          session.latest.clientY,
+          surfaceRect,
+        );
+      }
+      const rectangle = rectangleFromPoints(session.start, current);
+      drawMarquee(rectangle);
+      updateSelection(rectangle, session.blocks ?? []);
+      if (scrolled && !frame)
+        frame = requestAnimationFrame(processPointerFrame);
+    };
+    const schedulePointerFrame = () => {
+      if (!frame) frame = requestAnimationFrame(processPointerFrame);
+    };
+    const pointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 || !event.isPrimary) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        target.closest(
+          "button, input, textarea, select, a, [role='menu'], .drag-handle, [data-article-table-controls], [data-type='inline-math'], [data-type='block-math'], table, figure",
+        ) ||
+        pointIsOverEditableText(editor.view.dom, event.clientX, event.clientY)
+      ) {
+        return;
+      }
+      session = {
+        active: false,
+        pointerId: event.pointerId,
+        start: contentPoint(event.clientX, event.clientY),
+      };
+      event.preventDefault();
+    };
+    const pointerMove = (event: PointerEvent) => {
+      if (!session || event.pointerId !== session.pointerId) return;
+      session.latest = { clientX: event.clientX, clientY: event.clientY };
+      event.preventDefault();
+      schedulePointerFrame();
+    };
+    const pointerUp = (event: PointerEvent) => {
+      if (!session || event.pointerId !== session.pointerId) return;
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        processPointerFrame();
+      }
+      const wasActive = session.active;
+      session = undefined;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      drawMarquee();
+      if (!wasActive && !placeCaretAtBlankPoint(event.clientX, event.clientY)) {
+        clearBlockSelection();
+      }
+    };
+    const scroll = () => {
+      if (session?.active) schedulePointerFrame();
+    };
+    surface.addEventListener("pointerdown", pointerDown);
+    surface.addEventListener("scroll", scroll, { passive: true });
+    window.addEventListener("pointermove", pointerMove, { passive: false });
+    window.addEventListener("pointerup", pointerUp);
+    window.addEventListener("pointercancel", pointerUp);
+    return () => {
+      session = undefined;
+      cancelAnimationFrame(frame);
+      drawMarquee();
+      surface.removeEventListener("pointerdown", pointerDown);
+      surface.removeEventListener("scroll", scroll);
+      window.removeEventListener("pointermove", pointerMove);
+      window.removeEventListener("pointerup", pointerUp);
+      window.removeEventListener("pointercancel", pointerUp);
+    };
+  }, [canEdit, editor]);
+
+  useEffect(
+    () => () => {
+      tableDragCleanupRef.current();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      !blockMenuAnchor &&
+      !menuOpen &&
+      !tableEdgeMenuOpen &&
+      !mathEditorTarget
+    )
+      return;
+    const closeOverlays = (event?: Event) => {
+      const target = event?.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          "[data-article-block-menu], [data-article-node-menu], [data-article-table-controls], [data-article-math-editor], [data-type='inline-math'], [data-type='block-math'], .drag-handle",
+        )
+      ) {
+        return;
+      }
+      blockMenuOpenRef.current = false;
+      setBlockMenuAnchor(undefined);
+      setMenuOpen(false);
+      setTableEdgeMenuOpen(false);
+      setTableEdgeHandle(undefined);
+      setMathEditorTarget(undefined);
+      if (event?.type === "scroll" || event?.type === "resize") {
+        setHoverMenu(undefined);
+      }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeOverlays();
+      editor?.view.focus();
+    };
+    document.addEventListener("pointerdown", closeOverlays, true);
+    document.addEventListener("keydown", escape, true);
+    window.addEventListener("resize", closeOverlays);
+    const surface = editorSurfaceRef.current;
+    surface?.addEventListener("scroll", closeOverlays, { passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", closeOverlays, true);
+      document.removeEventListener("keydown", escape, true);
+      window.removeEventListener("resize", closeOverlays);
+      surface?.removeEventListener("scroll", closeOverlays);
+    };
+  }, [blockMenuAnchor, editor, mathEditorTarget, menuOpen, tableEdgeMenuOpen]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    const openImageUpload = () => imageInputRef.current?.click();
+    window.addEventListener(openArticleImageUploadEvent, openImageUpload);
+    return () =>
+      window.removeEventListener(openArticleImageUploadEvent, openImageUpload);
+  }, [canEdit]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const surface = editorSurfaceRef.current;
+    const publishActive = () => {
+      if (!surface) return;
+      const surfaceTop = surface.getBoundingClientRect().top;
+      let firstId = "";
+      let activeId = "";
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== "heading") return;
+        const id = String(node.attrs.id ?? "");
+        if (!id) return;
+        if (!firstId) firstId = id;
+        const dom = editor.view.nodeDOM(pos);
+        if (
+          dom instanceof HTMLElement &&
+          dom.getBoundingClientRect().top - surfaceTop <= 96
+        ) {
+          activeId = id;
+        }
+      });
+      activeId ||= firstId;
+      if (activeId === activeOutlineIdRef.current) return;
+      activeOutlineIdRef.current = activeId;
+      window.dispatchEvent(
+        new CustomEvent(articleOutlineActiveEvent, {
+          detail: { id: activeId },
+        }),
+      );
+    };
+    const publishOutline = () => {
+      const items: ArticleOutlineItem[] = [];
+      editor.state.doc.descendants((node) => {
+        if (node.type.name !== "heading") return;
+        const id = String(node.attrs.id ?? "");
+        if (id)
+          items.push({
+            id,
+            level: Number(node.attrs.level ?? 1),
+            text: node.textContent.trim() || "无标题章节",
+          });
+      });
+      if (!sameArticleOutline(outlineRef.current, items)) {
+        outlineRef.current = items;
+        onOutlineChange(items);
+      }
+      publishActive();
+    };
+    const navigate = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      let targetPosition: number | undefined;
+      editor.state.doc.descendants((node, pos) => {
+        if (String(node.attrs.id ?? "") === id) {
+          targetPosition = pos;
+          return false;
+        }
+      });
+      if (targetPosition === undefined) return;
+      const dom = editor.view.nodeDOM(targetPosition);
+      if (dom instanceof HTMLElement) {
+        dom.scrollIntoView({ behavior: "smooth", block: "start" });
+        editor.commands.setTextSelection(targetPosition + 1);
+        editor.commands.focus();
+        activeOutlineIdRef.current = id;
+        window.dispatchEvent(
+          new CustomEvent(articleOutlineActiveEvent, { detail: { id } }),
+        );
+      }
+    };
+    publishOutline();
+    editor.on("transaction", publishOutline);
+    surface?.addEventListener("scroll", publishActive, {
+      passive: true,
+    });
+    window.addEventListener(articleOutlineNavigateEvent, navigate);
+    return () => {
+      editor.off("transaction", publishOutline);
+      surface?.removeEventListener("scroll", publishActive);
+      window.removeEventListener(articleOutlineNavigateEvent, navigate);
+    };
+  }, [editor, onOutlineChange]);
+
+  useEffect(() => {
+    if (!editor || !canEdit) return;
+    const insertReference = (event: Event) => {
+      const detail = (event as CustomEvent<ArticleVersionedReferenceInsert>)
+        .detail;
+      if (
+        !detail?.objectId ||
+        !detail.referenceId ||
+        !detail.versionId ||
+        !detail.title
+      )
+        return;
+      const type =
+        detail.referenceType === "model_snapshot"
+          ? "modelReference"
+          : detail.referenceType === "experiment_result"
+            ? "experimentResult"
+            : "artifactReference";
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          attrs: {
+            experimentId:
+              detail.referenceType === "experiment_result"
+                ? detail.objectId
+                : "",
+            artifactId:
+              detail.referenceType === "problem" ? detail.objectId : "",
+            mimeType: detail.mimeType ?? "",
+            objectId: detail.objectId,
+            referenceId: detail.referenceId,
+            title: detail.title,
+            versionId: detail.versionId,
+          },
+          type,
+        })
+        .run();
+    };
+    window.addEventListener(articleInsertReferenceEvent, insertReference);
+    return () => {
+      window.removeEventListener(articleInsertReferenceEvent, insertReference);
+    };
+  }, [canEdit, editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const surface = editorSurfaceRef.current;
+    if (!surface) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const surfaceRect = surface.getBoundingClientRect();
+        const next: Record<string, number> = {};
+        editor.state.doc.descendants((node, pos) => {
+          const id = String(node.attrs.id ?? "");
+          if (!id) return;
+          const dom = editor.view.nodeDOM(pos);
+          if (dom instanceof HTMLElement) {
+            next[id] =
+              dom.getBoundingClientRect().top -
+              surfaceRect.top +
+              surface.scrollTop;
+          }
+        });
+        setTagPositions((current) =>
+          sameTagPositions(current, next) ? current : next,
+        );
+      });
+    };
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(measure);
+    observer?.observe(surface);
+    observer?.observe(editor.view.dom);
+    const tagLayer = surface.parentElement;
+    const syncScrollOffset = () => {
+      tagLayer?.style.setProperty(
+        "--article-editor-scroll-offset",
+        `${-surface.scrollTop}px`,
+      );
+    };
+    surface.addEventListener("scroll", syncScrollOffset, { passive: true });
+    editor.on("transaction", measure);
+    syncScrollOffset();
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      surface.removeEventListener("scroll", syncScrollOffset);
+      tagLayer?.style.removeProperty("--article-editor-scroll-offset");
+      editor.off("transaction", measure);
+    };
+  }, [blocks, editor]);
 
   useEffect(() => {
     const save = (event: KeyboardEvent) => {
@@ -154,41 +1056,280 @@ export function ArticleEditor({
     };
   }, [canEdit, editor, provider]);
 
+  useEffect(() => {
+    if (!editor || !canEdit) return;
+    const migrateLegacyCaptions = () => {
+      migrateLegacyTableCaptions(editor);
+    };
+    provider.on("synced", migrateLegacyCaptions);
+    if (provider.synced) migrateLegacyCaptions();
+    return () => {
+      provider.off("synced", migrateLegacyCaptions);
+    };
+  }, [canEdit, editor, provider]);
+
+  const handleElementDragEnd = useCallback(() => {
+    blockDraggingPosRef.current = null;
+    dropIndicatorRef.current = undefined;
+    setBlockDraggingPos(undefined);
+    setDropIndicator(undefined);
+  }, []);
+
+  const handleElementDragStart = useCallback(
+    (event: globalThis.DragEvent) => {
+      if (!editor) return;
+      const position = dragHandlePos.current;
+      if (position === null || position === undefined) return;
+      selectArticleBlock(editor, position, { scrollIntoView: false });
+      blockDraggingPosRef.current = position;
+      dropIndicatorRef.current = undefined;
+      setBlockDraggingPos(position);
+      setDropIndicator(undefined);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    },
+    [editor],
+  );
+
+  const handleDragNodeChange = useCallback(
+    ({ node, pos }: { node: ProseMirrorNode | null; pos: number }) => {
+      dragHandlePos.current = node ? pos : null;
+      if (!node && !blockMenuOpenRef.current) setBlockMenuAnchor(undefined);
+    },
+    [],
+  );
+
   if (!editor) return null;
+
+  const closeMathEditor = () => {
+    setMathEditorTarget(undefined);
+    editor.view.focus();
+  };
+
+  const saveMathEditor = () => {
+    if (!mathEditorTarget || !mathDraft.trim()) return;
+    const node = editor.state.doc.nodeAt(mathEditorTarget.pos);
+    const expectedName =
+      mathEditorTarget.kind === "block" ? "blockMath" : "inlineMath";
+    if (node?.type.name !== expectedName) {
+      setMathEditorTarget(undefined);
+      return;
+    }
+    if (mathEditorTarget.kind === "block") {
+      editor.commands.updateBlockMath({
+        latex: mathDraft.trim(),
+        pos: mathEditorTarget.pos,
+      });
+    } else {
+      editor.commands.updateInlineMath({
+        latex: mathDraft.trim(),
+        pos: mathEditorTarget.pos,
+      });
+    }
+    closeMathEditor();
+  };
+
+  const deleteMathEditor = () => {
+    if (!mathEditorTarget) return;
+    if (mathEditorTarget.kind === "block") {
+      editor.commands.deleteBlockMath({ pos: mathEditorTarget.pos });
+    } else {
+      editor.commands.deleteInlineMath({ pos: mathEditorTarget.pos });
+    }
+    closeMathEditor();
+  };
 
   const insertMath = () => {
     const latex = window.prompt("输入 LaTeX 公式", "\\int_0^1 x^2\\,dx");
     if (latex) editor.chain().focus().insertBlockMath({ latex }).run();
   };
 
-  const dropArtifact = async (event: DragEvent<HTMLDivElement>) => {
-    if (!canEdit || !event.dataTransfer.types.includes(articleArtifactMime))
+  const insertArtifactNode = async (
+    payload: ArticleArtifactDrop,
+    position = editor.state.selection.to,
+  ) => {
+    const reference = await onInsertArtifact(payload);
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(position, {
+        attrs: {
+          alt: payload.title,
+          align: "center",
+          artifactId: payload.artifactId,
+          mimeType: payload.mimeType,
+          objectId: payload.artifactId,
+          referenceId: reference.reference_id,
+          title: payload.title,
+          versionId: payload.versionId,
+          width: 100,
+        },
+        type: "artifactReference",
+      })
+      .run();
+  };
+
+  const locateImageReplacement = (target: ImageReplacementTarget) => {
+    let position: number | undefined;
+    if (target.blockId) {
+      editor.state.doc.descendants((node, pos) => {
+        if (String(node.attrs.id ?? "") === target.blockId) {
+          position = pos;
+          return false;
+        }
+      });
+    }
+    position ??= target.fallbackPosition;
+    const node = editor.state.doc.nodeAt(position);
+    if (
+      !node ||
+      (node.type.name !== "articleImage" &&
+        node.type.name !== "artifactReference")
+    ) {
       return;
+    }
+    return { node, pos: position };
+  };
+
+  const replaceImageWithArtifact = async (
+    payload: ArticleArtifactDrop,
+    target: ImageReplacementTarget,
+  ) => {
+    if (!locateImageReplacement(target)) {
+      throw new Error("原图片块已不存在，未执行替换");
+    }
+    const reference = await onInsertArtifact(payload);
+    const located = locateImageReplacement(target);
+    if (!located) throw new Error("上传期间原图片块已被删除，未执行替换");
+    const replaced = replaceArticleImageWithArtifact(editor, located.pos, {
+      artifactId: payload.artifactId,
+      mimeType: payload.mimeType,
+      referenceId: reference.reference_id,
+      title: payload.title,
+      versionId: payload.versionId,
+    });
+    if (!replaced) throw new Error("无法在原块位置替换图片");
+  };
+
+  const uploadImage = async (
+    file: File,
+    replacementTarget?: ImageReplacementTarget,
+    insertionPosition?: number,
+  ) => {
+    if (!canEdit || !file.type.startsWith("image/")) {
+      setDropError("请选择图片文件");
+      return;
+    }
+    setDropError(`正在上传图片 ${file.name}…`);
+    try {
+      const articleFolder = await ensureArtifactRootFolder(
+        projectId,
+        "article",
+      );
+      const detail = await new MultipartUploadTask({
+        file,
+        folderId: articleFolder.folder_id,
+        kind: "attachment",
+        name: file.name,
+        projectId,
+        tags: ["article-image"],
+      }).start();
+      const version = detail.current_version;
+      if (!version || version.status !== "available") {
+        throw new Error("图片上传完成，但不可变版本尚不可用");
+      }
+      const payload = {
+        artifactId: detail.artifact.artifact_id,
+        filename: version.filename,
+        mimeType: version.mime_type,
+        title: detail.artifact.name,
+        versionId: version.version_id,
+      } satisfies ArticleArtifactDrop;
+      if (replacementTarget) {
+        await replaceImageWithArtifact(payload, replacementTarget);
+        setDropError(`图片 ${file.name} 已上传并替换原图片块`);
+      } else {
+        await insertArtifactNode(payload, insertionPosition);
+        setDropError(`图片 ${file.name} 已上传并插入`);
+      }
+    } catch (error) {
+      setDropError(error instanceof Error ? error.message : "图片上传失败");
+    }
+  };
+
+  const selectImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void uploadImage(file);
+  };
+
+  const selectReplacementImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    const target = replacementImageTargetRef.current;
+    event.target.value = "";
+    replacementImageTargetRef.current = undefined;
+    if (file && target) void uploadImage(file, target);
+  };
+
+  const pasteImage = (event: ClipboardEvent<HTMLDivElement>) => {
+    const file = Array.from(event.clipboardData.files).find((item) =>
+      item.type.startsWith("image/"),
+    );
+    if (!file) return;
+    event.preventDefault();
+    void uploadImage(file);
+  };
+
+  const dropArtifact = async (
+    event: DragEvent<HTMLDivElement>,
+    insertionPosition?: number,
+  ) => {
+    const isZotero = event.dataTransfer.types.includes(articleZoteroMime);
+    const isArtifact = event.dataTransfer.types.includes(articleArtifactMime);
+    if (!canEdit || (!isZotero && !isArtifact)) return;
     event.preventDefault();
     setDropError(undefined);
     try {
+      if (isZotero) {
+        const payload = parseArticleZoteroDrop(
+          event.dataTransfer.getData(articleZoteroMime),
+        );
+        const reference = await onInsertZotero(payload);
+        const attrs = {
+          citationKey: payload.citationKey,
+          itemKey: payload.itemKey,
+          referenceId: reference.reference_id,
+          title: payload.title,
+          version: payload.version,
+        };
+        if (editor.schema.nodes.zoteroCitation) {
+          editor
+            .chain()
+            .focus()
+            .insertContent({ attrs, type: "zoteroCitation" })
+            .run();
+        } else {
+          editor
+            .chain()
+            .focus()
+            .insertContent(`[@${payload.citationKey}]`)
+            .run();
+        }
+        return;
+      }
       const payload = parseArticleArtifactDrop(
         event.dataTransfer.getData(articleArtifactMime),
       );
-      const reference = await onInsertArtifact(payload);
-      const target = editor.view.posAtCoords({
-        left: event.clientX,
-        top: event.clientY,
-      });
-      editor
-        .chain()
-        .focus()
-        .insertContentAt(target?.pos ?? editor.state.selection.to, {
-          attrs: {
-            artifactId: payload.artifactId,
-            objectId: payload.artifactId,
-            referenceId: reference.reference_id,
-            title: payload.title,
-            versionId: payload.versionId,
-          },
-          type: "artifactReference",
-        })
-        .run();
+      const target =
+        insertionPosition === undefined
+          ? editor.view.posAtCoords({
+              left: event.clientX,
+              top: event.clientY,
+            })
+          : undefined;
+      await insertArtifactNode(
+        payload,
+        insertionPosition ?? target?.pos ?? editor.state.selection.to,
+      );
     } catch (error) {
       setDropError(
         error instanceof Error ? error.message : "Artifact 插入失败",
@@ -196,9 +1337,888 @@ export function ArticleEditor({
     }
   };
 
+  const insertTableCaption = () => {
+    const table = findTableAtSelection();
+    if (!table) {
+      setDropError("请先把光标放在表格中，再编辑表注。");
+      return;
+    }
+    openMenuForNode("table", table.pos);
+  };
+
+  const insertParagraphBeforeCurrent = () => {
+    const position = dragHandlePos.current;
+    if (position === null || position === undefined) return;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(position, { type: "paragraph" })
+      .run();
+    editor.commands.setTextSelection(position + 1);
+    editor.view.focus();
+  };
+
+  const blockAt = (position: number) => {
+    const node = editor.state.doc.nodeAt(position);
+    if (!node || editor.state.doc.resolve(position).depth !== 0) return;
+    return node;
+  };
+
+  const openBlockMenu = () => {
+    const position = dragHandlePos.current;
+    if (position === null || position === undefined) return;
+    const node = blockAt(position);
+    if (!node) return;
+    const dom = editor.view.nodeDOM(position);
+    const rect =
+      dom instanceof HTMLElement ? dom.getBoundingClientRect() : null;
+    if (!rect) return;
+    blockMenuOpenRef.current = true;
+    setBlockMenuAnchor({
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 296)),
+      pos: position,
+      top: Math.max(8, Math.min(rect.top + 30, window.innerHeight - 536)),
+    });
+    selectArticleBlock(editor, position, { scrollIntoView: false });
+  };
+
+  const closeBlockMenu = () => {
+    blockMenuOpenRef.current = false;
+    setBlockMenuAnchor(undefined);
+  };
+
+  const copyText = async (value: string) => {
+    if (!value) return;
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const input = document.createElement("textarea");
+    input.value = value;
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.append(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  };
+
+  const runBlockAction = (
+    action:
+      ArticleBlockConversion | "after" | "before" | "up" | "down" | "duplicate",
+  ) => {
+    const position = blockMenuAnchor?.pos;
+    if (position === undefined) return;
+    if (action === "before" || action === "after") {
+      insertArticleBlock(editor, position, action);
+    } else if (action === "up" || action === "down") {
+      moveArticleBlock(editor, position, action);
+    } else if (action === "duplicate") {
+      duplicateArticleBlock(editor, position);
+    } else {
+      convertArticleBlock(editor, position, action);
+    }
+    closeBlockMenu();
+  };
+
+  const deleteBlockFromMenu = () => {
+    const position = blockMenuAnchor?.pos;
+    if (position === undefined) return;
+    closeBlockMenu();
+    deleteArticleBlock(editor, position);
+  };
+
+  const copyBlockId = () => {
+    const position = blockMenuAnchor?.pos;
+    const id =
+      position === undefined ? "" : String(blockAt(position)?.attrs.id ?? "");
+    void copyText(id)
+      .then(() => {
+        if (id) setDropError("块 ID 已复制");
+      })
+      .catch(() => setDropError("复制块 ID 失败"));
+  };
+
+  const cutBlock = () => {
+    const position = blockMenuAnchor?.pos;
+    if (position === undefined) return;
+    const node = editor.state.doc.nodeAt(position);
+    if (!node) return;
+    const value =
+      node.textContent.trim() ||
+      String(node.attrs.title ?? node.attrs.alt ?? node.type.name);
+    void copyText(value)
+      .then(() => {
+        closeBlockMenu();
+        deleteArticleBlock(editor, position);
+      })
+      .catch(() => setDropError("无法访问系统剪贴板，未删除该块"));
+  };
+
+  const reviewBlockFromMenu = () => {
+    const position = blockMenuAnchor?.pos;
+    const id =
+      position === undefined ? "" : String(blockAt(position)?.attrs.id ?? "");
+    if (!id) return;
+    closeBlockMenu();
+    void onReviewBlock(id).catch((error: unknown) => {
+      setDropError(error instanceof Error ? error.message : "审阅失败");
+    });
+  };
+
+  const selectBlockFromHandle = () => {
+    const blockPos = dragHandlePos.current;
+    if (blockPos === null || !editor.state.doc.nodeAt(blockPos)) return;
+    selectArticleBlock(editor, blockPos, { scrollIntoView: false });
+  };
+
+  const locateBlock = (blockId: string) => {
+    let targetPosition: number | undefined;
+    editor.state.doc.descendants((node, pos) => {
+      if (String(node.attrs.id ?? "") === blockId) {
+        targetPosition = pos;
+        return false;
+      }
+    });
+    if (targetPosition === undefined) return;
+    const dom = editor.view.nodeDOM(targetPosition);
+    if (dom instanceof HTMLElement)
+      dom.scrollIntoView({ behavior: "smooth", block: "center" });
+    editor.view.dispatch(
+      editor.state.tr.setSelection(
+        NodeSelection.create(editor.state.doc, targetPosition),
+      ),
+    );
+  };
+
+  const updateHoverMenu = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-article-node-menu]")) return;
+    const node = target.closest(
+      "table, figure[data-article-image], [data-article-artifact-image], figure[data-article-image-group]",
+    );
+    const surface = editorSurfaceRef.current;
+    if (!node || !surface) {
+      if (!menuOpen && hoverMenu) setHoverMenu(undefined);
+      return;
+    }
+    const rect = node.getBoundingClientRect();
+    let pos: number;
+    try {
+      pos = editor.view.posAtDOM(node, 0);
+    } catch {
+      return;
+    }
+    const nextHoverMenu = {
+      kind: node.matches("figure[data-article-image-group]")
+        ? "imageGroup"
+        : node.matches(
+              "figure[data-article-image], [data-article-artifact-image]",
+            )
+          ? "image"
+          : "table",
+      left: Math.max(36, Math.min(rect.right - 28, window.innerWidth - 8)),
+      placement: rect.top > window.innerHeight / 2 ? "above" : "below",
+      pos,
+      top: Math.max(8, Math.min(rect.top + 4, window.innerHeight - 36)),
+    } as const;
+    setHoverMenu((current) =>
+      current?.kind === nextHoverMenu.kind &&
+      current.pos === nextHoverMenu.pos &&
+      current.placement === nextHoverMenu.placement &&
+      Math.abs(current.left - nextHoverMenu.left) < 0.5 &&
+      Math.abs(current.top - nextHoverMenu.top) < 0.5
+        ? current
+        : nextHoverMenu,
+    );
+  };
+
+  const updateTableEdgeHandle = (event: MouseEvent<HTMLDivElement>) => {
+    if (!canEdit || tableEdgeMenuOpen || tableDragSessionRef.current) return;
+    const tables = Array.from(editor.view.dom.querySelectorAll("table"));
+    let next: ArticleTableEdgeHandle | undefined;
+    for (const table of tables) {
+      const tableRect = table.getBoundingClientRect();
+      const nearLeft = Math.abs(event.clientX - tableRect.left) <= 28;
+      const nearTop = Math.abs(event.clientY - tableRect.top) <= 24;
+      if (!nearLeft && !nearTop) continue;
+      const rows = Array.from(table.rows);
+      const firstRow = rows[0];
+      const rowIndex = rows.findIndex((row) => {
+        const rect = row.getBoundingClientRect();
+        return event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+      const cells = firstRow ? Array.from(firstRow.cells) : [];
+      const columnIndex = cells.findIndex((cell) => {
+        const rect = cell.getBoundingClientRect();
+        return event.clientX >= rect.left && event.clientX <= rect.right;
+      });
+      const axis = nearLeft && rowIndex >= 0 ? "row" : "column";
+      const index = axis === "row" ? rowIndex : columnIndex;
+      const cell =
+        axis === "row" ? rows[index]?.cells[0] : firstRow?.cells[index];
+      if (index < 0 || !cell) continue;
+      let cellPos: number;
+      try {
+        cellPos = editor.view.posAtDOM(cell, 0);
+      } catch {
+        continue;
+      }
+      const resolved = editor.state.doc.resolve(
+        Math.min(cellPos + 1, editor.state.doc.content.size),
+      );
+      let tablePos: number | undefined;
+      for (let depth = resolved.depth; depth > 0; depth -= 1) {
+        if (resolved.node(depth).type.name === "table") {
+          tablePos = resolved.before(depth);
+          break;
+        }
+      }
+      if (tablePos === undefined) continue;
+      const targetRect =
+        axis === "row"
+          ? rows[index]!.getBoundingClientRect()
+          : cells[index]!.getBoundingClientRect();
+      next = {
+        axis,
+        cellPos,
+        index,
+        left:
+          axis === "row"
+            ? Math.max(4, tableRect.left - 28)
+            : targetRect.left + targetRect.width / 2 - 12,
+        tablePos,
+        top:
+          axis === "row"
+            ? targetRect.top + targetRect.height / 2 - 12
+            : Math.max(4, tableRect.top - 28),
+      };
+      break;
+    }
+    setTableEdgeHandle((current) =>
+      current?.axis === next?.axis &&
+      current?.cellPos === next?.cellPos &&
+      current?.index === next?.index &&
+      current?.tablePos === next?.tablePos &&
+      Math.abs((current?.left ?? 0) - (next?.left ?? 0)) < 0.5 &&
+      Math.abs((current?.top ?? 0) - (next?.top ?? 0)) < 0.5
+        ? current
+        : next,
+    );
+  };
+
+  const findNode = (kind: ArticleNodeMenuKind) => {
+    if (!hoverMenu) return;
+    const names =
+      kind === "table"
+        ? new Set(["table"])
+        : kind === "imageGroup"
+          ? new Set(["articleImageGroup"])
+          : new Set(["articleImage", "artifactReference"]);
+    const direct = editor.state.doc.nodeAt(hoverMenu.pos);
+    if (direct && names.has(direct.type.name)) {
+      return { node: direct, pos: hoverMenu.pos };
+    }
+    const safePosition = Math.min(
+      hoverMenu.pos + 1,
+      editor.state.doc.content.size,
+    );
+    const resolved = editor.state.doc.resolve(safePosition);
+    for (let depth = resolved.depth; depth > 0; depth -= 1) {
+      const node = resolved.node(depth);
+      const nodePos = resolved.before(depth);
+      if (names.has(node.type.name)) return { node, pos: nodePos };
+    }
+  };
+
+  const currentAlignment = (): ArticleImageAlignment => {
+    const located = findNode("image");
+    return located?.node.attrs.align === "left" ||
+      located?.node.attrs.align === "right"
+      ? located.node.attrs.align
+      : "center";
+  };
+
+  const currentImageWidth = () => {
+    const located = findNode("image");
+    return normalizeImageWidth(located?.node.attrs.width);
+  };
+
+  const currentImageGroupColumns = () => {
+    const located = findNode("imageGroup");
+    const value = Number(located?.node.attrs.columns);
+    return Number.isFinite(value) ? Math.max(1, Math.min(4, value)) : 2;
+  };
+
+  const setImageGroupColumns = (columns: number) => {
+    const located = findNode("imageGroup");
+    if (!located) return;
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(located.pos, undefined, {
+        ...located.node.attrs,
+        columns: Math.max(1, Math.min(4, Math.round(columns))),
+      }),
+    );
+  };
+
+  const saveCaption = (kind: ArticleNodeMenuKind) => {
+    const located = findNode(kind);
+    if (!located) return;
+    const caption = captionDraft.trim();
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(located.pos, undefined, {
+        ...located.node.attrs,
+        caption,
+      }),
+    );
+    setMenuOpen(false);
+  };
+
+  const saveAlt = () => {
+    const located = findNode("image");
+    if (!located) return;
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(located.pos, undefined, {
+        ...located.node.attrs,
+        alt: altDraft.trim(),
+      }),
+    );
+  };
+
+  const alignImage = (alignment: ArticleImageAlignment) => {
+    const located = findNode("image");
+    if (!located) return;
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(located.pos, undefined, {
+        ...located.node.attrs,
+        align: alignment,
+      }),
+    );
+  };
+
+  const resizeImage = (width: number) => {
+    const located = findNode("image");
+    if (!located) return;
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(located.pos, undefined, {
+        ...located.node.attrs,
+        width: normalizeImageWidth(width),
+      }),
+    );
+  };
+
+  const openImageSource = async (download: boolean) => {
+    const located = findNode("image");
+    if (!located) return;
+    let url = String(located.node.attrs.src ?? "").trim();
+    if (located.node.type.name === "artifactReference") {
+      const artifactId = String(
+        located.node.attrs.artifactId ?? located.node.attrs.objectId ?? "",
+      );
+      const versionId = String(located.node.attrs.versionId ?? "");
+      if (!download) {
+        window.open(
+          `/projects/${encodeURIComponent(projectId)}/artifacts?artifact=${encodeURIComponent(artifactId)}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        return;
+      }
+      const grant = await artifactApi.download(
+        projectId,
+        artifactId,
+        versionId,
+      );
+      url = grant.transfer.url;
+    }
+    if (!url) {
+      setDropError("图片源文件不可用");
+      return;
+    }
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.rel = "noopener noreferrer";
+    anchor.target = "_blank";
+    if (download) anchor.download = String(located.node.attrs.alt ?? "image");
+    anchor.click();
+  };
+
+  const replaceImage = () => {
+    const located = findNode("image");
+    const src = replaceDraft.trim();
+    if (!located || !src) return;
+    if (isTransientImageURL(src)) {
+      setDropError("不能把临时签名地址写入论文；请上传图片或拖入 Artifact。");
+      return;
+    }
+    if (located.node.type.name === "articleImage") {
+      editor.view.dispatch(
+        editor.state.tr.setNodeMarkup(located.pos, undefined, {
+          ...located.node.attrs,
+          src,
+        }),
+      );
+    } else {
+      const image = editor.schema.nodes.articleImage.create({
+        align: located.node.attrs.align ?? "center",
+        alt: located.node.attrs.alt ?? "",
+        caption: located.node.attrs.caption ?? "",
+        src,
+        width: located.node.attrs.width ?? 100,
+      });
+      editor.view.dispatch(
+        editor.state.tr.replaceWith(
+          located.pos,
+          located.pos + located.node.nodeSize,
+          image,
+        ),
+      );
+    }
+    setReplaceDraft("");
+  };
+
+  const replaceImageFromFile = () => {
+    const located = findNode("image");
+    if (!located) return;
+    replacementImageTargetRef.current = {
+      blockId: String(located.node.attrs.id ?? ""),
+      fallbackPosition: located.pos,
+    };
+    replacementImageInputRef.current?.click();
+  };
+
+  const deleteImage = () => {
+    const located = findNode("image");
+    if (!located) return;
+    deleteArticleImageNode(editor, located.pos);
+    setHoverMenu(undefined);
+    setMenuOpen(false);
+  };
+
+  const currentImageGroupContext = () => {
+    const located = findNode("image");
+    return located ? articleImageGroupContext(editor, located.pos) : undefined;
+  };
+
+  const runImageGroupAction = (action: ArticleImageGroupAction) => {
+    const changed =
+      action === "ungroup"
+        ? (() => {
+            const located = findNode("imageGroup");
+            return located ? ungroupArticleImages(editor, located.pos) : false;
+          })()
+        : (() => {
+            const located = findNode("image");
+            if (!located) return false;
+            if (action === "removeFromGroup") {
+              return removeArticleImageFromGroup(editor, located.pos);
+            }
+            return mergeArticleImageWithNeighbor(
+              editor,
+              located.pos,
+              action === "mergeBefore" ? "before" : "after",
+            );
+          })();
+    if (!changed) return;
+    setHoverMenu(undefined);
+    setMenuOpen(false);
+  };
+
+  const findTableAtSelection = () => {
+    for (
+      let depth = editor.state.selection.$from.depth;
+      depth > 0;
+      depth -= 1
+    ) {
+      if (editor.state.selection.$from.node(depth).type.name === "table") {
+        return {
+          node: editor.state.selection.$from.node(depth),
+          pos: editor.state.selection.$from.before(depth),
+        };
+      }
+    }
+  };
+
+  const openMenuForNode = (kind: ArticleNodeMenuKind, pos: number) => {
+    const dom = editor.view.nodeDOM(pos);
+    const surface = editorSurfaceRef.current;
+    if (!(dom instanceof HTMLElement) || !surface) return;
+    const target = kind === "table" ? (dom.querySelector("table") ?? dom) : dom;
+    const rect = target.getBoundingClientRect();
+    const node = editor.state.doc.nodeAt(pos);
+    setHoverMenu({
+      kind,
+      left: Math.max(36, Math.min(rect.right - 28, window.innerWidth - 8)),
+      placement: rect.top > window.innerHeight / 2 ? "above" : "below",
+      pos,
+      top: Math.max(8, Math.min(rect.top + 4, window.innerHeight - 36)),
+    });
+    setCaptionDraft(String(node?.attrs.caption ?? ""));
+    setAltDraft(String(node?.attrs.alt ?? ""));
+    setReplaceDraft("");
+    setMenuOpen(true);
+  };
+
+  const openCurrentMenu = () => {
+    if (!hoverMenu) return;
+    const located = findNode(hoverMenu.kind);
+    if (!located) return;
+    setCaptionDraft(String(located.node.attrs.caption ?? ""));
+    setAltDraft(String(located.node.attrs.alt ?? ""));
+    setReplaceDraft("");
+    setMenuOpen((value) => !value);
+  };
+
+  const runTableCommand = (command: "toggleHeaderRow" | "deleteTable") => {
+    if (!hoverMenu || hoverMenu.kind !== "table") return;
+    const located = findNode("table");
+    if (!located) return;
+    let cellTextPosition: number | undefined;
+    located.node.descendants((node, relativePosition) => {
+      if (cellTextPosition === undefined && node.isTextblock) {
+        // descendants() positions are relative to the table content. Move
+        // through the table and paragraph opening tokens so table commands
+        // receive a real selection inside the first cell.
+        cellTextPosition = located.pos + relativePosition + 2;
+        return false;
+      }
+    });
+    if (cellTextPosition === undefined) return;
+    editor.view.dispatch(
+      editor.state.tr.setSelection(
+        TextSelection.near(editor.state.doc.resolve(cellTextPosition), 1),
+      ),
+    );
+    const chain = editor.chain().focus();
+    chain[command]().run();
+  };
+
+  const focusTableEdgeCell = (handle: ArticleTableEdgeHandle) => {
+    const position = Math.min(
+      handle.cellPos + 1,
+      editor.state.doc.content.size,
+    );
+    editor.view.dispatch(
+      editor.state.tr.setSelection(
+        TextSelection.near(editor.state.doc.resolve(position), 1),
+      ),
+    );
+  };
+
+  const runTableEdgeAction = (action: ArticleTableEdgeAction) => {
+    if (!tableEdgeHandle) return;
+    focusTableEdgeCell(tableEdgeHandle);
+    const command =
+      tableEdgeHandle.axis === "row"
+        ? action === "addBefore"
+          ? "addRowBefore"
+          : action === "addAfter"
+            ? "addRowAfter"
+            : "deleteRow"
+        : action === "addBefore"
+          ? "addColumnBefore"
+          : action === "addAfter"
+            ? "addColumnAfter"
+            : "deleteColumn";
+    editor.chain().focus()[command]().run();
+    setTableEdgeMenuOpen(false);
+    setTableEdgeHandle(undefined);
+  };
+
+  const reorderTableEdge = (
+    handle: ArticleTableEdgeHandle,
+    targetIndex: number,
+  ) => {
+    const table = editor.state.doc.nodeAt(handle.tablePos);
+    if (!table || table.type.name !== "table") return;
+    const rows: ProseMirrorNode[] = [];
+    table.forEach((row) => rows.push(row));
+    let replacement: ProseMirrorNode;
+    if (handle.axis === "row") {
+      replacement = table.type.create(
+        table.attrs,
+        moveArrayItem(rows, handle.index, targetIndex),
+        table.marks,
+      );
+    } else {
+      if (
+        rows.some(
+          (row) =>
+            handle.index >= row.childCount || targetIndex >= row.childCount,
+        )
+      )
+        return;
+      const reorderedRows = rows.map((row) => {
+        const cells: ProseMirrorNode[] = [];
+        row.forEach((cell) => cells.push(cell));
+        return row.type.create(
+          row.attrs,
+          moveArrayItem(cells, handle.index, targetIndex),
+          row.marks,
+        );
+      });
+      replacement = table.type.create(table.attrs, reorderedRows, table.marks);
+    }
+    editor.view.dispatch(
+      editor.state.tr
+        .replaceWith(
+          handle.tablePos,
+          handle.tablePos + table.nodeSize,
+          replacement,
+        )
+        .scrollIntoView(),
+    );
+  };
+
+  const startTableEdgeDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!tableEdgeHandle || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    tableDragCleanupRef.current();
+    const session: TableDragSession = {
+      active: false,
+      handle: tableEdgeHandle,
+      startX: event.clientX,
+      startY: event.clientY,
+      targetIndex: tableEdgeHandle.index,
+    };
+    tableDragSessionRef.current = session;
+    const pointerMove = (pointerEvent: PointerEvent) => {
+      const current = tableDragSessionRef.current;
+      if (!current) return;
+      if (
+        !current.active &&
+        Math.hypot(
+          pointerEvent.clientX - current.startX,
+          pointerEvent.clientY - current.startY,
+        ) < 4
+      )
+        return;
+      current.active = true;
+      pointerEvent.preventDefault();
+      document.body.classList.add("article-table-edge-dragging");
+      const tableDom = editor.view.nodeDOM(current.handle.tablePos);
+      const table =
+        tableDom instanceof HTMLElement
+          ? tableDom.matches("table")
+            ? tableDom
+            : tableDom.querySelector("table")
+          : null;
+      if (!(table instanceof HTMLTableElement)) return;
+      const tableRect = table.getBoundingClientRect();
+      const elements =
+        current.handle.axis === "row"
+          ? Array.from(table.rows)
+          : Array.from(table.rows[0]?.cells ?? []);
+      if (!elements.length) return;
+      const coordinate =
+        current.handle.axis === "row"
+          ? pointerEvent.clientY
+          : pointerEvent.clientX;
+      let targetIndex = 0;
+      let smallestDistance = Number.POSITIVE_INFINITY;
+      elements.forEach((element, index) => {
+        const rect = element.getBoundingClientRect();
+        const center =
+          current.handle.axis === "row"
+            ? rect.top + rect.height / 2
+            : rect.left + rect.width / 2;
+        const distance = Math.abs(coordinate - center);
+        if (distance < smallestDistance) {
+          smallestDistance = distance;
+          targetIndex = index;
+        }
+      });
+      current.targetIndex = targetIndex;
+      const targetRect = elements[targetIndex]!.getBoundingClientRect();
+      const after = targetIndex > current.handle.index;
+      setTableDragIndicator({
+        axis: current.handle.axis,
+        left:
+          current.handle.axis === "row"
+            ? tableRect.left
+            : after
+              ? targetRect.right
+              : targetRect.left,
+        length:
+          current.handle.axis === "row" ? tableRect.width : tableRect.height,
+        top:
+          current.handle.axis === "row"
+            ? after
+              ? targetRect.bottom
+              : targetRect.top
+            : tableRect.top,
+      });
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", pointerMove);
+      window.removeEventListener("pointerup", pointerUp);
+      window.removeEventListener("pointercancel", pointerUp);
+      document.body.classList.remove("article-table-edge-dragging");
+      tableDragSessionRef.current = undefined;
+      setTableDragIndicator(undefined);
+      tableDragCleanupRef.current = () => undefined;
+    };
+    const pointerUp = () => {
+      const current = tableDragSessionRef.current;
+      if (current?.active) {
+        reorderTableEdge(current.handle, current.targetIndex);
+        suppressTableHandleClickRef.current = true;
+        setTableEdgeHandle(undefined);
+        setTableEdgeMenuOpen(false);
+      }
+      cleanup();
+    };
+    tableDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", pointerMove, { passive: false });
+    window.addEventListener("pointerup", pointerUp);
+    window.addEventListener("pointercancel", pointerUp);
+  };
+
+  const toggleTableEdgeMenu = () => {
+    if (suppressTableHandleClickRef.current) {
+      suppressTableHandleClickRef.current = false;
+      return;
+    }
+    setTableEdgeMenuOpen((current) => !current);
+  };
+
+  const clearDropIndicator = () => {
+    dropIndicatorRef.current = undefined;
+    setDropIndicator(undefined);
+  };
+
+  const updateDropIndicator = (
+    event: DragEvent<HTMLDivElement>,
+    options: { autoScroll: boolean; dropEffect: "copy" | "move" },
+  ) => {
+    const surface = editorSurfaceRef.current;
+    if (!surface) return false;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = options.dropEffect;
+    const root = surface.getBoundingClientRect();
+    if (options.autoScroll) {
+      const margin = 72;
+      const maxStep = 24;
+      if (event.clientY < root.top + margin) {
+        surface.scrollTop -= Math.min(
+          maxStep,
+          Math.max(4, root.top + margin - event.clientY),
+        );
+      } else if (event.clientY > root.bottom - margin) {
+        surface.scrollTop += Math.min(
+          maxStep,
+          Math.max(4, event.clientY - (root.bottom - margin)),
+        );
+      }
+    }
+
+    const coordinates = editor.view.posAtCoords({
+      left: event.clientX,
+      top: event.clientY,
+    });
+    if (!coordinates) return true;
+    let blockPosition: number | undefined;
+    let blockNode: ReturnType<typeof blockAt>;
+    let offset = 0;
+    editor.state.doc.forEach((node) => {
+      if (
+        blockPosition === undefined &&
+        coordinates.pos >= offset &&
+        coordinates.pos <= offset + node.nodeSize
+      ) {
+        blockPosition = offset;
+        blockNode = node;
+      }
+      offset += node.nodeSize;
+    });
+    if (blockPosition === undefined || !blockNode) return true;
+    const dom = editor.view.nodeDOM(blockPosition);
+    if (!(dom instanceof HTMLElement)) return true;
+    const rect = dom.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
+    const nextIndicator = {
+      label: before ? "放在此块之前" : "放在此块之后",
+      position: dropTargetPosition(blockPosition, blockNode.nodeSize, before),
+      top: dropIndicatorOffset(
+        before ? rect.top : rect.bottom,
+        root.top,
+        surface.scrollTop,
+      ),
+    } satisfies ArticleDropIndicator;
+    dropIndicatorRef.current = nextIndicator;
+    setDropIndicator(nextIndicator);
+    return true;
+  };
+
+  const updateInternalDragOver = (event: DragEvent<HTMLDivElement>) => {
+    const draggingPosition = blockDraggingPosRef.current;
+    if (draggingPosition === null) return false;
+    const draggingNode = blockAt(draggingPosition);
+    return updateDropIndicator(event, {
+      autoScroll:
+        draggingNode?.type.name !== "artifactReference" &&
+        draggingNode?.type.name !== "articleImage" &&
+        draggingNode?.type.name !== "articleImageGroup",
+      dropEffect: "move",
+    });
+  };
+
+  const updateExternalArtifactDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (
+      !canEdit ||
+      (!event.dataTransfer.types.includes(articleArtifactMime) &&
+        !event.dataTransfer.types.includes("Files"))
+    ) {
+      return false;
+    }
+    return updateDropIndicator(event, {
+      autoScroll: false,
+      dropEffect: "copy",
+    });
+  };
+
+  const mathEditorNode = mathEditorTarget
+    ? editor.state.doc.nodeAt(mathEditorTarget.pos)
+    : undefined;
+  const mathEditorDom = mathEditorTarget
+    ? editor.view.nodeDOM(mathEditorTarget.pos)
+    : undefined;
+  const mathEditorAnchor =
+    mathEditorTarget &&
+    mathEditorNode?.type.name ===
+      (mathEditorTarget.kind === "block" ? "blockMath" : "inlineMath") &&
+    mathEditorDom instanceof HTMLElement
+      ? (() => {
+          const rect = mathEditorDom.getBoundingClientRect();
+          const placement = rect.top > 220 ? "above" : "below";
+          return {
+            left: Math.max(8, Math.min(rect.left, window.innerWidth - 392)),
+            placement,
+            top: placement === "above" ? rect.top - 8 : rect.bottom + 8,
+          } as const;
+        })()
+      : undefined;
+  const themeClass =
+    renderTheme === "latex" ? "article-theme-latex" : "article-theme-md";
+  const blockMenuNode = blockMenuAnchor
+    ? blockAt(blockMenuAnchor.pos)
+    : undefined;
+  const blockMenuId = String(blockMenuNode?.attrs.id ?? "");
+  const blockMenuMetadata = blocks.find(
+    (block) => block.block_id === blockMenuId,
+  );
+  const blockMenuIndex =
+    blockMenuAnchor === undefined
+      ? -1
+      : editor.state.doc.resolve(blockMenuAnchor.pos).index(0);
+
   return (
-    <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-      <div className="flex flex-wrap items-center gap-1 border-b bg-muted/30 p-2">
+    <div
+      className="flex h-[42rem] min-h-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm"
+      data-article-editor-shell
+    >
+      <div className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center gap-1 border-b bg-background/95 p-2 backdrop-blur">
         <EditorButton
           label="加粗"
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -227,6 +2247,31 @@ export function ArticleEditor({
         </EditorButton>
         <EditorButton label="公式块" onClick={insertMath}>
           <Sigma />
+        </EditorButton>
+        <EditorButton
+          label="上传图片并插入"
+          onClick={() => imageInputRef.current?.click()}
+        >
+          <ImagePlus />
+        </EditorButton>
+        <input
+          accept="image/*"
+          aria-label="选择要上传的图片"
+          className="sr-only"
+          onChange={selectImage}
+          ref={imageInputRef}
+          type="file"
+        />
+        <input
+          accept="image/*"
+          aria-label="选择用于替换的图片"
+          className="sr-only"
+          onChange={selectReplacementImage}
+          ref={replacementImageInputRef}
+          type="file"
+        />
+        <EditorButton label="添加表注" onClick={insertTableCaption}>
+          <Captions />
         </EditorButton>
         <EditorButton
           label="插入表格"
@@ -266,28 +2311,296 @@ export function ArticleEditor({
           {dropError}
         </p>
       ) : null}
-      <div
-        className="relative pl-9"
-        onDragOver={(event) => {
-          if (canEdit && event.dataTransfer.types.includes(articleArtifactMime))
-            event.preventDefault();
-        }}
-        onDrop={(event) => void dropArtifact(event)}
-      >
-        {canEdit ? (
-          <DragHandle editor={editor}>
-            <button
-              aria-label="拖动当前块排序"
-              className="flex size-7 cursor-grab items-center justify-center rounded border bg-background text-muted-foreground shadow-sm active:cursor-grabbing"
-              type="button"
+      <div className="relative min-h-0 flex-1">
+        <div
+          className="relative h-full overflow-y-auto overscroll-contain pl-24 pr-14"
+          data-article-block-dragging={
+            blockDraggingPos === undefined ? undefined : "true"
+          }
+          onMouseMove={(event) => {
+            updateHoverMenu(event);
+            updateTableEdgeHandle(event);
+          }}
+          onPaste={pasteImage}
+          onScroll={() => {
+            setTableEdgeHandle(undefined);
+            setTableEdgeMenuOpen(false);
+            setMathEditorTarget(undefined);
+            if (!menuOpen) setHoverMenu(undefined);
+          }}
+          onMouseLeave={(event) => {
+            const relatedTarget = event.relatedTarget;
+            if (
+              relatedTarget instanceof Element &&
+              relatedTarget.closest(
+                "[data-article-node-menu], [data-article-table-controls]",
+              )
+            )
+              return;
+            if (!menuOpen) setHoverMenu(undefined);
+            if (!tableEdgeMenuOpen && !tableDragSessionRef.current)
+              setTableEdgeHandle(undefined);
+          }}
+          ref={editorSurfaceRef}
+          style={{ scrollbarGutter: "stable" }}
+          onDragOver={(event) => {
+            if (updateInternalDragOver(event)) return;
+            if (updateExternalArtifactDragOver(event)) return;
+            if (canEdit && event.dataTransfer.types.includes(articleZoteroMime))
+              event.preventDefault();
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node))
+              clearDropIndicator();
+          }}
+          onDrop={(event) => {
+            const insertionPosition = dropIndicatorRef.current?.position;
+            clearDropIndicator();
+            if (blockDraggingPosRef.current !== null) return;
+            const localImage = Array.from(event.dataTransfer.files).find(
+              (item) => item.type.startsWith("image/"),
+            );
+            if (localImage) {
+              event.preventDefault();
+              void uploadImage(localImage, undefined, insertionPosition);
+              return;
+            }
+            void dropArtifact(event, insertionPosition);
+          }}
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 top-0 z-30 border border-primary/70 bg-primary/15"
+            data-article-marquee-selection
+            hidden
+            ref={marqueeRef}
+          />
+          {dropIndicator ? (
+            <div
+              aria-live="polite"
+              className="pointer-events-none absolute left-24 right-8 z-20 flex items-center gap-2 text-[11px] text-primary"
+              data-article-drop-indicator
+              style={{ top: dropIndicator.top }}
             >
-              <GripVertical className="size-4" />
-            </button>
-          </DragHandle>
-        ) : null}
-        <EditorContent
-          className="[&_.ProseMirror]:min-h-[42rem] [&_.ProseMirror]:p-8 [&_.ProseMirror]:text-[15px] [&_.ProseMirror]:leading-7 [&_.ProseMirror]:outline-none [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_h1]:mb-4 [&_.ProseMirror_h1]:text-3xl [&_.ProseMirror_h1]:font-bold [&_.ProseMirror_h2]:mb-3 [&_.ProseMirror_h2]:mt-8 [&_.ProseMirror_h2]:text-2xl [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_p]:my-3 [&_.ProseMirror_table]:my-4 [&_.ProseMirror_table]:w-full [&_.ProseMirror_table]:border-collapse [&_.ProseMirror_td]:border [&_.ProseMirror_td]:p-2 [&_.ProseMirror_th]:border [&_.ProseMirror_th]:bg-muted [&_.ProseMirror_th]:p-2"
-          editor={editor}
+              <span className="h-0.5 flex-1 rounded-full bg-primary shadow-sm" />
+              <span className="rounded bg-background px-1.5 py-0.5 shadow-sm">
+                {dropIndicator.label}
+              </span>
+            </div>
+          ) : null}
+          {canEdit ? (
+            <DragHandle
+              editor={editor}
+              onElementDragEnd={handleElementDragEnd}
+              onElementDragStart={handleElementDragStart}
+              onNodeChange={handleDragNodeChange}
+            >
+              <div className="flex items-center gap-0.5 rounded-md border bg-background/95 p-0.5 text-muted-foreground shadow-sm">
+                <button
+                  aria-label="在当前块前插入新块"
+                  className="flex size-6 items-center justify-center rounded hover:bg-muted hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    insertParagraphBeforeCurrent();
+                  }}
+                  type="button"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+                <button
+                  aria-label="拖动当前块排序"
+                  className="flex size-6 cursor-grab items-center justify-center rounded hover:bg-muted hover:text-foreground active:cursor-grabbing"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    selectBlockFromHandle();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    selectBlockFromHandle();
+                  }}
+                  type="button"
+                >
+                  <GripVertical className="size-3.5" />
+                </button>
+                <button
+                  aria-label="打开块操作菜单"
+                  className="flex size-6 items-center justify-center rounded hover:bg-muted hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openBlockMenu();
+                  }}
+                  type="button"
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </button>
+              </div>
+            </DragHandle>
+          ) : null}
+          {blockMenuAnchor && blockMenuNode
+            ? createPortal(
+                <div
+                  className="fixed z-[100]"
+                  data-article-block-menu-anchor
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      closeBlockMenu();
+                      editor.view.focus();
+                    }
+                  }}
+                  style={{
+                    left: blockMenuAnchor.left,
+                    top: blockMenuAnchor.top,
+                  }}
+                >
+                  <ArticleBlockMenu
+                    author={String(
+                      blockMenuMetadata?.provenance.reviewed_by ??
+                        blockMenuMetadata?.provenance.agent_id ??
+                        blockMenuMetadata?.provenance.user_id ??
+                        (blockMenuMetadata?.tag?.startsWith("ai_")
+                          ? "AI"
+                          : "Human"),
+                    )}
+                    blockId={blockMenuId}
+                    canMoveDown={
+                      blockMenuIndex >= 0 &&
+                      blockMenuIndex < editor.state.doc.childCount - 1
+                    }
+                    canMoveUp={blockMenuIndex > 0}
+                    canReview={blockMenuMetadata?.tag !== "reviewed"}
+                    onAction={runBlockAction}
+                    onClose={closeBlockMenu}
+                    onCopyId={copyBlockId}
+                    onCut={cutBlock}
+                    onDelete={deleteBlockFromMenu}
+                    onReview={reviewBlockFromMenu}
+                    updatedAt={blockMenuMetadata?.updated_at}
+                  />
+                </div>,
+                document.body,
+              )
+            : null}
+          {mathEditorTarget && mathEditorAnchor
+            ? createPortal(
+                <ArticleMathEditor
+                  kind={mathEditorTarget.kind}
+                  latex={mathDraft}
+                  left={mathEditorAnchor.left}
+                  onChange={setMathDraft}
+                  onClose={closeMathEditor}
+                  onDelete={deleteMathEditor}
+                  onSave={saveMathEditor}
+                  placement={mathEditorAnchor.placement}
+                  top={mathEditorAnchor.top}
+                />,
+                document.body,
+              )
+            : null}
+          {tableEdgeHandle
+            ? createPortal(
+                <ArticleTableEdgeControls
+                  handle={tableEdgeHandle}
+                  menuOpen={tableEdgeMenuOpen}
+                  onAction={runTableEdgeAction}
+                  onClose={() => {
+                    setTableEdgeMenuOpen(false);
+                    setTableEdgeHandle(undefined);
+                  }}
+                  onPointerDown={startTableEdgeDrag}
+                  onToggleMenu={toggleTableEdgeMenu}
+                />,
+                document.body,
+              )
+            : null}
+          {tableDragIndicator
+            ? createPortal(
+                <div
+                  aria-hidden="true"
+                  className={`pointer-events-none fixed z-[110] rounded-full bg-primary shadow-[0_0_0_1px_white] ${tableDragIndicator.axis === "row" ? "h-0.5" : "w-0.5"}`}
+                  data-article-table-drop-indicator
+                  style={{
+                    height:
+                      tableDragIndicator.axis === "column"
+                        ? tableDragIndicator.length
+                        : undefined,
+                    left: tableDragIndicator.left,
+                    top: tableDragIndicator.top,
+                    width:
+                      tableDragIndicator.axis === "row"
+                        ? tableDragIndicator.length
+                        : undefined,
+                  }}
+                />,
+                document.body,
+              )
+            : null}
+          {hoverMenu
+            ? createPortal(
+                <div
+                  className="fixed z-[90]"
+                  data-article-node-menu
+                  style={{ left: hoverMenu.left, top: hoverMenu.top }}
+                >
+                  <button
+                    aria-label={
+                      hoverMenu.kind === "image"
+                        ? "打开图片操作"
+                        : hoverMenu.kind === "imageGroup"
+                          ? "打开图片组合操作"
+                          : "打开表格操作"
+                    }
+                    className="flex size-7 items-center justify-center rounded border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+                    onClick={openCurrentMenu}
+                    type="button"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </button>
+                  {menuOpen ? (
+                    <ArticleNodeMenu
+                      alignment={currentAlignment()}
+                      alt={altDraft}
+                      caption={captionDraft}
+                      groupColumns={currentImageGroupColumns()}
+                      imageGroupContext={currentImageGroupContext()}
+                      kind={hoverMenu.kind}
+                      onAlign={alignImage}
+                      onAltChange={setAltDraft}
+                      onApplyAlt={saveAlt}
+                      onApplyCaption={() => saveCaption(hoverMenu.kind)}
+                      onCaptionChange={setCaptionDraft}
+                      onDelete={deleteImage}
+                      onDownload={() => void openImageSource(true)}
+                      onGroupColumnsChange={setImageGroupColumns}
+                      onImageGroupAction={runImageGroupAction}
+                      onOpenSource={() => void openImageSource(false)}
+                      onReplace={replaceImage}
+                      onReplaceFile={replaceImageFromFile}
+                      onReplaceUrlChange={setReplaceDraft}
+                      onTableAction={runTableCommand}
+                      replaceUrl={replaceDraft}
+                      width={currentImageWidth()}
+                      onWidthChange={resizeImage}
+                      placement={hoverMenu.placement}
+                    />
+                  ) : null}
+                </div>,
+                document.body,
+              )
+            : null}
+          <EditorContent
+            className={`${themeClass} h-full [&_.ProseMirror]:min-h-full [&_.ProseMirror]:p-8 [&_.ProseMirror]:text-[15px] [&_.ProseMirror]:leading-7 [&_.ProseMirror]:outline-none [&_.ProseMirror_blockquote]:border-l-2 [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_h1]:mb-4 [&_.ProseMirror_h1]:text-3xl [&_.ProseMirror_h1]:font-bold [&_.ProseMirror_h2]:mb-3 [&_.ProseMirror_h2]:mt-8 [&_.ProseMirror_h2]:text-2xl [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_p]:my-3 [&_.ProseMirror_table]:my-4 [&_.ProseMirror_table]:w-full [&_.ProseMirror_table]:border-collapse [&_.ProseMirror_td]:border [&_.ProseMirror_td]:p-2 [&_.ProseMirror_th]:border [&_.ProseMirror_th]:bg-muted [&_.ProseMirror_th]:p-2 [&_.ProseMirror-selectednode]:rounded-md [&_.ProseMirror-selectednode]:bg-muted/60 [&_.ProseMirror-selectednode]:shadow-[inset_0_0_0_1px_hsl(var(--border))]`}
+            editor={editor}
+          />
+        </div>
+        <ArticleTagRail
+          blocks={blocks}
+          canEdit={canEdit}
+          chapterTags={chapterTags}
+          onLocate={locateBlock}
+          onReview={onReviewBlock}
+          onReviewChapter={onReviewChapter}
+          positions={tagPositions}
         />
       </div>
     </div>

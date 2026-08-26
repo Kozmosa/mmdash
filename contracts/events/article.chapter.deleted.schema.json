@@ -1,0 +1,11 @@
+{
+  "$id": "https://mmdash.moe/contracts/events/article.chapter.deleted.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "article.chapter.deleted payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chapter_tag_id"],
+  "properties": {
+    "chapter_tag_id": { "type": "string", "format": "uuid" }
+  }
+}

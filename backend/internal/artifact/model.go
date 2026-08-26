@@ -63,11 +63,37 @@ type Artifact struct {
 	Description      *string    `json:"description"`
 	RecommendedUsage []string   `json:"recommended_usage"`
 	CurrentVersionID *string    `json:"current_version_id"`
+	FolderID         *string    `json:"folder_id"`
 	Status           string     `json:"status"`
 	CreatedBy        string     `json:"created_by"`
 	TrashedAt        *time.Time `json:"trashed_at"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+// Folder is a project-scoped logical directory for Artifacts. Children are
+// populated by FolderTree reads; a folder never owns file bytes.
+type Folder struct {
+	ID             string   `json:"folder_id"`
+	ProjectID      string   `json:"project_id"`
+	ParentFolderID *string  `json:"parent_folder_id"`
+	Name           string   `json:"name"`
+	Position       int      `json:"position"`
+	Children       []Folder `json:"children"`
+}
+
+type FolderTree struct {
+	Items []Folder `json:"items"`
+}
+
+type CreateFolderInput struct {
+	Name           string
+	ParentFolderID *string
+}
+
+type MoveFolderInput struct {
+	ParentFolderID *string
+	Position       *int
 }
 
 // GitReference pins a Repo-backed Artifact to immutable content.
