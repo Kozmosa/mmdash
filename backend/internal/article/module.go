@@ -315,6 +315,15 @@ func (module Module) handleWorker(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
+	if len(segments) == 2 && segments[0] != "" && segments[1] == "progress" && r.Method == http.MethodPost {
+		var body contract.UpdateArticleBuildProgressRequest
+		if !decode(w, r, &body) {
+			return
+		}
+		value, err := module.Service.WorkerProgress(r.Context(), caller, segments[0], int(body.ProgressPercent), body.ProgressStage)
+		writeResult(w, r, http.StatusOK, value, err)
+		return
+	}
 	if len(segments) == 3 && segments[0] != "" && segments[1] == "outputs" && r.Method == http.MethodPost {
 		size, parseErr := strconv.ParseInt(r.Header.Get("X-Content-Length"), 10, 64)
 		if parseErr != nil {

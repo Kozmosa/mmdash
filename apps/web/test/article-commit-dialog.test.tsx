@@ -51,6 +51,7 @@ describe("Article commit readiness", () => {
           canRelease
           data={aggregate}
           onClose={vi.fn()}
+          onOpenHistory={vi.fn()}
           onOpenTemplates={openTemplates}
           onRefresh={vi.fn()}
         />

@@ -182,6 +182,8 @@ type Build struct {
 	FinishedAt         *time.Time             `json:"finished_at,omitempty"`
 	JobID              string                 `json:"job_id,omitempty"`
 	Outputs            []BuildOutput          `json:"outputs"`
+	ProgressPercent    int                    `json:"progress_percent"`
+	ProgressStage      string                 `json:"progress_stage"`
 	ProjectID          string                 `json:"project_id"`
 	Status             string                 `json:"status"`
 	TemplateArtifactID string                 `json:"template_artifact_id"`

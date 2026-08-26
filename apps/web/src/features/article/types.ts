@@ -93,6 +93,18 @@ export type ArticleBuild = {
   bibliography_tool: "auto" | "bibtex" | "biber" | "none";
   toolchain?: Record<string, unknown>;
   outputs: ArticleBuildOutput[];
+  progress_percent: number;
+  progress_stage:
+    | "queued"
+    | "preparing"
+    | "resources"
+    | "converting"
+    | "compiling"
+    | "packaging"
+    | "uploading"
+    | "completed"
+    | "failed"
+    | "superseded";
   error_code?: string;
   error_message?: string;
   created_by: string;

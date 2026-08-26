@@ -36,6 +36,7 @@ type Store interface {
 	GetBuildByJob(context.Context, transaction.Tx, string) (Build, error)
 	ListBuilds(context.Context, string, string) ([]Build, error)
 	MarkBuildRunning(context.Context, transaction.Tx, string) error
+	UpdateBuildProgress(context.Context, string, int, string) (Build, error)
 	CompleteBuild(context.Context, transaction.Tx, string, map[string]interface{}) (Build, error)
 	FailBuild(context.Context, transaction.Tx, string, string, string) (Build, error)
 	AddBuildOutput(context.Context, string, BuildOutput) error

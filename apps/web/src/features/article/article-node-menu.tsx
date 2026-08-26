@@ -4,6 +4,8 @@ import {
   AlignCenter,
   AlignLeft,
   AlignRight,
+  ArrowLeft,
+  ArrowRight,
   Check,
   ChevronDown,
   Images,
@@ -238,10 +240,29 @@ function ImageMenu({
         <ActionButton onClick={onDownload}>下载原图</ActionButton>
       </div>
       {imageGroupContext?.inGroup ? (
-        <ActionButton onClick={() => onImageGroupAction?.("removeFromGroup")}>
-          <Ungroup className="size-3.5" />
-          移出图片组合
-        </ActionButton>
+        <div className="grid gap-1 border-t pt-2">
+          <MenuLabel>组合内操作</MenuLabel>
+          <div className="grid grid-cols-2 gap-1">
+            <ActionButton
+              disabled={!imageGroupContext.canMoveEarlier}
+              onClick={() => onImageGroupAction?.("moveEarlier")}
+            >
+              <ArrowLeft className="size-3.5" />
+              向前移
+            </ActionButton>
+            <ActionButton
+              disabled={!imageGroupContext.canMoveLater}
+              onClick={() => onImageGroupAction?.("moveLater")}
+            >
+              向后移
+              <ArrowRight className="size-3.5" />
+            </ActionButton>
+          </div>
+          <ActionButton onClick={() => onImageGroupAction?.("removeFromGroup")}>
+            <Ungroup className="size-3.5" />
+            移出图片组合
+          </ActionButton>
+        </div>
       ) : imageGroupContext?.canMergeBefore ||
         imageGroupContext?.canMergeAfter ? (
         <div className="grid gap-1 border-t pt-2">
@@ -293,7 +314,7 @@ function ImageGroupMenu({
         保存组合大题注
       </ActionButton>
       <div className="grid gap-1">
-        <span className="text-muted-foreground">每行图片数量</span>
+        <span className="text-muted-foreground">每行最多数量（宽度自适应）</span>
         <div className="grid grid-cols-4 gap-1">
           {[1, 2, 3, 4].map((value) => (
             <button

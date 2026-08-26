@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ type articleTemplateStore struct {
 	Store
 	uploads       map[string]UploadSession
 	details       map[string]Detail
+	blobs         map[string]Blob
 	createFirst   int
 	finalizeCount int
 }
@@ -35,6 +37,7 @@ func newArticleTemplateStore() *articleTemplateStore {
 	return &articleTemplateStore{
 		uploads: make(map[string]UploadSession),
 		details: make(map[string]Detail),
+		blobs:   make(map[string]Blob),
 	}
 }
 
@@ -63,9 +66,13 @@ func (store *articleTemplateStore) GetDetail(
 }
 
 func (store *articleTemplateStore) FindBlob(
-	_ context.Context, _ string, _ string, _ int64,
+	_ context.Context, projectID string, sha string, size int64,
 ) (Blob, error) {
-	return Blob{}, ErrNotFound
+	blob, ok := store.blobs[articleBlobKey(projectID, sha, size)]
+	if !ok {
+		return Blob{}, ErrNotFound
+	}
+	return blob, nil
 }
 
 func (store *articleTemplateStore) CreateFirst(
@@ -132,6 +139,7 @@ func (store *articleTemplateStore) FinalizeUpload(
 	detail.CurrentVersion.ObjectKey = blob.ObjectKey
 	detail.CurrentVersion.Backend = blob.Backend
 	store.details[key] = detail
+	store.blobs[articleBlobKey(blob.ProjectID, blob.SHA256, blob.SizeBytes)] = blob
 	return detail, nil
 }
 
@@ -150,6 +158,10 @@ func (store *articleTemplateStore) updateUpload(
 
 func artifactIDKey(projectID, artifactID string) string {
 	return projectID + "\x00" + artifactID
+}
+
+func articleBlobKey(projectID, sha string, size int64) string {
+	return projectID + "\x00" + sha + "\x00" + strconv.FormatInt(size, 10)
 }
 
 type failingReader struct{}
@@ -270,6 +282,58 @@ func TestArchiveArticleTemplatePreservesSizeAndSHAValidation(t *testing.T) {
 		strings.Repeat("0", 64), int64(len(contents)), bytes.NewReader(contents),
 	); !errors.Is(err, ErrHashMismatch) {
 		t.Fatalf("expected SHA rejection, got %v", err)
+	}
+}
+
+func TestArchiveArticleBuildOutputSupportsBlobDeduplicationAndIdempotentRetry(t *testing.T) {
+	contents := []byte("shared article build output")
+	projectID := "project-build"
+	store := newArticleTemplateStore()
+	storage, err := NewLocalBlobStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create local storage: %v", err)
+	}
+	ids := &articleTemplateIDs{}
+	service := Service{
+		Generator:          ids,
+		MaxUploadBytes:     20 * 1024 * 1024,
+		MultipartPartBytes: MultipartMinPartBytes,
+		Storage:            storage,
+		Store:              store,
+	}
+	sha := articleTemplateSHA(contents)
+	firstArtifactID, firstVersionID, err := service.ArchiveArticleBuildOutput(
+		context.Background(), projectID, "build-one", "system", "pdf",
+		"main.pdf", "application/pdf", sha, int64(len(contents)), bytes.NewReader(contents),
+	)
+	if err != nil {
+		t.Fatalf("archive first build output: %v", err)
+	}
+	secondArtifactID, secondVersionID, err := service.ArchiveArticleBuildOutput(
+		context.Background(), projectID, "build-one", "system", "tex_source",
+		"main.tex", "application/x-tex", sha, int64(len(contents)), bytes.NewReader(contents),
+	)
+	if err != nil {
+		t.Fatalf("archive deduplicated build output: %v", err)
+	}
+	if secondArtifactID == firstArtifactID || secondVersionID == firstVersionID {
+		t.Fatalf("deduplicated bytes must still produce distinct output identities")
+	}
+	if store.createFirst != 2 || store.finalizeCount != 1 {
+		t.Fatalf("unexpected persistence counts: create=%d finalize=%d", store.createFirst, store.finalizeCount)
+	}
+	retryArtifactID, retryVersionID, err := service.ArchiveArticleBuildOutput(
+		context.Background(), projectID, "build-one", "system", "tex_source",
+		"main.tex", "application/x-tex", sha, int64(len(contents)), failingReader{},
+	)
+	if err != nil {
+		t.Fatalf("retry deduplicated build output: %v", err)
+	}
+	if retryArtifactID != secondArtifactID || retryVersionID != secondVersionID ||
+		store.createFirst != 2 || store.finalizeCount != 1 || ids.next != 7 {
+		t.Fatalf("retry created a duplicate: first=(%s,%s) retry=(%s,%s) create=%d finalize=%d ids=%d",
+			secondArtifactID, secondVersionID, retryArtifactID, retryVersionID,
+			store.createFirst, store.finalizeCount, ids.next)
 	}
 }
 

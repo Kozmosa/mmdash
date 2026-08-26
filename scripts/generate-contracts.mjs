@@ -142,6 +142,7 @@ function renderGoHandlerTypes(document) {
     "CreateArticleCommitRequest",
     "CreateArticleBuildRequest",
     "CreateArticlePreviewBuildRequest",
+    "UpdateArticleBuildProgressRequest",
     "CreateArticleReleaseRequest",
     "CreateArticlePublicationRequest",
     "RegisterArticleTemplateRequest",

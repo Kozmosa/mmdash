@@ -13,16 +13,19 @@ export function WorkspaceShell({
 }: Readonly<{ children: ReactNode; projectId: string }>) {
   const pathname = usePathname();
   const agentWorkspace = /\/projects\/[^/]+\/agent\/?$/.test(pathname);
+  const articleWorkspace = /\/projects\/[^/]+\/article\/?$/.test(pathname);
   return (
     <div className="min-h-screen bg-background md:grid md:grid-cols-[auto_1fr]">
       <WorkspaceSidebar projectId={projectId} />
-      <div className="min-w-0">
+      <div className="flex min-w-0 flex-col">
         <WorkspaceNavbar />
         <main
           className={cn(
             agentWorkspace
               ? "h-[calc(100dvh-4rem)] w-full overflow-hidden p-0"
-              : "mx-auto w-full max-w-[1440px] p-5 md:p-6 lg:p-8",
+              : articleWorkspace
+                ? "mx-auto flex h-[calc(100dvh-4rem)] w-full max-w-[1440px] flex-col overflow-hidden p-4 md:p-5 lg:p-6"
+                : "mx-auto w-full max-w-[1440px] p-5 md:p-6 lg:p-8",
           )}
         >
           {children}
