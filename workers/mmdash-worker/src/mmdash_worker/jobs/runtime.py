@@ -205,15 +205,25 @@ class WorkerRuntime:
             "job.failed",
             {"code": error.code, "retryable": error.retryable},
         )
-        await asyncio.to_thread(
-            self.client.fail,
-            job_id,
-            self.worker_id,
-            code=error.code,
-            message=str(error),
-            retryable=error.retryable,
-            retry_delay_seconds=error.retry_delay_seconds,
-        )
+        try:
+            await asyncio.to_thread(
+                self.client.fail,
+                job_id,
+                self.worker_id,
+                code=error.code,
+                message=str(error),
+                retryable=error.retryable,
+                retry_delay_seconds=error.retry_delay_seconds,
+            )
+        except Exception as report_error:  # noqa: BLE001 - failure reporting must not kill the worker loop
+            # Keep polling so a transient Core 5xx cannot take down the whole
+            # local stack. The job lease will expire and Core can retry it.
+            await self._safe_log(
+                job_id,
+                "error",
+                "job.failure_report_failed",
+                {"error": str(report_error)},
+            )
 
     async def _safe_log(
         self,

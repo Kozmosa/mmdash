@@ -9,7 +9,13 @@ export function registerErrorHandler(app: FastifyInstance): void {
     const mapped = mapError(error);
     if (mapped.status >= 500) {
       request.log.error(
-        { code: mapped.code, error_name: errorName(error), status: mapped.status },
+        {
+          code: mapped.code,
+          error_name: errorName(error),
+          request_id: request.id,
+          status: mapped.status,
+          ...coreFailureContext(error),
+        },
         "request failed",
       );
     } else {
@@ -26,6 +32,15 @@ export function registerErrorHandler(app: FastifyInstance): void {
       ...(mapped.details === undefined ? {} : { details: mapped.details }),
     });
   });
+}
+
+function coreFailureContext(error: unknown): Record<string, unknown> {
+  if (!(error instanceof CoreClientError)) return {};
+  return {
+    core_code: error.body.code ?? "CORE_REQUEST_FAILED",
+    core_request_id: error.body.request_id,
+    core_status: error.status,
+  };
 }
 
 function mapError(error: unknown): {

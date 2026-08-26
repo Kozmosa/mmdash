@@ -237,6 +237,41 @@ func TestArtifactRBACMatchesFrozenRoles(t *testing.T) {
 	}
 }
 
+func TestFolderInputValidationAndPermissions(t *testing.T) {
+	if !validFolderUUID("550e8400-e29b-41d4-a716-446655440000") {
+		t.Fatal("expected UUID-shaped folder ID to be accepted")
+	}
+	for _, name := range []string{"", " ", "a\nb", strings.Repeat("x", 256)} {
+		if validFolderName(name) {
+			t.Fatalf("expected folder name %q to be rejected", name)
+		}
+	}
+	if !validFolderName("Research Data") {
+		t.Fatal("expected ordinary folder name to be accepted")
+	}
+
+	service := Service{Access: roleAccess{role: project.RoleEditor}}
+	identity := auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}}
+	if err := service.DeleteFolder(
+		context.Background(), identity,
+		"550e8400-e29b-41d4-a716-446655440000",
+		"550e8400-e29b-41d4-a716-446655440001",
+		false,
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("editor should not delete folders: %v", err)
+	}
+	if _, err := service.MoveFolder(
+		context.Background(), auth.Identity{Kind: "session", User: auth.User{ID: "user-1"}},
+		"550e8400-e29b-41d4-a716-446655440000",
+		"550e8400-e29b-41d4-a716-446655440001",
+		MoveFolderInput{ParentFolderID: stringPointer("not-a-uuid")},
+	); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid parent folder ID should be rejected: %v", err)
+	}
+}
+
+func stringPointer(value string) *string { return &value }
+
 type roleAccess struct {
 	role project.Role
 }

@@ -1,0 +1,13 @@
+{
+  "$id": "https://mmdash.moe/contracts/events/article.chapter.reviewed.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "article.chapter.reviewed payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chapter_tag_id", "status", "reviewed_by"],
+  "properties": {
+    "chapter_tag_id": { "type": "string", "format": "uuid" },
+    "status": { "const": "reviewed" },
+    "reviewed_by": { "type": "string", "format": "uuid" }
+  }
+}

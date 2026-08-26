@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppProviders } from "@/components/providers/app-providers";
 import { UserProvider } from "@/components/providers/user-provider";
 
+import "@fontsource-variable/noto-serif-sc/wght.css";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 

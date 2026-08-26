@@ -78,6 +78,23 @@ const versionParamsSchema = projectArtifactParamsSchema.extend({
 const semanticDescriptionInputSchema = z.object({
   agent_instance_id: idSchema.optional(),
 });
+const folderCreateInputSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  parent_folder_id: idSchema.nullable().optional(),
+});
+const folderRenameInputSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+});
+const folderMoveInputSchema = z.object({
+  parent_folder_id: idSchema.nullable(),
+  position: z.number().int().min(0).optional(),
+});
+const folderDeleteQuerySchema = z.object({
+  recursive: z.enum(["true", "false"]).optional().default("false"),
+});
+const artifactFolderInputSchema = z.object({
+  folder_id: idSchema.nullable(),
+});
 
 export function registerArtifactRoutes(
   app: FastifyInstance,
@@ -200,6 +217,88 @@ export function registerArtifactRoutes(
   );
 
   app.get(
+    "/api/projects/:projectId/artifacts/folders",
+    { config: { auth: "required", project: "required" } },
+    async (request) =>
+      coreClient.request<components["schemas"]["ArtifactFolderTree"]>(
+        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/folders`,
+        { method: "GET" },
+        coreContext(request),
+      ),
+  );
+
+  app.post(
+    "/api/projects/:projectId/artifacts/folders",
+    { config: { auth: "required", project: "required" } },
+    async (request, reply) => {
+      const folder = await coreClient.request<
+        components["schemas"]["ArtifactFolder"]
+      >(
+        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/folders`,
+        {
+          body: folderCreateInputSchema.parse(request.body),
+          method: "POST",
+        },
+        coreContext(request),
+      );
+      return reply.code(201).send(folder);
+    },
+  );
+
+  app.patch(
+    "/api/projects/:projectId/artifacts/folders/:folderId",
+    { config: { auth: "required", project: "required" } },
+    async (request) => {
+      const { folderId } = z
+        .object({ folderId: idSchema })
+        .parse(request.params);
+      return coreClient.request<components["schemas"]["ArtifactFolder"]>(
+        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/folders/${encodeURIComponent(folderId)}`,
+        {
+          body: folderRenameInputSchema.parse(request.body),
+          method: "PATCH",
+        },
+        coreContext(request),
+      );
+    },
+  );
+
+  app.delete(
+    "/api/projects/:projectId/artifacts/folders/:folderId",
+    { config: { auth: "required", project: "required" } },
+    async (request, reply) => {
+      const { folderId } = z
+        .object({ folderId: idSchema })
+        .parse(request.params);
+      const { recursive } = folderDeleteQuerySchema.parse(request.query);
+      await coreClient.request<void>(
+        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/folders/${encodeURIComponent(folderId)}?recursive=${recursive}`,
+        { method: "DELETE" },
+        coreContext(request),
+      );
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    "/api/projects/:projectId/artifacts/folders/:folderId/move",
+    { config: { auth: "required", project: "required" } },
+    async (request) => {
+      const { folderId } = z
+        .object({ folderId: idSchema })
+        .parse(request.params);
+      return coreClient.request<components["schemas"]["ArtifactFolder"]>(
+        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/folders/${encodeURIComponent(folderId)}/move`,
+        {
+          body: folderMoveInputSchema.parse(request.body),
+          method: "POST",
+        },
+        coreContext(request),
+      );
+    },
+  );
+
+  app.get(
     "/api/projects/:projectId/artifacts/:artifactId",
     { config: { auth: "required", project: "required" } },
     async (request) => {
@@ -207,6 +306,22 @@ export function registerArtifactRoutes(
       return coreClient.getArtifact(
         request.currentProjectId!,
         artifactId,
+        coreContext(request),
+      );
+    },
+  );
+
+  app.put(
+    "/api/projects/:projectId/artifacts/:artifactId/folder",
+    { config: { auth: "required", project: "required" } },
+    async (request) => {
+      const { artifactId } = projectArtifactParamsSchema.parse(request.params);
+      return coreClient.request<components["schemas"]["ArtifactDetail"]>(
+        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/${encodeURIComponent(artifactId)}/folder`,
+        {
+          body: artifactFolderInputSchema.parse(request.body),
+          method: "PUT",
+        },
         coreContext(request),
       );
     },

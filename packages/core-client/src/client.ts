@@ -638,6 +638,78 @@ export class CoreClient {
     );
   }
 
+  async listArticleChapterTags(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArticleChapterTagList"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/article/chapter-tags`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async createArticleChapterTag(
+    projectId: string,
+    input: components["schemas"]["CreateArticleChapterTagRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArticleChapterTag"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/article/chapter-tags`,
+      { body: input, method: "POST" },
+      context,
+    );
+  }
+
+  async getArticleChapterTag(
+    projectId: string,
+    chapterTagId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArticleChapterTag"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/article/chapter-tags/${encodeURIComponent(chapterTagId)}`,
+      { method: "GET" },
+      context,
+    );
+  }
+
+  async updateArticleChapterTag(
+    projectId: string,
+    chapterTagId: string,
+    input: components["schemas"]["UpdateArticleChapterTagRequest"],
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArticleChapterTag"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/article/chapter-tags/${encodeURIComponent(chapterTagId)}`,
+      { body: input, method: "PATCH" },
+      context,
+    );
+  }
+
+  async deleteArticleChapterTag(
+    projectId: string,
+    chapterTagId: string,
+    context: CoreRequestContext,
+  ): Promise<void> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/article/chapter-tags/${encodeURIComponent(chapterTagId)}`,
+      { method: "DELETE" },
+      context,
+    );
+  }
+
+  async reviewArticleChapterTag(
+    projectId: string,
+    chapterTagId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["ArticleChapterTag"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/article/chapter-tags/${encodeURIComponent(chapterTagId)}/review`,
+      { method: "POST" },
+      context,
+    );
+  }
+
   async getModelSource(
     projectId: string,
     context: CoreRequestContext,

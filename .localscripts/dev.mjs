@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   copyFileSync,
   closeSync,
   existsSync,
   mkdirSync,
   openSync,
   readFileSync,
+  rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -73,6 +75,7 @@ const connectionFailurePattern =
   /\b(?:connectex|ECONNREFUSED|ECONNRESET|ETIMEDOUT)\b|dial (?:tcp|udp)|connection (?:attempt failed|refused|reset|timed out)|connect fail(?:ed|ure)?/i;
 let issuedWorkerCredential;
 let developmentLock;
+let developmentWorkerContainerName;
 let shuttingDown = false;
 
 const commands = {
@@ -110,6 +113,9 @@ async function main() {
   await verifyToolchain();
   await assertDevelopmentPortsAvailable(environment);
 
+  const workerMode = options.skipWorker
+    ? "disabled"
+    : await resolveDevelopmentWorkerMode(environment);
   if (!options.skipInstall) {
     await runForeground(
       commands.pnpm,
@@ -133,6 +139,79 @@ async function main() {
     environment,
     "core-client",
   );
+
+  if (workerMode === "docker") {
+    const pythonIndexUrl = new URL(
+      environment.MMDASH_DEV_PYPI_INDEX_URL ||
+        "https://mirrors.aliyun.com/pypi/simple/",
+    );
+    if (
+      !["http:", "https:"].includes(pythonIndexUrl.protocol) ||
+      pythonIndexUrl.username ||
+      pythonIndexUrl.password
+    ) {
+      throw new Error(
+        "MMDASH_DEV_PYPI_INDEX_URL must be an HTTP(S) URL without embedded credentials",
+      );
+    }
+    const configuredProxyUrl = environment.MMDASH_DEV_DOCKER_PROXY_URL;
+    const localFallbackAvailable =
+      !configuredProxyUrl && (await hasListeningServer(22_334));
+    const dockerProxyUrl = configuredProxyUrl
+      ? dockerAccessibleUrl(configuredProxyUrl)
+      : localFallbackAvailable
+        ? dockerAccessibleUrl(fallbackProxyUrl)
+        : undefined;
+    if (dockerProxyUrl) {
+      const parsedProxyUrl = new URL(dockerProxyUrl);
+      if (
+        !["http:", "https:"].includes(parsedProxyUrl.protocol) ||
+        parsedProxyUrl.username ||
+        parsedProxyUrl.password
+      ) {
+        throw new Error(
+          "MMDASH_DEV_DOCKER_PROXY_URL must be an HTTP(S) URL without embedded credentials",
+        );
+      }
+    }
+    console.log(
+      `[dev] Native Pandoc/LaTeX toolchain is unavailable; preparing the containerized Worker (Python index: ${pythonIndexUrl.href}${dockerProxyUrl ? `, proxy: ${dockerProxyUrl}` : ""})...`,
+    );
+    const workerBuildContext = prepareWorkerBuildContext();
+    try {
+      const workerBuildArguments = ["build"];
+      if (dockerProxyUrl) {
+        workerBuildArguments.push(
+          "--build-arg",
+          `HTTP_PROXY=${dockerProxyUrl}`,
+          "--build-arg",
+          `HTTPS_PROXY=${dockerProxyUrl}`,
+        );
+      }
+      workerBuildArguments.push(
+        "--build-arg",
+        `PYPI_INDEX_URL=${pythonIndexUrl.href}`,
+        "--tag",
+        "mmdash-worker:dev",
+        "--file",
+        path.join(
+          workerBuildContext,
+          "workers",
+          "mmdash-worker",
+          "Dockerfile",
+        ),
+        workerBuildContext,
+      );
+      await runForeground(
+        commands.docker,
+        workerBuildArguments,
+        environment,
+        "worker-image",
+      );
+    } finally {
+      removeWorkerBuildContext(workerBuildContext);
+    }
+  }
 
   mkdirSync(developmentToolsDirectory, { recursive: true });
   await runForeground(
@@ -257,7 +336,7 @@ async function main() {
     environment,
   );
 
-  if (!options.skipWorker) {
+  if (workerMode === "native") {
     startManaged(
       "worker",
       commands.uv,
@@ -266,6 +345,55 @@ async function main() {
         ...environment,
         MMDASH_WORKER_API_TOKEN: workerToken,
       },
+    );
+  } else if (workerMode === "docker") {
+    developmentWorkerContainerName = `mmdash-development-worker-${process.pid}`;
+    const dockerWorkerEnvironment = {
+      ...environment,
+      MMDASH_CORE_URL: dockerAccessibleUrl(environment.MMDASH_CORE_URL),
+      MMDASH_WORKER_API_TOKEN: workerToken,
+      MMDASH_WORKER_ID: developmentWorkerContainerName,
+      MMDASH_WORKER_TRANSFER_ORIGIN_OVERRIDE: dockerAccessibleUrl(
+        environment.OBJECT_STORAGE_PUBLIC_ENDPOINT,
+      ),
+    };
+    startManaged(
+      "worker",
+      commands.docker,
+      [
+        "run",
+        "--rm",
+        "--name",
+        developmentWorkerContainerName,
+        "--mount",
+        `type=bind,source=${path.join(repositoryRoot, "workers", "mmdash-worker", "src")},target=/app/workers/mmdash-worker/src,readonly`,
+        "--env",
+        "MMDASH_CORE_URL",
+        "--env",
+        "MMDASH_WORKER_API_TOKEN",
+        "--env",
+        "MMDASH_WORKER_ID",
+        "--env",
+        "MMDASH_WORKER_TRANSFER_ORIGIN_OVERRIDE",
+        "--env",
+        "MMDASH_WORKER_LEASE_SECONDS",
+        "--env",
+        "MMDASH_WORKER_POLL_SECONDS",
+        "--env",
+        "MMDASH_PROGRESS_EVALUATOR_MODE",
+        "--env",
+        "SOURCE_DATE_EPOCH=0",
+        "--env",
+        "TZ=UTC",
+        "--env",
+        "TEXMFVAR=/tmp/texmf-var",
+        "--env",
+        "TEXMFCONFIG=/tmp/texmf-config",
+        "--env",
+        "TEXMFHOME=/tmp/texmf-home",
+        "mmdash-worker:dev",
+      ],
+      dockerWorkerEnvironment,
     );
   }
 
@@ -374,7 +502,11 @@ Options:
 
 Optional local port overrides:
   MMDASH_DEV_WEB_PORT  MMDASH_DEV_BFF_PORT
-  MMDASH_DEV_MCP_PORT  MMDASH_DEV_CORE_PORT`);
+  MMDASH_DEV_MCP_PORT  MMDASH_DEV_CORE_PORT
+
+Optional containerized Worker downloads:
+  MMDASH_DEV_PYPI_INDEX_URL     Python package index (default: Aliyun)
+  MMDASH_DEV_DOCKER_PROXY_URL   HTTP(S) proxy; auto-detects 127.0.0.1:22334`);
 }
 
 function buildDevelopmentEnvironment() {
@@ -481,6 +613,73 @@ function developmentPort(environment, name, fallback) {
   }
   environment[name] = String(value);
   return value;
+}
+
+async function resolveDevelopmentWorkerMode(environment) {
+  const configured = (environment.MMDASH_DEV_WORKER_MODE || "auto")
+    .trim()
+    .toLowerCase();
+  if (!["auto", "native", "docker"].includes(configured)) {
+    throw new Error(
+      "MMDASH_DEV_WORKER_MODE must be auto, native, or docker",
+    );
+  }
+  if (configured !== "auto") {
+    return configured;
+  }
+  for (const command of ["pandoc", "latexmk", "xelatex"]) {
+    try {
+      await captureCommand(command, ["--version"]);
+    } catch {
+      return "docker";
+    }
+  }
+  return "native";
+}
+
+function dockerAccessibleUrl(value) {
+  const url = new URL(value);
+  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+    url.hostname = "host.docker.internal";
+  }
+  return url.toString().replace(/\/$/u, "");
+}
+
+function prepareWorkerBuildContext() {
+  const contextRoot = path.join(
+    developmentToolsDirectory,
+    `worker-build-${process.pid}`,
+  );
+  const workerSource = path.join(repositoryRoot, "workers", "mmdash-worker");
+  const workerTarget = path.join(contextRoot, "workers", "mmdash-worker");
+  mkdirSync(workerTarget, { recursive: true });
+  copyFileSync(
+    path.join(repositoryRoot, "pyproject.toml"),
+    path.join(contextRoot, "pyproject.toml"),
+  );
+  copyFileSync(
+    path.join(repositoryRoot, "uv.lock"),
+    path.join(contextRoot, "uv.lock"),
+  );
+  for (const filename of ["Dockerfile", "pyproject.toml", "README.md"]) {
+    copyFileSync(
+      path.join(workerSource, filename),
+      path.join(workerTarget, filename),
+    );
+  }
+  cpSync(path.join(workerSource, "src"), path.join(workerTarget, "src"), {
+    recursive: true,
+  });
+  return contextRoot;
+}
+
+function removeWorkerBuildContext(contextRoot) {
+  const expectedParent = `${path.resolve(developmentToolsDirectory)}${path.sep}`;
+  const resolved = path.resolve(contextRoot);
+  if (!resolved.startsWith(expectedParent)) {
+    throw new Error(`Refusing to remove unexpected Worker context: ${resolved}`);
+  }
+  rmSync(resolved, { force: true, recursive: true });
 }
 
 function localServiceUrl(port, pathname = "") {
@@ -1162,6 +1361,7 @@ async function shutdown(exitCode = 0) {
       await stopManagedProcess(processEntry);
     }
   }
+  await removeDevelopmentWorkerContainer();
   await revokeIssuedWorkerToken();
   for (const processEntry of processesInStopOrder) {
     if (processEntry.label === "worker") {
@@ -1171,6 +1371,19 @@ async function shutdown(exitCode = 0) {
   }
   releaseDevelopmentLock();
   process.exit(exitCode);
+}
+
+async function removeDevelopmentWorkerContainer() {
+  if (!developmentWorkerContainerName) {
+    return;
+  }
+  const name = developmentWorkerContainerName;
+  developmentWorkerContainerName = undefined;
+  try {
+    await captureCommand(commands.docker, ["rm", "--force", name]);
+  } catch {
+    // `docker run --rm` may already have removed the exact managed container.
+  }
 }
 
 async function fail(message) {

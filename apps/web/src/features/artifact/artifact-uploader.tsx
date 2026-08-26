@@ -33,6 +33,7 @@ import type { ArtifactDetail, PublicArtifactKind } from "./types";
 type ArtifactUploaderProps = {
   artifactId?: string;
   defaultKind?: PublicArtifactKind;
+  folderId?: string | null;
   onClose: () => void;
   onComplete: (detail: ArtifactDetail) => void;
   open: boolean;
@@ -50,6 +51,7 @@ const initialSnapshot: UploadTaskSnapshot = {
 export function ArtifactUploader({
   artifactId,
   defaultKind = "attachment",
+  folderId,
   onClose,
   onComplete,
   open,
@@ -113,6 +115,7 @@ export function ArtifactUploader({
             description: description || undefined,
             file,
             kind,
+            folderId,
             name: files.length === 1 && displayName ? displayName : file.name,
             projectId,
             tags,

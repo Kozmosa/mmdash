@@ -12,6 +12,12 @@ type Store interface {
 	GetDraft(context.Context, string) (Draft, error)
 	PersistDraft(context.Context, string, string, PersistDraftInput, string, []Block, map[string]interface{}, string) (Draft, error)
 	ReviewBlock(context.Context, string, string, string) (Block, error)
+	CreateChapterTag(context.Context, ChapterTag) (ChapterTag, bool, error)
+	GetChapterTag(context.Context, string, string) (ChapterTag, error)
+	ListChapterTags(context.Context, string) ([]ChapterTag, error)
+	UpdateChapterTag(context.Context, string, string, string, string) (ChapterTag, error)
+	DeleteChapterTag(context.Context, string, string, string) error
+	ReviewChapterTag(context.Context, string, string, string) (ChapterTag, error)
 	CreatePatch(context.Context, Patch) (Patch, error)
 	ListPatches(context.Context, string, string) ([]Patch, error)
 	ReviewPatch(context.Context, string, string, string, string, *int64) (Patch, error)
@@ -51,5 +57,6 @@ type Store interface {
 type ArtifactAccess interface {
 	ArticleTemplateGrant(context.Context, string, string, string) (map[string]interface{}, error)
 	ArticleResourceGrant(context.Context, string, string, string) (map[string]interface{}, error)
+	ArchiveArticleTemplate(context.Context, string, string, string, string, string, int64, io.Reader) (string, string, error)
 	ArchiveArticleBuildOutput(context.Context, string, string, string, string, string, string, string, int64, io.Reader) (string, string, error)
 }

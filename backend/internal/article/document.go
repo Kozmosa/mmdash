@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -25,7 +26,6 @@ func NormalizeDocument(document map[string]interface{}, generator idGenerator, a
 		document["content"] = content
 	}
 	blocks := make([]Block, 0, len(content))
-	markdown := make([]string, 0, len(content))
 	for index, raw := range content {
 		node, ok := raw.(map[string]interface{})
 		if !ok {
@@ -49,6 +49,8 @@ func NormalizeDocument(document map[string]interface{}, generator idGenerator, a
 		if nodeType == "" {
 			return "", nil, ErrInvalid
 		}
+		sanitizeDocumentNode(node)
+		attrs = object(node["attrs"])
 		text := plainText(node)
 		tag := tagForActor(actorKind, attrs)
 		attrs["tag"] = tag
@@ -60,15 +62,63 @@ func NormalizeDocument(document map[string]interface{}, generator idGenerator, a
 		}
 		attrs["provenance"] = blockProvenance
 		blocks = append(blocks, Block{Attrs: attrs, BlockID: blockID, NodeType: nodeType, Ordinal: index, Provenance: blockProvenance, Tag: tag, Text: text, UpdatedAt: now})
+	}
+	markdown, err := renderDocumentContent(content)
+	if err != nil {
+		return "", nil, err
+	}
+	return strings.TrimSpace(strings.Join(markdown, "\n\n")) + trailingNewline(markdown), blocks, nil
+}
+
+// renderDocumentContent keeps legacy sibling table captions compatible while
+// the current editor stores the caption on the table node itself. A document
+// briefly containing both forms during migration must render only one caption.
+func renderDocumentContent(content []interface{}) ([]string, error) {
+	markdown := make([]string, 0, len(content))
+	for index := 0; index < len(content); index++ {
+		node, ok := content[index].(map[string]interface{})
+		if !ok {
+			return nil, ErrInvalid
+		}
+		nodeType, _ := node["type"].(string)
+		if nodeType == "tableCaption" {
+			caption := renderTableCaption(node)
+			if index+1 < len(content) {
+				next, nextOK := content[index+1].(map[string]interface{})
+				nextType, _ := next["type"].(string)
+				if nextOK && nextType == "table" {
+					table, err := renderBlock(next)
+					if err != nil {
+						return nil, err
+					}
+					if table != "" {
+						// The bound caption is authoritative once present on the
+						// table; the sibling exists only for old snapshots.
+						boundCaption := markdownCaption(stringAttr(object(next["attrs"]), "caption"))
+						if caption != "" && boundCaption == "" {
+							markdown = append(markdown, caption+"\n\n"+table)
+						} else {
+							markdown = append(markdown, table)
+						}
+						index++
+						continue
+					}
+				}
+			}
+			if caption != "" {
+				markdown = append(markdown, caption)
+			}
+			continue
+		}
 		rendered, err := renderBlock(node)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		if rendered != "" {
 			markdown = append(markdown, rendered)
 		}
 	}
-	return strings.TrimSpace(strings.Join(markdown, "\n\n")) + trailingNewline(markdown), blocks, nil
+	return markdown, nil
 }
 
 // ReconcileBlockTags preserves review decisions for unchanged stable blocks
@@ -142,6 +192,30 @@ func semanticNodeHash(node map[string]interface{}) [32]byte {
 	return sha256.Sum256(encoded)
 }
 
+func chapterHeadingFingerprint(block Block) string {
+	attrs := cloneObject(block.Attrs)
+	delete(attrs, "id")
+	delete(attrs, "tag")
+	delete(attrs, "provenance")
+	encoded, _ := json.Marshal(map[string]interface{}{
+		"node_type": block.NodeType,
+		"text":      block.Text,
+		"attrs":     attrs,
+	})
+	digest := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", digest)
+}
+
+func headingBlocksByID(blocks []Block) map[string]Block {
+	result := make(map[string]Block)
+	for _, block := range blocks {
+		if block.NodeType == "heading" && block.BlockID != "" {
+			result[block.BlockID] = block
+		}
+	}
+	return result
+}
+
 func tagForActor(actorKind string, attrs map[string]interface{}) string {
 	if existing, ok := attrs["tag"].(string); ok {
 		switch existing {
@@ -191,14 +265,34 @@ func renderBlock(node map[string]interface{}) (string, error) {
 		return "$$\n" + stringAttr(attrs, "latex") + "\n$$", nil
 	case "image":
 		return "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")", nil
+	case "articleImage":
+		value := "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")"
+		if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
+			value += "\n\n" + caption
+		}
+		return value, nil
+	case "articleImageGroup":
+		return renderImageGroup(node), nil
+	case "tableCaption":
+		return renderTableCaption(node), nil
 	case "artifactReference":
 		artifactID := stringAttr(attrs, "artifactId")
 		if artifactID == "" {
 			artifactID = stringAttr(attrs, "objectId")
 		}
+		if strings.HasPrefix(stringAttr(attrs, "mimeType"), "image/") {
+			target := fmt.Sprintf("mmdash://artifact/%s/versions/%s", safeID(artifactID), safeID(stringAttr(attrs, "versionId")))
+			value := "![" + escapeMarkdown(stringAttr(attrs, "title")) + "](" + target + ")"
+			if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
+				value += "\n\n" + caption
+			}
+			return value, nil
+		}
 		return fmt.Sprintf("[Artifact %s@%s](mmdash://artifact/%s/versions/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(artifactID), safeID(stringAttr(attrs, "versionId"))), nil
 	case "experimentResult":
 		return fmt.Sprintf("[Experiment result %s@%s](mmdash://experiment/%s/results/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(stringAttr(attrs, "experimentId")), safeID(stringAttr(attrs, "versionId"))), nil
+	case "modelReference":
+		return fmt.Sprintf("[Model %s@%s](mmdash://model/%s/snapshots/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(stringAttr(attrs, "objectId")), safeID(stringAttr(attrs, "versionId"))), nil
 	default:
 		return renderInlineChildren(node), nil
 	}
@@ -258,8 +352,12 @@ func renderInlineChildren(node map[string]interface{}) string {
 			value = "  \n"
 		case "mathInline", "inlineMath":
 			value = "$" + stringAttr(attrs, "latex") + "$"
-		case "citation":
-			value = "[@" + safeCitationKey(stringAttr(attrs, "citationKey")) + "]"
+		case "citation", "zoteroCitation":
+			citationKey := stringAttr(attrs, "citationKey")
+			if typeName == "zoteroCitation" && strings.TrimSpace(citationKey) == "" {
+				citationKey = stringAttr(attrs, "itemKey")
+			}
+			value = "[@" + safeCitationKey(citationKey) + "]"
 		default:
 			value = renderInlineChildren(child)
 		}
@@ -267,6 +365,105 @@ func renderInlineChildren(node map[string]interface{}) string {
 		result.WriteString(value)
 	}
 	return result.String()
+}
+
+func renderTableCaption(node map[string]interface{}) string {
+	caption := markdownCaption(stringAttr(object(node["attrs"]), "caption"))
+	if caption == "" {
+		return ""
+	}
+	// Pandoc/GFM recognize the Table: paragraph as the caption belonging to
+	// the immediately following pipe table. Keeping it in the same rendered
+	// unit also prevents an intervening block from stealing the association.
+	return "Table: " + caption
+}
+
+func markdownCaption(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\r", " "), "\n", " "))
+	if value == "" {
+		return ""
+	}
+	return escapeMarkdown(value)
+}
+
+func renderImageGroup(node map[string]interface{}) string {
+	children, _ := interfaceSlice(node["content"])
+	cells := make([]string, 0, len(children))
+	for _, raw := range children {
+		child, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cell := renderImageGroupCell(child)
+		if cell != "" {
+			cells = append(cells, cell)
+		}
+	}
+	if len(cells) < 2 {
+		return ""
+	}
+	columns := integer(object(node["attrs"])["columns"], 2)
+	if columns < 1 {
+		columns = 1
+	}
+	if columns > 4 {
+		columns = 4
+	}
+	if columns > len(cells) {
+		columns = len(cells)
+	}
+	line := func(values []string) string {
+		padded := make([]string, columns)
+		copy(padded, values)
+		return "| " + strings.Join(padded, " | ") + " |"
+	}
+	separator := make([]string, columns)
+	for index := range separator {
+		separator[index] = ":---:"
+	}
+	lines := []string{line(make([]string, columns)), line(separator)}
+	for start := 0; start < len(cells); start += columns {
+		end := start + columns
+		if end > len(cells) {
+			end = len(cells)
+		}
+		lines = append(lines, line(cells[start:end]))
+	}
+	value := strings.Join(lines, "\n")
+	if caption := markdownCaption(stringAttr(object(node["attrs"]), "caption")); caption != "" {
+		value += "\n\n" + caption
+	}
+	return value
+}
+
+func renderImageGroupCell(node map[string]interface{}) string {
+	nodeType, _ := node["type"].(string)
+	attrs := object(node["attrs"])
+	alt := stringAttr(attrs, "alt")
+	target := ""
+	switch nodeType {
+	case "articleImage":
+		target = safeImageTarget(stringAttr(attrs, "src"))
+	case "artifactReference":
+		if !strings.HasPrefix(stringAttr(attrs, "mimeType"), "image/") {
+			return ""
+		}
+		artifactID := stringAttr(attrs, "artifactId")
+		if artifactID == "" {
+			artifactID = stringAttr(attrs, "objectId")
+		}
+		if alt == "" {
+			alt = stringAttr(attrs, "title")
+		}
+		target = fmt.Sprintf("mmdash://artifact/%s/versions/%s", safeID(artifactID), safeID(stringAttr(attrs, "versionId")))
+	default:
+		return ""
+	}
+	value := "![" + escapeMarkdown(alt) + "](" + target + ")"
+	if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
+		value += "<br><small>" + strings.ReplaceAll(caption, "|", `\|`) + "</small>"
+	}
+	return value
 }
 
 func renderTable(node map[string]interface{}) string {
@@ -314,7 +511,11 @@ func renderTable(node map[string]interface{}) string {
 	for _, row := range values[1:] {
 		lines = append(lines, line(row))
 	}
-	return strings.Join(lines, "\n")
+	table := strings.Join(lines, "\n")
+	if caption := markdownCaption(stringAttr(object(node["attrs"]), "caption")); caption != "" {
+		return "Table: " + caption + "\n\n" + table
+	}
+	return table
 }
 
 func applyMarks(value string, raw interface{}) string {
@@ -443,10 +644,67 @@ func safeTarget(value string) string {
 }
 func safeImageTarget(value string) string {
 	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, "mmdash://artifact/") {
-		return strings.ReplaceAll(value, ")", "%29")
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return "about:blank"
 	}
-	return "about:blank"
+	switch parsed.Scheme {
+	case "http", "https":
+		if parsed.Hostname() == "" {
+			return "about:blank"
+		}
+	case "mmdash":
+		if parsed.Host != "artifact" || !strings.HasPrefix(parsed.Path, "/") || parsed.Path == "/" {
+			return "about:blank"
+		}
+	default:
+		return "about:blank"
+	}
+	return strings.ReplaceAll(value, ")", "%29")
+}
+
+func sanitizeTransientArtifactAttrs(nodeType string, attrs map[string]interface{}) {
+	if nodeType != "artifactReference" {
+		return
+	}
+	for _, key := range []string{"previewUrl", "preview_url", "expiresAt", "expires_at"} {
+		delete(attrs, key)
+	}
+}
+
+func sanitizeTransientImageAttrs(nodeType string, attrs map[string]interface{}) {
+	if nodeType != "articleImage" {
+		return
+	}
+	value, _ := attrs["src"].(string)
+	parsed, err := url.Parse(value)
+	if err != nil {
+		delete(attrs, "src")
+		return
+	}
+	for key := range parsed.Query() {
+		switch strings.ToLower(key) {
+		case "x-amz-algorithm", "x-amz-credential", "x-amz-signature", "x-amz-security-token", "signature", "token":
+			delete(attrs, "src")
+			return
+		}
+	}
+}
+
+func sanitizeDocumentNode(node map[string]interface{}) {
+	nodeType, _ := node["type"].(string)
+	if _, hasAttrs := node["attrs"]; hasAttrs {
+		attrs := object(node["attrs"])
+		sanitizeTransientArtifactAttrs(nodeType, attrs)
+		sanitizeTransientImageAttrs(nodeType, attrs)
+		node["attrs"] = attrs
+	}
+	children, _ := interfaceSlice(node["content"])
+	for _, raw := range children {
+		if child, ok := raw.(map[string]interface{}); ok {
+			sanitizeDocumentNode(child)
+		}
+	}
 }
 func safeID(value string) string {
 	return strings.Map(func(r rune) rune {

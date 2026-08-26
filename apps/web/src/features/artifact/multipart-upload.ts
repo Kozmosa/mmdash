@@ -16,6 +16,7 @@ export type StoredArtifactUpload = {
   fileLastModified: number;
   fileName: string;
   fileSize: number;
+  folderId?: string;
   idempotencyKey: string;
   kind: PublicArtifactKind;
   name?: string;
@@ -54,6 +55,7 @@ type UploadTaskOptions = {
   concurrency?: number;
   description?: string;
   file: File;
+  folderId?: string | null;
   idempotencyKey?: string;
   kind?: PublicArtifactKind;
   name?: string;
@@ -116,12 +118,13 @@ export class MultipartUploadTask {
           this.options.projectId,
           this.session.artifact_id,
         );
+        const placed = await this.placeInFolder(detail);
         this.update({
           completedBytes: this.file.size,
           progress: 1,
           status: "completed",
         });
-        return detail;
+        return placed;
       }
       persistStoredUpload(this.toStored(sha256));
       const parts = await this.uploadParts(this.session);
@@ -138,7 +141,7 @@ export class MultipartUploadTask {
         progress: 1,
         status: "completed",
       });
-      return detail;
+      return this.placeInFolder(detail);
     } catch (error) {
       if (this.cancelled) {
         this.setStatus("cancelled");
@@ -378,6 +381,7 @@ export class MultipartUploadTask {
       fileLastModified: this.file.lastModified,
       fileName: this.file.name,
       fileSize: this.file.size,
+      folderId: this.options.folderId ?? this.options.stored?.folderId,
       idempotencyKey:
         this.options.idempotencyKey ??
         this.options.stored?.idempotencyKey ??
@@ -390,6 +394,17 @@ export class MultipartUploadTask {
       uploadId: session.upload_id,
       versionId: session.version_id,
     };
+  }
+
+  private async placeInFolder(detail: ArtifactDetail): Promise<ArtifactDetail> {
+    if (this.options.artifactId) return detail;
+    const folderId = this.options.folderId ?? this.options.stored?.folderId;
+    if (!folderId || detail.artifact.folder_id === folderId) return detail;
+    return artifactApi.moveArtifact(
+      this.options.projectId,
+      detail.artifact.artifact_id,
+      folderId,
+    );
   }
 
   private validateResumeFile(file: File): void {

@@ -37,6 +37,11 @@ describe("Article block and section tags", () => {
     render(<ArticleTagPanel blocks={blocks} canEdit onReview={review} />);
     expect(screen.getByText("AI 修订")).toBeInTheDocument();
     expect(screen.getByText("agent-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收起只显示颜色" }));
+    expect(
+      screen.getByRole("button", { name: "横向展开" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "横向展开" }));
     fireEvent.click(screen.getByRole("button", { name: "审阅块 2" }));
     await waitFor(() =>
       expect(review).toHaveBeenCalledWith(blocks[1]!.block_id),

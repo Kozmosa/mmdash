@@ -1,0 +1,12 @@
+{
+  "$id": "https://mmdash.moe/contracts/events/article.chapter.updated.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "article.chapter.updated payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chapter_tag_id", "status"],
+  "properties": {
+    "chapter_tag_id": { "type": "string", "format": "uuid" },
+    "status": { "enum": ["unedited", "unreviewed"] }
+  }
+}

@@ -47,6 +47,25 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 				writeResult(w, r, http.StatusOK, value, err)
 				return
 			}
+		case "chapter-tags":
+			if r.Method == http.MethodGet {
+				value, err := module.Service.ListChapterTags(r.Context(), caller, projectID)
+				writeResult(w, r, http.StatusOK, Page[ChapterTag]{Items: value}, err)
+				return
+			}
+			if r.Method == http.MethodPost {
+				var body contract.CreateArticleChapterTagRequest
+				if !decode(w, r, &body) {
+					return
+				}
+				status := ""
+				if body.Status != nil {
+					status = *body.Status
+				}
+				value, _, err := module.Service.CreateChapterTag(r.Context(), caller, projectID, body.HeadingBlockID, status)
+				writeResult(w, r, http.StatusCreated, value, err)
+				return
+			}
 		case "patches":
 			if r.Method == http.MethodGet {
 				value, err := module.Service.ListPatches(r.Context(), caller, projectID, r.URL.Query().Get("status"))
@@ -195,6 +214,31 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		value, err := module.Service.PersistDraft(r.Context(), caller, projectID, PersistDraftInput{ExpectedRevision: body.ExpectedRevision, YjsUpdate: body.YjsUpdate, StateVector: body.StateVector, TiptapJSON: body.TiptapJson, ActorKind: body.ActorKind, Provenance: body.Provenance})
+		writeResult(w, r, http.StatusOK, value, err)
+		return
+	}
+	if len(tail) == 2 && tail[0] == "chapter-tags" {
+		switch r.Method {
+		case http.MethodGet:
+			value, err := module.Service.GetChapterTag(r.Context(), caller, projectID, tail[1])
+			writeResult(w, r, http.StatusOK, value, err)
+			return
+		case http.MethodPatch:
+			var body contract.UpdateArticleChapterTagRequest
+			if !decode(w, r, &body) {
+				return
+			}
+			value, err := module.Service.UpdateChapterTag(r.Context(), caller, projectID, tail[1], body.Status)
+			writeResult(w, r, http.StatusOK, value, err)
+			return
+		case http.MethodDelete:
+			err := module.Service.DeleteChapterTag(r.Context(), caller, projectID, tail[1])
+			writeResult(w, r, http.StatusNoContent, nil, err)
+			return
+		}
+	}
+	if len(tail) == 3 && tail[0] == "chapter-tags" && tail[2] == "review" && r.Method == http.MethodPost {
+		value, err := module.Service.ReviewChapterTag(r.Context(), caller, projectID, tail[1])
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}

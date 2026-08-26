@@ -20,7 +20,7 @@ export function registerArticleRoutes(
 ): void {
   const collection = (
     name: string,
-    methods: ("GET" | "POST" | "PUT" | "DELETE")[],
+    methods: ("GET" | "POST" | "PUT" | "PATCH" | "DELETE")[],
   ) => {
     for (const method of methods) {
       app.route({
@@ -68,6 +68,7 @@ export function registerArticleRoutes(
   );
   collection("draft", ["GET"]);
   collection("draft/flush", ["POST"]);
+  collection("chapter-tags", ["GET", "POST"]);
   collection("patches", ["GET", "POST"]);
   collection("references", ["GET", "POST"]);
   collection("commits", ["GET", "POST"]);
@@ -80,6 +81,8 @@ export function registerArticleRoutes(
   collection("zotero/search", ["GET"]);
   for (const [name, suffix, methods] of [
     ["blocks", "review", ["POST"]],
+    ["chapter-tags", "", ["GET", "PATCH", "DELETE"]],
+    ["chapter-tags", "review", ["POST"]],
     ["patches", "review", ["POST"]],
     ["commits", "", ["GET"]],
     ["commits", "restore", ["POST"]],
@@ -121,7 +124,7 @@ async function proxy(
   reply: FastifyReply,
   projectId: string,
   suffix: string,
-  method: "GET" | "POST" | "PUT" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   bodyOverride?: Record<string, unknown>,
 ): Promise<unknown> {
   const query = new URLSearchParams();
@@ -157,7 +160,13 @@ async function proxy(
   }
   if (
     method === "POST" &&
-    ["/commits", "/references", "/patches", "/releases"].includes(suffix)
+    [
+      "/commits",
+      "/references",
+      "/patches",
+      "/releases",
+      "/chapter-tags",
+    ].includes(suffix)
   ) {
     return reply.code(201).send(value);
   }

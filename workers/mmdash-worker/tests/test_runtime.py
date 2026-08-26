@@ -18,11 +18,13 @@ class FakeClient:
         *,
         renew_error: Exception | None = None,
         renew_result: dict[str, Any] | None = None,
+        fail_error: Exception | None = None,
     ) -> None:
         self.job = job
         self.calls: list[tuple[Any, ...]] = []
         self.renew_error = renew_error
         self.renew_result = renew_result
+        self.fail_error = fail_error
 
     def heartbeat_worker(
         self,
@@ -78,6 +80,8 @@ class FakeClient:
         retryable: bool,
         retry_delay_seconds: int = 0,
     ) -> dict[str, Any]:
+        if self.fail_error is not None:
+            raise self.fail_error
         self.calls.append(
             ("fail", job_id, worker_id, code, message, retryable, retry_delay_seconds)
         )
@@ -145,6 +149,30 @@ def test_safe_handler_failure_is_submitted_with_retry_policy() -> None:
         True,
         7,
     )
+
+
+def test_failure_report_error_does_not_stop_worker_polling() -> None:
+    registry = HandlerRegistry()
+
+    def fail_handler(_context: object, _payload: object) -> dict[str, Any]:
+        raise HandlerError("HANDLER_FAILED", "bad input", retryable=True)
+
+    registry.register("system.failurereport", fail_handler)
+    client = FakeClient(
+        {"id": "job-report", "job_type": "system.failurereport", "payload": {}},
+        fail_error=RuntimeError("Core returned HTTP 500"),
+    )
+    runtime = WorkerRuntime(
+        client,
+        registry,
+        worker_id="worker-1",
+        version="0.1.0",
+        lease_seconds=10,
+        poll_seconds=0,
+    )
+
+    assert asyncio.run(runtime.run_once()) is True
+    assert any(call[0] == "log" and call[4] == "job.failure_report_failed" for call in client.calls)
 
 
 def test_long_running_handler_renews_its_lease_before_completion() -> None:

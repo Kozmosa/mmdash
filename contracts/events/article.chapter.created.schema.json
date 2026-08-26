@@ -1,0 +1,15 @@
+{
+  "$id": "https://mmdash.moe/contracts/events/article.chapter.created.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "article.chapter.created payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chapter_tag_id", "heading_block_id", "status"],
+  "properties": {
+    "chapter_tag_id": { "type": "string", "format": "uuid" },
+    "heading_block_id": { "type": "string", "format": "uuid" },
+    "status": {
+      "enum": ["unedited", "unreviewed", "reviewed", "needs_review"]
+    }
+  }
+}
