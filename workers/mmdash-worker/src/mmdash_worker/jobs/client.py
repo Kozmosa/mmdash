@@ -226,6 +226,22 @@ class CoreJobClient:
             "GET", f"/v1/internal/article-build-jobs/{job_id}/input", timeout_seconds=60
         )
 
+    def update_article_build_progress(
+        self,
+        job_id: str,
+        progress_percent: int,
+        progress_stage: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/internal/article-build-jobs/{job_id}/progress",
+            {
+                "progress_percent": progress_percent,
+                "progress_stage": progress_stage,
+            },
+            timeout_seconds=30,
+        )
+
     def upload_article_build_output(
         self,
         job_id: str,

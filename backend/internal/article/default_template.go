@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultTemplateFilename       = "mmdash-default-template.zip"
-	defaultTemplateIdempotencyKey = "article-default-template:1.0.0"
+	defaultTemplateIdempotencyKey = "article-default-template:1.0.2"
 )
 
 var defaultTemplateTimestamp = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -20,11 +20,11 @@ func defaultTemplateManifest() TemplateManifest {
 	return TemplateManifest{
 		SchemaVersion:      "1.0",
 		Name:               "mmdash 默认论文模板",
-		Version:            "1.0.0",
+		Version:            "1.0.2",
 		Entrypoint:         "main.tex",
 		Output:             "main.pdf",
-		ContentTarget:      ".mmdash/generated-content.tex",
-		BibliographyTarget: ".mmdash/references.bib",
+		ContentTarget:      "generated-content.tex",
+		BibliographyTarget: "references.bib",
 		Engine:             "xelatex",
 		BibliographyTool:   "none",
 	}
@@ -50,11 +50,12 @@ func defaultTemplateArchive() ([]byte, string, error) {
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs,longtable,array,calc}
 \usepackage{graphicx}
+\usepackage{subcaption}
 \usepackage{hyperref}
 \usepackage{xcolor}
 \providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 \begin{document}
-\input{.mmdash/generated-content}
+\input{generated-content}
 \end{document}
 `),
 		},

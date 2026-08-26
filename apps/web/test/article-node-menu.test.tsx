@@ -154,6 +154,8 @@ describe("Article node menus", () => {
       imageGroupContext: {
         canMergeAfter: true,
         canMergeBefore: false,
+        canMoveEarlier: false,
+        canMoveLater: false,
         inGroup: false,
       },
       onImageGroupAction,
@@ -166,10 +168,16 @@ describe("Article node menus", () => {
       imageGroupContext: {
         canMergeAfter: false,
         canMergeBefore: false,
+        canMoveEarlier: true,
+        canMoveLater: true,
         inGroup: true,
       },
       onImageGroupAction,
     });
+    fireEvent.click(screen.getByRole("button", { name: "向前移" }));
+    expect(onImageGroupAction).toHaveBeenCalledWith("moveEarlier");
+    fireEvent.click(screen.getByRole("button", { name: "向后移" }));
+    expect(onImageGroupAction).toHaveBeenCalledWith("moveLater");
     fireEvent.click(screen.getByRole("button", { name: "移出图片组合" }));
     expect(onImageGroupAction).toHaveBeenCalledWith("removeFromGroup");
   });

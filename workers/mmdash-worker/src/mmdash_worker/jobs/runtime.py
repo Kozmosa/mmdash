@@ -112,7 +112,17 @@ class WorkerRuntime:
         """Poll until cancelled by process shutdown."""
 
         while True:
-            handled = await self.run_once()
+            try:
+                handled = await self.run_once()
+            except JobAPIError as error:
+                if error.status != 0 and error.status < 500:
+                    raise
+                # A short Core restart or transport timeout must not tear down
+                # the Worker and, through the local launcher, every service.
+                # No job has been claimed at this boundary, so retrying the
+                # heartbeat/claim loop is safe.
+                await asyncio.sleep(max(self.poll_seconds, 0.1))
+                continue
             if not handled:
                 await asyncio.sleep(self.poll_seconds)
 

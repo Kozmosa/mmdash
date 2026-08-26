@@ -6,6 +6,10 @@ import type { EditorView } from "@tiptap/pm/view";
 import { createElement } from "react";
 
 import { ArticleArtifactNodeView } from "./article-artifact-node-view";
+import {
+  articleImageGroupGridTemplateColumns,
+  normalizeArticleImageGroupColumns,
+} from "./article-image-group";
 import { ArticleImageNodeView } from "./article-image-node-view";
 import { ArticleImageGroupNodeView } from "./article-image-group-node-view";
 import { ArticleZoteroCitationNodeView } from "./article-zotero-citation-node-view";
@@ -125,6 +129,7 @@ function versionedReference(name: string, dataAttribute: string) {
     name,
     group: "block",
     atom: true,
+    draggable: true,
     addOptions() {
       return { projectId: "" };
     },
@@ -184,8 +189,21 @@ function versionedReference(name: string, dataAttribute: string) {
     addNodeView() {
       if (name !== "artifactReference") return null;
       const projectId = String(this.options.projectId ?? "");
-      return ReactNodeViewRenderer((props) =>
-        createElement(ArticleArtifactNodeView, { ...props, projectId }),
+      return ReactNodeViewRenderer(
+        (props) =>
+          createElement(ArticleArtifactNodeView, { ...props, projectId }),
+        {
+          stopEvent({ event }) {
+            const target = event.target as HTMLElement | null;
+            const isInput =
+              target?.tagName === "INPUT" ||
+              target?.tagName === "BUTTON" ||
+              target?.tagName === "SELECT" ||
+              target?.tagName === "TEXTAREA";
+            if (isInput) return true;
+            return event.type.startsWith("drag") || event.type === "drop";
+          },
+        },
       );
     },
   });
@@ -208,6 +226,7 @@ export const ArticleImage = Node.create({
   name: "articleImage",
   group: "block",
   atom: true,
+  draggable: true,
   addAttributes() {
     return {
       alt: { default: "" },
@@ -255,7 +274,18 @@ export const ArticleImage = Node.create({
     ];
   },
   addNodeView() {
-    return ReactNodeViewRenderer(ArticleImageNodeView);
+    return ReactNodeViewRenderer(ArticleImageNodeView, {
+      stopEvent({ event }) {
+        const target = event.target as HTMLElement | null;
+        const isInput =
+          target?.tagName === "INPUT" ||
+          target?.tagName === "BUTTON" ||
+          target?.tagName === "SELECT" ||
+          target?.tagName === "TEXTAREA";
+        if (isInput) return true;
+        return event.type.startsWith("drag") || event.type === "drop";
+      },
+    });
   },
 });
 
@@ -276,13 +306,21 @@ export const ArticleImageGroup = Node.create({
   },
   renderHTML({ HTMLAttributes }) {
     const caption = String(HTMLAttributes.caption ?? "").trim();
+    const columns = normalizeArticleImageGroupColumns(HTMLAttributes.columns);
     return [
       "figure",
       mergeAttributes(HTMLAttributes, {
         "data-article-image-group": "true",
         class: "article-image-group my-4",
       }),
-      ["div", { "data-article-image-group-content": "true" }, 0],
+      [
+        "div",
+        {
+          "data-article-image-group-content": "true",
+          style: `--article-image-group-columns: ${articleImageGroupGridTemplateColumns(columns)}; --article-image-group-columns-count: ${columns}; --article-image-group-item-basis: calc((100% - (${columns} - 1) * 0.75rem) / ${columns} - 1px);`,
+        },
+        0,
+      ],
       ...(caption
         ? [
             [
@@ -295,7 +333,18 @@ export const ArticleImageGroup = Node.create({
     ];
   },
   addNodeView() {
-    return ReactNodeViewRenderer(ArticleImageGroupNodeView);
+    return ReactNodeViewRenderer(ArticleImageGroupNodeView, {
+      stopEvent({ event }) {
+        const target = event.target as HTMLElement | null;
+        const isInput =
+          target?.tagName === "INPUT" ||
+          target?.tagName === "BUTTON" ||
+          target?.tagName === "SELECT" ||
+          target?.tagName === "TEXTAREA";
+        if (isInput) return true;
+        return event.type.startsWith("drag") || event.type === "drop";
+      },
+    });
   },
 });
 

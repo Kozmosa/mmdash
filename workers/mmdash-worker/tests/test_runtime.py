@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from mmdash_worker.jobs.client import JobAPIError
 from mmdash_worker.jobs.handlers import (
     HandlerContext,
     HandlerError,
@@ -116,6 +117,75 @@ def test_run_once_heartbeats_claims_dispatches_and_completes() -> None:
             "handler": "system.test",
         },
     )
+
+
+def test_run_forever_retries_a_transient_claim_transport_failure() -> None:
+    class FlakyClaimClient(FakeClient):
+        def __init__(self) -> None:
+            super().__init__(None)
+            self.claim_count = 0
+
+        def claim(
+            self,
+            worker_id: str,
+            job_types: Sequence[str],
+            lease_seconds: int,
+        ) -> dict[str, Any] | None:
+            self.claim_count += 1
+            if self.claim_count == 1:
+                raise JobAPIError("CORE_UNAVAILABLE", "timed out")
+            return super().claim(worker_id, job_types, lease_seconds)
+
+    async def exercise() -> int:
+        client = FlakyClaimClient()
+        runtime = WorkerRuntime(
+            client,
+            baseline_registry(),
+            worker_id="worker-1",
+            version="0.1.0",
+            lease_seconds=10,
+            poll_seconds=0.001,
+        )
+        task = asyncio.create_task(runtime.run_forever())
+        for _ in range(100):
+            if client.claim_count >= 2:
+                break
+            await asyncio.sleep(0.002)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return client.claim_count
+
+    assert asyncio.run(exercise()) >= 2
+
+
+def test_run_forever_does_not_retry_a_non_transient_claim_error() -> None:
+    class UnauthorizedClient(FakeClient):
+        def claim(
+            self,
+            worker_id: str,
+            job_types: Sequence[str],
+            lease_seconds: int,
+        ) -> dict[str, Any] | None:
+            del worker_id, job_types, lease_seconds
+            raise JobAPIError("AUTH_UNAUTHORIZED", "invalid token", status=401)
+
+    runtime = WorkerRuntime(
+        UnauthorizedClient(None),
+        baseline_registry(),
+        worker_id="worker-1",
+        version="0.1.0",
+        lease_seconds=10,
+        poll_seconds=0,
+    )
+    try:
+        asyncio.run(runtime.run_forever())
+    except JobAPIError as error:
+        assert error.status == 401
+    else:
+        raise AssertionError("non-transient Job API errors must stop the Worker")
 
 
 def test_safe_handler_failure_is_submitted_with_retry_policy() -> None:

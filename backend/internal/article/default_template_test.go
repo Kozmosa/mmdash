@@ -36,8 +36,9 @@ func TestDefaultTemplateArchiveIsDeterministicAndSelfDescribing(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if !bytes.Contains(entries["main.tex"], []byte(`\input{.mmdash/generated-content}`)) ||
-		!bytes.Contains(entries["main.tex"], []byte(`\usepackage{booktabs,longtable,array,calc}`)) {
+	if !bytes.Contains(entries["main.tex"], []byte(`\input{generated-content}`)) ||
+		!bytes.Contains(entries["main.tex"], []byte(`\usepackage{booktabs,longtable,array,calc}`)) ||
+		!bytes.Contains(entries["main.tex"], []byte(`\usepackage{subcaption}`)) {
 		t.Fatalf("default main.tex lacks the generated content slot or paper packages: %s", entries["main.tex"])
 	}
 	var manifest TemplateManifest

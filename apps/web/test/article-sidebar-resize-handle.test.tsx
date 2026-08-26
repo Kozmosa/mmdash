@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 describe("ArticleSidebarResizeHandle", () => {
-  it("resizes with pointer capture and persists the final width", () => {
+  it("resizes with pointer capture and persists the final ratio", () => {
     const onResize = vi.fn();
     const onResizeEnd = vi.fn();
     const setPointerCapture = vi.fn();
@@ -33,23 +33,34 @@ describe("ArticleSidebarResizeHandle", () => {
     }
     vi.stubGlobal("PointerEvent", TestPointerEvent);
 
-    render(
-      <ArticleSidebarResizeHandle
-        onResize={onResize}
-        onResizeEnd={onResizeEnd}
-        width={320}
-      />,
+    const { container } = render(
+      <div data-article-workbench-container style={{ width: 1000 }}>
+        <ArticleSidebarResizeHandle
+          onResize={onResize}
+          onResizeEnd={onResizeEnd}
+          ratio={0.25}
+        />
+      </div>,
     );
+    const workbenchContainer = container.querySelector(
+      "[data-article-workbench-container]",
+    );
+    if (workbenchContainer) {
+      Object.defineProperty(workbenchContainer, "clientWidth", {
+        configurable: true,
+        value: 1000,
+      });
+    }
     const handle = screen.getByRole("separator", {
       name: "拖动调整左栏宽度",
     });
     fireEvent.pointerDown(handle, { clientX: 100, pointerId: 7 });
-    fireEvent.pointerMove(handle, { clientX: 180, pointerId: 7 });
-    fireEvent.pointerUp(handle, { clientX: 180, pointerId: 7 });
+    fireEvent.pointerMove(handle, { clientX: 150, pointerId: 7 });
+    fireEvent.pointerUp(handle, { clientX: 150, pointerId: 7 });
 
     expect(setPointerCapture).toHaveBeenCalledWith(7);
-    expect(onResize).toHaveBeenCalledWith(400);
-    expect(onResizeEnd).toHaveBeenCalledWith(400);
+    expect(onResize).toHaveBeenCalledWith(0.3);
+    expect(onResizeEnd).toHaveBeenCalledWith(0.3);
     expect(hasPointerCapture).toHaveBeenCalledWith(7);
     expect(releasePointerCapture).toHaveBeenCalledWith(7);
   });
@@ -60,12 +71,12 @@ describe("ArticleSidebarResizeHandle", () => {
       <ArticleSidebarResizeHandle
         onResize={vi.fn()}
         onResizeEnd={onResizeEnd}
-        width={320}
+        ratio={0.25}
       />,
     );
     const handle = screen.getByRole("separator");
     fireEvent.keyDown(handle, { key: "ArrowRight" });
     fireEvent.doubleClick(handle);
-    expect(onResizeEnd.mock.calls.map(([width]) => width)).toEqual([336, 320]);
+    expect(onResizeEnd.mock.calls.map(([ratio]) => ratio)).toEqual([0.27, 0.25]);
   });
 });
