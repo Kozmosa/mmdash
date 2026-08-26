@@ -16,6 +16,8 @@ from functools import partial
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
+from PIL import Image, ImageOps, UnidentifiedImageError
+
 try:
     import resource
 except ImportError:  # pragma: no cover - Windows unit-test host
@@ -43,10 +45,29 @@ FORBIDDEN_TEMPLATE_SUFFIXES = {
     ".rb",
     ".sh",
 }
+LATEX_NATIVE_IMAGE_SUFFIXES = {".jpeg", ".jpg", ".pdf", ".png"}
+LATEX_PNG_IMAGE_SUFFIXES = {
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".heic",
+    ".heif",
+    ".ico",
+    ".j2c",
+    ".jp2",
+    ".jpf",
+    ".jpx",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
 
 
 class ArticleClient(Protocol):
     def get_article_build_input(self, job_id: str) -> dict[str, Any]: ...
+    def update_article_build_progress(
+        self, job_id: str, progress_percent: int, progress_stage: str
+    ) -> dict[str, Any]: ...
     def download_transfer(
         self, grant: Mapping[str, Any], destination: Path, *, max_bytes: int
     ) -> dict[str, Any]: ...
@@ -78,6 +99,7 @@ class ArticleBuildHandler:
             raise HandlerError("JOB_CANCELLED", "Article build was cancelled")
         build = self.client.get_article_build_input(context.job_id)
         _validate_input(build)
+        self.client.update_article_build_progress(context.job_id, 10, "preparing")
         limits = _limits(build)
         with tempfile.TemporaryDirectory(prefix="mmdash-article-") as temporary:
             root = Path(temporary)
@@ -90,6 +112,7 @@ class ArticleBuildHandler:
             _extract_template(template_zip, template_root)
             manifest = _mapping(template["manifest"])
             _validate_template(template_root, manifest)
+            self.client.update_article_build_progress(context.job_id, 20, "resources")
             manuscript = root / "manuscript.md"
             bibliography = root / "references.bib"
             article_manifest = root / "article.json"
@@ -119,11 +142,17 @@ class ArticleBuildHandler:
                     raise HandlerError("ARTICLE_RESOURCE_CHANGED", "Article resource size changed")
                 if _sha256(destination) != str(resource["sha256"]):
                     raise HandlerError("ARTICLE_RESOURCE_CHANGED", "Article resource hash changed")
-                manuscript_text = manuscript_text.replace(
-                    f"mmdash://artifact/{artifact_id}/versions/{version_id}",
-                    f"figures/{filename}",
+                _convert_resource_for_latex(destination, resource)
+                manuscript_text = _replace_resource_references(
+                    manuscript_text,
+                    index,
+                    resource,
+                    artifact_id,
+                    version_id,
+                    filename,
                 )
             manuscript.write_text(manuscript_text, encoding="utf-8", newline="\n")
+            self.client.update_article_build_progress(context.job_id, 35, "converting")
             content_target = _safe_child(template_root, _required(manifest, "content_target"))
             bibliography_target = _safe_child(
                 template_root, _required(manifest, "bibliography_target")
@@ -178,6 +207,7 @@ class ArticleBuildHandler:
                     )
                 )
                 _check_disk(root, limits["disk_bytes"])
+                self.client.update_article_build_progress(context.job_id, 55, "compiling")
                 log_parts.append(
                     _run_command(
                         latexmk,
@@ -236,6 +266,7 @@ class ArticleBuildHandler:
                 encoding="utf-8",
                 newline="\n",
             )
+            self.client.update_article_build_progress(context.job_id, 75, "packaging")
             source_zip = root / "article-source.zip"
             _create_source_zip(
                 source_zip,
@@ -261,13 +292,19 @@ class ArticleBuildHandler:
             if synctex.is_file():
                 outputs.append(("synctex", synctex, synctex.name, "application/gzip"))
             uploaded: list[dict[str, Any]] = []
-            for role, source, filename, mime_type in outputs:
+            self.client.update_article_build_progress(context.job_id, 85, "uploading")
+            for index, (role, source, filename, mime_type) in enumerate(outputs):
                 if context.cancellation_requested:
                     raise HandlerError("JOB_CANCELLED", "Article build was cancelled")
                 if source.stat().st_size > limits["output_bytes"]:
                     raise HandlerError("ARTICLE_OUTPUT_LIMIT", "Article build output is too large")
                 uploaded.append(
                     _upload_output(self.client, context.job_id, role, source, filename, mime_type)
+                )
+                self.client.update_article_build_progress(
+                    context.job_id,
+                    min(95, 85 + round(((index + 1) / len(outputs)) * 10)),
+                    "uploading",
                 )
             return {"build_id": build["build_id"], "outputs": uploaded, "toolchain": toolchain}
 
@@ -297,8 +334,73 @@ def _validate_input(value: Mapping[str, Any]) -> None:
 
 def _resource_filename(index: int, resource: Mapping[str, Any]) -> str:
     source = PurePosixPath(str(resource.get("filename", "resource.bin"))).name
-    suffix = PurePosixPath(source).suffix[:16]
+    suffix = PurePosixPath(source).suffix.casefold()[:16]
+    if _resource_requires_png(resource):
+        suffix = ".png"
     return f"artifact-{index:04d}{suffix}"
+
+
+def _resource_requires_png(resource: Mapping[str, Any]) -> bool:
+    source = PurePosixPath(str(resource.get("filename", "resource.bin"))).suffix.casefold()
+    mime_type = str(resource.get("mime_type", "")).split(";", 1)[0].casefold()
+    return source in LATEX_PNG_IMAGE_SUFFIXES or mime_type in {
+        "image/avif",
+        "image/bmp",
+        "image/gif",
+        "image/heic",
+        "image/heif",
+        "image/webp",
+    }
+
+
+def _replace_resource_references(
+    manuscript: str,
+    index: int,
+    resource: Mapping[str, Any],
+    artifact_id: str,
+    version_id: str,
+    filename: str,
+) -> str:
+    replacement = f"figures/{filename}"
+    references = {
+        f"mmdash://artifact/{artifact_id}/versions/{version_id}",
+    }
+    source = PurePosixPath(str(resource.get("filename", "resource.bin"))).name
+    source_suffix = PurePosixPath(source).suffix.casefold()[:16]
+    legacy = f"artifact-{index:04d}{source_suffix}"
+    for candidate in {source, legacy}:
+        references.update({f"figures/{candidate}", f"./figures/{candidate}"})
+    for reference in references:
+        manuscript = manuscript.replace(reference, replacement)
+    return manuscript
+
+
+def _convert_resource_for_latex(destination: Path, resource: Mapping[str, Any]) -> None:
+    """Convert raster formats unsupported by graphicx/XeLaTeX to PNG.
+
+    The resource hash is checked before this function runs, so the conversion
+    cannot mask a changed transfer. The generated PNG is then the canonical
+    resource included in the manuscript and reproducible source ZIP.
+    """
+    if not _resource_requires_png(resource):
+        return
+    temporary = destination.with_name(f".{destination.name}.converted")
+    try:
+        with Image.open(destination) as image:
+            image.seek(0)
+            converted = ImageOps.exif_transpose(image)
+            if "A" in converted.getbands():
+                converted = converted.convert("RGBA")
+            else:
+                converted = converted.convert("RGB")
+            converted.save(temporary, format="PNG", optimize=False)
+        os.replace(temporary, destination)
+    except (OSError, UnidentifiedImageError, ValueError) as error:
+        temporary.unlink(missing_ok=True)
+        raise HandlerError(
+            "ARTICLE_RESOURCE_INVALID_IMAGE",
+            "Article image could not be converted to a LaTeX-compatible PNG",
+        ) from error
 
 
 def _extract_template(source: Path, destination: Path) -> None:
@@ -441,8 +543,13 @@ def _create_source_zip(
         ),
     }
     for source in sorted(template_root.rglob("*")):
+        relative = source.relative_to(template_root)
+        if relative.parts and relative.parts[0] in {".cache", ".config", ".local"}:
+            continue
+        if relative.parts and relative.parts[0].startswith(".texlive"):
+            continue
         if source.is_file():
-            entries[source.relative_to(template_root).as_posix()] = source.read_bytes()
+            entries[relative.as_posix()] = source.read_bytes()
     entrypoint_name = entrypoint.relative_to(template_root).as_posix()
     if entrypoint_name != "main.tex":
         # Keep the original entrypoint at its registered path. Copying its

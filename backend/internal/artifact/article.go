@@ -234,9 +234,33 @@ func (service Service) ArchiveArticleTemplate(
 // Artifact verification/promotion boundary. Article stores only the returned
 // stable Artifact and Version identifiers.
 func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID, buildID, createdBy, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+	filename = strings.TrimSpace(filename)
+	mimeType = strings.TrimSpace(mimeType)
 	expectedSHA = strings.ToLower(strings.TrimSpace(expectedSHA))
-	if projectID == "" || buildID == "" || createdBy == "" || role == "" || filename == "" || mimeType == "" || expectedSize < 1 || expectedSize > service.MaxUploadBytes || !sha256Pattern.MatchString(expectedSHA) {
+	idempotencyKey := "article-build:" + buildID + ":" + role
+	if projectID == "" || buildID == "" || createdBy == "" || role == "" ||
+		!validFilename(filename) || mimeType == "" || input == nil ||
+		expectedSize < 1 || expectedSize > service.MaxUploadBytes ||
+		!sha256Pattern.MatchString(expectedSHA) {
 		return "", "", ErrInvalid
+	}
+	initial := InitializeUploadInput{
+		Filename: filename, SizeBytes: expectedSize, SHA256: expectedSHA,
+		MIMEType: mimeType, Kind: KindArticleBuild,
+		IdempotencyKey: idempotencyKey,
+	}
+	if existing, lookupErr := service.Store.GetUploadByIdempotency(
+		ctx, projectID, idempotencyKey,
+	); lookupErr == nil {
+		if !matchesInitial(existing, createdBy, initial) {
+			return "", "", ErrUploadConflict
+		}
+		if existing.Status == UploadCompleted {
+			return existing.ArtifactID, existing.VersionID, nil
+		}
+		return "", "", ErrUploadConflict
+	} else if !errors.Is(lookupErr, ErrNotFound) {
+		return "", "", lookupErr
 	}
 	temporary, err := stageResultInput(input, expectedSize, expectedSHA)
 	if err != nil {
@@ -268,15 +292,31 @@ func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID,
 	sourceID := buildID
 	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindArticleBuild, Source: SourceArticle, SourceObjectID: &sourceID, Tags: []string{"article-build", role}, Name: filename, RecommendedUsage: []string{role}, CurrentVersionID: &versionID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
 	version := Version{ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1, StorageClass: "object", Filename: filename, SHA256: expectedSHA, MIMEType: mimeType, SizeBytes: expectedSize, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now}
-	upload, _, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, filename, mimeType, expectedSHA, expectedSize, "article-build:"+buildID+":"+role, plan)
+	upload, providerUpload, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, filename, mimeType, expectedSHA, expectedSize, idempotencyKey, plan)
 	if err != nil {
 		return "", "", err
 	}
 	if upload.Status == UploadCompleted {
-		return artifactID, versionID, nil
+		artifact.Status = StatusAvailable
+		version.Status = StatusAvailable
+		version.BlobID = strings.TrimPrefix(upload.ProviderUploadID, "deduplicated:")
+		version.AvailableAt = upload.CompletedAt
 	}
 	if err := service.Store.CreateFirst(ctx, artifact, version, upload); err != nil {
+		service.abortPrepared(ctx, providerUpload)
+		if errors.Is(err, ErrUploadConflict) {
+			existing, findErr := service.Store.GetUploadByIdempotency(
+				ctx, projectID, idempotencyKey,
+			)
+			if findErr == nil && matchesInitial(existing, createdBy, initial) &&
+				existing.Status == UploadCompleted {
+				return existing.ArtifactID, existing.VersionID, nil
+			}
+		}
 		return "", "", err
+	}
+	if upload.Status == UploadCompleted {
+		return artifactID, versionID, nil
 	}
 	provider := providerHandle(upload)
 	parts := make([]CompletedPart, 0, plan.PartCount)

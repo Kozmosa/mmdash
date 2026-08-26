@@ -18,7 +18,8 @@ Stage 9 Article operations:
   `article.templates.list`, `article.templates.create`, `article.zotero.get`,
   `article.zotero.update`, `article.zotero.delete`, `article.zotero.search`,
   `article.artifacts.describe`, `article.artifact_semantic_jobs.execute`,
-  `article.build_jobs.input.get`, and `article.build_jobs.outputs.upload`.
+  `article.build_jobs.input.get`, `article.build_jobs.progress.update`, and
+  `article.build_jobs.outputs.upload`.
 - Browser BFF: `bff.article.get`, `bff.article.collaboration.connect`,
   `bff.article.draft.get`, `bff.article.draft.flush`, `bff.article.blocks.review`,
   `bff.article.chapter_tags.list`, `bff.article.chapter_tags.create`, `bff.article.chapter_tags.get`,

@@ -171,6 +171,18 @@ func (store *articleTestStore) AddBuildOutput(_ context.Context, _ string, item 
 	store.outputs = append(store.outputs, item)
 	return nil
 }
+func (store *articleTestStore) UpdateBuildProgress(_ context.Context, jobID string, percent int, stage string) (Build, error) {
+	for index := range store.builds {
+		if store.builds[index].JobID == jobID {
+			if percent >= store.builds[index].ProgressPercent {
+				store.builds[index].ProgressPercent = percent
+				store.builds[index].ProgressStage = stage
+			}
+			return store.builds[index], nil
+		}
+	}
+	return Build{}, ErrNotFound
+}
 func (store *articleTestStore) CreatePublicationBuild(_ context.Context, publication Publication, build Build, _ jobs.CreateInput, _ jobs.TransactionalWriter) (Publication, bool, error) {
 	store.publications = append(store.publications, publication)
 	store.builds = append(store.builds, build)
@@ -275,7 +287,7 @@ func TestCommitPinsOneDraftRevisionAndOnlyThreeEditableFiles(t *testing.T) {
 	}
 	wantPaths := []string{"manuscript.md", "references.bib", ".mmdash/article.json"}
 	for index, change := range workspace.commits[0].Changes {
-		if change.Path != wantPaths[index] || change.Operation != "upsert" {
+		if change.Path != wantPaths[index] || change.Operation != "put" {
 			t.Fatalf("unexpected change: %#v", change)
 		}
 	}
@@ -439,6 +451,16 @@ func TestArticlePermissionsAndWorkerOutputBoundary(t *testing.T) {
 	artifacts := &articleTestArtifacts{}
 	service.Artifacts = artifacts
 	service.JobAccess = articleTestJobAccess{job: jobs.Job{ID: "job-1", JobType: JobTypeBuild, ProjectID: "project-1", Payload: map[string]interface{}{"build_id": "build-1"}}}
+	progress, err := service.WorkerProgress(context.Background(), human(), "job-1", 55, "compiling")
+	if err != nil || progress.ProgressPercent != 55 || progress.ProgressStage != "compiling" {
+		t.Fatalf("Worker progress was not persisted: %#v %v", progress, err)
+	}
+	if _, err = service.WorkerProgress(context.Background(), human(), "job-1", 40, "converting"); err != nil {
+		t.Fatalf("monotonic progress update was rejected: %v", err)
+	}
+	if store.builds[0].ProgressPercent != 55 || store.builds[0].ProgressStage != "compiling" {
+		t.Fatalf("Worker progress regressed: %#v", store.builds[0])
+	}
 	output, err := service.WorkerOutput(context.Background(), human(), "job-1", "pdf", "paper.pdf", "application/pdf", digest, int64(len(contents)), bytes.NewReader(contents))
 	if err != nil {
 		t.Fatal(err)

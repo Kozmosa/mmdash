@@ -33,9 +33,10 @@ const (
 )
 
 var (
-	shaPattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	rolePattern = regexp.MustCompile(`^(pdf|tex_source|source_zip|build_report|log|synctex)$`)
-	tagPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+	shaPattern   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	rolePattern  = regexp.MustCompile(`^(pdf|tex_source|source_zip|build_report|log|synctex)$`)
+	stagePattern = regexp.MustCompile(`^(preparing|resources|converting|compiling|packaging|uploading)$`)
+	tagPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 )
 
 type Access interface {
@@ -386,7 +387,7 @@ func (service *Service) Commit(ctx context.Context, caller auth.Identity, projec
 	if err != nil {
 		return Commit{}, err
 	}
-	result, err := service.Workspace.Commit(ctx, repo.WorkspaceCommitRequest{ActorEmail: caller.User.Email, ActorID: caller.ActorID(), ActorName: displayName(caller), Changes: []repo.FileChange{{Path: "manuscript.md", Operation: "upsert", Content: manuscript}, {Path: "references.bib", Operation: "upsert", Content: bibliography}, {Path: ".mmdash/article.json", Operation: "upsert", Content: manifestBytes}}, ExpectedHeadSHA: head.CommitSHA, IdempotencyKey: "article-commit:" + projectID + ":" + fmt.Sprint(draftRevision) + ":" + requestDigest, Message: strings.TrimSpace(message), ProjectID: projectID, RequestSHA256: requestDigest})
+	result, err := service.Workspace.Commit(ctx, repo.WorkspaceCommitRequest{ActorEmail: caller.User.Email, ActorID: caller.ActorID(), ActorName: displayName(caller), Changes: []repo.FileChange{{Path: "manuscript.md", Operation: "put", Content: manuscript}, {Path: "references.bib", Operation: "put", Content: bibliography}, {Path: ".mmdash/article.json", Operation: "put", Content: manifestBytes}}, ExpectedHeadSHA: head.CommitSHA, IdempotencyKey: "article-commit:" + projectID + ":" + fmt.Sprint(draftRevision) + ":" + requestDigest, Message: strings.TrimSpace(message), ProjectID: projectID, RequestSHA256: requestDigest})
 	if err != nil {
 		return Commit{}, err
 	}
@@ -485,7 +486,7 @@ func (service *Service) prepareBuild(ctx context.Context, actorID, projectID, ki
 		return Build{}, jobs.CreateInput{}, err
 	}
 	now := service.now()
-	item := Build{BuildID: id, ProjectID: projectID, BuildKind: kind, Status: BuildQueued, CommitID: commitID, DraftRevision: draftRevision, TemplateID: templateID, TemplateArtifactID: template.ArtifactID, TemplateVersionID: template.VersionID, Engine: engine, BibliographyTool: bibliographyTool, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, Outputs: []BuildOutput{}, Toolchain: map[string]interface{}{}, IdempotencyKey: idempotency}
+	item := Build{BuildID: id, ProjectID: projectID, BuildKind: kind, Status: BuildQueued, CommitID: commitID, DraftRevision: draftRevision, TemplateID: templateID, TemplateArtifactID: template.ArtifactID, TemplateVersionID: template.VersionID, Engine: engine, BibliographyTool: bibliographyTool, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, Outputs: []BuildOutput{}, ProgressPercent: 0, ProgressStage: "queued", Toolchain: map[string]interface{}{}, IdempotencyKey: idempotency}
 	jobInput := jobs.CreateInput{JobType: JobTypeBuild, ProjectID: projectID, Payload: map[string]interface{}{"build_id": id, "build_kind": kind}, Priority: kindPriority(kind), IdempotencyKey: "article-build:" + id, MaxAttempts: 2, TimeoutSeconds: 900}
 	return item, jobInput, nil
 }
@@ -803,6 +804,23 @@ func (service *Service) WorkerOutput(ctx context.Context, caller auth.Identity, 
 		return BuildOutput{}, err
 	}
 	return output, nil
+}
+
+func (service *Service) WorkerProgress(ctx context.Context, caller auth.Identity, jobID string, percent int, stage string) (Build, error) {
+	_, build, _, err := service.workerBuild(ctx, caller, jobID)
+	if err != nil {
+		return Build{}, err
+	}
+	if build.Status == BuildSuperseded {
+		return Build{}, ErrSuperseded
+	}
+	if build.Status != BuildQueued && build.Status != BuildRunning {
+		return Build{}, ErrConflict
+	}
+	if percent < 5 || percent > 95 || !stagePattern.MatchString(stage) {
+		return Build{}, ErrInvalid
+	}
+	return service.Store.UpdateBuildProgress(ctx, jobID, percent, stage)
 }
 func (service *Service) workerBuild(ctx context.Context, caller auth.Identity, jobID string) (jobs.Job, Build, Template, error) {
 	if service.JobAccess == nil {

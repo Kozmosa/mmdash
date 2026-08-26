@@ -4291,6 +4291,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/internal/article-build-jobs/{jobId}/progress": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Persist monotonic progress for a claimed Article build Job */
+    post: operations["article.build_jobs.progress.update"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/internal/article-build-jobs/{jobId}/outputs/{role}": {
     parameters: {
       query?: never;
@@ -4659,6 +4678,17 @@ export interface components {
     /** @enum {string} */
     ArticleBuildOutputRole:
       "pdf" | "tex_source" | "source_zip" | "build_report" | "log" | "synctex";
+    UpdateArticleBuildProgressRequest: {
+      progress_percent: number;
+      /** @enum {string} */
+      progress_stage:
+        | "preparing"
+        | "resources"
+        | "converting"
+        | "compiling"
+        | "packaging"
+        | "uploading";
+    };
     ArticleBuildOutput: {
       role: components["schemas"]["ArticleBuildOutputRole"];
       /** Format: uuid */
@@ -4701,6 +4731,19 @@ export interface components {
         [key: string]: unknown;
       };
       outputs: components["schemas"]["ArticleBuildOutput"][];
+      progress_percent: number;
+      /** @enum {string} */
+      progress_stage:
+        | "queued"
+        | "preparing"
+        | "resources"
+        | "converting"
+        | "compiling"
+        | "packaging"
+        | "uploading"
+        | "completed"
+        | "failed"
+        | "superseded";
       error_code?: string;
       error_message?: string;
       created_by: string;
@@ -15259,6 +15302,32 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ArticleBuildJobInput"];
+        };
+      };
+    };
+  };
+  "article.build_jobs.progress.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        jobId: components["parameters"]["JobId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateArticleBuildProgressRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated Article build. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleBuild"];
         };
       };
     };

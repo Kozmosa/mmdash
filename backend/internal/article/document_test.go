@@ -242,15 +242,47 @@ func TestNormalizeDocumentRendersWrappingImageGroupAndSanitizesChildren(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "|  |  |\n| :---: | :---: |\n| ![A](https://example.test/a.png)<br><small>子图 A</small> | ![B](mmdash://artifact/artifact-1/versions/version-2)<br><small>子图 B</small> |\n| ![C](about:blank) |  |\n\n组合大题注\n"
+	want := "\\begin{figure}[htbp]\n\\centering\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{mmdash://artifact/artifact-1/versions/version-2}\n  \\caption{子图 B}\n\\end{subfigure}\n\\par\\medskip\n\\begin{subfigure}[b]{0.98\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{about:blank}\n\\end{subfigure}\n\\caption{组合大题注}\n\\end{figure}\n"
 	if markdown != want {
-		t.Fatalf("unexpected image group markdown:\n%s", markdown)
+		t.Fatalf("unexpected image group markdown:\n%s\nwant:\n%s", markdown, want)
 	}
 	if _, exists := signedAttrs["src"]; exists {
 		t.Fatal("signed URL on a nested image remained in the document")
 	}
 	if len(blocks) != 1 || blocks[0].NodeType != "articleImageGroup" {
 		t.Fatalf("image group was not kept as one top-level block: %#v", blocks)
+	}
+}
+
+func TestNormalizeDocumentImageGroupPreservesReorderedSequenceAndAdaptiveWidths(t *testing.T) {
+	// Test reordered images: C then A then B, with 3 columns (all in 1 row)
+	document := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{
+			"type": "articleImageGroup",
+			"attrs": map[string]interface{}{
+				"id": "image-group-2", "caption": "重排组合", "columns": 3,
+			},
+			"content": []interface{}{
+				map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+					"alt": "C", "caption": "子图 C", "src": "https://example.test/c.png",
+				}},
+				map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+					"alt": "A", "caption": "子图 A", "src": "https://example.test/a.png",
+				}},
+				map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+					"alt": "B", "caption": "子图 B", "src": "https://example.test/b.png",
+				}},
+			},
+		},
+	}}
+
+	markdown, _, err := NormalizeDocument(document, nil, "human", map[string]interface{}{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "\\begin{figure}[htbp]\n\\centering\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/c.png}\n  \\caption{子图 C}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/b.png}\n  \\caption{子图 B}\n\\end{subfigure}\n\\caption{重排组合}\n\\end{figure}\n"
+	if markdown != want {
+		t.Fatalf("unexpected reordered image group markdown:\n%s\nwant:\n%s", markdown, want)
 	}
 }
 

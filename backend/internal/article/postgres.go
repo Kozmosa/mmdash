@@ -628,14 +628,14 @@ func (store PostgresStore) ReconcileBuildStates(ctx context.Context, projectID s
 	})
 }
 
-const buildSelect = `SELECT b.build_id,b.project_id,b.build_kind,b.status,COALESCE(b.commit_id::text,''),c.git_commit_sha,b.draft_revision,COALESCE(b.job_id::text,''),b.template_id,t.artifact_id,b.template_version_id,b.engine,b.bibliography_tool,b.toolchain,COALESCE(b.error_code,''),COALESCE(b.error_message,''),b.created_by,b.created_at,b.updated_at,b.finished_at,COALESCE(b.idempotency_key,'') FROM article_builds b JOIN article_templates t ON t.template_id=b.template_id LEFT JOIN article_commits c ON c.commit_id=b.commit_id`
+const buildSelect = `SELECT b.build_id,b.project_id,b.build_kind,b.status,COALESCE(b.commit_id::text,''),c.git_commit_sha,b.draft_revision,COALESCE(b.job_id::text,''),b.template_id,t.artifact_id,b.template_version_id,b.engine,b.bibliography_tool,b.toolchain,COALESCE(b.error_code,''),COALESCE(b.error_message,''),b.progress_percent,b.progress_stage,b.created_by,b.created_at,b.updated_at,b.finished_at,COALESCE(b.idempotency_key,'') FROM article_builds b JOIN article_templates t ON t.template_id=b.template_id LEFT JOIN article_commits c ON c.commit_id=b.commit_id`
 
 func scanBuild(scan func(...interface{}) error) (Build, error) {
 	var item Build
 	var draft sql.NullInt64
 	var commitSHA sql.NullString
 	var toolchain []byte
-	if err := scan(&item.BuildID, &item.ProjectID, &item.BuildKind, &item.Status, &item.CommitID, &commitSHA, &draft, &item.JobID, &item.TemplateID, &item.TemplateArtifactID, &item.TemplateVersionID, &item.Engine, &item.BibliographyTool, &toolchain, &item.ErrorCode, &item.ErrorMessage, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.FinishedAt, &item.IdempotencyKey); err != nil {
+	if err := scan(&item.BuildID, &item.ProjectID, &item.BuildKind, &item.Status, &item.CommitID, &commitSHA, &draft, &item.JobID, &item.TemplateID, &item.TemplateArtifactID, &item.TemplateVersionID, &item.Engine, &item.BibliographyTool, &toolchain, &item.ErrorCode, &item.ErrorMessage, &item.ProgressPercent, &item.ProgressStage, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.FinishedAt, &item.IdempotencyKey); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Build{}, ErrNotFound
 		}
@@ -672,8 +672,23 @@ func (store PostgresStore) listOutputs(ctx context.Context, buildID string) ([]B
 }
 
 func (store PostgresStore) MarkBuildRunning(ctx context.Context, tx transaction.Tx, jobID string) error {
-	_, err := tx.ExecContext(ctx, `UPDATE article_builds SET status=CASE WHEN status='queued' THEN 'running' ELSE status END,started_at=COALESCE(started_at,$2),updated_at=$2 WHERE job_id=$1`, jobID, store.now())
+	_, err := tx.ExecContext(ctx, `UPDATE article_builds SET status=CASE WHEN status='queued' THEN 'running' ELSE status END,progress_percent=GREATEST(progress_percent,5),progress_stage=CASE WHEN progress_percent < 5 THEN 'preparing' ELSE progress_stage END,started_at=COALESCE(started_at,$2),updated_at=$2 WHERE job_id=$1`, jobID, store.now())
 	return err
+}
+func (store PostgresStore) UpdateBuildProgress(ctx context.Context, jobID string, percent int, stage string) (Build, error) {
+	result, err := store.DB.ExecContext(ctx, `UPDATE article_builds SET progress_percent=GREATEST(progress_percent,$2),progress_stage=CASE WHEN $2 >= progress_percent THEN $3 ELSE progress_stage END,updated_at=$4 WHERE job_id=$1 AND status IN ('queued','running')`, jobID, percent, stage, store.now())
+	if err != nil {
+		return Build{}, err
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return Build{}, ErrConflict
+	}
+	item, err := scanBuild(store.DB.QueryRowContext(ctx, buildSelect+` WHERE b.job_id=$1`, jobID).Scan)
+	if err != nil {
+		return Build{}, err
+	}
+	item.Outputs, err = store.listOutputs(ctx, item.BuildID)
+	return item, err
 }
 func (store PostgresStore) CompleteBuild(ctx context.Context, tx transaction.Tx, jobID string, result map[string]interface{}) (Build, error) {
 	item, err := store.GetBuildByJob(ctx, tx, jobID)
@@ -685,7 +700,7 @@ func (store PostgresStore) CompleteBuild(ctx context.Context, tx transaction.Tx,
 	}
 	toolchain, _ := json.Marshal(result["toolchain"])
 	now := store.now()
-	if _, err = tx.ExecContext(ctx, `UPDATE article_builds SET status='succeeded',toolchain=$2,error_code=NULL,error_message=NULL,finished_at=$3,updated_at=$3 WHERE build_id=$1 AND status IN ('queued','running')`, item.BuildID, toolchain, now); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE article_builds SET status='succeeded',progress_percent=100,progress_stage='completed',toolchain=$2,error_code=NULL,error_message=NULL,finished_at=$3,updated_at=$3 WHERE build_id=$1 AND status IN ('queued','running')`, item.BuildID, toolchain, now); err != nil {
 		return Build{}, err
 	}
 	if item.BuildKind == BuildTemplateTest {
@@ -712,6 +727,8 @@ func (store PostgresStore) CompleteBuild(ctx context.Context, tx transaction.Tx,
 		return Build{}, err
 	}
 	item.Status = BuildSucceeded
+	item.ProgressPercent = 100
+	item.ProgressStage = "completed"
 	item.UpdatedAt = now
 	item.FinishedAt = &now
 	return item, nil
@@ -725,7 +742,7 @@ func (store PostgresStore) FailBuild(ctx context.Context, tx transaction.Tx, job
 		return item, nil
 	}
 	now := store.now()
-	if _, err = tx.ExecContext(ctx, `UPDATE article_builds SET status='failed',error_code=$2,error_message=$3,finished_at=$4,updated_at=$4 WHERE build_id=$1 AND status IN ('queued','running')`, item.BuildID, code, message, now); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE article_builds SET status='failed',progress_stage='failed',error_code=$2,error_message=$3,finished_at=$4,updated_at=$4 WHERE build_id=$1 AND status IN ('queued','running')`, item.BuildID, code, message, now); err != nil {
 		return Build{}, err
 	}
 	if item.BuildKind == BuildTemplateTest {
@@ -743,6 +760,7 @@ func (store PostgresStore) FailBuild(ctx context.Context, tx transaction.Tx, job
 		return Build{}, err
 	}
 	item.Status = BuildFailed
+	item.ProgressStage = "failed"
 	item.ErrorCode = code
 	item.ErrorMessage = message
 	item.UpdatedAt = now

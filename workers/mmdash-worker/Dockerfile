@@ -22,6 +22,7 @@ RUN apt-get update \
       texlive-latex-base=2022.20230122-3 \
       texlive-latex-extra=2022.20230122-4 \
       texlive-latex-recommended=2022.20230122-3 \
+      texlive-lang-chinese=2022.20230122-1 \
       texlive-luatex=2022.20230122-3 \
       texlive-xetex=2022.20230122-3 \
     && pandoc --version | grep -F 'pandoc 2.17.1.1' \
@@ -29,6 +30,7 @@ RUN apt-get update \
     && pdflatex --version | grep -F 'TeX Live 2022/Debian' \
     && xelatex --version | grep -F 'TeX Live 2022/Debian' \
     && lualatex --version | grep -F 'TeX Live 2022/Debian' \
+    && kpsewhich ctexart.cls | grep -F '/ctex/ctexart.cls' \
     && rm -rf /var/lib/apt/lists/*
 
 ARG PYPI_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/

@@ -3076,6 +3076,29 @@ func (request CreateArticlePreviewBuildRequest) Validate() error {
 	return nil
 }
 
+// UpdateArticleBuildProgressRequest is generated from the Core request-body schema.
+type UpdateArticleBuildProgressRequest struct {
+	ProgressPercent int64  `json:"progress_percent"`
+	ProgressStage   string `json:"progress_stage"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateArticleBuildProgressRequest) Validate() error {
+	if request.ProgressPercent < 5 {
+		return fmt.Errorf("progress_percent is below its minimum")
+	}
+	if request.ProgressPercent > 95 {
+		return fmt.Errorf("progress_percent exceeds its maximum")
+	}
+	if request.ProgressStage == "" {
+		return fmt.Errorf("progress_stage is required")
+	}
+	if request.ProgressStage != "preparing" && request.ProgressStage != "resources" && request.ProgressStage != "converting" && request.ProgressStage != "compiling" && request.ProgressStage != "packaging" && request.ProgressStage != "uploading" {
+		return fmt.Errorf("progress_stage has an unsupported value")
+	}
+	return nil
+}
+
 // CreateArticleReleaseRequest is generated from the Core request-body schema.
 type CreateArticleReleaseRequest struct {
 	CommitID string `json:"commit_id"`
