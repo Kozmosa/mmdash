@@ -65,6 +65,7 @@ const detail = {
     created_by: "user-1",
     current_version_id: version.version_id,
     description: "Original",
+    folder_id: null,
     kind: "problem",
     name: "Problem statement",
     project_id: projectId,

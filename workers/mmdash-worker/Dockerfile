@@ -31,8 +31,12 @@ RUN apt-get update \
     && lualatex --version | grep -F 'TeX Live 2022/Debian' \
     && rm -rf /var/lib/apt/lists/*
 
+ARG PYPI_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ENV UV_DEFAULT_INDEX=${PYPI_INDEX_URL} \
+    UV_INDEX_URL=${PYPI_INDEX_URL}
+
 RUN pip install --no-cache-dir \
-    --index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+    --index-url "${PYPI_INDEX_URL}" \
     uv==0.8.22
 
 WORKDIR /app

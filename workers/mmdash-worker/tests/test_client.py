@@ -103,6 +103,33 @@ def test_artifact_transfer_request_uses_worker_token(
     assert result["method"] == "GET"
 
 
+def test_transfer_origin_override_preserves_the_signed_host() -> None:
+    client = CoreJobClient(
+        "http://core:8080",
+        "worker-token",
+        transfer_origin_override="http://host.docker.internal:9000",
+    )
+
+    url, headers = client._transfer_target(
+        "http://localhost:9000/mmdash/object?X-Amz-Signature=signed",
+        {"X-Test": "value"},
+    )
+
+    assert url == ("http://host.docker.internal:9000/mmdash/object?X-Amz-Signature=signed")
+    assert headers == {"X-Test": "value", "Host": "localhost:9000"}
+
+
+def test_transfer_origin_override_rejects_nonlocal_signed_urls() -> None:
+    client = CoreJobClient(
+        "http://core:8080",
+        "worker-token",
+        transfer_origin_override="http://host.docker.internal:9000",
+    )
+
+    with pytest.raises(JobAPIError, match="only accepts local signed URLs"):
+        client._transfer_target("https://storage.example.test/object", {})
+
+
 def test_model_completion_uses_media_transfer_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -190,9 +217,7 @@ def test_progress_evaluation_capabilities_use_job_bound_routes(
     result = getattr(client, method_name)("job-1")
 
     request = captured["request"]
-    assert request.full_url.endswith(
-        f"/v1/internal/progress-evaluation-jobs/job-1{suffix}"
-    )
+    assert request.full_url.endswith(f"/v1/internal/progress-evaluation-jobs/job-1{suffix}")
     assert request.get_method() == http_method
     assert captured["timeout"] == 456
     assert result == {"status": "running"}

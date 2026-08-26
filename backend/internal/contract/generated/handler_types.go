@@ -2821,6 +2821,41 @@ func (request PersistArticleDraftRequest) Validate() error {
 	return nil
 }
 
+// CreateArticleChapterTagRequest is generated from the Core request-body schema.
+type CreateArticleChapterTagRequest struct {
+	HeadingBlockID string  `json:"heading_block_id"`
+	Status         *string `json:"status,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request CreateArticleChapterTagRequest) Validate() error {
+	if request.HeadingBlockID == "" {
+		return fmt.Errorf("heading_block_id is required")
+	}
+	if request.Status != nil {
+		if *request.Status != "unedited" && *request.Status != "unreviewed" {
+			return fmt.Errorf("status has an unsupported value")
+		}
+	}
+	return nil
+}
+
+// UpdateArticleChapterTagRequest is generated from the Core request-body schema.
+type UpdateArticleChapterTagRequest struct {
+	Status string `json:"status"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request UpdateArticleChapterTagRequest) Validate() error {
+	if request.Status == "" {
+		return fmt.Errorf("status is required")
+	}
+	if request.Status != "unedited" && request.Status != "unreviewed" {
+		return fmt.Errorf("status has an unsupported value")
+	}
+	return nil
+}
+
 // CreateArticlePatchRequest is generated from the Core request-body schema.
 type CreateArticlePatchRequest struct {
 	BaseRevision int64                  `json:"base_revision"`

@@ -26,6 +26,41 @@ afterEach(() => {
 });
 
 describe("Article Zotero settings", () => {
+  it("persists the shared Markdown rendering theme in Project settings", async () => {
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockImplementation(async (path, options) => {
+        if (path.endsWith("/settings/article.rendering")) {
+          return {
+            updated_at: "2026-08-19T00:00:00Z",
+            values: {
+              theme: options?.method === "PATCH" ? "latex" : "md",
+            },
+            version: options?.method === "PATCH" ? 2 : 1,
+          } as never;
+        }
+        if (path.endsWith("/settings/article.zotero")) return setting() as never;
+        throw new Error(`unexpected request ${path} ${options?.method}`);
+      });
+    render(
+      <TestQueryProvider>
+        <ArticleSettingsPanel />
+      </TestQueryProvider>,
+    );
+
+    const theme = await screen.findByLabelText("Article 渲染主题");
+    await waitFor(() => expect(theme).toBeEnabled());
+    fireEvent.change(theme, { target: { value: "latex" } });
+    await waitFor(() => expect(theme).toHaveValue("latex"));
+    expect(
+      request.mock.calls.find(
+        ([path, options]) =>
+          path.endsWith("/settings/article.rendering") &&
+          options?.method === "PATCH",
+      )?.[1]?.body,
+    ).toEqual({ values: { theme: "latex" } });
+  });
+
   it("keeps the encrypted key redacted while saving and testing all registered fields", async () => {
     const request = vi
       .spyOn(apiClient, "request")
@@ -41,6 +76,13 @@ describe("Article Zotero settings", () => {
           if (options?.method === "PATCH")
             return { ...setting(), version: 3 } as never;
           return setting() as never;
+        }
+        if (path.endsWith("/settings/article.rendering")) {
+          return {
+            updated_at: "2026-08-19T00:00:00Z",
+            values: { theme: "md" },
+            version: 1,
+          } as never;
         }
         throw new Error(`unexpected request ${path} ${options?.method}`);
       });

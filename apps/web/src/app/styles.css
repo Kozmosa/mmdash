@@ -263,3 +263,295 @@
 .prose li > ol {
   margin-block: 0.25rem;
 }
+
+[data-article-editor-shell] .ProseMirror ul {
+  margin-block: 0.75rem;
+  padding-inline-start: 1.75rem;
+  list-style-type: disc;
+}
+
+[data-article-editor-shell] .ProseMirror ol {
+  margin-block: 0.75rem;
+  padding-inline-start: 1.75rem;
+  list-style-type: decimal;
+}
+
+[data-article-editor-shell] .ProseMirror li {
+  display: list-item;
+  padding-inline-start: 0.2rem;
+}
+
+[data-article-editor-shell] .ProseMirror ul ul {
+  list-style-type: circle;
+}
+
+[data-article-editor-shell] .ProseMirror ul ul ul {
+  list-style-type: square;
+}
+
+[data-article-editor-shell] .ProseMirror ol ol {
+  list-style-type: lower-alpha;
+}
+
+[data-article-editor-shell] .ProseMirror ol ol ol {
+  list-style-type: lower-roman;
+}
+
+[data-article-marquee-selection] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 45%, transparent);
+}
+
+.article-table-edge-dragging,
+.article-table-edge-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+[data-article-editor-shell] [data-type="inline-math"],
+[data-article-editor-shell] [data-type="block-math"] {
+  cursor: pointer;
+}
+
+[data-article-editor-shell] [data-type="inline-math"] {
+  border-radius: 0.25rem;
+  padding-inline: 0.15rem;
+}
+
+[data-article-editor-shell] [data-type="inline-math"]:hover,
+[data-article-editor-shell] [data-type="block-math"]:hover {
+  background: color-mix(in srgb, var(--muted) 65%, transparent);
+}
+
+[data-article-editor-shell] [data-type="block-math"] {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  margin-block: 1rem;
+  padding: 0.75rem 1rem;
+  text-align: center;
+}
+
+[data-article-editor-shell] [data-type="block-math"] .block-math-inner {
+  margin-inline: auto;
+}
+
+[data-article-block-dragging="true"] .ProseMirror > * {
+  cursor: grabbing;
+}
+
+[data-article-block-dragging="true"] .ProseMirror-selectednode {
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  outline-offset: 0.2rem;
+}
+
+.ProseMirror-selectednoderange {
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 86%, transparent);
+}
+
+[data-article-drop-indicator] {
+  transform: translateY(-50%);
+}
+
+.article-rendered-document-latex,
+.article-theme-latex .ProseMirror {
+  font-family: "Noto Serif SC Variable", "Noto Serif SC", serif;
+  counter-reset: article-h1 article-h2 article-h3 article-h4 article-h5
+    article-h6;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) h1 {
+  counter-increment: article-h1;
+  counter-reset: article-h2 article-h3 article-h4 article-h5 article-h6;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) h2 {
+  counter-increment: article-h2;
+  counter-reset: article-h3 article-h4 article-h5 article-h6;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) h3 {
+  counter-increment: article-h3;
+  counter-reset: article-h4 article-h5 article-h6;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) h4 {
+  counter-increment: article-h4;
+  counter-reset: article-h5 article-h6;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) h5 {
+  counter-increment: article-h5;
+  counter-reset: article-h6;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) h6 {
+  counter-increment: article-h6;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  h1::before {
+  content: counter(article-h1) ". ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  h2::before {
+  content: counter(article-h1) "." counter(article-h2) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  h3::before {
+  content: counter(article-h1) "." counter(article-h2) "." counter(article-h3)
+    " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  h4::before {
+  content: counter(article-h1) "." counter(article-h2) "." counter(article-h3)
+    "." counter(article-h4) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  h5::before {
+  content: counter(article-h1) "." counter(article-h2) "." counter(article-h3)
+    "." counter(article-h4) "." counter(article-h5) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  h6::before {
+  content: counter(article-h1) "." counter(article-h2) "." counter(article-h3)
+    "." counter(article-h4) "." counter(article-h5) "." counter(article-h6) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  )
+  h2::before {
+  content: counter(article-h2) ". ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  )
+  h3::before {
+  content: counter(article-h2) "." counter(article-h3) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2))
+  h3::before {
+  content: counter(article-h3) ". ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  )
+  h4::before {
+  content: counter(article-h2) "." counter(article-h3) "." counter(article-h4)
+    " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2))
+  h4::before {
+  content: counter(article-h3) "." counter(article-h4) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2)):not(:has(h3))
+  h4::before {
+  content: counter(article-h4) ". ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  )
+  h5::before {
+  content: counter(article-h2) "." counter(article-h3) "." counter(article-h4)
+    "." counter(article-h5) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2))
+  h5::before {
+  content: counter(article-h3) "." counter(article-h4) "." counter(article-h5)
+    " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2)):not(:has(h3))
+  h5::before {
+  content: counter(article-h4) "." counter(article-h5) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2)):not(:has(h3)):not(:has(h4))
+  h5::before {
+  content: counter(article-h5) ". ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  )
+  h6::before {
+  content: counter(article-h2) "." counter(article-h3) "." counter(article-h4)
+    "." counter(article-h5) "." counter(article-h6) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2))
+  h6::before {
+  content: counter(article-h3) "." counter(article-h4) "." counter(article-h5)
+    "." counter(article-h6) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2)):not(:has(h3))
+  h6::before {
+  content: counter(article-h4) "." counter(article-h5) "." counter(article-h6)
+    " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2)):not(:has(h3)):not(:has(h4))
+  h6::before {
+  content: counter(article-h5) "." counter(article-h6) " ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror):not(
+    :has(h1)
+  ):not(:has(h2)):not(:has(h3)):not(:has(h4)):not(:has(h5))
+  h6::before {
+  content: counter(article-h6) ". ";
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) table {
+  border-top: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) th,
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) td {
+  border: 0 !important;
+  background: transparent;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  tr:first-child
+  th,
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)
+  tr:first-child
+  td {
+  border-bottom: 1px solid currentColor !important;
+}

@@ -30,22 +30,46 @@ MAX_OUTPUT_BYTES = 512 * 1024 * 1024
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 FORBIDDEN_TEMPLATE_NAMES = {".latexmkrc", "latexmkrc", "makefile"}
 FORBIDDEN_TEMPLATE_SUFFIXES = {
-    ".bat", ".cmd", ".com", ".dll", ".exe", ".jar", ".js", ".pl", ".ps1",
-    ".py", ".rb", ".sh",
+    ".bat",
+    ".cmd",
+    ".com",
+    ".dll",
+    ".exe",
+    ".jar",
+    ".js",
+    ".pl",
+    ".ps1",
+    ".py",
+    ".rb",
+    ".sh",
 }
 
 
 class ArticleClient(Protocol):
     def get_article_build_input(self, job_id: str) -> dict[str, Any]: ...
-    def download_transfer(self, grant: Mapping[str, Any], destination: Path, *, max_bytes: int) -> dict[str, Any]: ...
-    def upload_article_build_output(self, job_id: str, role: str, source: Path, *, filename: str, mime_type: str, sha256: str, size_bytes: int) -> dict[str, Any]: ...
+    def download_transfer(
+        self, grant: Mapping[str, Any], destination: Path, *, max_bytes: int
+    ) -> dict[str, Any]: ...
+    def upload_article_build_output(
+        self,
+        job_id: str,
+        role: str,
+        source: Path,
+        *,
+        filename: str,
+        mime_type: str,
+        sha256: str,
+        size_bytes: int,
+    ) -> dict[str, Any]: ...
 
 
 class ArticleBuildHandler:
     def __init__(self, client: ArticleClient) -> None:
         self.client = client
 
-    async def __call__(self, context: HandlerContext, payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    async def __call__(
+        self, context: HandlerContext, payload: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
         del payload
         return await asyncio.to_thread(self._run, context)
 
@@ -72,7 +96,8 @@ class ArticleBuildHandler:
             manuscript.write_text(str(build["manuscript"]), encoding="utf-8", newline="\n")
             bibliography.write_text(str(build["references_bib"]), encoding="utf-8", newline="\n")
             article_manifest.write_text(
-                json.dumps(build["article_manifest"], ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+                json.dumps(build["article_manifest"], ensure_ascii=False, sort_keys=True, indent=2)
+                + "\n",
                 encoding="utf-8",
                 newline="\n",
             )
@@ -100,45 +125,74 @@ class ArticleBuildHandler:
                 )
             manuscript.write_text(manuscript_text, encoding="utf-8", newline="\n")
             content_target = _safe_child(template_root, _required(manifest, "content_target"))
-            bibliography_target = _safe_child(template_root, _required(manifest, "bibliography_target"))
+            bibliography_target = _safe_child(
+                template_root, _required(manifest, "bibliography_target")
+            )
             entrypoint = _safe_child(template_root, _required(manifest, "entrypoint"))
             expected_pdf = _safe_child(template_root, _required(manifest, "output"))
             content_target.parent.mkdir(parents=True, exist_ok=True)
             bibliography_target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(bibliography, bibliography_target)
             pandoc = [
-                "pandoc", str(manuscript), "--from=gfm+tex_math_dollars+raw_tex", "--to=latex",
-                "--wrap=none", "--resource-path", str(template_root), "--output", str(content_target),
+                "pandoc",
+                str(manuscript),
+                # Pandoc's GFM reader explicitly disables table_captions; the
+                # default Markdown reader keeps GFM-compatible pipe tables and
+                # supports the `Table:` captions emitted by Core.
+                "--from=markdown+tex_math_dollars+raw_tex+table_captions",
+                "--to=latex",
+                "--wrap=none",
+                "--resource-path",
+                str(template_root),
+                "--output",
+                str(content_target),
             ]
             if bibliography.stat().st_size:
                 pandoc.extend(["--citeproc", "--bibliography", str(bibliography)])
             log_parts: list[str] = []
             engine = _engine(build, manifest)
             _verify_toolchain(build, engine)
-            latexmk_mode = {"pdflatex": "-pdf", "xelatex": "-xelatex", "lualatex": "-lualatex"}[engine]
+            latexmk_mode = {"pdflatex": "-pdf", "xelatex": "-xelatex", "lualatex": "-lualatex"}[
+                engine
+            ]
             latexmk = [
-                "latexmk", latexmk_mode, "-interaction=nonstopmode", "-halt-on-error",
-                "-file-line-error", "-synctex=1", "-recorder", "-no-shell-escape",
+                "latexmk",
+                latexmk_mode,
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                "-file-line-error",
+                "-synctex=1",
+                "-recorder",
+                "-no-shell-escape",
                 entrypoint.name,
             ]
             if str(build["bibliography_tool"]) == "none":
                 latexmk.insert(-1, "-bibtex-")
             try:
-                log_parts.append(_run_command(
-                    pandoc, root,
-                    timeout=min(300, limits["timeout_seconds"]), limits=limits,
-                ))
+                log_parts.append(
+                    _run_command(
+                        pandoc,
+                        root,
+                        timeout=min(300, limits["timeout_seconds"]),
+                        limits=limits,
+                    )
+                )
                 _check_disk(root, limits["disk_bytes"])
-                log_parts.append(_run_command(
-                    latexmk, entrypoint.parent,
-                    timeout=limits["timeout_seconds"], limits=limits,
-                ))
+                log_parts.append(
+                    _run_command(
+                        latexmk,
+                        entrypoint.parent,
+                        timeout=limits["timeout_seconds"],
+                        limits=limits,
+                    )
+                )
                 _check_disk(root, limits["disk_bytes"])
             except _CommandFailure as error:
                 build_log = root / "build.log"
                 build_log.write_text(
                     _sanitize_log("\n\n".join([*log_parts, error.log]), root),
-                    encoding="utf-8", newline="\n",
+                    encoding="utf-8",
+                    newline="\n",
                 )
                 _upload_output(
                     self.client, context.job_id, "log", build_log, "build.log", "text/plain"
@@ -150,7 +204,9 @@ class ArticleBuildHandler:
                     expected_pdf.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(fallback, expected_pdf)
                 else:
-                    raise HandlerError("ARTICLE_PDF_MISSING", "LaTeX did not produce the declared PDF")
+                    raise HandlerError(
+                        "ARTICLE_PDF_MISSING", "LaTeX did not produce the declared PDF"
+                    )
             build_log = root / "build.log"
             build_log.write_text(
                 _sanitize_log("\n\n".join(log_parts), root), encoding="utf-8", newline="\n"
@@ -160,22 +216,38 @@ class ArticleBuildHandler:
             report.write_text(
                 json.dumps(
                     {
-                        "schema_version": "1.0", "build_id": build["build_id"],
-                        "build_kind": build["build_kind"], "engine": engine,
-                        "bibliography_tool": build["bibliography_tool"], "toolchain": toolchain,
+                        "schema_version": "1.0",
+                        "build_id": build["build_id"],
+                        "build_kind": build["build_kind"],
+                        "engine": engine,
+                        "bibliography_tool": build["bibliography_tool"],
+                        "toolchain": toolchain,
                         "source_files": sorted(
                             source.relative_to(template_root).as_posix()
-                            for source in template_root.rglob("*") if source.is_file()
+                            for source in template_root.rglob("*")
+                            if source.is_file()
                         ),
                     },
-                    ensure_ascii=False, sort_keys=True, indent=2,
-                ) + "\n",
-                encoding="utf-8", newline="\n",
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+                newline="\n",
             )
             source_zip = root / "article-source.zip"
             _create_source_zip(
-                source_zip, manuscript, bibliography, article_manifest, template_root,
-                expected_pdf, entrypoint, report, build, toolchain,
+                source_zip,
+                manuscript,
+                bibliography,
+                article_manifest,
+                template_root,
+                expected_pdf,
+                entrypoint,
+                report,
+                build,
+                toolchain,
             )
             _check_disk(root, limits["disk_bytes"])
             outputs = [
@@ -194,19 +266,29 @@ class ArticleBuildHandler:
                     raise HandlerError("JOB_CANCELLED", "Article build was cancelled")
                 if source.stat().st_size > limits["output_bytes"]:
                     raise HandlerError("ARTICLE_OUTPUT_LIMIT", "Article build output is too large")
-                uploaded.append(_upload_output(
-                    self.client, context.job_id, role, source, filename, mime_type
-                ))
+                uploaded.append(
+                    _upload_output(self.client, context.job_id, role, source, filename, mime_type)
+                )
             return {"build_id": build["build_id"], "outputs": uploaded, "toolchain": toolchain}
 
 
 def _validate_input(value: Mapping[str, Any]) -> None:
-    for field in ("build_id", "project_id", "build_kind", "manuscript", "references_bib", "engine", "bibliography_tool"):
+    for field in (
+        "build_id",
+        "project_id",
+        "build_kind",
+        "manuscript",
+        "references_bib",
+        "engine",
+        "bibliography_tool",
+    ):
         if not isinstance(value.get(field), str):
             raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article build input is invalid")
     if value["build_kind"] not in {"preview", "formal", "template_test"}:
         raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article build kind is invalid")
-    if not isinstance(value.get("article_manifest"), Mapping) or not isinstance(value.get("template"), Mapping):
+    if not isinstance(value.get("article_manifest"), Mapping) or not isinstance(
+        value.get("template"), Mapping
+    ):
         raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article build manifest is invalid")
     resources = value.get("resources", [])
     if not isinstance(resources, list) or len(resources) > 500:
@@ -236,10 +318,14 @@ def _extract_template(source: Path, destination: Path) -> None:
             normalized_name = normalized.as_posix().rstrip("/").casefold()
             mode = member.external_attr >> 16
             if (
-                not member.filename or normalized.is_absolute() or ".." in normalized.parts
-                or "\\" in member.filename or "\x00" in member.filename
+                not member.filename
+                or normalized.is_absolute()
+                or ".." in normalized.parts
+                or "\\" in member.filename
+                or "\x00" in member.filename
                 or (normalized.parts and normalized.parts[0].endswith(":"))
-                or stat.S_ISLNK(mode) or member.flag_bits & 0x1
+                or stat.S_ISLNK(mode)
+                or member.flag_bits & 0x1
             ):
                 raise HandlerError("ARTICLE_TEMPLATE_UNSAFE", "Template contains an unsafe path")
             if normalized_name in names:
@@ -250,9 +336,12 @@ def _extract_template(source: Path, destination: Path) -> None:
             if (
                 total > MAX_TEMPLATE_EXPANDED_BYTES
                 or member.file_size > MAX_TEMPLATE_EXPANDED_BYTES
-                or member.file_size > 8 * 1024 * 1024 and member.file_size / compressed > 200
+                or member.file_size > 8 * 1024 * 1024
+                and member.file_size / compressed > 200
             ):
-                raise HandlerError("ARTICLE_TEMPLATE_TOO_LARGE", "Expanded template exceeds its limit")
+                raise HandlerError(
+                    "ARTICLE_TEMPLATE_TOO_LARGE", "Expanded template exceeds its limit"
+                )
             target = destination.joinpath(*normalized.parts)
             if member.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
@@ -269,18 +358,29 @@ def _validate_template(root: Path, registered: Mapping[str, Any]) -> None:
     try:
         archived = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template manifest is invalid") from error
+        raise HandlerError(
+            "ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template manifest is invalid"
+        ) from error
     if not isinstance(archived, dict) or archived != dict(registered):
         raise HandlerError(
             "ARTICLE_TEMPLATE_MANIFEST_MISMATCH", "Registered manifest does not match ZIP"
         )
     for key in (
-        "schema_version", "name", "version", "entrypoint", "output", "content_target",
-        "bibliography_target", "engine", "bibliography_tool",
+        "schema_version",
+        "name",
+        "version",
+        "entrypoint",
+        "output",
+        "content_target",
+        "bibliography_target",
+        "engine",
+        "bibliography_tool",
     ):
         _required(registered, key)
     if registered["schema_version"] != "1.0":
-        raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template schema version is invalid")
+        raise HandlerError(
+            "ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template schema version is invalid"
+        )
     if registered["engine"] not in {"auto", "pdflatex", "xelatex", "lualatex"}:
         raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template engine is invalid")
     if registered["bibliography_tool"] not in {"auto", "bibtex", "biber", "none"}:
@@ -289,15 +389,24 @@ def _validate_template(root: Path, registered: Mapping[str, Any]) -> None:
     content = _safe_child(root, str(registered["content_target"]))
     bibliography = _safe_child(root, str(registered["bibliography_target"]))
     _safe_child(root, str(registered["output"]))
-    if not entrypoint.is_file() or content in {entrypoint, bibliography} or bibliography == entrypoint:
+    if (
+        not entrypoint.is_file()
+        or content in {entrypoint, bibliography}
+        or bibliography == entrypoint
+    ):
         raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template targets are invalid")
     if content.exists() or bibliography.exists():
-        raise HandlerError("ARTICLE_TEMPLATE_TARGET_EXISTS", "Generated template target already exists")
+        raise HandlerError(
+            "ARTICLE_TEMPLATE_TARGET_EXISTS", "Generated template target already exists"
+        )
     for source in root.rglob("*"):
         if not source.is_file():
             continue
         name = source.name.casefold()
-        if name in FORBIDDEN_TEMPLATE_NAMES or source.suffix.casefold() in FORBIDDEN_TEMPLATE_SUFFIXES:
+        if (
+            name in FORBIDDEN_TEMPLATE_NAMES
+            or source.suffix.casefold() in FORBIDDEN_TEMPLATE_SUFFIXES
+        ):
             raise HandlerError(
                 "ARTICLE_TEMPLATE_SCRIPT_FORBIDDEN", "Template contains executable content"
             )
@@ -342,9 +451,12 @@ def _create_source_zip(
         # and gives Overleaf the conventional main.tex entrypoint.
         entries["main.tex"] = f"\\input{{{entrypoint_name}}}\n".encode()
     manifest = {
-        "schema_version": "1.0", "build_id": build["build_id"],
-        "build_kind": build["build_kind"], "engine": toolchain.get("engine", ""),
-        "bibliography_tool": build["bibliography_tool"], "toolchain": dict(toolchain),
+        "schema_version": "1.0",
+        "build_id": build["build_id"],
+        "build_kind": build["build_kind"],
+        "engine": toolchain.get("engine", ""),
+        "bibliography_tool": build["bibliography_tool"],
+        "toolchain": dict(toolchain),
         "source_date_epoch": 0,
     }
     entries["build-manifest.json"] = (
@@ -377,31 +489,58 @@ class _CommandFailure(RuntimeError):
 
 
 def _run_command(
-    arguments: list[str], cwd: Path, *, timeout: int,
+    arguments: list[str],
+    cwd: Path,
+    *,
+    timeout: int,
     limits: Mapping[str, int] | None = None,
 ) -> str:
-    environment = {"PATH": os.environ.get("PATH", ""), "HOME": str(cwd), "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "SOURCE_DATE_EPOCH": "0", "TZ": "UTC", "openout_any": "p", "openin_any": "p"}
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(cwd),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "SOURCE_DATE_EPOCH": "0",
+        "TZ": "UTC",
+        "openout_any": "p",
+        "openin_any": "p",
+    }
     try:
         completed = subprocess.run(
-            arguments, cwd=cwd, env=environment, shell=False, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-            errors="replace", timeout=timeout, check=False,
+            arguments,
+            cwd=cwd,
+            env=environment,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
             preexec_fn=partial(_limit_process, limits or {}) if os.name == "posix" else None,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        code = "ARTICLE_BUILD_TIMEOUT" if isinstance(error, subprocess.TimeoutExpired) else "ARTICLE_TOOL_UNAVAILABLE"
+        code = (
+            "ARTICLE_BUILD_TIMEOUT"
+            if isinstance(error, subprocess.TimeoutExpired)
+            else "ARTICLE_TOOL_UNAVAILABLE"
+        )
         captured = getattr(error, "stdout", "") or ""
         if isinstance(captured, bytes):
             captured = captured.decode("utf-8", errors="replace")
         raise _CommandFailure(
-            code, "Article build tool failed to execute",
+            code,
+            "Article build tool failed to execute",
             "$ " + " ".join(arguments) + "\n" + captured[-4_000_000:],
             retryable=code == "ARTICLE_TOOL_UNAVAILABLE",
         ) from error
     output = completed.stdout[-4_000_000:]
     if completed.returncode != 0:
         raise _CommandFailure(
-            "ARTICLE_BUILD_FAILED", "Article document compilation failed",
+            "ARTICLE_BUILD_FAILED",
+            "Article document compilation failed",
             "$ " + " ".join(arguments) + "\n" + output,
         )
     return "$ " + " ".join(arguments) + "\n" + output
@@ -449,7 +588,12 @@ def _check_disk(root: Path, limit: int) -> None:
 
 
 def _toolchain(engine: str) -> dict[str, str]:
-    return {"pandoc": _version(["pandoc", "--version"]), "latexmk": _version(["latexmk", "-v"]), "tex_engine": _version([engine, "--version"]), "engine": engine}
+    return {
+        "pandoc": _version(["pandoc", "--version"]),
+        "latexmk": _version(["latexmk", "-v"]),
+        "tex_engine": _version([engine, "--version"]),
+        "engine": engine,
+    }
 
 
 def _verify_toolchain(build: Mapping[str, Any], engine: str) -> None:
@@ -471,7 +615,14 @@ def _verify_toolchain(build: Mapping[str, Any], engine: str) -> None:
 
 def _version(command: list[str]) -> str:
     try:
-        output = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=10, check=False).stdout
+        output = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=10,
+            check=False,
+        ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return "unavailable"
     return output.splitlines()[0][:200] if output else "unknown"
@@ -533,12 +684,20 @@ def _upload_output(
         raise HandlerError("ARTICLE_OUTPUT_INVALID", "Article output exceeds its limit")
     digest = _sha256(source)
     response = client.upload_article_build_output(
-        job_id, role, source, filename=filename, mime_type=mime_type,
-        sha256=digest, size_bytes=size,
+        job_id,
+        role,
+        source,
+        filename=filename,
+        mime_type=mime_type,
+        sha256=digest,
+        size_bytes=size,
     )
     return {
-        "role": role, "artifact_id": response.get("artifact_id"),
-        "version_id": response.get("version_id"), "sha256": digest, "size_bytes": size,
+        "role": role,
+        "artifact_id": response.get("artifact_id"),
+        "version_id": response.get("version_id"),
+        "sha256": digest,
+        "size_bytes": size,
     }
 
 

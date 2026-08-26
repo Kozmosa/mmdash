@@ -14,10 +14,15 @@ const cli = path.join(
 const generated = spawnSync(
   process.execPath,
   [cli, "contracts/openapi/core.yaml"],
-  { cwd: root, encoding: "utf8" },
+  { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
 );
 if (generated.status !== 0) {
-  console.error(generated.stderr || generated.stdout);
+  console.error(
+    generated.error?.stack ||
+      generated.stderr ||
+      generated.stdout ||
+      "openapi-typescript failed without diagnostic output",
+  );
   process.exit(1);
 }
 const expected = await format(generated.stdout, {

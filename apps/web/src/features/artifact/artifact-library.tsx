@@ -15,6 +15,7 @@ import {
   FileArchive,
   FileText,
   Filter,
+  FolderPlus,
   FolderOpen,
   Plus,
   Search,
@@ -36,10 +37,20 @@ import { apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/cn";
 
 import { artifactApi } from "./artifact-api";
+import {
+  ArtifactFolderBrowser,
+  artifactMoveMime,
+} from "./artifact-folder-browser";
+import { ArtifactFolderDeleteActions } from "./artifact-folder-delete-actions";
+import {
+  artifactFolderDescendantIds,
+  flattenArtifactFolders,
+} from "./artifact-folders";
 import { ArtifactDetailDrawer } from "./artifact-detail-drawer";
 import { ArtifactUploader, formatBytes } from "./artifact-uploader";
 import type {
   ArtifactDetail,
+  ArtifactFolder,
   ArtifactKind,
   ArtifactListFilters,
   ArtifactPage,
@@ -64,6 +75,97 @@ export function ArtifactLibrary() {
     searchParams.get("view") === "trash",
   );
   const [uploaderOpen, setUploaderOpen] = useState(false);
+  const [folder, setFolder] = useState<string | null>(null);
+  const folderTree = useQuery({
+    enabled: !trashView,
+    queryFn: () => artifactApi.listFolders(project.id),
+    queryKey: ["artifact-folders", project.id],
+  });
+  const folderOptions = useMemo(
+    () => flattenArtifactFolders(folderTree.data?.items ?? []),
+    [folderTree.data],
+  );
+  const selectedFolder = folderOptions.find(
+    (item) => item.folder.folder_id === folder,
+  )?.folder;
+  const refreshFoldersAndArtifacts = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["artifact-folders", project.id],
+      }),
+      queryClient.invalidateQueries({ queryKey: ["artifacts", project.id] }),
+    ]);
+  };
+  const createFolder = useMutation({
+    mutationFn: (name: string) =>
+      artifactApi.createFolder(
+        project.id,
+        name,
+        selectedFolder?.folder_id ?? null,
+      ),
+    onError: (error) => toast.error(error.message),
+    onSuccess: async (created) => {
+      await refreshFoldersAndArtifacts();
+      setFolder(created.folder_id);
+      toast.success("文件夹已创建");
+    },
+  });
+  const renameFolder = useMutation({
+    mutationFn: (name: string) =>
+      artifactApi.renameFolder(project.id, selectedFolder!.folder_id, name),
+    onError: (error) => toast.error(error.message),
+    onSuccess: async () => {
+      await refreshFoldersAndArtifacts();
+      toast.success("文件夹已重命名");
+    },
+  });
+  const deleteFolder = useMutation({
+    mutationFn: (recursive: boolean) =>
+      artifactApi.deleteFolder(
+        project.id,
+        selectedFolder!.folder_id,
+        recursive,
+      ),
+    onError: (error) => toast.error(error.message),
+    onSuccess: async () => {
+      setFolder(null);
+      await refreshFoldersAndArtifacts();
+      toast.success("文件夹结构已删除，所含 Artifact 已移到根目录");
+    },
+  });
+  const moveFolder = useMutation({
+    mutationFn: ({
+      folderId,
+      parentFolderId,
+    }: {
+      folderId: string;
+      parentFolderId: string | null;
+    }) =>
+      artifactApi.moveFolder(
+        project.id,
+        folderId,
+        parentFolderId,
+      ),
+    onError: (error) => toast.error(error.message),
+    onSuccess: async () => {
+      await refreshFoldersAndArtifacts();
+      toast.success("文件夹已移动");
+    },
+  });
+  const moveArtifact = useMutation({
+    mutationFn: ({
+      artifactId,
+      folderId,
+    }: {
+      artifactId: string;
+      folderId: string | null;
+    }) => artifactApi.moveArtifact(project.id, artifactId, folderId),
+    onError: (error) => toast.error(error.message),
+    onSuccess: async () => {
+      await refreshFoldersAndArtifacts();
+      toast.success("Artifact 已移动");
+    },
+  });
 
   const projectDetail = useQuery({
     enabled: setupMode,
@@ -103,13 +205,22 @@ export function ArtifactLibrary() {
     },
     queryKey: ["artifacts", project.id, trashView, filters] as const,
   });
-  const items = useMemo(
+  const allItems = useMemo(
     () => artifacts.data?.pages.flatMap((page) => page.items) ?? [],
     [artifacts.data],
+  );
+  const items = useMemo(
+    () =>
+      allItems.filter((item) => item.artifact.folder_id === folder),
+    [allItems, folder],
   );
   const canUpload = ["owner", "maintainer", "editor"].includes(
     project.role ?? "",
   );
+  const excludedFolderTargets = selectedFolder
+    ? artifactFolderDescendantIds(selectedFolder)
+    : new Set<string>();
+  if (selectedFolder) excludedFolderTargets.add(selectedFolder.folder_id);
   const unavailableSelected = selected.filter(
     (artifactId) =>
       !items.some((item) => item.artifact.artifact_id === artifactId),
@@ -149,6 +260,74 @@ export function ArtifactLibrary() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {!trashView ? (
+            <Button
+              disabled={createFolder.isPending}
+              onClick={() => {
+                const name = window.prompt(
+                  selectedFolder
+                    ? `在“${selectedFolder.name}”中新建文件夹`
+                    : "在项目根目录新建文件夹",
+                );
+                if (name?.trim()) createFolder.mutate(name.trim());
+              }}
+              variant="outline"
+            >
+              <FolderPlus aria-hidden="true" className="size-4" />
+              新建文件夹
+            </Button>
+          ) : null}
+          {selectedFolder && !trashView ? (
+            <>
+              <Button
+                disabled={renameFolder.isPending}
+                onClick={() => {
+                  const name = window.prompt(
+                    "重命名文件夹",
+                    selectedFolder.name,
+                  );
+                  if (name?.trim() && name.trim() !== selectedFolder.name)
+                    renameFolder.mutate(name.trim());
+                }}
+                variant="outline"
+              >
+                重命名
+              </Button>
+              <select
+                aria-label="移动当前文件夹"
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                defaultValue={selectedFolder.parent_folder_id ?? "root"}
+                disabled={moveFolder.isPending}
+                onChange={(event) =>
+                  moveFolder.mutate({
+                    folderId: selectedFolder.folder_id,
+                    parentFolderId:
+                      event.target.value === "root"
+                        ? null
+                        : event.target.value,
+                  })
+                }
+              >
+                <option value="root">移动到根目录</option>
+                {folderOptions
+                  .filter(
+                    ({ folder: option }) =>
+                      !excludedFolderTargets.has(option.folder_id),
+                  )
+                  .map(({ depth, folder: option }) => (
+                    <option key={option.folder_id} value={option.folder_id}>
+                      {"　".repeat(depth)}
+                      {option.name}
+                    </option>
+                  ))}
+              </select>
+              <ArtifactFolderDeleteActions
+                folderName={selectedFolder.name}
+                onDelete={(recursive) => deleteFolder.mutate(recursive)}
+                pending={deleteFolder.isPending}
+              />
+            </>
+          ) : null}
           <Button
             onClick={() => {
               setDetailId(undefined);
@@ -171,6 +350,21 @@ export function ArtifactLibrary() {
           ) : null}
         </div>
       </header>
+
+      {!trashView ? (
+        <ArtifactFolderBrowser
+          canManage={canUpload}
+          currentFolderId={folder}
+          folders={folderTree.data?.items ?? []}
+          onMoveArtifact={(artifactId, folderId) =>
+            moveArtifact.mutate({ artifactId, folderId })
+          }
+          onMoveFolder={(folderId, parentFolderId) =>
+            moveFolder.mutate({ folderId, parentFolderId })
+          }
+          onNavigate={setFolder}
+        />
+      ) : null}
 
       {setupMode ? (
         <Card className="border-primary/30 bg-primary/5">
@@ -249,6 +443,10 @@ export function ArtifactLibrary() {
           />
         ) : null}
         <ArtifactSelector
+          folders={trashView ? undefined : (folderTree.data?.items ?? [])}
+          onAssignFolder={(artifactId, folderId) =>
+            moveArtifact.mutate({ artifactId, folderId })
+          }
           items={items}
           onOpen={(item) => setDetailId(item.artifact.artifact_id)}
           onSelectedChange={setSelected}
@@ -270,6 +468,7 @@ export function ArtifactLibrary() {
 
       <ArtifactUploader
         defaultKind={setupMode ? "problem" : "attachment"}
+        folderId={folder}
         onClose={() => setUploaderOpen(false)}
         onComplete={() => {
           void queryClient.invalidateQueries({
@@ -293,12 +492,16 @@ export function ArtifactLibrary() {
 }
 
 export function ArtifactSelector({
+  folders,
+  onAssignFolder,
   items,
   onOpen,
   onSelectedChange,
   selected,
   selectionMode,
 }: Readonly<{
+  folders?: ArtifactFolder[];
+  onAssignFolder?: (artifactId: string, folderId: string | null) => void;
   items: ArtifactDetail[];
   onOpen: (item: ArtifactDetail) => void;
   onSelectedChange: (ids: string[]) => void;
@@ -320,7 +523,16 @@ export function ArtifactSelector({
               checked ? "border-primary ring-1 ring-primary/30" : null,
             )}
             key={item.artifact.artifact_id}
+            draggable={Boolean(folders && onAssignFolder)}
             onClick={() => onOpen(item)}
+            onDragStart={(event) => {
+              if (!folders || !onAssignFolder) return;
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(
+                artifactMoveMime,
+                JSON.stringify({ artifactId: item.artifact.artifact_id }),
+              );
+            }}
           >
             <CardHeader className="pb-3">
               <div className="flex items-start gap-3">
@@ -407,6 +619,11 @@ export function ArtifactSelector({
                   </Button>
                 ) : null}
               </div>
+              {folders && onAssignFolder ? (
+                <p className="text-[11px] text-muted-foreground">
+                  拖到上方文件夹或路径即可整理
+                </p>
+              ) : null}
             </CardContent>
           </Card>
         );

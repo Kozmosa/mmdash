@@ -10,12 +10,7 @@ export type ArtifactKind =
 export type PublicArtifactKind = "problem" | "attachment" | "other";
 
 export type ArtifactSource =
-  | "user_upload"
-  | "experiment"
-  | "model"
-  | "article"
-  | "agent"
-  | "system";
+  "user_upload" | "experiment" | "model" | "article" | "agent" | "system";
 
 export type ArtifactStatus = "pending_upload" | "available" | "trashed";
 
@@ -30,12 +25,24 @@ export type Artifact = {
   description: string | null;
   recommended_usage: string[];
   current_version_id: string | null;
+  folder_id: string | null;
   status: ArtifactStatus;
   created_by: string;
   trashed_at: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export type ArtifactFolder = {
+  children: ArtifactFolder[];
+  folder_id: string;
+  name: string;
+  parent_folder_id: string | null;
+  position: number;
+  project_id: string;
+};
+
+export type ArtifactFolderTree = { items: ArtifactFolder[] };
 
 export type ArtifactVersion = {
   version_id: string;

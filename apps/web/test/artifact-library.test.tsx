@@ -13,8 +13,14 @@ import { ArtifactLibrary } from "@/features/artifact/artifact-library";
 
 const mocks = vi.hoisted(() => ({
   apiRequest: vi.fn(),
+  createFolder: vi.fn(),
   list: vi.fn(),
+  listFolders: vi.fn(),
   listTrash: vi.fn(),
+  moveArtifact: vi.fn(),
+  moveFolder: vi.fn(),
+  renameFolder: vi.fn(),
+  deleteFolder: vi.fn(),
   push: vi.fn(),
 }));
 
@@ -33,9 +39,15 @@ vi.mock("@/components/providers/project-provider", () => ({
 
 vi.mock("@/features/artifact/artifact-api", () => ({
   artifactApi: {
+    createFolder: mocks.createFolder,
+    deleteFolder: mocks.deleteFolder,
     download: vi.fn(),
     list: mocks.list,
+    listFolders: mocks.listFolders,
     listTrash: mocks.listTrash,
+    moveArtifact: mocks.moveArtifact,
+    moveFolder: mocks.moveFolder,
+    renameFolder: mocks.renameFolder,
   },
 }));
 
@@ -61,6 +73,7 @@ const detail = {
     created_by: "user-1",
     current_version_id: "00000000-0000-4000-8000-000000000003",
     description: null,
+    folder_id: null,
     kind: "problem",
     name: "Problem statement",
     project_id: "00000000-0000-4000-8000-000000000001",
@@ -115,6 +128,27 @@ describe("Artifact library selector", () => {
       has_more: false,
       items: [],
       next_cursor: null,
+    });
+    mocks.listFolders.mockResolvedValue({
+      items: [
+        {
+          children: [],
+          folder_id: "00000000-0000-4000-8000-000000000010",
+          name: "资料",
+          parent_folder_id: null,
+          position: 0,
+          project_id: "00000000-0000-4000-8000-000000000001",
+        },
+      ],
+    });
+    mocks.moveArtifact.mockResolvedValue(detail);
+    mocks.createFolder.mockResolvedValue({
+      children: [],
+      folder_id: "00000000-0000-4000-8000-000000000011",
+      name: "新文件夹",
+      parent_folder_id: null,
+      position: 1,
+      project_id: "00000000-0000-4000-8000-000000000001",
     });
     mocks.apiRequest.mockImplementation(
       (_path: string, options?: { method?: string }) =>
@@ -204,5 +238,35 @@ describe("Artifact library selector", () => {
 
     fireEvent.click(await screen.findByText("Problem statement"));
     expect(screen.getByText(`详情 ${artifactId}`)).toBeInTheDocument();
+  });
+
+  it("uses the shared folder API instead of browser-local mappings", async () => {
+    render(<ArtifactLibrary />, { wrapper: Providers });
+    const artifactTitle = await screen.findByText("Problem statement");
+    const artifactCard = artifactTitle.closest("[draggable='true']");
+    const folderTitle = screen.getByRole("button", { name: "资料" });
+    const folderCard = folderTitle.closest("[draggable='true']");
+    expect(artifactCard).not.toBeNull();
+    expect(folderCard).not.toBeNull();
+    const values = new Map<string, string>();
+    const dataTransfer = {
+      dropEffect: "none",
+      effectAllowed: "none",
+      getData: (type: string) => values.get(type) ?? "",
+      setData: (type: string, value: string) => values.set(type, value),
+      types: [] as string[],
+    };
+    fireEvent.dragStart(artifactCard!, { dataTransfer });
+    dataTransfer.types = [...values.keys()];
+    fireEvent.dragOver(folderCard!, { dataTransfer });
+    fireEvent.drop(folderCard!, { dataTransfer });
+    await waitFor(() =>
+      expect(mocks.moveArtifact).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+        artifactId,
+        "00000000-0000-4000-8000-000000000010",
+      ),
+    );
+    expect(window.localStorage.getItem("mmdash-artifact-folders")).toBeNull();
   });
 });

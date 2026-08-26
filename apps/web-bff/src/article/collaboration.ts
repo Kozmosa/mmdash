@@ -2,9 +2,14 @@ import { Hocuspocus, type Document } from "@hocuspocus/server";
 import type { CoreClient } from "@mmdash/core-client";
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
-import { yXmlFragmentToProsemirrorJSON } from "y-prosemirror";
+import {
+  prosemirrorJSONToYXmlFragment,
+  yXmlFragmentToProsemirrorJSON,
+} from "y-prosemirror";
 import WebSocket, { type RawData } from "ws";
 import * as Y from "yjs";
+
+import { articleDocumentSchema } from "./document-schema.js";
 
 type RoomContext = {
   accessToken: string;
@@ -41,7 +46,10 @@ export class ArticleCollaboration {
       timeout: 30_000,
       unloadImmediately: true,
       async onAuthenticate({ context, documentName, token }) {
-        if (token !== "browser-session" || documentName !== roomName(context.projectId)) {
+        if (
+          token !== "browser-session" ||
+          documentName !== roomName(context.projectId)
+        ) {
           throw new Error("Article collaboration permission denied");
         }
         return context;
@@ -56,9 +64,25 @@ export class ArticleCollaboration {
       onLoadDocument: async ({ context, document, documentName }) => {
         const draft = await this.getDraft(context);
         if (draft.yjs_update) {
-          Y.applyUpdate(document, Buffer.from(draft.yjs_update, "base64"), "core-load");
+          Y.applyUpdate(
+            document,
+            Buffer.from(draft.yjs_update, "base64"),
+            "core-load",
+          );
+        } else if (hasDocumentContent(draft.tiptap_json)) {
+          // v0.1 drafts created before collaboration was enabled may contain
+          // authoritative Tiptap JSON but no Yjs update. Populate the room
+          // before any browser can send an empty state and overwrite it.
+          prosemirrorJSONToYXmlFragment(
+            articleDocumentSchema,
+            draft.tiptap_json,
+            document.getXmlFragment("default"),
+          );
         }
-        this.rooms.set(documentName, { ...context, revision: draft.draft_revision });
+        this.rooms.set(documentName, {
+          ...context,
+          revision: draft.draft_revision,
+        });
       },
       onStoreDocument: async ({ document, documentName, lastContext }) => {
         const context = lastContext ?? this.rooms.get(documentName);
@@ -89,7 +113,8 @@ export class ArticleCollaboration {
       if (released) return;
       released = true;
       const remaining = (this.connectionCounts.get(context.projectId) ?? 1) - 1;
-      if (remaining > 0) this.connectionCounts.set(context.projectId, remaining);
+      if (remaining > 0)
+        this.connectionCounts.set(context.projectId, remaining);
       else this.connectionCounts.delete(context.projectId);
     };
     let client;
@@ -99,7 +124,9 @@ export class ArticleCollaboration {
       release();
       throw error;
     }
-    socket.on("message", (raw: RawData) => client.handleMessage(toUint8Array(raw)));
+    socket.on("message", (raw: RawData) =>
+      client.handleMessage(toUint8Array(raw)),
+    );
     socket.on("close", (code, reason) => {
       release();
       client.handleClose({ code, reason: reason.toString() });
@@ -113,7 +140,10 @@ export class ArticleCollaboration {
 
   async flush(context: RoomContext): Promise<Draft> {
     const name = roomName(context.projectId);
-    const connection = await this.hocuspocus.openDirectConnection(name, context);
+    const connection = await this.hocuspocus.openDirectConnection(
+      name,
+      context,
+    );
     await connection.disconnect();
     await this.stores.get(name);
     return this.getDraft(context);
@@ -132,8 +162,12 @@ export class ArticleCollaboration {
   ): Promise<void> {
     const state = this.rooms.get(documentName) ?? { ...context, revision: 0 };
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const update = Buffer.from(Y.encodeStateAsUpdate(document)).toString("base64");
-      const vector = Buffer.from(Y.encodeStateVector(document)).toString("base64");
+      const update = Buffer.from(Y.encodeStateAsUpdate(document)).toString(
+        "base64",
+      );
+      const vector = Buffer.from(Y.encodeStateVector(document)).toString(
+        "base64",
+      );
       let tiptap: Record<string, unknown> = { content: [], type: "doc" };
       const fragment = document.getXmlFragment("default");
       if (fragment.length > 0) tiptap = yXmlFragmentToProsemirrorJSON(fragment);
@@ -144,7 +178,10 @@ export class ArticleCollaboration {
             body: {
               actor_kind: "human",
               expected_revision: state.revision,
-              provenance: { session_id: context.sessionId, user_id: context.userId },
+              provenance: {
+                session_id: context.sessionId,
+                user_id: context.userId,
+              },
               state_vector: vector,
               tiptap_json: tiptap,
               yjs_update: update,
@@ -153,27 +190,41 @@ export class ArticleCollaboration {
           },
           coreContext(context),
         );
-        this.rooms.set(documentName, { ...context, revision: draft.draft_revision });
+        this.rooms.set(documentName, {
+          ...context,
+          revision: draft.draft_revision,
+        });
         return;
       } catch (error) {
         if (attempt > 0) throw error;
         const latest = await this.getDraft(context);
         state.revision = latest.draft_revision;
-        this.rooms.set(documentName, { ...context, revision: latest.draft_revision });
+        this.rooms.set(documentName, {
+          ...context,
+          revision: latest.draft_revision,
+        });
         if (latest.yjs_update) {
-          Y.applyUpdate(document, Buffer.from(latest.yjs_update, "base64"), "core-cas-merge");
+          Y.applyUpdate(
+            document,
+            Buffer.from(latest.yjs_update, "base64"),
+            "core-cas-merge",
+          );
         }
       }
     }
   }
 
-  private serializeStore(documentName: string, work: () => Promise<void>): Promise<void> {
+  private serializeStore(
+    documentName: string,
+    work: () => Promise<void>,
+  ): Promise<void> {
     const pending = (this.stores.get(documentName) ?? Promise.resolve())
       .catch(() => undefined)
       .then(work);
     this.stores.set(documentName, pending);
     void pending.finally(() => {
-      if (this.stores.get(documentName) === pending) this.stores.delete(documentName);
+      if (this.stores.get(documentName) === pending)
+        this.stores.delete(documentName);
     });
     return pending;
   }
@@ -185,6 +236,14 @@ export class ArticleCollaboration {
       coreContext(context),
     );
   }
+}
+
+function hasDocumentContent(value: Record<string, unknown>): boolean {
+  return (
+    value.type === "doc" &&
+    Array.isArray(value.content) &&
+    value.content.length > 0
+  );
 }
 
 export function registerArticleCollaboration(
@@ -207,7 +266,10 @@ export function registerArticleCollaboration(
         pendingBytes += bytes;
         if (pendingMessages.length >= 100 || pendingBytes > 4 * 1024 * 1024) {
           socket.off("message", bufferMessage);
-          socket.close(1009, "Article collaboration authentication queue exceeded");
+          socket.close(
+            1009,
+            "Article collaboration authentication queue exceeded",
+          );
           return;
         }
         pendingMessages.push(raw);
@@ -217,10 +279,18 @@ export function registerArticleCollaboration(
         .then((context) => {
           socket.off("message", bufferMessage);
           const url = new URL(request.url, "http://web-bff.local");
-          collaboration.connect(socket, new Request(url), context, pendingMessages);
+          collaboration.connect(
+            socket,
+            new Request(url),
+            context,
+            pendingMessages,
+          );
         })
         .catch((error) => {
-          request.log.warn({ err: error }, "article collaboration authorization failed");
+          request.log.warn(
+            { err: error },
+            "article collaboration authorization failed",
+          );
           socket.close(1008, "Article collaboration permission denied");
         });
     },
@@ -232,7 +302,11 @@ export function registerArticleCollaboration(
 export async function roomContext(
   coreClient: CoreClient,
   request: {
-    browserIdentity?: { accessToken: string; sessionId: string; userId: string };
+    browserIdentity?: {
+      accessToken: string;
+      sessionId: string;
+      userId: string;
+    };
     currentProjectId?: string;
     id: string;
   },
@@ -276,6 +350,7 @@ function toUint8Array(raw: RawData): Uint8Array {
 
 function rawDataSize(raw: RawData): number {
   if (raw instanceof ArrayBuffer) return raw.byteLength;
-  if (Array.isArray(raw)) return raw.reduce((total, item) => total + item.byteLength, 0);
+  if (Array.isArray(raw))
+    return raw.reduce((total, item) => total + item.byteLength, 0);
   return raw.byteLength;
 }

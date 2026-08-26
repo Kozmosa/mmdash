@@ -4,6 +4,8 @@ Stage 9 Article operations:
 
 - Core collaborative source and review: `article.get`, `article.draft.get`,
   `article.draft.flush`, `article.blocks.review`, `article.patches.list`, `article.patches.create`,
+  `article.chapter_tags.list`, `article.chapter_tags.create`, `article.chapter_tags.get`,
+  `article.chapter_tags.update`, `article.chapter_tags.delete`, and `article.chapter_tags.review`,
   `article.patches.review`, `article.references.list`,
   `article.references.create`, and `article.references.delete`.
 - Core immutable history: `article.commits.list`, `article.commits.create`,
@@ -19,6 +21,9 @@ Stage 9 Article operations:
   `article.build_jobs.input.get`, and `article.build_jobs.outputs.upload`.
 - Browser BFF: `bff.article.get`, `bff.article.collaboration.connect`,
   `bff.article.draft.get`, `bff.article.draft.flush`, `bff.article.blocks.review`,
+  `bff.article.chapter_tags.list`, `bff.article.chapter_tags.create`, `bff.article.chapter_tags.get`,
+  `bff.article.chapter_tags.update`, `bff.article.chapter_tags.delete`, and
+  `bff.article.chapter_tags.review`,
   `bff.article.patches.list`, `bff.article.patches.create`,
   `bff.article.patches.review`, `bff.article.references.list`,
   `bff.article.references.create`, `bff.article.references.delete`,
@@ -371,10 +376,16 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Core        | File stream   | `GET`         | `/v1/artifact-transfers/{signedToken}`                                                                                 | `artifact.transfers.get`                   | artifact             | `core.yaml`                 |
 | Core        | File stream   | `PUT`         | `/v1/artifact-transfers/{signedToken}`                                                                                 | `artifact.transfers.put`                   | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/artifacts`                                                                                   | `artifact.list`                            | artifact             | `core.yaml`                 |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/artifacts/folders`                                                                           | `artifact.folders.list`                    | artifact             | `core.yaml`                 |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/artifacts/folders`                                                                           | `artifact.folders.create`                  | artifact             | `core.yaml`                 |
+| Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/artifacts/folders/{folderId}`                                                                | `artifact.folders.rename`                  | artifact             | `core.yaml`                 |
+| Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/artifacts/folders/{folderId}/move`                                                           | `artifact.folders.move`                    | artifact             | `core.yaml`                 |
+| Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/artifacts/folders/{folderId}`                                                                | `artifact.folders.delete`                  | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/artifacts/trash`                                                                             | `artifact.trash.list`                      | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/artifacts/{artifactId}`                                                                      | `artifact.get`                             | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `PATCH`       | `/v1/projects/{projectId}/artifacts/{artifactId}`                                                                      | `artifact.update`                          | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/artifacts/{artifactId}`                                                                      | `artifact.trash`                           | artifact             | `core.yaml`                 |
+| Core        | HTTP          | `PUT`         | `/v1/projects/{projectId}/artifacts/{artifactId}/folder`                                                               | `artifact.folder.move`                     | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/artifacts/{artifactId}/versions`                                                             | `artifact.versions.list`                   | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/artifacts/{artifactId}/versions/uploads`                                                     | `artifact.versions.uploads.initialize`     | artifact             | `core.yaml`                 |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/restore`                                         | `artifact.versions.restore`                | artifact             | `core.yaml`                 |
@@ -392,10 +403,16 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | File stream   | `GET`         | `/api/artifact-transfers/{signedToken}`                                                                                | `bff.artifact.transfers.get`               | artifact             | `web-bff.yaml`              |
 | Web BFF     | File stream   | `PUT`         | `/api/artifact-transfers/{signedToken}`                                                                                | `bff.artifact.transfers.put`               | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/artifacts`                                                                                  | `bff.artifact.list`                        | artifact             | `web-bff.yaml`              |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/artifacts/folders`                                                                          | `bff.artifact.folders.list`                | artifact             | `web-bff.yaml`              |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/artifacts/folders`                                                                          | `bff.artifact.folders.create`              | artifact             | `web-bff.yaml`              |
+| Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/artifacts/folders/{folderId}`                                                               | `bff.artifact.folders.rename`              | artifact             | `web-bff.yaml`              |
+| Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/artifacts/folders/{folderId}/move`                                                          | `bff.artifact.folders.move`                | artifact             | `web-bff.yaml`              |
+| Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/artifacts/folders/{folderId}`                                                               | `bff.artifact.folders.delete`              | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/artifacts/trash`                                                                            | `bff.artifact.trash.list`                  | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/artifacts/{artifactId}`                                                                     | `bff.artifact.get`                         | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `PATCH`       | `/api/projects/{projectId}/artifacts/{artifactId}`                                                                     | `bff.artifact.update`                      | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/artifacts/{artifactId}`                                                                     | `bff.artifact.trash`                       | artifact             | `web-bff.yaml`              |
+| Web BFF     | HTTP          | `PUT`         | `/api/projects/{projectId}/artifacts/{artifactId}/folder`                                                              | `bff.artifact.folder.move`                 | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/artifacts/{artifactId}/versions`                                                            | `bff.artifact.versions.list`               | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/artifacts/{artifactId}/versions/uploads`                                                    | `bff.artifact.versions.uploads.initialize` | artifact             | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/restore`                                        | `bff.artifact.versions.restore`            | artifact             | `web-bff.yaml`              |

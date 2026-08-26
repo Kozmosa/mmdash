@@ -2,6 +2,8 @@ import { apiClient } from "@/lib/api-client";
 
 import type {
   ArtifactDetail,
+  ArtifactFolder,
+  ArtifactFolderTree,
   ArtifactListFilters,
   ArtifactPage,
   ArtifactPreview,
@@ -18,7 +20,84 @@ function projectPath(projectId: string): string {
   return `/projects/${encodeURIComponent(projectId)}/artifacts`;
 }
 
+export async function ensureArtifactRootFolder(
+  projectId: string,
+  name: string,
+): Promise<ArtifactFolder> {
+  const normalizedName = name.trim().toLocaleLowerCase();
+  const findExisting = (tree: ArtifactFolderTree) =>
+    tree.items.find(
+      (folder) => folder.name.trim().toLocaleLowerCase() === normalizedName,
+    );
+  const current = await artifactApi.listFolders(projectId);
+  const existing = findExisting(current);
+  if (existing) return existing;
+  try {
+    return await artifactApi.createFolder(projectId, name.trim(), null);
+  } catch (error) {
+    const raced = findExisting(await artifactApi.listFolders(projectId));
+    if (raced) return raced;
+    throw error;
+  }
+}
+
 export const artifactApi = {
+  createFolder(
+    projectId: string,
+    name: string,
+    parentFolderId: string | null = null,
+  ) {
+    return apiClient.request<ArtifactFolder>(
+      `${projectPath(projectId)}/folders`,
+      {
+        body: { name, parent_folder_id: parentFolderId },
+        method: "POST",
+      },
+    );
+  },
+
+  deleteFolder(projectId: string, folderId: string, recursive = false) {
+    return apiClient.request<void>(
+      `${projectPath(projectId)}/folders/${encodeURIComponent(folderId)}?recursive=${recursive}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listFolders(projectId: string) {
+    return apiClient.request<ArtifactFolderTree>(
+      `${projectPath(projectId)}/folders`,
+    );
+  },
+
+  moveArtifact(projectId: string, artifactId: string, folderId: string | null) {
+    return apiClient.request<ArtifactDetail>(
+      `${projectPath(projectId)}/${encodeURIComponent(artifactId)}/folder`,
+      { body: { folder_id: folderId }, method: "PUT" },
+    );
+  },
+
+  moveFolder(
+    projectId: string,
+    folderId: string,
+    parentFolderId: string | null,
+    position?: number,
+  ) {
+    return apiClient.request<ArtifactFolder>(
+      `${projectPath(projectId)}/folders/${encodeURIComponent(folderId)}/move`,
+      {
+        body: { parent_folder_id: parentFolderId, position },
+        method: "POST",
+      },
+    );
+  },
+
+  renameFolder(projectId: string, folderId: string, name: string) {
+    return apiClient.request<ArtifactFolder>(
+      `${projectPath(projectId)}/folders/${encodeURIComponent(folderId)}`,
+      { body: { name }, method: "PATCH" },
+    );
+  },
+
   abortUpload(projectId: string, uploadId: string) {
     return apiClient.request<void>(
       `${projectPath(projectId)}/uploads/${encodeURIComponent(uploadId)}`,

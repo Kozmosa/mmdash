@@ -36,6 +36,10 @@ All entries currently use envelope schema version `1`.
 | `artifact.deleted`            | artifact | yes            | `artifact_id`, `current_version_id`, `reason`, `trashed_at`                                                     | `datahub.projections`          |
 | `article.draft.flushed`       | article  | yes            | `resource_id`, `resource_type=article_draft`, `draft_revision`, `actor_kind`, `status`                          | `datahub.projections`          |
 | `article.block.reviewed`      | article  | yes            | `resource_id`, `resource_type=article_block`, `block_id`, `status=reviewed`                                    | `datahub.projections`          |
+| `article.chapter.created`     | article  | yes            | `chapter_tag_id`, `heading_block_id`, `status`                                                                  | none                           |
+| `article.chapter.updated`     | article  | yes            | `chapter_tag_id`, `status`                                                                                      | none                           |
+| `article.chapter.deleted`     | article  | yes            | `chapter_tag_id`                                                                                                | none                           |
+| `article.chapter.reviewed`    | article  | yes            | `chapter_tag_id`, `status=reviewed`, `reviewed_by`                                                              | none                           |
 | `article.patch.proposed`      | article  | yes            | `resource_id`, `resource_type=article_block`, `patch_id`, `base_revision`, `status`                             | `datahub.projections`          |
 | `article.patch.reviewed`      | article  | yes            | `resource_id`, `resource_type=article_block`, `patch_id`, `decision`, optional accepted revision               | `datahub.projections`          |
 | `article.commit.created`      | article  | yes            | `resource_id`, `resource_type=article_commit`, `commit_id`, `git_commit_sha`, `draft_revision`                  | `datahub.projections`          |
