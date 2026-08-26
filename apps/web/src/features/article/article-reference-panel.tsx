@@ -106,8 +106,8 @@ export function ArticleReferencePanel({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="grid shrink-0 grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
         {(
           [
             ["model_snapshot", "模型"],
@@ -126,56 +126,58 @@ export function ArticleReferencePanel({
         ))}
       </div>
 
-      {kind === "model_snapshot" ? (
-        <ModelReferenceBrowser
-          canEdit={canEdit}
-          onPin={(input) => pin.mutate(input)}
-          onQuestionChange={setQuestionId}
-          onSnapshotChange={setSnapshotId}
-          projectId={projectId}
-          questionId={questionId}
-          references={data.references}
-          renderTheme={renderTheme}
-          snapshotId={snapshotId}
-        />
-      ) : null}
-      {kind === "experiment_result" ? (
-        <ExperimentReferenceBrowser
-          canEdit={canEdit}
-          experimentId={experimentId}
-          onExperimentChange={setExperimentId}
-          onPin={(input) => pin.mutate(input)}
-          projectId={projectId}
-          references={data.references}
-        />
-      ) : null}
-      {kind === "problem" ? (
-        <ProblemReferenceBrowser
-          artifactId={problemArtifactId}
-          canEdit={canEdit}
-          onArtifactChange={setProblemArtifactId}
-          onPin={(input) => pin.mutate(input)}
-          projectId={projectId}
-          references={data.references}
-        />
-      ) : null}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {kind === "model_snapshot" ? (
+          <ModelReferenceBrowser
+            canEdit={canEdit}
+            onPin={(input) => pin.mutate(input)}
+            onQuestionChange={setQuestionId}
+            onSnapshotChange={setSnapshotId}
+            projectId={projectId}
+            questionId={questionId}
+            references={data.references}
+            renderTheme={renderTheme}
+            snapshotId={snapshotId}
+          />
+        ) : null}
+        {kind === "experiment_result" ? (
+          <ExperimentReferenceBrowser
+            canEdit={canEdit}
+            experimentId={experimentId}
+            onExperimentChange={setExperimentId}
+            onPin={(input) => pin.mutate(input)}
+            projectId={projectId}
+            references={data.references}
+          />
+        ) : null}
+        {kind === "problem" ? (
+          <ProblemReferenceBrowser
+            artifactId={problemArtifactId}
+            canEdit={canEdit}
+            onArtifactChange={setProblemArtifactId}
+            onPin={(input) => pin.mutate(input)}
+            projectId={projectId}
+            references={data.references}
+          />
+        ) : null}
 
-      {items.length ? (
-        <div className="space-y-1 border-t pt-3">
-          <p className="text-[11px] font-medium text-muted-foreground">
-            已固定参考
-          </p>
-          {items.map((reference) => (
-            <PinnedReference
-              canEdit={canEdit}
-              key={reference.reference_id}
-              onOpen={() => openPinned(reference)}
-              onRemove={() => remove.mutate(reference.reference_id)}
-              reference={reference}
-            />
-          ))}
-        </div>
-      ) : null}
+        {items.length ? (
+          <div className="space-y-1 border-t pt-3">
+            <p className="text-[11px] font-medium text-muted-foreground">
+              已固定参考
+            </p>
+            {items.map((reference) => (
+              <PinnedReference
+                canEdit={canEdit}
+                key={reference.reference_id}
+                onOpen={() => openPinned(reference)}
+                onRemove={() => remove.mutate(reference.reference_id)}
+                reference={reference}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -278,7 +280,7 @@ function ProblemReferenceBrowser({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <PathBar
         onBack={() => onArtifactChange("")}
         parts={[
@@ -287,9 +289,9 @@ function ProblemReferenceBrowser({
           version ? `v${version.version_no}` : "无版本",
         ]}
       />
-      <div className="overflow-hidden rounded-md border bg-background">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-background">
         {preview?.transfer && preview.preview_type !== "pdf" ? (
-          <div className="relative h-52 bg-muted/30">
+          <div className="relative min-h-0 flex-1 bg-muted/30">
             <Image
               alt={selected?.artifact.name ?? "题目预览"}
               className="object-contain"
@@ -301,7 +303,7 @@ function ProblemReferenceBrowser({
           </div>
         ) : preview?.transfer ? (
           <iframe
-            className="h-72 w-full"
+            className="min-h-0 flex-1 w-full"
             src={preview.transfer.url}
             title={`${selected?.artifact.name ?? "题目"} PDF 预览`}
           />
@@ -330,7 +332,9 @@ function ProblemReferenceBrowser({
         </div>
       </div>
       {existing ? (
-        <InsertReferenceButton canEdit={canEdit} reference={existing} />
+        <div className="shrink-0">
+          <InsertReferenceButton canEdit={canEdit} reference={existing} />
+        </div>
       ) : (
         <Button
           disabled={!canEdit || !version}
@@ -484,7 +488,7 @@ function ModelReferenceBrowser({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <PathBar
         onBack={() => onSnapshotChange("")}
         parts={[
@@ -497,7 +501,7 @@ function ModelReferenceBrowser({
       />
       {snapshot.data ? (
         <div
-          className={`article-rendered-document max-h-[32rem] overflow-auto rounded-md border bg-background px-4 py-5 ${renderTheme === "latex" ? "article-rendered-document-latex" : ""}`}
+          className={`article-rendered-document min-h-0 flex-1 overflow-auto rounded-md border bg-background px-4 py-5 ${renderTheme === "latex" ? "article-rendered-document-latex" : ""}`}
         >
           <ModelDocument
             assets={snapshot.data.assets}
@@ -510,7 +514,7 @@ function ModelReferenceBrowser({
         <p className="text-xs text-muted-foreground">正在读取模型版本…</p>
       )}
       {snapshot.data ? (
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           {existing ? (
             <InsertReferenceButton canEdit={canEdit} reference={existing} />
           ) : (
@@ -622,14 +626,14 @@ function ExperimentReferenceBrowser({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <PathBar
         onBack={() => onExperimentChange("")}
         parts={["experiments", current?.name ?? experimentId, "结果"]}
       />
       {current && result.data ? (
         result.data.files.length ? (
-          <div className="grid h-[32rem] min-h-0 gap-2 rounded-md border p-2 xl:grid-cols-[12rem_minmax(0,1fr)]">
+          <div className="grid min-h-0 flex-1 gap-2 rounded-md border p-2 xl:grid-cols-[12rem_minmax(0,1fr)]">
             <ResultFileTree
               files={result.data.files}
               onSelect={setSelectedPath}
@@ -723,12 +727,12 @@ function BrowserList({
   label,
 }: Readonly<{ children: ReactNode; label: string }>) {
   return (
-    <div className="space-y-2">
-      <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <p className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
         <ListTree className="size-3.5" />
         {label}
       </p>
-      <div className="max-h-[32rem] space-y-1 overflow-auto">{children}</div>
+      <div className="min-h-0 flex-1 space-y-1 overflow-auto">{children}</div>
     </div>
   );
 }

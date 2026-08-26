@@ -1,5 +1,6 @@
 import { apiClient } from "@/lib/api-client";
 
+import { flushArticleCollaboration } from "./article-collaboration-sync";
 import type {
   ArticleAggregate,
   ArticleBlock,
@@ -23,7 +24,8 @@ export const articleApi = {
   aggregate(projectId: string) {
     return apiClient.request<ArticleAggregate>(base(projectId));
   },
-  flush(projectId: string) {
+  async flush(projectId: string) {
+    await flushArticleCollaboration(projectId);
     return apiClient.request<ArticleDraft>(`${base(projectId)}/draft/flush`, {
       method: "POST",
     });
@@ -52,7 +54,7 @@ export const articleApi = {
       { method: "POST" },
     );
   },
-  createPreview(
+  async createPreview(
     projectId: string,
     input: {
       bibliography_tool: ArticleBuild["bibliography_tool"];
@@ -61,6 +63,7 @@ export const articleApi = {
       template_id: string;
     },
   ) {
+    await flushArticleCollaboration(projectId);
     return apiClient.request<ArticleBuild>(
       `${base(projectId)}/preview-builds`,
       {

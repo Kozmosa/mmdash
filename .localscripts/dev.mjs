@@ -154,11 +154,14 @@ async function main() {
         "MMDASH_DEV_PYPI_INDEX_URL must be an HTTP(S) URL without embedded credentials",
       );
     }
-    const configuredProxyUrl = environment.MMDASH_DEV_DOCKER_PROXY_URL;
+    const configuredProxyValue = environment.MMDASH_DEV_DOCKER_PROXY_URL?.trim();
+    const proxyDisabled = configuredProxyValue?.toLowerCase() === "none";
     const localFallbackAvailable =
-      !configuredProxyUrl && (await hasListeningServer(22_334));
-    const dockerProxyUrl = configuredProxyUrl
-      ? dockerAccessibleUrl(configuredProxyUrl)
+      !configuredProxyValue && (await hasListeningServer(22_334));
+    const dockerProxyUrl = proxyDisabled
+      ? undefined
+      : configuredProxyValue
+        ? dockerAccessibleUrl(configuredProxyValue)
       : localFallbackAvailable
         ? dockerAccessibleUrl(fallbackProxyUrl)
         : undefined;
@@ -405,7 +408,7 @@ async function main() {
     ),
     waitForHttp(
       "Web",
-      localServiceUrl(environment.MMDASH_DEV_WEB_PORT),
+      localServiceUrl(environment.MMDASH_DEV_WEB_PORT, "/health/live"),
       120_000,
     ),
     waitForHttp(
@@ -506,7 +509,11 @@ Optional local port overrides:
 
 Optional containerized Worker downloads:
   MMDASH_DEV_PYPI_INDEX_URL     Python package index (default: Aliyun)
-  MMDASH_DEV_DOCKER_PROXY_URL   HTTP(S) proxy; auto-detects 127.0.0.1:22334`);
+  MMDASH_DEV_DOCKER_PROXY_URL   HTTP(S) proxy; auto-detects 127.0.0.1:22334;
+                                set to none to disable proxy auto-detection
+
+Optional Local Git development access:
+  REPO_LOCAL_ALLOWED_ROOTS      Local provider allowlist (default: repository .tmp)`);
 }
 
 function buildDevelopmentEnvironment() {
@@ -575,6 +582,8 @@ function buildDevelopmentEnvironment() {
     "migrations",
   );
   environment.REPO_ASKPASS_PATH = repoAskPassPath;
+  environment.REPO_LOCAL_ALLOWED_ROOTS =
+    environment.REPO_LOCAL_ALLOWED_ROOTS || path.join(repositoryRoot, ".tmp");
   environment.MMDASH_PUBLIC_URL = webUrl;
   environment.MMDASH_URL =
     environment.MMDASH_DEV_CLI_SERVER_URL || webUrl;

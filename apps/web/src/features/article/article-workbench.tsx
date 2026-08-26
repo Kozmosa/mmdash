@@ -46,6 +46,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PDFReader } from "@/components/ui/pdf-reader";
 import { cn } from "@/lib/cn";
 import { artifactApi } from "@/features/artifact/artifact-api";
 import { ArtifactFolderDeleteActions } from "@/features/artifact/artifact-folder-delete-actions";
@@ -61,6 +62,7 @@ import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-client";
 
 import { articleApi } from "./api";
+import { registerArticleCollaborationProvider } from "./article-collaboration-sync";
 import { ArticleAggregateWarnings } from "./article-aggregate-warnings";
 import { ArticleReferencePanel } from "./article-reference-panel";
 import { visibleArticleOutline } from "./article-outline";
@@ -209,6 +211,8 @@ export function ArticleWorkbench() {
       token: "browser-session",
       url: `${protocol}//${window.location.host}/api/projects/${encodeURIComponent(project.id)}/article/collaboration`,
     });
+    const unregisterCollaborationProvider =
+      registerArticleCollaborationProvider(project.id, next);
     const offline = () => setConnection("offline");
     const online = () => {
       setConnection(WebSocketStatus.Connecting);
@@ -218,6 +222,7 @@ export function ArticleWorkbench() {
     window.addEventListener("online", online);
     setProvider(next);
     return () => {
+      unregisterCollaborationProvider();
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);
       next.destroy();
@@ -603,7 +608,13 @@ export function WritingWorkspace({
           ) : null}
           {!collapsed ? (
             <>
-              <div className="min-h-0 flex-1 overflow-auto p-3">
+              <div
+                className={cn(
+                  "min-h-0 flex-1 overflow-auto p-3",
+                  ["pdf", "reference"].includes(panel) &&
+                    "flex flex-col overflow-hidden",
+                )}
+              >
                 {panel === "reference" ? (
                   <ArticleReferencePanel
                     canEdit={canEdit}
@@ -651,7 +662,10 @@ export function WritingWorkspace({
                         (outline[itemIndex + 1]?.level ?? 0) > item.level;
                       const folded = collapsedOutlineIds.has(item.id);
                       return (
-                        <div className="flex min-w-0 items-center" key={item.id}>
+                        <div
+                          className="flex min-w-0 items-center"
+                          key={item.id}
+                        >
                           <button
                             aria-label={folded ? "展开章节" : "折叠章节"}
                             className={`flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted ${hasChildren ? "visible" : "invisible"}`}
@@ -676,7 +690,9 @@ export function WritingWorkspace({
                           </button>
                           <button
                             aria-current={
-                              activeOutlineId === item.id ? "location" : undefined
+                              activeOutlineId === item.id
+                                ? "location"
+                                : undefined
                             }
                             className="min-w-0 flex-1 truncate rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=location]:bg-primary/10 aria-[current=location]:font-medium aria-[current=location]:text-foreground"
                             onClick={() =>
@@ -1189,43 +1205,42 @@ function WritingPDFPanel({
   const latest = data.builds.find((item) => item.build_kind === "preview");
   const latestSuccessful = latestSuccessfulArticlePreview(data.builds);
   const pdf = latestSuccessful?.outputs.find((item) => item.role === "pdf");
-  const [url, setURL] = useState<string>();
+  const latestLog = latest?.outputs.find((item) => item.role === "log");
+  const [transfer, setTransfer] = useState<{
+    headers: Record<string, string>;
+    url: string;
+  }>();
   const [readError, setReadError] = useState<string>();
   useEffect(() => {
     let active = true;
-    let objectURL = "";
-    setURL(undefined);
+    setTransfer(undefined);
     setReadError(undefined);
     if (!pdf) {
       return () => {
         active = false;
       };
     }
-    void readArtifactBlobURL(projectId, pdf)
-      .then((nextURL) => {
-        if (!active) {
-          URL.revokeObjectURL(nextURL);
-          return;
-        }
-        objectURL = nextURL;
-        setURL(nextURL);
+    void artifactApi
+      .download(projectId, pdf.artifact_id, pdf.version_id)
+      .then((grant) => {
+        if (active) setTransfer(grant.transfer);
       })
       .catch((error: unknown) => {
         if (active)
-          setReadError(error instanceof Error ? error.message : "草稿 PDF 读取失败");
+          setReadError(
+            error instanceof Error ? error.message : "草稿 PDF 读取失败",
+          );
       });
     return () => {
       active = false;
-      if (objectURL) URL.revokeObjectURL(objectURL);
     };
   }, [pdf, projectId]);
   const preview = useMutation({
     mutationFn: async () => {
       if (!template) throw new Error("没有可用模板");
-      const draft = await articleApi.flush(projectId);
       return articleApi.createPreview(projectId, {
         bibliography_tool: "auto",
-        draft_revision: draft.draft_revision,
+        draft_revision: data.draft.draft_revision,
         engine: "auto",
         template_id: template.template_id,
       });
@@ -1233,34 +1248,51 @@ function WritingPDFPanel({
     onSuccess: onRefresh,
   });
   return (
-    <div className="space-y-3">
-      <Button
-        className="w-full"
-        disabled={!canBuild || !template || preview.isPending}
-        onClick={() => preview.mutate()}
-        variant="outline"
-      >
-        手动生成当前草稿 PDF
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        仅保留最新草稿预览，不进入正式 Build 历史，也不能创建 Release。
-      </p>
-      {latest ? <BuildProgress build={latest} /> : null}
-      {preview.error ? (
-        <p className="text-xs text-destructive">{preview.error.message}</p>
-      ) : null}
-      {readError ? <p className="text-xs text-destructive">{readError}</p> : null}
-      {url ? (
-        <iframe
-          className="h-[34rem] w-full rounded-md border"
-          src={`${url}#page=1&zoom=page-width`}
-          title={`草稿 r${latestSuccessful?.draft_revision ?? ""} PDF 预览`}
-        />
-      ) : latestSuccessful?.status === "succeeded" && pdf ? (
-        <LoadingState label="正在读取草稿 PDF…" />
-      ) : (
-        <Empty label="尚无可用草稿 PDF" />
-      )}
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="shrink-0 space-y-3">
+        <Button
+          className="w-full"
+          disabled={!canBuild || !template || preview.isPending}
+          onClick={() => preview.mutate()}
+          variant="outline"
+        >
+          手动生成当前草稿 PDF
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          仅保留最新草稿预览，不进入正式 Build 历史，也不能创建 Release。
+        </p>
+        {latest ? <BuildProgress build={latest} /> : null}
+        {latest?.error_message ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+            <p className="font-medium">
+              {latest.error_code || "ARTICLE_BUILD_FAILED"}
+            </p>
+            <p className="mt-1">{latest.error_message}</p>
+          </div>
+        ) : null}
+        {latestLog ? (
+          <OutputButton output={latestLog} projectId={projectId} />
+        ) : null}
+        {preview.error ? (
+          <p className="text-xs text-destructive">{preview.error.message}</p>
+        ) : null}
+        {readError ? (
+          <p className="text-xs text-destructive">{readError}</p>
+        ) : null}
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden rounded-md border bg-muted/20">
+        {transfer ? (
+          <PDFReader
+            className="block h-full min-h-0 w-full border-0"
+            title={`草稿 r${latestSuccessful?.draft_revision ?? ""} PDF 预览`}
+            transfer={transfer}
+          />
+        ) : latestSuccessful?.status === "succeeded" && pdf ? (
+          <LoadingState label="正在读取草稿 PDF…" />
+        ) : (
+          <Empty label="尚无可用草稿 PDF" />
+        )}
+      </div>
     </div>
   );
 }
@@ -1530,10 +1562,9 @@ function BuildWorkspace({
   const action = useMutation({
     mutationFn: async (kind: "preview" | "formal") => {
       if (kind === "preview") {
-        const draft = await articleApi.flush(projectId);
         return articleApi.createPreview(projectId, {
           bibliography_tool: "auto",
-          draft_revision: draft.draft_revision,
+          draft_revision: data.draft.draft_revision,
           engine: "auto",
           template_id: templateId,
         });
