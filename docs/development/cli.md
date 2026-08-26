@@ -6,17 +6,24 @@ dependency on shared TypeScript packages.
 
 ## Commands
 
-| Command                           | Purpose                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------- |
-| `mmdash login`                    | Start browser-approved device authorization and securely save the refreshable session |
-| `mmdash logout`                   | Revoke the Core session and delete the local system credential                        |
-| `mmdash whoami`                   | Resolve the delegated Core identity                                                   |
-| `mmdash project list`             | List active projects visible to the identity                                          |
-| `mmdash project use <project_id>` | Validate and explicitly select the local current Project                              |
-| `mmdash project current`          | Read the selected Project from Core                                                   |
-| `mmdash config set-domain [host]` | Set the unified hosted domain or a loopback development host                          |
-| `mmdash mcp`                      | Run the stdio-to-remote-Streamable-HTTP MCP bridge                                    |
-| `mmdash doctor`                   | Check configuration, identity, Project selection, and Gateway health                  |
+| Command                                                                                                | Purpose                                                                               |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `mmdash login`                                                                                         | Start browser-approved device authorization and securely save the refreshable session |
+| `mmdash logout`                                                                                        | Revoke the Core session and delete the local system credential                        |
+| `mmdash whoami`                                                                                        | Resolve the delegated Core identity                                                   |
+| `mmdash project list`                                                                                  | List active projects visible to the identity                                          |
+| `mmdash project use <project_id>`                                                                      | Validate and explicitly select the local current Project                              |
+| `mmdash project current`                                                                               | Read the selected Project from Core                                                   |
+| `mmdash model list`                                                                                    | List Model questions and Notion synchronization state                                 |
+| `mmdash model show <question_id>`                                                                      | Show one Model question and its Snapshot timeline                                     |
+| `mmdash model sync [question_id]`                                                                      | Synchronize all models or one question and reset the countdown                        |
+| `mmdash experiment list`                                                                               | List frozen experiments in the current project                                        |
+| `mmdash experiment create <box\|self> <name> <full_commit_sha> <entrypoint> [auto\|e2b\|local-docker]` | Create a frozen Box-managed or self-run experiment                                    |
+| `mmdash experiment run <experiment_id>`                                                                | Queue one frozen experiment                                                           |
+| `mmdash experiment status <experiment_id>`                                                             | Read one experiment lifecycle state                                                   |
+| `mmdash config set-domain [host]`                                                                      | Set the unified hosted domain or a loopback development host                          |
+| `mmdash mcp`                                                                                           | Run the stdio-to-remote-Streamable-HTTP MCP bridge                                    |
+| `mmdash doctor`                                                                                        | Check configuration, identity, Project selection, and Gateway health                  |
 
 Use `--json` for machine-readable command output. Stable failures use a code,
 safe message, exit status, optional request ID, and retryability. Usage errors
@@ -77,9 +84,9 @@ instructions, and safe errors go to stderr; tokens never appear in either.
 ## Extending the CLI
 
 Features register commands and doctor checks through small compile-time Go
-interfaces. Stage 3 registers only Core/auth/MCP and Project features. Later
-Artifact, Progress, Model, Experiment, and Article stages own their human
-commands. Go runtime plugins are not supported.
+interfaces. The CLI currently registers the Core/auth/MCP, Project, Model, and
+Experiment features. Later Artifact, Progress, and Article stages own their
+human commands. Go runtime plugins are not supported.
 
 ## Build, test, and release
 

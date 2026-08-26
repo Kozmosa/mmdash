@@ -7,6 +7,8 @@ machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 | ---------------------- | ---------------------------------------------------- | -------------- | ----------- | --------------------------- | ----------------------- |
 | `project.list`         | List projects visible to the identity                | No             | CLI, Agent  | `project.list.json`         | Stage 3 read            |
 | `project.get`          | Read one authorized Project                          | Yes            | CLI, Agent  | `project.get.json`          | Stage 3 read            |
+| `project.member.list`  | List members and roles for an authorized project     | Yes            | CLI, Agent  | `project.member.list.json`  | Stage 3.16 read         |
+| `project.member.get`   | Read one project member and role                     | Yes            | CLI, Agent  | `project.member.get.json`   | Stage 3.16 read         |
 | `data.list`            | List Data Hub object projections                     | Yes            | CLI, Agent  | `data.list.json`            | Stage 1 read            |
 | `data.read`            | Read through the authoritative adapter               | Yes            | CLI, Agent  | `data.read.json`            | Stage 1 read            |
 | `context.promote`      | Submit a pending Context Proposal                    | Yes            | CLI, Agent  | `context.promote.json`      | Stage 5 proposal        |

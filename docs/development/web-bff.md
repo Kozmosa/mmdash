@@ -13,7 +13,8 @@ pnpm --filter @mmdash/web-bff test
 pnpm --filter @mmdash/web-bff build
 ```
 
-The default local address is `http://127.0.0.1:3001`. Configure it with:
+The default listen address is `0.0.0.0:3001`; use `http://127.0.0.1:3001`
+locally. Configure it with:
 
 | Variable | Purpose |
 | --- | --- |

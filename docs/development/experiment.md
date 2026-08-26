@@ -1,15 +1,15 @@
 # Stage 8 Experiment redesign baseline
 
 This guide freezes the target Experiment boundary for the Stage 8 refactor.
-The current implementation is a migration source only: it has one Box-only
+The legacy implementation was a migration source only: it had one Box-only
 lifecycle, hard-coded Web defaults, an Artifact-only result pointer, no
 durable offline state, no self-run binding, and no result-branch product
 workflow. Do not extend those assumptions.
 
 The authoritative product requirements are the Stage 8 sections of the three
-documents indexed by `docs/design/v0.1/README.md`. This guide turns that design
-into an implementation handoff; source OpenAPI and JSON Schema contracts still
-describe the legacy implementation until the refactor changes them.
+documents indexed by `docs/design/v0.1/README.md`. This guide turned that
+design into an implementation handoff; the source OpenAPI and JSON Schema
+contracts now carry the refactored model.
 
 ## Ownership and immutable identity
 
@@ -94,7 +94,7 @@ Every terminal failure stores:
 Minimum new codes are `NO_ELIGIBLE_BOX`, `BOX_OFFLINE_TIMEOUT`,
 `BOX_FORCE_REVOKED`, `RUNTIME_UNAVAILABLE`, `RUNTIME_EXIT_NONZERO`,
 `RUNTIME_TIMED_OUT`, `RESULT_UPLOAD_FAILED`, `RESULT_INVALID`,
-`ENVIRONMENT_MANIFEST_INVALID`, `ENVIRONMENT_BUILD_FAILED`,
+`ENVIRONMENT_INVALID`, `ENVIRONMENT_BUILD_FAILED`,
 `ENVIRONMENT_UNAVAILABLE`,
 `ARTIFACT_ARCHIVE_FAILED`, `RESULT_PROCESSING_FAILED`, `REPO_COMMIT_FAILED`,
 `REPO_PUSH_FAILED`, and `RESULT_BINDING_FAILED`.
@@ -303,8 +303,8 @@ MCP descriptions, input/output JSON Schemas, examples, mocks, generated clients,
 
 ## Migration plan from current main
 
-Current canonical migrations end at `000042_article_module`; never edit
-`000041_stage8_box_experiment`.
+Canonical migrations currently end at `000045_project_stage8_purge`; never
+edit `000041_stage8_box_experiment`.
 
 - `000043_box_account_nodes` is owned by Box Control and establishes account
   ownership/many-to-many assignment plus offline protocol storage.
@@ -317,8 +317,7 @@ Current canonical migrations end at `000042_article_module`; never edit
   window. It preserves account-level Boxes and Box Tokens and never deletes
   external repositories or remote branches.
 
-If another migration lands first, shift all three numbers while preserving the
-order. Cover fresh, existing `000041`, revoked Boxes, active legacy Box
+Cover fresh, existing `000041`, revoked Boxes, active legacy Box
 reauthorization, partial result processing, and down/up tests.
 
 ## Product completion and acceptance

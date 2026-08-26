@@ -9,30 +9,112 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  check:
+  commits:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      CADDY_VERSION: 2.11.4
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - name: Validate commit messages
+        run: |
+          git log --no-merges --format=%s "origin/${{ github.base_ref }}..HEAD" |
+            while IFS= read -r message; do
+              node scripts/check-commit-message.mjs "$message"
+            done
+
+  ts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: actions/setup-go@v5
+      # The generated-contract freshness test shells out to gofmt.
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
-          cache-dependency-path: backend/go.sum
-      - uses: astral-sh/setup-uv@v6
+          cache-dependency-path: |
+            backend/go.sum
+            box/go.sum
+            go.work.sum
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:ts
+      - run: pnpm test:ts
+      - run: pnpm build:ts
+
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            backend/go.sum
+            box/go.sum
+            go.work.sum
+      - run: pnpm lint:go
+      - run: pnpm test:go
+      - run: pnpm build:go
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+      # astral-sh/setup-uv publishes no floating major tag; pin exactly.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - run: pnpm lint:python
+      - run: pnpm test:python
+      - run: pnpm build:python
+
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CADDY_VERSION: "2.11.4"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      # contracts:check regenerates the Go contract outputs through gofmt.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            backend/go.sum
+            box/go.sum
+            go.work.sum
       - name: Install Caddy
         run: |
           archive="caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
@@ -43,12 +125,6 @@ jobs:
           sudo tar --extract --gzip --file "${archive}" --directory /usr/local/bin caddy
           caddy version
       - run: pnpm install --frozen-lockfile
-      - run: uv sync --all-packages --frozen
-      - run: pnpm check
-      - name: Validate commit messages
-        if: github.event_name == 'pull_request'
-        run: |
-          git log --no-merges --format=%s "origin/${{ github.base_ref }}..HEAD" |
-            while IFS= read -r message; do
-              pnpm commit:check "$message"
-            done
+      - run: pnpm contracts:check
+      - run: pnpm api:check
+      - run: pnpm caddy:check
