@@ -386,57 +386,51 @@ func markdownCaption(value string) string {
 	return escapeMarkdown(value)
 }
 
-func renderImageGroup(node map[string]interface{}) string {
-	children, _ := interfaceSlice(node["content"])
-	cells := make([]string, 0, len(children))
-	for _, raw := range children {
-		child, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		cell := renderImageGroupCell(child)
-		if cell != "" {
-			cells = append(cells, cell)
-		}
-	}
-	if len(cells) < 2 {
+func escapeLaTeX(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\r", " "), "\n", " "))
+	if value == "" {
 		return ""
 	}
-	columns := integer(object(node["attrs"])["columns"], 2)
-	if columns < 1 {
-		columns = 1
-	}
-	if columns > 4 {
-		columns = 4
-	}
-	if columns > len(cells) {
-		columns = len(cells)
-	}
-	line := func(values []string) string {
-		padded := make([]string, columns)
-		copy(padded, values)
-		return "| " + strings.Join(padded, " | ") + " |"
-	}
-	separator := make([]string, columns)
-	for index := range separator {
-		separator[index] = ":---:"
-	}
-	lines := []string{line(make([]string, columns)), line(separator)}
-	for start := 0; start < len(cells); start += columns {
-		end := start + columns
-		if end > len(cells) {
-			end = len(cells)
-		}
-		lines = append(lines, line(cells[start:end]))
-	}
-	value := strings.Join(lines, "\n")
-	if caption := markdownCaption(stringAttr(object(node["attrs"]), "caption")); caption != "" {
-		value += "\n\n" + caption
-	}
-	return value
+	replacer := strings.NewReplacer(
+		`\`, `\textbackslash{}`,
+		`%`, `\%`,
+		`$`, `\$`,
+		`&`, `\&`,
+		`#`, `\#`,
+		`_`, `\_`,
+		`{`, `\{`,
+		`}`, `\}`,
+		`~`, `\textasciitilde{}`,
+		`^`, `\textasciicircum{}`,
+	)
+	return replacer.Replace(value)
 }
 
-func renderImageGroupCell(node map[string]interface{}) string {
+func subfigureWidth(count int) string {
+	switch count {
+	case 1:
+		return "0.98\\linewidth"
+	case 2:
+		return "0.48\\linewidth"
+	case 3:
+		return "0.31\\linewidth"
+	case 4:
+		return "0.23\\linewidth"
+	default:
+		if count <= 0 {
+			return "0.98\\linewidth"
+		}
+		return fmt.Sprintf("%.2f\\linewidth", (1.0-0.04*float64(count-1))/float64(count))
+	}
+}
+
+type imageGroupCell struct {
+	target  string
+	alt     string
+	caption string
+}
+
+func extractImageGroupCell(node map[string]interface{}) (imageGroupCell, bool) {
 	nodeType, _ := node["type"].(string)
 	attrs := object(node["attrs"])
 	alt := stringAttr(attrs, "alt")
@@ -446,7 +440,7 @@ func renderImageGroupCell(node map[string]interface{}) string {
 		target = safeImageTarget(stringAttr(attrs, "src"))
 	case "artifactReference":
 		if !strings.HasPrefix(stringAttr(attrs, "mimeType"), "image/") {
-			return ""
+			return imageGroupCell{}, false
 		}
 		artifactID := stringAttr(attrs, "artifactId")
 		if artifactID == "" {
@@ -457,13 +451,73 @@ func renderImageGroupCell(node map[string]interface{}) string {
 		}
 		target = fmt.Sprintf("mmdash://artifact/%s/versions/%s", safeID(artifactID), safeID(stringAttr(attrs, "versionId")))
 	default:
+		return imageGroupCell{}, false
+	}
+	caption := stringAttr(attrs, "caption")
+	return imageGroupCell{target: target, alt: alt, caption: caption}, true
+}
+
+func renderImageGroup(node map[string]interface{}) string {
+	children, _ := interfaceSlice(node["content"])
+	items := make([]imageGroupCell, 0, len(children))
+	for _, raw := range children {
+		child, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		item, ok := extractImageGroupCell(child)
+		if ok {
+			items = append(items, item)
+		}
+	}
+	if len(items) == 0 {
 		return ""
 	}
-	value := "![" + escapeMarkdown(alt) + "](" + target + ")"
-	if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
-		value += "<br><small>" + strings.ReplaceAll(caption, "|", `\|`) + "</small>"
+	columns := integer(object(node["attrs"])["columns"], 2)
+	if columns < 1 {
+		columns = 1
 	}
-	return value
+	if columns > 4 {
+		columns = 4
+	}
+
+	var builder strings.Builder
+	builder.WriteString("\\begin{figure}[htbp]\n\\centering\n")
+
+	var rows [][]imageGroupCell
+	for start := 0; start < len(items); start += columns {
+		end := start + columns
+		if end > len(items) {
+			end = len(items)
+		}
+		rows = append(rows, items[start:end])
+	}
+
+	for rowIndex, row := range rows {
+		if rowIndex > 0 {
+			builder.WriteString("\n\\par\\medskip\n")
+		}
+		rowLen := len(row)
+		widthStr := subfigureWidth(rowLen)
+		for itemIndex, item := range row {
+			if itemIndex > 0 {
+				builder.WriteString("\n\\hfill\n")
+			}
+			builder.WriteString(fmt.Sprintf("\\begin{subfigure}[b]{%s}\n  \\centering\n  \\includegraphics[width=\\linewidth]{%s}", widthStr, item.target))
+			escapedSubCaption := escapeLaTeX(item.caption)
+			if escapedSubCaption != "" {
+				builder.WriteString(fmt.Sprintf("\n  \\caption{%s}", escapedSubCaption))
+			}
+			builder.WriteString("\n\\end{subfigure}")
+		}
+	}
+
+	escapedGroupCaption := escapeLaTeX(stringAttr(object(node["attrs"]), "caption"))
+	if escapedGroupCaption != "" {
+		builder.WriteString(fmt.Sprintf("\n\\caption{%s}", escapedGroupCaption))
+	}
+	builder.WriteString("\n\\end{figure}")
+	return builder.String()
 }
 
 func renderTable(node map[string]interface{}) string {

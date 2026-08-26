@@ -33,9 +33,10 @@ const (
 )
 
 var (
-	shaPattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	rolePattern = regexp.MustCompile(`^(pdf|tex_source|source_zip|build_report|log|synctex)$`)
-	tagPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+	shaPattern   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	rolePattern  = regexp.MustCompile(`^(pdf|tex_source|source_zip|build_report|log|synctex)$`)
+	stagePattern = regexp.MustCompile(`^(preparing|resources|converting|compiling|packaging|uploading)$`)
+	tagPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 )
 
 type Access interface {
@@ -386,7 +387,7 @@ func (service *Service) Commit(ctx context.Context, caller auth.Identity, projec
 	if err != nil {
 		return Commit{}, err
 	}
-	result, err := service.Workspace.Commit(ctx, repo.WorkspaceCommitRequest{ActorEmail: caller.User.Email, ActorID: caller.ActorID(), ActorName: displayName(caller), Changes: []repo.FileChange{{Path: "manuscript.md", Operation: "upsert", Content: manuscript}, {Path: "references.bib", Operation: "upsert", Content: bibliography}, {Path: ".mmdash/article.json", Operation: "upsert", Content: manifestBytes}}, ExpectedHeadSHA: head.CommitSHA, IdempotencyKey: "article-commit:" + projectID + ":" + fmt.Sprint(draftRevision) + ":" + requestDigest, Message: strings.TrimSpace(message), ProjectID: projectID, RequestSHA256: requestDigest})
+	result, err := service.Workspace.Commit(ctx, repo.WorkspaceCommitRequest{ActorEmail: caller.User.Email, ActorID: caller.ActorID(), ActorName: displayName(caller), Changes: []repo.FileChange{{Path: "manuscript.md", Operation: "put", Content: manuscript}, {Path: "references.bib", Operation: "put", Content: bibliography}, {Path: ".mmdash/article.json", Operation: "put", Content: manifestBytes}}, ExpectedHeadSHA: head.CommitSHA, IdempotencyKey: "article-commit:" + projectID + ":" + fmt.Sprint(draftRevision) + ":" + requestDigest, Message: strings.TrimSpace(message), ProjectID: projectID, RequestSHA256: requestDigest})
 	if err != nil {
 		return Commit{}, err
 	}
@@ -446,6 +447,14 @@ func (service *Service) CreateBuild(ctx context.Context, caller auth.Identity, p
 	}
 	return service.createBuild(ctx, caller.ActorID(), projectID, BuildFormal, commitID, nil, templateID, engine, bibliographyTool, idempotency)
 }
+type previewBuildSnapshot struct {
+	ArticleManifest    map[string]interface{} `json:"article_manifest"`
+	DraftRevision      int64                  `json:"draft_revision"`
+	Manuscript         string                 `json:"manuscript"`
+	ReferencesBIB      string                 `json:"references_bib"`
+	ResourceReferences []Reference            `json:"resource_references"`
+	SchemaVersion      string                 `json:"schema_version"`
+}
 func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity, projectID string, draftRevision int64, templateID, engine, bibliographyTool string) (Build, bool, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleBuild); err != nil {
 		return Build{}, false, err
@@ -457,7 +466,46 @@ func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity,
 	if draft.DraftRevision != draftRevision {
 		return Build{}, false, ErrConflict
 	}
-	return service.createBuild(ctx, caller.ActorID(), projectID, BuildPreview, "", &draftRevision, templateID, engine, bibliographyTool, fmt.Sprintf("preview:%d:%s:%s:%s", draftRevision, templateID, engine, bibliographyTool))
+	references, err := service.Store.ListReferences(ctx, projectID)
+	if err != nil {
+		return Build{}, false, err
+	}
+	resourceReferences := make([]Reference, 0)
+	for _, reference := range references {
+		if reference.ReferenceType != "artifact" {
+			continue
+		}
+		resourceReferences = append(resourceReferences, Reference{
+			ReferenceType:   reference.ReferenceType,
+			SourceObjectID:  reference.SourceObjectID,
+			SourceVersionID: reference.SourceVersionID,
+			Title:           reference.Title,
+		})
+	}
+	item, jobInput, err := service.prepareBuild(
+		ctx,
+		caller.ActorID(),
+		projectID,
+		BuildPreview,
+		"",
+		&draftRevision,
+		templateID,
+		engine,
+		bibliographyTool,
+		fmt.Sprintf("preview:%d:%s:%s:%s", draftRevision, templateID, engine, bibliographyTool),
+	)
+	if err != nil {
+		return Build{}, false, err
+	}
+	jobInput.Payload["preview_snapshot"] = previewBuildSnapshot{
+		ArticleManifest:    cloneObject(draft.Manifest),
+		DraftRevision:      draftRevision,
+		Manuscript:         draft.Markdown,
+		ReferencesBIB:      Bibliography(references),
+		ResourceReferences: resourceReferences,
+		SchemaVersion:      "1.0",
+	}
+	return service.Store.CreateBuild(ctx, item, jobInput, service.JobWriter)
 }
 func (service *Service) createBuild(ctx context.Context, actorID, projectID, kind, commitID string, draftRevision *int64, templateID, engine, bibliographyTool, idempotency string) (Build, bool, error) {
 	item, jobInput, err := service.prepareBuild(ctx, actorID, projectID, kind, commitID, draftRevision, templateID, engine, bibliographyTool, idempotency)
@@ -485,7 +533,7 @@ func (service *Service) prepareBuild(ctx context.Context, actorID, projectID, ki
 		return Build{}, jobs.CreateInput{}, err
 	}
 	now := service.now()
-	item := Build{BuildID: id, ProjectID: projectID, BuildKind: kind, Status: BuildQueued, CommitID: commitID, DraftRevision: draftRevision, TemplateID: templateID, TemplateArtifactID: template.ArtifactID, TemplateVersionID: template.VersionID, Engine: engine, BibliographyTool: bibliographyTool, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, Outputs: []BuildOutput{}, Toolchain: map[string]interface{}{}, IdempotencyKey: idempotency}
+	item := Build{BuildID: id, ProjectID: projectID, BuildKind: kind, Status: BuildQueued, CommitID: commitID, DraftRevision: draftRevision, TemplateID: templateID, TemplateArtifactID: template.ArtifactID, TemplateVersionID: template.VersionID, Engine: engine, BibliographyTool: bibliographyTool, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, Outputs: []BuildOutput{}, ProgressPercent: 0, ProgressStage: "queued", Toolchain: map[string]interface{}{}, IdempotencyKey: idempotency}
 	jobInput := jobs.CreateInput{JobType: JobTypeBuild, ProjectID: projectID, Payload: map[string]interface{}{"build_id": id, "build_kind": kind}, Priority: kindPriority(kind), IdempotencyKey: "article-build:" + id, MaxAttempts: 2, TimeoutSeconds: 900}
 	return item, jobInput, nil
 }
@@ -697,6 +745,31 @@ func (service *Service) RetryPublication(ctx context.Context, caller auth.Identi
 	return service.Store.RetryPublicationBuild(ctx, publication, previous.BuildID, build, jobInput, service.JobWriter)
 }
 
+func previewSnapshotFromJob(job jobs.Job, build Build) (previewBuildSnapshot, bool, error) {
+	raw, exists := job.Payload["preview_snapshot"]
+	if !exists {
+		return previewBuildSnapshot{}, false, nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return previewBuildSnapshot{}, true, ErrInvalid
+	}
+	var snapshot previewBuildSnapshot
+	if err = json.Unmarshal(encoded, &snapshot); err != nil {
+		return previewBuildSnapshot{}, true, ErrInvalid
+	}
+	if snapshot.SchemaVersion != "1.0" ||
+		snapshot.ArticleManifest == nil ||
+		build.DraftRevision == nil ||
+		snapshot.DraftRevision != *build.DraftRevision {
+		return previewBuildSnapshot{}, true, ErrInvalid
+	}
+	if snapshot.ResourceReferences == nil {
+		snapshot.ResourceReferences = []Reference{}
+	}
+	return snapshot, true, nil
+}
+
 func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, jobID string) (BuildJobInput, error) {
 	job, build, template, err := service.workerBuild(ctx, caller, jobID)
 	if err != nil {
@@ -732,17 +805,30 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			}
 		}
 	case BuildPreview:
-		draft, err := service.Store.GetDraft(ctx, job.ProjectID)
-		if err != nil {
-			return BuildJobInput{}, err
+		snapshot, frozen, snapshotErr := previewSnapshotFromJob(job, build)
+		if snapshotErr != nil {
+			return BuildJobInput{}, snapshotErr
 		}
-		if build.DraftRevision == nil || draft.DraftRevision != *build.DraftRevision {
-			return BuildJobInput{}, ErrSuperseded
-		}
-		manuscript, referencesBIB, manifest = draft.Markdown, draft.ReferencesBIB, draft.Manifest
-		frozenReferences, err = service.Store.ListReferences(ctx, job.ProjectID)
-		if err != nil {
-			return BuildJobInput{}, err
+		if frozen {
+			manuscript = snapshot.Manuscript
+			referencesBIB = snapshot.ReferencesBIB
+			manifest = snapshot.ArticleManifest
+			frozenReferences = snapshot.ResourceReferences
+		} else {
+			// Rolling-deploy compatibility for Preview jobs queued by an older
+			// Core before immutable job snapshots were introduced.
+			draft, err := service.Store.GetDraft(ctx, job.ProjectID)
+			if err != nil {
+				return BuildJobInput{}, err
+			}
+			if build.DraftRevision == nil || draft.DraftRevision != *build.DraftRevision {
+				return BuildJobInput{}, ErrSuperseded
+			}
+			manuscript, referencesBIB, manifest = draft.Markdown, draft.ReferencesBIB, draft.Manifest
+			frozenReferences, err = service.Store.ListReferences(ctx, job.ProjectID)
+			if err != nil {
+				return BuildJobInput{}, err
+			}
 		}
 	case BuildTemplateTest:
 		manuscript = "# Template validation\n\nA citation-free equation: $x^2$.\n"
@@ -803,6 +889,23 @@ func (service *Service) WorkerOutput(ctx context.Context, caller auth.Identity, 
 		return BuildOutput{}, err
 	}
 	return output, nil
+}
+
+func (service *Service) WorkerProgress(ctx context.Context, caller auth.Identity, jobID string, percent int, stage string) (Build, error) {
+	_, build, _, err := service.workerBuild(ctx, caller, jobID)
+	if err != nil {
+		return Build{}, err
+	}
+	if build.Status == BuildSuperseded {
+		return Build{}, ErrSuperseded
+	}
+	if build.Status != BuildQueued && build.Status != BuildRunning {
+		return Build{}, ErrConflict
+	}
+	if percent < 5 || percent > 95 || !stagePattern.MatchString(stage) {
+		return Build{}, ErrInvalid
+	}
+	return service.Store.UpdateBuildProgress(ctx, jobID, percent, stage)
 }
 func (service *Service) workerBuild(ctx context.Context, caller auth.Identity, jobID string) (jobs.Job, Build, Template, error) {
 	if service.JobAccess == nil {

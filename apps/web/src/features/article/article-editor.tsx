@@ -12,7 +12,7 @@ import {
   NodeRangeSelection,
 } from "@tiptap/extension-node-range";
 import { TableKit } from "@tiptap/extension-table";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import UniqueID from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -26,6 +26,8 @@ import {
   Heading2,
   ImagePlus,
   Italic,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   Plus,
   Save,
@@ -47,6 +49,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   artifactApi,
@@ -64,6 +67,7 @@ import {
   duplicateArticleBlock,
   insertArticleBlock,
   moveArticleBlock,
+  moveArticleBlockRange,
   replaceArticleImageWithArtifact,
   selectArticleBlock,
   type ArticleBlockConversion,
@@ -85,7 +89,11 @@ import {
 import {
   articleImageGroupContext,
   deleteArticleImageNode,
+  insertArticleImageIntoGroup,
+  isArticleImageNode,
   mergeArticleImageWithNeighbor,
+  moveArticleImageInGroupDirection,
+  normalizeArticleImageGroupColumns,
   removeArticleImageFromGroup,
   ungroupArticleImages,
   type ArticleImageGroupAction,
@@ -118,6 +126,10 @@ export const articleArtifactMime =
 export const articleZoteroMime = "application/vnd.mmdash.zotero+json";
 export const articleOutlineNavigateEvent = "mmdash:article-outline-navigate";
 export const articleOutlineActiveEvent = "mmdash:article-outline-active";
+export const articleInsertArtifactIntoGroupEvent =
+  "mmdash:article-insert-artifact-into-group";
+export const articleUploadImageIntoGroupEvent =
+  "mmdash:article-upload-image-into-group";
 
 export function sameArticleOutline(
   left: ArticleOutlineItem[],
@@ -313,34 +325,44 @@ type Collaborator = { color: string; name: string };
 
 export function ArticleEditor({
   blocks,
+  canCommit,
   canEdit,
   chapterTags,
   collaborator,
+  draftRevision,
+  immersive,
   onFlush,
   onInsertArtifact,
+  onInsertZotero,
+  onOpenCommit,
   onOutlineChange,
   onReviewBlock,
   onReviewChapter,
-  onInsertZotero,
+  onToggleImmersive,
   projectId,
   provider,
 }: Readonly<{
+  blocks: ArticleBlock[];
+  canCommit?: boolean;
   canEdit: boolean;
   chapterTags: ArticleChapterTag[];
   collaborator: Collaborator;
+  draftRevision?: number;
+  immersive?: boolean;
   onFlush: () => void;
   onInsertArtifact: (
     artifact: ArticleArtifactDrop,
   ) => Promise<{ reference_id: string }>;
-  onOutlineChange: (items: ArticleOutlineItem[]) => void;
-  onReviewBlock: (blockId: string) => Promise<void>;
-  onReviewChapter: (chapterTagId: string) => Promise<void>;
   onInsertZotero: (
     item: ArticleZoteroDrop,
   ) => Promise<{ reference_id: string }>;
+  onOpenCommit?: () => void;
+  onOutlineChange: (items: ArticleOutlineItem[]) => void;
+  onReviewBlock: (blockId: string) => Promise<void>;
+  onReviewChapter: (chapterTagId: string) => Promise<void>;
+  onToggleImmersive?: () => void;
   projectId: string;
   provider: HocuspocusProvider;
-  blocks: ArticleBlock[];
 }>) {
   const [dropError, setDropError] = useState<string>();
   const [renderTheme, setRenderTheme] = useState<ArticleRenderTheme>("md");
@@ -382,6 +404,10 @@ export function ArticleEditor({
   const activeOutlineIdRef = useRef("");
   const outlineRef = useRef<ArticleOutlineItem[]>([]);
   const blockDraggingPosRef = useRef<number | null>(null);
+  const blockDraggingRangeRef = useRef<{
+    from: number;
+    to: number;
+  } | null>(null);
   const dropIndicatorRef = useRef<ArticleDropIndicator | undefined>(undefined);
   const marqueeRef = useRef<HTMLDivElement>(null);
   const blockMenuOpenRef = useRef(false);
@@ -960,6 +986,192 @@ export function ArticleEditor({
   }, [canEdit, editor]);
 
   useEffect(() => {
+    if (!editor || !canEdit) return;
+
+    const handleInsertArtifactIntoGroup = async (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          groupPos?: number;
+          insertIndex: number;
+          payload: ArticleArtifactDrop;
+          standalonePos?: number;
+        }>
+      ).detail;
+      if (!detail?.payload) return;
+
+      try {
+        const reference = await onInsertArtifact(detail.payload);
+        const node = editor.schema.nodes.artifactReference.create({
+          alt: detail.payload.title,
+          align: "center",
+          artifactId: detail.payload.artifactId,
+          mimeType: detail.payload.mimeType,
+          objectId: detail.payload.artifactId,
+          referenceId: reference.reference_id,
+          title: detail.payload.title,
+          versionId: detail.payload.versionId,
+          width: 100,
+        });
+
+        if (detail.groupPos !== undefined) {
+          const inserted = insertArticleImageIntoGroup(
+            editor,
+            detail.groupPos,
+            detail.insertIndex,
+            node,
+          );
+          if (inserted) return;
+        }
+
+        if (detail.standalonePos !== undefined) {
+          const standaloneNode = editor.state.doc.nodeAt(detail.standalonePos);
+          if (standaloneNode && isArticleImageNode(standaloneNode)) {
+            const groupType = editor.schema.nodes.articleImageGroup;
+            if (groupType) {
+              const children =
+                detail.insertIndex > 0
+                  ? [standaloneNode, node]
+                  : [node, standaloneNode];
+              const group = groupType.create(
+                { caption: "", columns: 2 },
+                Fragment.fromArray(children),
+              );
+              editor.view.dispatch(
+                editor.state.tr.replaceWith(
+                  detail.standalonePos,
+                  detail.standalonePos + standaloneNode.nodeSize,
+                  group,
+                ),
+              );
+              editor.view.focus();
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        setDropError(
+          error instanceof Error ? error.message : "无法将图片插入组合",
+        );
+      }
+    };
+
+    const handleUploadImageIntoGroup = async (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          file: File;
+          groupPos?: number;
+          insertIndex: number;
+          standalonePos?: number;
+        }>
+      ).detail;
+      if (!detail?.file) return;
+
+      try {
+        setDropError(`正在上传图片 ${detail.file.name}…`);
+        const articleFolder = await ensureArtifactRootFolder(
+          projectId,
+          "article",
+        );
+        const uploadDetail = await new MultipartUploadTask({
+          file: detail.file,
+          folderId: articleFolder.folder_id,
+          kind: "attachment",
+          name: detail.file.name,
+          projectId,
+          tags: ["article-image"],
+        }).start();
+        const version = uploadDetail.current_version;
+        if (!version || version.status !== "available") {
+          throw new Error("图片上传完成，但不可变版本尚不可用");
+        }
+        const payload = {
+          artifactId: uploadDetail.artifact.artifact_id,
+          filename: version.filename,
+          mimeType: version.mime_type,
+          title: uploadDetail.artifact.name,
+          versionId: version.version_id,
+        } satisfies ArticleArtifactDrop;
+
+        const reference = await onInsertArtifact(payload);
+        const node = editor.schema.nodes.artifactReference.create({
+          alt: payload.title,
+          align: "center",
+          artifactId: payload.artifactId,
+          mimeType: payload.mimeType,
+          objectId: payload.artifactId,
+          referenceId: reference.reference_id,
+          title: payload.title,
+          versionId: payload.versionId,
+          width: 100,
+        });
+
+        if (detail.groupPos !== undefined) {
+          const inserted = insertArticleImageIntoGroup(
+            editor,
+            detail.groupPos,
+            detail.insertIndex,
+            node,
+          );
+          if (inserted) {
+            setDropError(`图片 ${detail.file.name} 已加入图片组合`);
+            return;
+          }
+        }
+
+        if (detail.standalonePos !== undefined) {
+          const standaloneNode = editor.state.doc.nodeAt(detail.standalonePos);
+          if (standaloneNode && isArticleImageNode(standaloneNode)) {
+            const groupType = editor.schema.nodes.articleImageGroup;
+            if (groupType) {
+              const children =
+                detail.insertIndex > 0
+                  ? [standaloneNode, node]
+                  : [node, standaloneNode];
+              const group = groupType.create(
+                { caption: "", columns: 2 },
+                Fragment.fromArray(children),
+              );
+              editor.view.dispatch(
+                editor.state.tr.replaceWith(
+                  detail.standalonePos,
+                  detail.standalonePos + standaloneNode.nodeSize,
+                  group,
+                ),
+              );
+              editor.view.focus();
+              setDropError(`已创建图片组合并加入 ${detail.file.name}`);
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        setDropError(
+          error instanceof Error ? error.message : "图片上传失败",
+        );
+      }
+    };
+
+    window.addEventListener(
+      articleInsertArtifactIntoGroupEvent,
+      handleInsertArtifactIntoGroup,
+    );
+    window.addEventListener(
+      articleUploadImageIntoGroupEvent,
+      handleUploadImageIntoGroup,
+    );
+    return () => {
+      window.removeEventListener(
+        articleInsertArtifactIntoGroupEvent,
+        handleInsertArtifactIntoGroup,
+      );
+      window.removeEventListener(
+        articleUploadImageIntoGroupEvent,
+        handleUploadImageIntoGroup,
+      );
+    };
+  }, [canEdit, editor, onInsertArtifact, projectId]);
+
+  useEffect(() => {
     if (!editor) return;
     const surface = editorSurfaceRef.current;
     if (!surface) return;
@@ -1070,6 +1282,7 @@ export function ArticleEditor({
 
   const handleElementDragEnd = useCallback(() => {
     blockDraggingPosRef.current = null;
+    blockDraggingRangeRef.current = null;
     dropIndicatorRef.current = undefined;
     setBlockDraggingPos(undefined);
     setDropIndicator(undefined);
@@ -1080,7 +1293,27 @@ export function ArticleEditor({
       if (!editor) return;
       const position = dragHandlePos.current;
       if (position === null || position === undefined) return;
-      selectArticleBlock(editor, position, { scrollIntoView: false });
+
+      // Check if the drag handle block is within an existing multi-block
+      // selection. If so, preserve the selection to drag all selected blocks.
+      const selection = editor.state.selection;
+      const isInMultiBlockSelection =
+        isNodeRangeSelection(selection) &&
+        position >= selection.from &&
+        position < selection.to;
+
+      if (isInMultiBlockSelection) {
+        // Keep the existing multi-block selection
+        blockDraggingRangeRef.current = {
+          from: selection.from,
+          to: selection.to,
+        };
+      } else {
+        // Single block drag
+        selectArticleBlock(editor, position, { scrollIntoView: false });
+        blockDraggingRangeRef.current = null;
+      }
+
       blockDraggingPosRef.current = position;
       dropIndicatorRef.current = undefined;
       setBlockDraggingPos(position);
@@ -1646,8 +1879,7 @@ export function ArticleEditor({
 
   const currentImageGroupColumns = () => {
     const located = findNode("imageGroup");
-    const value = Number(located?.node.attrs.columns);
-    return Number.isFinite(value) ? Math.max(1, Math.min(4, value)) : 2;
+    return normalizeArticleImageGroupColumns(located?.node.attrs.columns);
   };
 
   const setImageGroupColumns = (columns: number) => {
@@ -1656,7 +1888,7 @@ export function ArticleEditor({
     editor.view.dispatch(
       editor.state.tr.setNodeMarkup(located.pos, undefined, {
         ...located.node.attrs,
-        columns: Math.max(1, Math.min(4, Math.round(columns))),
+        columns: normalizeArticleImageGroupColumns(columns),
       }),
     );
   };
@@ -1812,6 +2044,20 @@ export function ArticleEditor({
             if (!located) return false;
             if (action === "removeFromGroup") {
               return removeArticleImageFromGroup(editor, located.pos);
+            }
+            if (action === "moveEarlier") {
+              return moveArticleImageInGroupDirection(
+                editor,
+                located.pos,
+                "earlier",
+              );
+            }
+            if (action === "moveLater") {
+              return moveArticleImageInGroupDirection(
+                editor,
+                located.pos,
+                "later",
+              );
             }
             return mergeArticleImageWithNeighbor(
               editor,
@@ -2133,6 +2379,35 @@ export function ArticleEditor({
       offset += node.nodeSize;
     });
     if (blockPosition === undefined || !blockNode) return true;
+
+    const isImageOrArtifact =
+      event.dataTransfer.types.includes(articleArtifactMime) ||
+      event.dataTransfer.types.includes("Files") ||
+      event.dataTransfer.types.includes(
+        "application/vnd.mmdash.image-group-item",
+      );
+
+    const targetEl =
+      typeof document !== "undefined"
+        ? document.elementFromPoint(event.clientX, event.clientY)
+        : null;
+
+    const isOverImageContainer = Boolean(
+      targetEl?.closest?.(
+        "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
+      ) ||
+        (blockNode &&
+          (blockNode.type.name === "articleImageGroup" ||
+            blockNode.type.name === "articleImage" ||
+            (blockNode.type.name === "artifactReference" &&
+              String(blockNode.attrs.mimeType ?? "").startsWith("image/")))),
+    );
+
+    if (isImageOrArtifact && isOverImageContainer) {
+      clearDropIndicator();
+      return true;
+    }
+
     const dom = editor.view.nodeDOM(blockPosition);
     if (!(dom instanceof HTMLElement)) return true;
     const rect = dom.getBoundingClientRect();
@@ -2215,7 +2490,7 @@ export function ArticleEditor({
 
   return (
     <div
-      className="flex h-[42rem] min-h-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-background shadow-sm"
       data-article-editor-shell
     >
       <div className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center gap-1 border-b bg-background/95 p-2 backdrop-blur">
@@ -2291,15 +2566,55 @@ export function ArticleEditor({
         >
           <Undo2 />
         </EditorButton>
-        <Button
-          className="ml-auto"
-          onClick={onFlush}
-          size="sm"
-          variant="outline"
-        >
-          <Save className="size-3.5" />
-          保存同步
-        </Button>
+        <div className="ml-auto flex items-center gap-1.5">
+          {immersive && draftRevision !== undefined ? (
+            <Badge className="text-xs font-normal">
+              草稿 r{draftRevision}
+            </Badge>
+          ) : null}
+          {immersive && onOpenCommit ? (
+            <Button
+              className="h-8 text-xs"
+              disabled={!canCommit}
+              onClick={onOpenCommit}
+              size="sm"
+              variant="default"
+            >
+              Commit…
+            </Button>
+          ) : null}
+          <Button
+            className="h-8 text-xs gap-1"
+            onClick={onFlush}
+            size="sm"
+            variant="outline"
+          >
+            <Save className="size-3.5" />
+            保存同步
+          </Button>
+          {onToggleImmersive ? (
+            <Button
+              aria-label={immersive ? "退出沉浸模式 (Esc)" : "进入沉浸编辑模式"}
+              className="h-8 gap-1 px-2 text-xs"
+              onClick={onToggleImmersive}
+              size="sm"
+              title={immersive ? "退出沉浸模式 (Esc)" : "沉浸编辑模式"}
+              variant={immersive ? "secondary" : "ghost"}
+            >
+              {immersive ? (
+                <>
+                  <Minimize2 className="size-3.5" />
+                  <span className="hidden sm:inline">退出沉浸</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="size-3.5" />
+                  <span className="hidden sm:inline">沉浸模式</span>
+                </>
+              )}
+            </Button>
+          ) : null}
+        </div>
       </div>
       {!canEdit ? (
         <p className="border-b bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
@@ -2344,6 +2659,26 @@ export function ArticleEditor({
           ref={editorSurfaceRef}
           style={{ scrollbarGutter: "stable" }}
           onDragOver={(event) => {
+            if (
+              event.dataTransfer.types.includes(
+                "application/vnd.mmdash.image-group-item",
+              )
+            ) {
+              clearDropIndicator();
+              return;
+            }
+            const targetEl =
+              typeof document !== "undefined"
+                ? document.elementFromPoint(event.clientX, event.clientY)
+                : null;
+            if (
+              targetEl?.closest?.(
+                "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
+              )
+            ) {
+              clearDropIndicator();
+              return;
+            }
             if (updateInternalDragOver(event)) return;
             if (updateExternalArtifactDragOver(event)) return;
             if (canEdit && event.dataTransfer.types.includes(articleZoteroMime))
@@ -2354,10 +2689,61 @@ export function ArticleEditor({
               clearDropIndicator();
           }}
           onDrop={(event) => {
+            if (
+              event.dataTransfer.types.includes(
+                "application/vnd.mmdash.image-group-item",
+              )
+            ) {
+              clearDropIndicator();
+              return;
+            }
+            const targetEl =
+              typeof document !== "undefined"
+                ? document.elementFromPoint(event.clientX, event.clientY)
+                : null;
+            if (
+              targetEl?.closest?.(
+                "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
+              )
+            ) {
+              clearDropIndicator();
+              return;
+            }
             const insertionPosition = dropIndicatorRef.current?.position;
             clearDropIndicator();
-            if (blockDraggingPosRef.current !== null) return;
-            const localImage = Array.from(event.dataTransfer.files).find(
+            // Handle internal block drag-and-drop (single or multi-block)
+            if (blockDraggingPosRef.current !== null) {
+              event.preventDefault();
+              event.stopPropagation();
+              if (insertionPosition === undefined || !editor) return;
+              const range = blockDraggingRangeRef.current;
+              if (range) {
+                // Multi-block move
+                moveArticleBlockRange(
+                  editor,
+                  range.from,
+                  range.to,
+                  insertionPosition,
+                );
+              } else {
+                // Single-block move
+                const draggedNode = editor.state.doc.nodeAt(
+                  blockDraggingPosRef.current,
+                );
+                if (draggedNode) {
+                  moveArticleBlockRange(
+                    editor,
+                    blockDraggingPosRef.current,
+                    blockDraggingPosRef.current + draggedNode.nodeSize,
+                    insertionPosition,
+                  );
+                }
+              }
+              blockDraggingPosRef.current = null;
+              blockDraggingRangeRef.current = null;
+              return;
+            }
+            const localImage = Array.from(event.dataTransfer?.files ?? []).find(
               (item) => item.type.startsWith("image/"),
             );
             if (localImage) {

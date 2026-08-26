@@ -46,6 +46,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PDFReader } from "@/components/ui/pdf-reader";
+import { cn } from "@/lib/cn";
 import { artifactApi } from "@/features/artifact/artifact-api";
 import { ArtifactFolderDeleteActions } from "@/features/artifact/artifact-folder-delete-actions";
 import {
@@ -60,14 +62,20 @@ import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-client";
 
 import { articleApi } from "./api";
+import { registerArticleCollaborationProvider } from "./article-collaboration-sync";
 import { ArticleAggregateWarnings } from "./article-aggregate-warnings";
 import { ArticleReferencePanel } from "./article-reference-panel";
 import { visibleArticleOutline } from "./article-outline";
 import { availableThumbnailURL } from "./article-image-utils";
 import {
-  articleSidebarDefaultWidth,
-  clampArticleSidebarWidth,
+  articleEditorMinWidth,
+  articleOutlineDefaultHeight,
+  articleSidebarDefaultRatio,
+  articleSidebarMinWidth,
+  clampArticleOutlineHeight,
+  clampArticleSidebarRatio,
 } from "./article-layout";
+import { ArticleOutlineResizeHandle } from "./article-outline-resize-handle";
 import { ArticleSidebarResizeHandle } from "./article-sidebar-resize-handle";
 import {
   copiedTemplateManifest,
@@ -203,6 +211,8 @@ export function ArticleWorkbench() {
       token: "browser-session",
       url: `${protocol}//${window.location.host}/api/projects/${encodeURIComponent(project.id)}/article/collaboration`,
     });
+    const unregisterCollaborationProvider =
+      registerArticleCollaborationProvider(project.id, next);
     const offline = () => setConnection("offline");
     const online = () => {
       setConnection(WebSocketStatus.Connecting);
@@ -212,6 +222,7 @@ export function ArticleWorkbench() {
     window.addEventListener("online", online);
     setProvider(next);
     return () => {
+      unregisterCollaborationProvider();
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);
       next.destroy();
@@ -252,8 +263,11 @@ export function ArticleWorkbench() {
 
   const data = aggregate.data;
   return (
-    <section className="space-y-5" aria-labelledby="article-title">
-      <header className="flex flex-wrap items-start gap-4">
+    <section
+      className="flex h-full min-h-0 flex-1 flex-col gap-3"
+      aria-labelledby="article-title"
+    >
+      <header className="flex shrink-0 flex-wrap items-start gap-4">
         <div className="flex size-10 items-center justify-center rounded-lg border bg-card shadow-xs">
           <FilePenLine className="size-5" />
         </div>
@@ -274,7 +288,7 @@ export function ArticleWorkbench() {
 
       <nav
         aria-label="论文工作区"
-        className="flex flex-wrap gap-2 border-b pb-3"
+        className="flex shrink-0 flex-wrap gap-2 border-b pb-2"
       >
         {(
           [
@@ -295,12 +309,16 @@ export function ArticleWorkbench() {
       </nav>
 
       {error ? (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+        <div className="shrink-0 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           <CircleAlert className="size-4" />
           {error}
         </div>
       ) : null}
-      <ArticleAggregateWarnings warnings={data.warnings} />
+      {data?.warnings?.length ? (
+        <div className="shrink-0">
+          <ArticleAggregateWarnings warnings={data.warnings} />
+        </div>
+      ) : null}
       {tab === "write" ? (
         <WritingWorkspace
           canEdit={canEdit}
@@ -309,6 +327,7 @@ export function ArticleWorkbench() {
           collaborator={collaborator}
           data={data}
           onFlush={forceFlush}
+          onOpenHistory={() => setTab("history")}
           onRefresh={refresh}
           onOpenTemplates={() => setTab("templates")}
           provider={provider}
@@ -336,13 +355,14 @@ export function ArticleWorkbench() {
   );
 }
 
-function WritingWorkspace({
+export function WritingWorkspace({
   canBuild,
   canEdit,
   canRelease,
   collaborator,
   data,
   onFlush,
+  onOpenHistory,
   onOpenTemplates,
   onRefresh,
   provider,
@@ -354,6 +374,7 @@ function WritingWorkspace({
   collaborator: { color: string; name: string };
   data: ArticleAggregate;
   onFlush: () => void;
+  onOpenHistory: () => void;
   onOpenTemplates: () => void;
   onRefresh: () => Promise<void>;
   provider?: HocuspocusProvider;
@@ -363,7 +384,7 @@ function WritingWorkspace({
     "reference" | "artifact" | "zotero" | "pdf"
   >("reference");
   const [collapsed, setCollapsed] = useState(false);
-  const [width, setWidth] = useState(articleSidebarDefaultWidth);
+  const [sidebarRatio, setSidebarRatio] = useState(articleSidebarDefaultRatio);
   const [outline, setOutline] = useState<ArticleOutlineItem[]>([]);
   const [activeOutlineId, setActiveOutlineId] = useState("");
   const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(
@@ -373,12 +394,40 @@ function WritingWorkspace({
     "experiment_result" | "model_snapshot" | "problem"
   >("model_snapshot");
   const [commitOpen, setCommitOpen] = useState(false);
+  const [immersive, setImmersive] = useState(false);
+  const [outlineHeight, setOutlineHeight] = useState(
+    articleOutlineDefaultHeight,
+  );
   const projectId = data.draft.project_id;
-  const widthPreferenceKey = `mmdash-article-sidebar-width:${projectId}`;
+  const ratioPreferenceKey = `mmdash-article-sidebar-ratio:${projectId}`;
+  const outlineHeightPreferenceKey = `mmdash-article-outline-height:${projectId}`;
+
   useEffect(() => {
-    const saved = Number(window.localStorage.getItem(widthPreferenceKey));
-    if (Number.isFinite(saved)) setWidth(clampArticleSidebarWidth(saved));
-  }, [widthPreferenceKey]);
+    if (!immersive) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setImmersive(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [immersive]);
+  useEffect(() => {
+    const rawRatio = window.localStorage.getItem(ratioPreferenceKey);
+    if (rawRatio !== null && rawRatio !== "") {
+      const parsed = Number(rawRatio);
+      if (Number.isFinite(parsed)) {
+        const normalized = parsed > 1 ? parsed / 1280 : parsed;
+        setSidebarRatio(clampArticleSidebarRatio(normalized));
+      }
+    }
+    const rawHeight = window.localStorage.getItem(outlineHeightPreferenceKey);
+    if (rawHeight !== null && rawHeight !== "") {
+      const savedHeight = Number(rawHeight);
+      if (Number.isFinite(savedHeight))
+        setOutlineHeight(clampArticleOutlineHeight(savedHeight));
+    }
+  }, [outlineHeightPreferenceKey, ratioPreferenceKey]);
   useEffect(() => {
     const openArtifact = () => {
       setCollapsed(false);
@@ -413,10 +462,15 @@ function WritingWorkspace({
       window.removeEventListener(articleOutlineActiveEvent, activate);
   }, []);
   const visibleOutline = visibleArticleOutline(outline, collapsedOutlineIds);
-  const persistSidebarWidth = (next: number) => {
-    const normalized = clampArticleSidebarWidth(next);
-    setWidth(normalized);
-    window.localStorage.setItem(widthPreferenceKey, String(normalized));
+  const persistSidebarRatio = (next: number) => {
+    const normalized = clampArticleSidebarRatio(next);
+    setSidebarRatio(normalized);
+    window.localStorage.setItem(ratioPreferenceKey, String(normalized));
+  };
+  const persistOutlineHeight = (next: number) => {
+    const normalized = clampArticleOutlineHeight(next);
+    setOutlineHeight(normalized);
+    window.localStorage.setItem(outlineHeightPreferenceKey, String(normalized));
   };
   const insertArtifact = useCallback(
     async (artifact: ArticleArtifactDrop) => {
@@ -472,14 +526,41 @@ function WritingWorkspace({
   );
   return (
     <>
-      <div className="flex min-h-[44rem] gap-3">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 gap-3",
+          immersive
+            ? "fixed inset-0 z-50 h-screen w-screen overflow-hidden bg-background p-2.5 md:p-3"
+            : "h-full w-full",
+        )}
+        data-article-workbench-container
+      >
         <aside
-          className={`relative flex h-[44rem] shrink-0 flex-col overflow-hidden rounded-lg border bg-card ${collapsed ? "w-12" : ""}`}
-          style={collapsed ? undefined : { width }}
+          className={cn(
+            "relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border bg-card",
+            collapsed ? "w-12" : "",
+          )}
+          style={
+            collapsed
+              ? undefined
+              : {
+                  maxWidth: `calc(100% - ${articleEditorMinWidth}px)`,
+                  minWidth: articleSidebarMinWidth,
+                  width: `${sidebarRatio * 100}%`,
+                }
+          }
         >
-          <div className="flex items-center gap-1 overflow-x-auto border-b p-2">
-            {!collapsed
-              ? (
+          <div className="flex shrink-0 items-center border-b p-2 gap-1">
+            {!collapsed ? (
+              <div
+                className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                onWheel={(event) => {
+                  if (event.deltaY !== 0) {
+                    event.currentTarget.scrollLeft += event.deltaY;
+                  }
+                }}
+              >
+                {(
                   [
                     ["reference", "参考"],
                     ["artifact", "Artifact"],
@@ -488,6 +569,7 @@ function WritingWorkspace({
                   ] as const
                 ).map(([value, label]) => (
                   <Button
+                    className="shrink-0"
                     key={value}
                     onClick={() => setPanel(value)}
                     size="sm"
@@ -495,13 +577,14 @@ function WritingWorkspace({
                   >
                     {label}
                   </Button>
-                ))
-              : null}
+                ))}
+              </div>
+            ) : null}
             <Button
               aria-label={collapsed ? "展开左栏" : "折叠左栏"}
-              className="ml-auto"
+              className={cn("shrink-0", collapsed ? "mx-auto" : "ml-auto")}
               onClick={() => setCollapsed((value) => !value)}
-              size="sm"
+              size={collapsed ? "icon" : "sm"}
               variant="ghost"
             >
               {collapsed ? (
@@ -524,140 +607,169 @@ function WritingWorkspace({
             </Button>
           ) : null}
           {!collapsed ? (
-            <div className="min-h-0 flex-1 overflow-auto p-3">
-              {panel === "reference" ? (
-                <ArticleReferencePanel
-                  canEdit={canEdit}
-                  data={data}
-                  initialKind={referenceKind}
-                  onRefresh={onRefresh}
-                />
-              ) : null}
-              {panel === "artifact" ? (
-                <ArtifactPanel canEdit={canEdit} projectId={projectId} />
-              ) : null}
-              {panel === "zotero" ? (
-                <WritingZoteroPanel
-                  canEdit={canEdit}
-                  data={data}
-                  onRefresh={onRefresh}
-                  projectId={projectId}
-                />
-              ) : null}
-              {panel === "pdf" ? (
-                <WritingPDFPanel
-                  canBuild={canBuild}
-                  data={data}
-                  onRefresh={onRefresh}
-                  projectId={projectId}
-                />
-              ) : null}
-            </div>
-          ) : null}
-          {!collapsed ? (
-            <nav
-              aria-label="论文目录"
-              className="h-52 shrink-0 overflow-auto border-t p-3"
-            >
-              <p className="mb-2 text-xs font-medium">目录</p>
-              {outline.length ? (
-                <div className="grid gap-0.5">
-                  {visibleOutline.map((item) => {
-                    const itemIndex = outline.indexOf(item);
-                    const hasChildren =
-                      (outline[itemIndex + 1]?.level ?? 0) > item.level;
-                    const folded = collapsedOutlineIds.has(item.id);
-                    return (
-                      <div className="flex min-w-0 items-center" key={item.id}>
-                        <button
-                          aria-label={folded ? "展开章节" : "折叠章节"}
-                          className={`flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted ${hasChildren ? "visible" : "invisible"}`}
-                          onClick={() =>
-                            setCollapsedOutlineIds((current) => {
-                              const next = new Set(current);
-                              if (next.has(item.id)) next.delete(item.id);
-                              else next.add(item.id);
-                              return next;
-                            })
-                          }
-                          style={{
-                            marginLeft: `${Math.max(0, item.level - 1) * 0.65}rem`,
-                          }}
-                          type="button"
+            <>
+              <div
+                className={cn(
+                  "min-h-0 flex-1 overflow-auto p-3",
+                  ["pdf", "reference"].includes(panel) &&
+                    "flex flex-col overflow-hidden",
+                )}
+              >
+                {panel === "reference" ? (
+                  <ArticleReferencePanel
+                    canEdit={canEdit}
+                    data={data}
+                    initialKind={referenceKind}
+                    onRefresh={onRefresh}
+                  />
+                ) : null}
+                {panel === "artifact" ? (
+                  <ArtifactPanel canEdit={canEdit} projectId={projectId} />
+                ) : null}
+                {panel === "zotero" ? (
+                  <WritingZoteroPanel
+                    canEdit={canEdit}
+                    data={data}
+                    onRefresh={onRefresh}
+                    projectId={projectId}
+                  />
+                ) : null}
+                {panel === "pdf" ? (
+                  <WritingPDFPanel
+                    canBuild={canBuild}
+                    data={data}
+                    onRefresh={onRefresh}
+                    projectId={projectId}
+                  />
+                ) : null}
+              </div>
+              <ArticleOutlineResizeHandle
+                height={outlineHeight}
+                onResize={setOutlineHeight}
+                onResizeEnd={persistOutlineHeight}
+              />
+              <nav
+                aria-label="论文目录"
+                className="shrink-0 min-h-0 overflow-auto p-3"
+                style={{ height: outlineHeight }}
+              >
+                <p className="mb-2 text-xs font-medium">目录</p>
+                {outline.length ? (
+                  <div className="grid gap-0.5">
+                    {visibleOutline.map((item) => {
+                      const itemIndex = outline.indexOf(item);
+                      const hasChildren =
+                        (outline[itemIndex + 1]?.level ?? 0) > item.level;
+                      const folded = collapsedOutlineIds.has(item.id);
+                      return (
+                        <div
+                          className="flex min-w-0 items-center"
+                          key={item.id}
                         >
-                          {folded ? (
-                            <ChevronRight className="size-3" />
-                          ) : (
-                            <ChevronDown className="size-3" />
-                          )}
-                        </button>
-                        <button
-                          aria-current={
-                            activeOutlineId === item.id ? "location" : undefined
-                          }
-                          className="min-w-0 flex-1 truncate rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=location]:bg-primary/10 aria-[current=location]:font-medium aria-[current=location]:text-foreground"
-                          onClick={() =>
-                            window.dispatchEvent(
-                              new CustomEvent(articleOutlineNavigateEvent, {
-                                detail: { id: item.id },
-                              }),
-                            )
-                          }
-                          title={item.text}
-                          type="button"
-                        >
-                          {item.text}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  添加标题后将在此生成目录
-                </p>
-              )}
-            </nav>
+                          <button
+                            aria-label={folded ? "展开章节" : "折叠章节"}
+                            className={`flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted ${hasChildren ? "visible" : "invisible"}`}
+                            onClick={() =>
+                              setCollapsedOutlineIds((current) => {
+                                const next = new Set(current);
+                                if (next.has(item.id)) next.delete(item.id);
+                                else next.add(item.id);
+                                return next;
+                              })
+                            }
+                            style={{
+                              marginLeft: `${Math.max(0, item.level - 1) * 0.65}rem`,
+                            }}
+                            type="button"
+                          >
+                            {folded ? (
+                              <ChevronRight className="size-3" />
+                            ) : (
+                              <ChevronDown className="size-3" />
+                            )}
+                          </button>
+                          <button
+                            aria-current={
+                              activeOutlineId === item.id
+                                ? "location"
+                                : undefined
+                            }
+                            className="min-w-0 flex-1 truncate rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=location]:bg-primary/10 aria-[current=location]:font-medium aria-[current=location]:text-foreground"
+                            onClick={() =>
+                              window.dispatchEvent(
+                                new CustomEvent(articleOutlineNavigateEvent, {
+                                  detail: { id: item.id },
+                                }),
+                              )
+                            }
+                            title={item.text}
+                            type="button"
+                          >
+                            {item.text}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    添加标题后将在此生成目录
+                  </p>
+                )}
+              </nav>
+            </>
           ) : null}
           {!collapsed ? (
             <ArticleSidebarResizeHandle
-              onResize={setWidth}
-              onResizeEnd={persistSidebarWidth}
-              width={width}
+              onResize={setSidebarRatio}
+              onResizeEnd={persistSidebarRatio}
+              ratio={sidebarRatio}
             />
           ) : null}
         </aside>
-        <main className="min-w-0 flex-1 space-y-3">
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
-            <Badge>草稿 r{data.draft.draft_revision}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {data.unreviewed_blocks} 个未审阅块 · 完成度{" "}
-              {Math.round(data.section_completion * 100)}%
-            </span>
-            <Button
-              className="ml-auto"
-              disabled={!canEdit || !synced}
-              onClick={() => setCommitOpen(true)}
-              size="sm"
-            >
-              Commit…
-            </Button>
-          </div>
+        <main
+          className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-2.5"
+          style={{ minWidth: articleEditorMinWidth }}
+        >
+          {!immersive ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
+              <Badge>草稿 r{data.draft.draft_revision}</Badge>
+              <span className="text-xs text-muted-foreground">
+                {data.unreviewed_blocks} 个未审阅块 · 完成度{" "}
+                {Math.round(data.section_completion * 100)}%
+              </span>
+              <Button
+                className="ml-auto"
+                disabled={!canEdit || !synced}
+                onClick={() => setCommitOpen(true)}
+                size="sm"
+              >
+                Commit…
+              </Button>
+            </div>
+          ) : null}
           {provider && synced ? (
-            <ArticleEditor
-              blocks={data.draft.blocks}
-              canEdit={canEdit}
-              chapterTags={data.chapter_tags}
-              collaborator={collaborator}
-              onFlush={onFlush}
-              onInsertArtifact={insertArtifact}
-              onInsertZotero={insertZotero}
-              onOutlineChange={setOutline}
-              onReviewBlock={reviewBlock}
-              onReviewChapter={reviewChapter}
-              projectId={projectId}
-              provider={provider}
-            />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ArticleEditor
+                blocks={data.draft.blocks}
+                canCommit={canEdit && synced}
+                canEdit={canEdit}
+                chapterTags={data.chapter_tags}
+                collaborator={collaborator}
+                draftRevision={data.draft.draft_revision}
+                immersive={immersive}
+                onFlush={onFlush}
+                onInsertArtifact={insertArtifact}
+                onInsertZotero={insertZotero}
+                onOpenCommit={() => setCommitOpen(true)}
+                onOutlineChange={setOutline}
+                onReviewBlock={reviewBlock}
+                onReviewChapter={reviewChapter}
+                onToggleImmersive={() => setImmersive((value) => !value)}
+                projectId={projectId}
+                provider={provider}
+              />
+            </div>
           ) : (
             <LoadingState label="正在同步协同草稿…" />
           )}
@@ -669,6 +781,7 @@ function WritingWorkspace({
           canRelease={canRelease}
           data={data}
           onClose={() => setCommitOpen(false)}
+          onOpenHistory={onOpenHistory}
           onOpenTemplates={() => {
             setCommitOpen(false);
             onOpenTemplates();
@@ -1090,24 +1203,44 @@ function WritingPDFPanel({
 }>) {
   const template = data.templates.find((item) => item.status === "ready");
   const latest = data.builds.find((item) => item.build_kind === "preview");
-  const pdf = latest?.outputs.find((item) => item.role === "pdf");
-  const [url, setURL] = useState<string>();
+  const latestSuccessful = latestSuccessfulArticlePreview(data.builds);
+  const pdf = latestSuccessful?.outputs.find((item) => item.role === "pdf");
+  const latestLog = latest?.outputs.find((item) => item.role === "log");
+  const [transfer, setTransfer] = useState<{
+    headers: Record<string, string>;
+    url: string;
+  }>();
+  const [readError, setReadError] = useState<string>();
   useEffect(() => {
+    let active = true;
+    setTransfer(undefined);
+    setReadError(undefined);
     if (!pdf) {
-      setURL(undefined);
-      return;
+      return () => {
+        active = false;
+      };
     }
     void artifactApi
       .download(projectId, pdf.artifact_id, pdf.version_id)
-      .then((grant) => setURL(grant.transfer.url));
+      .then((grant) => {
+        if (active) setTransfer(grant.transfer);
+      })
+      .catch((error: unknown) => {
+        if (active)
+          setReadError(
+            error instanceof Error ? error.message : "草稿 PDF 读取失败",
+          );
+      });
+    return () => {
+      active = false;
+    };
   }, [pdf, projectId]);
   const preview = useMutation({
     mutationFn: async () => {
       if (!template) throw new Error("没有可用模板");
-      const draft = await articleApi.flush(projectId);
       return articleApi.createPreview(projectId, {
         bibliography_tool: "auto",
-        draft_revision: draft.draft_revision,
+        draft_revision: data.draft.draft_revision,
         engine: "auto",
         template_id: template.template_id,
       });
@@ -1115,32 +1248,63 @@ function WritingPDFPanel({
     onSuccess: onRefresh,
   });
   return (
-    <div className="space-y-3">
-      <Button
-        className="w-full"
-        disabled={!canBuild || !template || preview.isPending}
-        onClick={() => preview.mutate()}
-        variant="outline"
-      >
-        手动生成当前草稿 PDF
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        仅保留最新草稿预览，不进入正式 Build 历史，也不能创建 Release。
-      </p>
-      {latest ? <BuildStatus status={latest.status} /> : null}
-      {preview.error ? (
-        <p className="text-xs text-destructive">{preview.error.message}</p>
-      ) : null}
-      {url ? (
-        <iframe
-          className="h-[34rem] w-full rounded-md border"
-          src={url}
-          title="最新草稿 PDF 预览"
-        />
-      ) : (
-        <Empty label="尚无可用草稿 PDF" />
-      )}
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="shrink-0 space-y-3">
+        <Button
+          className="w-full"
+          disabled={!canBuild || !template || preview.isPending}
+          onClick={() => preview.mutate()}
+          variant="outline"
+        >
+          手动生成当前草稿 PDF
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          仅保留最新草稿预览，不进入正式 Build 历史，也不能创建 Release。
+        </p>
+        {latest ? <BuildProgress build={latest} /> : null}
+        {latest?.error_message ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+            <p className="font-medium">
+              {latest.error_code || "ARTICLE_BUILD_FAILED"}
+            </p>
+            <p className="mt-1">{latest.error_message}</p>
+          </div>
+        ) : null}
+        {latestLog ? (
+          <OutputButton output={latestLog} projectId={projectId} />
+        ) : null}
+        {preview.error ? (
+          <p className="text-xs text-destructive">{preview.error.message}</p>
+        ) : null}
+        {readError ? (
+          <p className="text-xs text-destructive">{readError}</p>
+        ) : null}
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden rounded-md border bg-muted/20">
+        {transfer ? (
+          <PDFReader
+            className="block h-full min-h-0 w-full border-0"
+            title={`草稿 r${latestSuccessful?.draft_revision ?? ""} PDF 预览`}
+            transfer={transfer}
+          />
+        ) : latestSuccessful?.status === "succeeded" && pdf ? (
+          <LoadingState label="正在读取草稿 PDF…" />
+        ) : (
+          <Empty label="尚无可用草稿 PDF" />
+        )}
+      </div>
     </div>
+  );
+}
+
+export function latestSuccessfulArticlePreview(
+  builds: ArticleBuild[],
+): ArticleBuild | undefined {
+  return builds.find(
+    (build) =>
+      build.build_kind === "preview" &&
+      build.status === "succeeded" &&
+      build.outputs.some((output) => output.role === "pdf"),
   );
 }
 
@@ -1160,6 +1324,7 @@ export function CommitDialog({
   canRelease,
   data,
   onClose,
+  onOpenHistory,
   onOpenTemplates,
   onRefresh,
 }: Readonly<{
@@ -1167,6 +1332,7 @@ export function CommitDialog({
   canRelease: boolean;
   data: ArticleAggregate;
   onClose: () => void;
+  onOpenHistory: () => void;
   onOpenTemplates: () => void;
   onRefresh: () => Promise<void>;
 }>) {
@@ -1190,6 +1356,7 @@ export function CommitDialog({
     onSuccess: async () => {
       await onRefresh();
       onClose();
+      onOpenHistory();
     },
   });
   const publish = useMutation({
@@ -1210,6 +1377,7 @@ export function CommitDialog({
     onSuccess: async () => {
       await onRefresh();
       onClose();
+      onOpenHistory();
     },
   });
   const error = commit.error ?? publish.error;
@@ -1394,10 +1562,9 @@ function BuildWorkspace({
   const action = useMutation({
     mutationFn: async (kind: "preview" | "formal") => {
       if (kind === "preview") {
-        const draft = await articleApi.flush(projectId);
         return articleApi.createPreview(projectId, {
           bibliography_tool: "auto",
-          draft_revision: draft.draft_revision,
+          draft_revision: data.draft.draft_revision,
           engine: "auto",
           template_id: templateId,
         });
@@ -1548,6 +1715,7 @@ function BuildCard({
           {build.engine} · {build.bibliography_tool} · template{" "}
           {build.template_version_id.slice(0, 8)}
         </p>
+        <BuildProgress build={build} />
         {build.error_message ? (
           <p className="mt-2 text-sm text-destructive">
             {build.error_code}: {build.error_message}
@@ -1873,7 +2041,7 @@ function ReleaseDetail({
                     size="sm"
                     variant="outline"
                   >
-                    {outputIcon(role)}下载 {role}
+                    {outputIcon(role)}下载 {outputLabel(role)}
                   </Button>
                 ) : null,
             )}
@@ -2400,7 +2568,7 @@ function OutputButton({
       variant="outline"
     >
       <Download className="size-3.5" />
-      {output.role}
+      {outputLabel(output.role)}
     </Button>
   );
 }
@@ -2448,6 +2616,55 @@ function BuildStatus({ status }: Readonly<{ status: ArticleBuild["status"] }>) {
       {status}
     </Badge>
   );
+}
+
+const buildStageLabels: Record<ArticleBuild["progress_stage"], string> = {
+  queued: "等待 Worker",
+  preparing: "准备模板",
+  resources: "整理图片与引用",
+  converting: "生成 TeX 目录",
+  compiling: "编译 PDF",
+  packaging: "打包 TeX 源码",
+  uploading: "归档构建产物",
+  completed: "构建完成",
+  failed: "构建失败",
+  superseded: "已被新预览取代",
+};
+
+export function BuildProgress({ build }: Readonly<{ build: ArticleBuild }>) {
+  const value = Math.max(0, Math.min(100, build.progress_percent));
+  return (
+    <div className="mt-3 space-y-1.5" data-article-build-progress>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">
+          {buildStageLabels[build.progress_stage] ?? build.progress_stage}
+        </span>
+        <span className="font-mono tabular-nums">{value}%</span>
+      </div>
+      <div
+        aria-label="论文编译进度"
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={value}
+        className="h-2 overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+      >
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ${build.status === "failed" ? "bg-destructive" : "bg-primary"}`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function outputLabel(role: ArticleBuildOutput["role"]): string {
+  if (role === "pdf") return "PDF";
+  if (role === "source_zip") return "TeX 源码 ZIP";
+  if (role === "tex_source") return "主 TeX 文件";
+  if (role === "build_report") return "构建报告";
+  if (role === "synctex") return "SyncTeX 映射";
+  return "构建日志";
 }
 function Empty({ label }: Readonly<{ label: string }>) {
   return (

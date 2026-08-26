@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PDFReader } from "@/components/ui/pdf-reader";
 import { useCurrentProject } from "@/components/providers/project-provider";
 
 import { artifactApi } from "./artifact-api";
@@ -519,6 +520,13 @@ function PreviewPanel({
             width={900}
           />
         </div>
+      ) : null}
+      {primary?.preview_type === "pdf" && preview?.transfer ? (
+        <PDFReader
+          className="mt-3 block h-[calc(100vh-20rem)] min-h-[28rem] w-full rounded-xl border border-border bg-muted/20"
+          title={`${artifactId} v${version.version_no} PDF 预览`}
+          transfer={preview.transfer}
+        />
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {preview?.transfer ? (

@@ -24,7 +24,9 @@ is reported to Core without terminating the Worker polling loop.
 Aggregate reads idempotently provision the deterministic
 `mmdash 默认论文模板` as a protected system Artifact. The ZIP contains a
 versioned manifest and a XeLaTeX `ctexart` entrypoint with math, images,
-`booktabs`, and Pandoc-generated content support. It is not eligible for normal
+`booktabs`, and Pandoc-generated content support. Generated TeX and bibliography
+targets use ordinary relative filenames so they remain readable under the
+Worker's paranoid TeX file-access policy. It is not eligible for normal
 Preview/Build selection until its automatic template-test Build succeeds.
 Ordinary template update, version initialization, trash, restore, and purge
 operations reject this protected Artifact; users register a separate template

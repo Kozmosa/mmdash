@@ -51,3 +51,13 @@ export function imageAlignmentStyle(value: unknown) {
       alignment === "left" ? "auto" : alignment === "center" ? "auto" : "0",
   };
 }
+
+export function isImageArtifact(payload: {
+  filename?: string;
+  mimeType?: string;
+  title?: string;
+}): boolean {
+  if (payload.mimeType?.startsWith("image/")) return true;
+  const name = (payload.filename || payload.title || "").toLowerCase();
+  return /\.(png|jpe?g|gif|webp|svg|bmp|tiff?|ico)$/i.test(name);
+}

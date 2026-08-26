@@ -1,5 +1,9 @@
 import type { Editor } from "@tiptap/core";
-import { isNodeRangeSelection } from "@tiptap/extension-node-range";
+import {
+  isNodeRangeSelection,
+  NodeRangeSelection,
+} from "@tiptap/extension-node-range";
+import { Fragment } from "@tiptap/pm/model";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 
@@ -220,6 +224,76 @@ export function moveArticleBlock(
       .scrollIntoView();
     editor.view.dispatch(transaction);
   }
+  editor.view.focus();
+  return true;
+}
+
+/**
+ * Move a contiguous range of top-level blocks [rangeFrom, rangeTo) to a
+ * target insertion position. Used by multi-block drag-and-drop.
+ *
+ * `targetPos` is the document offset where the blocks should be inserted
+ * (before that position). Returns false if the move is a no-op or invalid.
+ */
+export function moveArticleBlockRange(
+  editor: Editor,
+  rangeFrom: number,
+  rangeTo: number,
+  targetPos: number,
+) {
+  const { doc } = editor.state;
+  if (rangeFrom >= rangeTo) return false;
+  if (rangeFrom < 0 || rangeTo > doc.content.size) return false;
+  // No-op: target is inside the range being dragged
+  if (targetPos >= rangeFrom && targetPos <= rangeTo) return false;
+
+  // Collect the nodes in the range
+  const nodes: import("@tiptap/pm/model").Node[] = [];
+  doc.nodesBetween(rangeFrom, rangeTo, (node, pos) => {
+    if (doc.resolve(pos).depth === 0) {
+      nodes.push(node);
+      return false; // don't descend
+    }
+  });
+  if (nodes.length === 0) return false;
+
+  const fragment = Fragment.from(nodes);
+  const rangeSize = rangeTo - rangeFrom;
+
+  let tr = editor.state.tr;
+
+  if (targetPos < rangeFrom) {
+    // Moving up: insert first, then delete old range (which shifted right)
+    tr = tr.insert(targetPos, fragment);
+    // After insert, the old range shifted by the inserted size
+    tr = tr.delete(rangeFrom + rangeSize, rangeTo + rangeSize);
+    // Select the moved blocks at target
+    tr = tr.setSelection(
+      NodeRangeSelection.create(
+        tr.doc,
+        targetPos,
+        targetPos + rangeSize,
+        0,
+      ),
+    );
+  } else {
+    // Moving down: delete first, then insert at adjusted position
+    tr = tr.delete(rangeFrom, rangeTo);
+    // After delete, targetPos shifted left by the deleted size
+    const adjustedTarget = targetPos - rangeSize;
+    tr = tr.insert(adjustedTarget, fragment);
+    tr = tr.setSelection(
+      NodeRangeSelection.create(
+        tr.doc,
+        adjustedTarget,
+        adjustedTarget + rangeSize,
+        0,
+      ),
+    );
+  }
+
+  tr.scrollIntoView();
+  editor.view.dispatch(tr);
   editor.view.focus();
   return true;
 }

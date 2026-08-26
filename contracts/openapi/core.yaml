@@ -5276,6 +5276,24 @@ paths:
                   schema: { $ref: "#/components/schemas/ArticleBuildJobInput" },
                 },
             }
+  /v1/internal/article-build-jobs/{jobId}/progress:
+    parameters: [{ $ref: "#/components/parameters/JobId" }]
+    post:
+      tags: [Article, Jobs]
+      summary: Persist monotonic progress for a claimed Article build Job
+      operationId: article.build_jobs.progress.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateArticleBuildProgressRequest"
+      responses:
+        "200":
+          description: Updated Article build.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleBuild" }
   /v1/internal/article-build-jobs/{jobId}/outputs/{role}:
     parameters:
       - { $ref: "#/components/parameters/JobId" }
@@ -6115,6 +6133,25 @@ components:
     ArticleBuildOutputRole:
       type: string
       enum: [pdf, tex_source, source_zip, build_report, log, synctex]
+    UpdateArticleBuildProgressRequest:
+      type: object
+      additionalProperties: false
+      required: [progress_percent, progress_stage]
+      properties:
+        progress_percent: { type: integer, minimum: 5, maximum: 95 }
+        progress_stage:
+          {
+            type: string,
+            enum:
+              [
+                preparing,
+                resources,
+                converting,
+                compiling,
+                packaging,
+                uploading,
+              ],
+          }
     ArticleBuildOutput:
       type: object
       additionalProperties: false
@@ -6143,6 +6180,8 @@ components:
           engine,
           bibliography_tool,
           outputs,
+          progress_percent,
+          progress_stage,
           created_by,
           created_at,
           updated_at,
@@ -6170,6 +6209,24 @@ components:
           {
             type: array,
             items: { $ref: "#/components/schemas/ArticleBuildOutput" },
+          }
+        progress_percent: { type: integer, minimum: 0, maximum: 100 }
+        progress_stage:
+          {
+            type: string,
+            enum:
+              [
+                queued,
+                preparing,
+                resources,
+                converting,
+                compiling,
+                packaging,
+                uploading,
+                completed,
+                failed,
+                superseded,
+              ],
           }
         error_code: { type: string }
         error_message: { type: string }

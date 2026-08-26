@@ -9,11 +9,15 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from PIL import Image
 
 from mmdash_worker.article.handler import (
     ArticleBuildHandler,
     _CommandFailure,
+    _convert_resource_for_latex,
     _extract_template,
+    _replace_resource_references,
+    _resource_filename,
     _validate_template,
 )
 from mmdash_worker.jobs.handlers import HandlerContext, HandlerError
@@ -41,6 +45,16 @@ class FakeArticleClient:
     def __init__(self, template_zip: Path) -> None:
         self.template_zip = template_zip
         self.uploads: dict[str, bytes] = {}
+        self.progress: list[tuple[int, str]] = []
+
+    def update_article_build_progress(
+        self, _job_id: str, progress_percent: int, progress_stage: str
+    ) -> dict[str, Any]:
+        self.progress.append((progress_percent, progress_stage))
+        return {
+            "progress_percent": progress_percent,
+            "progress_stage": progress_stage,
+        }
 
     def get_article_build_input(self, _job_id: str) -> dict[str, Any]:
         return {
@@ -158,15 +172,16 @@ def test_successful_build_uploads_reproducible_overleaf_zip(tmp_path: Path) -> N
     ) -> str:
         del timeout, limits
         if arguments[0] == "pandoc":
-            assert (
-                "--from=markdown+tex_math_dollars+raw_tex+table_captions" in arguments
-            )
+            assert "--from=markdown+tex_math_dollars+raw_tex+table_captions" in arguments
             output = Path(arguments[arguments.index("--output") + 1])
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("Generated TeX", encoding="utf-8")
         else:
             (cwd / "paper.pdf").write_bytes(b"%PDF-1.7\narticle\n")
             (cwd / "main.synctex.gz").write_bytes(b"synctex")
+            cache = cwd / ".cache" / "fontconfig"
+            cache.mkdir(parents=True)
+            (cache / "generated.cache-8").write_bytes(b"host-specific-cache")
         return "$ " + " ".join(arguments) + "\nok"
 
     with (
@@ -186,6 +201,18 @@ def test_successful_build_uploads_reproducible_overleaf_zip(tmp_path: Path) -> N
         "log",
         "synctex",
     }
+    assert [percent for percent, _stage in client.progress] == sorted(
+        percent for percent, _stage in client.progress
+    )
+    assert {stage for _percent, stage in client.progress} == {
+        "preparing",
+        "resources",
+        "converting",
+        "compiling",
+        "packaging",
+        "uploading",
+    }
+    assert client.progress[-1] == (95, "uploading")
     source_zip = tmp_path / "result.zip"
     source_zip.write_bytes(client.uploads["source_zip"])
     with zipfile.ZipFile(source_zip) as archive:
@@ -203,6 +230,7 @@ def test_successful_build_uploads_reproducible_overleaf_zip(tmp_path: Path) -> N
             "CHECKSUMS.sha256",
             "README.md",
         } <= names
+        assert not any(name.startswith(".cache/") for name in names)
         assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist())
         checksums = archive.read("CHECKSUMS.sha256").decode()
         assert hashlib.sha256(archive.read("paper.pdf")).hexdigest() in checksums
@@ -238,6 +266,42 @@ def test_failed_build_archives_sanitized_log_before_failing(tmp_path: Path) -> N
     assert set(client.uploads) == {"log"}
     assert b"mmdash-article-" not in client.uploads["log"]
     assert b"$WORKDIR" in client.uploads["log"]
+
+
+def test_webp_resource_is_converted_to_latex_compatible_png(tmp_path: Path) -> None:
+    resource = {
+        "filename": "figure.webp",
+        "mime_type": "image/webp",
+    }
+    assert _resource_filename(7, resource) == "artifact-0007.png"
+    source = tmp_path / "artifact-0007.png"
+    with Image.new("RGBA", (4, 3), (25, 50, 75, 128)) as image:
+        image.save(source.with_suffix(".webp"), format="WEBP")
+    source.write_bytes(source.with_suffix(".webp").read_bytes())
+    source.with_suffix(".webp").unlink()
+
+    _convert_resource_for_latex(source, resource)
+
+    with Image.open(source) as converted:
+        assert converted.format == "PNG"
+        assert converted.size == (4, 3)
+        assert converted.mode == "RGBA"
+
+
+def test_webp_resource_paths_are_rewritten_even_for_legacy_markdown() -> None:
+    resource = {"filename": "figure.webp", "mime_type": "image/webp"}
+    manuscript = (
+        "![new](mmdash://artifact/artifact-7/versions/version-7)\n"
+        "![legacy](figures/artifact-0007.webp)\n"
+        "![named](./figures/figure.webp)\n"
+    )
+
+    rewritten = _replace_resource_references(
+        manuscript, 7, resource, "artifact-7", "version-7", "artifact-0007.png"
+    )
+
+    assert rewritten.count("figures/artifact-0007.png") == 3
+    assert ".webp" not in rewritten
 
 
 def test_build_rejects_toolchain_drift_before_running_template(tmp_path: Path) -> None:
