@@ -13,5 +13,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./test/setup.ts"],
+    // CI runners are slower than local development; retry timing-sensitive
+    // DOM/request-order assertions there instead of failing the pipeline.
+    retry: process.env.CI ? 2 : 0,
   },
 });

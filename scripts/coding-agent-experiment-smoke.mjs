@@ -1,7 +1,7 @@
 // Simulate a Coding Agent calling the Experiment MCP tools and completing one
 // Local Docker run.  Start the local development stack first:
 //
-//   .\.localscripts\dev.ps1
+//   node .localscripts\dev.mjs
 //
 // Then run this script from a second terminal.  The script creates a temporary
 // local Git remote and a project, prefers an already-online account-owned Box,
@@ -79,7 +79,7 @@ try {
   );
   assert(
     existsSync(boxBinary),
-    `Box binary not found at ${boxBinary}. Start .\\.localscripts\\dev.ps1 first or set MMDASH_ACCEPTANCE_BOX_BINARY.`,
+    `Box binary not found at ${boxBinary}. Start .localscripts\\dev.mjs first or set MMDASH_ACCEPTANCE_BOX_BINARY.`,
   );
   await checkHealth(`${coreUrl}/health/ready`, "Core");
   await checkHealth(`${bffUrl}/health/live`, "Web BFF");

@@ -111,16 +111,18 @@ NAT, private addresses, and loss of public inbound reachability are supported.
 
 ## Offline execution and durable spool
 
-Every claimed task has durable local state:
+Every claimed task has durable local state. The root `state.json` persists
+the durable identity and every task's phase, execution epoch and log sequence
+bookkeeping, acknowledged callbacks, bounded log spool, and Bundle/Manifest
+pointers; task outputs live under `outputs/`:
 
 ```text
-box-data/tasks/{task_id}/
-├── execution.json
-├── logs.spool
-├── log-offset.json
-├── manifest.json
-├── execution-bundle.zip
-└── callback-state.json
+{box root}
+├── state.json
+└── outputs/
+    ├── {task_id}/logs/stdout.log, stderr.log
+    ├── {task_id}/manifest.json
+    └── {task_id}-execution-bundle.zip
 ```
 
 Logs carry task ID, execution epoch, monotonic sequence, source timestamp,
@@ -131,7 +133,7 @@ Network loss never cancels a running Runtime. Gateway continues execution,
 spools logs/status/results, and resumes from Core's last acknowledgement after
 reconnect or process restart. When the configured local log budget is
 exhausted, Runtime continues, new log bytes are discarded, and Gateway durably
-records `logs_truncated=true`, truncation time, reason, and last sequence.
+records `logs_truncated=true`, truncation time, and last sequence.
 
 Core marks connectivity `box_offline` separately from execution phase. At 72
 hours offline it fails the Experiment with `BOX_OFFLINE_TIMEOUT`; late logs may
@@ -167,7 +169,9 @@ Adapters are compiled into Box but advertised only after availability probes.
 
 The Local Docker Adapter retains read-only source, dropped capabilities,
 `no-new-privileges`, CPU/memory/PID/time/network/disk bounds, a bounded output
-mount, and fixed ENTRYPOINT replacement. Docker socket access remains an
+mount, and fixed ENTRYPOINT replacement. On Windows Docker Desktop the disk
+bound is skipped because `--storage-opt` requires XFS project quotas; the
+output and log budgets guard disk usage there. Docker socket access remains an
 explicit high-privilege deployment choice.
 
 ## Environment preparation and Local Docker cache
@@ -175,8 +179,8 @@ explicit high-privilege deployment choice.
 `preparing` is a durable task phase owned by the Gateway. After a claim, the
 Gateway uses the short-lived, read-only `source_transfer` from Repo/Core to
 download the exact frozen `source_commit` into the Box host's task workspace.
-It verifies the Commit, transfer digest, and path boundaries before the
-workspace can be used. The Runtime never receives Git credentials and never
+It verifies the Commit, transfer URL expiry and size limits, and archive path
+boundaries before the workspace can be used. The Runtime never receives Git credentials and never
 clones the repository from inside a container. The verified source directory
 is mounted into the execution container as `/workspace:ro`; it is not copied
 into an environment image.
@@ -188,11 +192,11 @@ first complete Local Docker slice supports:
 
 Known but not yet implemented combinations such as `pyproject.toml` with
 `uv.lock`, Node lockfiles, `go.mod`/`go.sum`, and a controlled
-`.mmdash/environment.yaml` must fail with `ENVIRONMENT_MANIFEST_INVALID`
+`.mmdash/environment.yaml` must fail with `ENVIRONMENT_INVALID`
 instead of being ignored or interpreted heuristically. They can be added as
 separate builder versions with their own lockfile and integrity rules.
 
-Files outside this allowlist, arbitrary Dockerfiles, CI scripts, shell setup
+Other files, arbitrary Dockerfiles, CI scripts, shell setup
 commands, and unrecognized package-manager files do not affect preparation.
 Conflicting manifests fail preparation with an auditable reason instead of
 choosing implicitly.
@@ -210,7 +214,7 @@ package_index_configuration_version
 
 The key is scoped to the Box and its build configuration. A single-flight lock
 ensures concurrent tasks build one environment per key and wait for that
-result. The image is usable only after a successful build and minimal probe;
+result. The image is usable only after a successful build;
 the final image ID/digest and `last_used_at` are recorded. A failed build never
 replaces a previous ready image and never enters the reusable cache. Build and
 dependency-install output is emitted as `system` stream entries, persisted in
@@ -235,11 +239,12 @@ environment.builder_version
 environment.cache_hit
 ```
 
-For E2B, the final environment fields identify the configured Template and its
-version/digest. E2B always creates from a published Template and never invokes
-Local Docker's dynamic image builder or its local cache/GC path.
+E2B always creates from the configured published Template, records no dynamic
+environment fields, and never invokes Local Docker's dynamic image builder or
+its local cache/GC path.
 
-Box GC runs independently of task execution. It may delete only an image built
+Box GC runs during environment preparation and runtime probes. It may delete
+only an image built
 and marked as managed by that Box, using its exact image ID, when it has had no
 reference for four consecutive days. Images under build, running, uploading,
 or any other active task reference are retained. User-provided base images and

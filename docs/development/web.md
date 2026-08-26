@@ -9,11 +9,19 @@ Git, Hermes, or Box directly.
 | Route                               | Purpose                              |
 | ----------------------------------- | ------------------------------------ |
 | `/login`                            | Browser-authentication shell         |
+| `/register`                         | Account registration                 |
+| `/invite`                           | Project invitation acceptance        |
 | `/inbox`                            | Global unread/all/processed Inbox    |
 | `/inbox/[inboxItemId]`              | Controlled Inbox message detail      |
+| `/account`                          | Account profile and security         |
+| `/account/boxes`                    | Personal Box node management         |
+| `/cli/authorize`                    | CLI device authorization approval    |
+| `/downloads`                        | Public CLI and Box download center   |
 | `/projects`                         | Project-list shell                   |
+| `/projects/trash`                   | Project trash with 30-day retention  |
 | `/projects/[projectId]`             | Project workspace and home slot      |
 | `/projects/[projectId]/agent`       | mmdash Agent slot                    |
+| `/projects/[projectId]/artifacts`   | Project file library slot            |
 | `/projects/[projectId]/progress`    | Progress slot                        |
 | `/projects/[projectId]/models`      | Model slot                           |
 | `/projects/[projectId]/article`     | Article slot                         |
@@ -21,11 +29,11 @@ Git, Hermes, or Box directly.
 | `/projects/[projectId]/repository`  | Read-only managed Repository browser |
 | `/projects/[projectId]/settings`    | Module settings slots                |
 
-The canonical seven-item navigation registry is
+The canonical eight-item navigation registry is
 `apps/web/src/lib/navigation.ts`. A feature route must be registered there and
 tested before it appears in the sidebar.
 
-Inbox is global rather than one of the seven project modules. The shared
+Inbox is global rather than one of the eight navigation entries. The shared
 `InboxNavLink` renders the same icon-only link and unread badge in the global
 project-list header and project workspace navbar. Inbox copy comes from the
 Core-rendered snapshot; the browser does not derive arbitrary presentation

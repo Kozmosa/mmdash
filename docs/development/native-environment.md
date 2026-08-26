@@ -43,9 +43,10 @@ On Bash:
 ```
 
 `install` downloads the isolated toolchain and workspace dependencies.
-`check` runs the repository validation suite. `dev` runs in the foreground and
-starts PostgreSQL, MinIO, database migrations, Core, Web BFF, MCP Gateway, and
-Web. Once it reports that the environment is ready, open
+`check` runs the repository validation suite and `test` runs the full test
+suites, both through the isolated environment. `dev` runs in the foreground
+and starts PostgreSQL, MinIO, database migrations, Core, Web BFF, MCP Gateway,
+and Web. Once it reports that the environment is ready, open
 `http://127.0.0.1:13000`.
 
 The bootstrap account is:

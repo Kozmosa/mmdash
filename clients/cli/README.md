@@ -11,6 +11,9 @@ mmdash whoami
 mmdash project list
 mmdash project use <project_id>
 mmdash project current
+mmdash model list
+mmdash experiment list
+mmdash experiment run <experiment_id>
 mmdash config set-domain [domain]
 mmdash mcp
 mmdash doctor
