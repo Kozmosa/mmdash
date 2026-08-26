@@ -88,6 +88,9 @@ func (module Module) handleProjectResource(
 		return
 	}
 	switch remaining[0] {
+	case "folders":
+		module.handleFolders(response, request, identity, projectID, remaining[1:])
+		return
 	case "trash":
 		if len(remaining) == 1 {
 			module.handleCollection(response, request, identity, projectID, true)
@@ -105,6 +108,95 @@ func (module Module) handleProjectResource(
 		module.handleArtifact(
 			response, request, identity, projectID, remaining[0], remaining[1:],
 		)
+		return
+	}
+	writeArtifactError(response, request, ErrNotFound)
+}
+
+func (module Module) handleFolders(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+	segments []string,
+) {
+	if len(segments) == 0 {
+		switch request.Method {
+		case http.MethodGet:
+			tree, err := module.Service.ListFolders(request.Context(), identity, projectID)
+			if err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			httpx.WriteJSON(response, http.StatusOK, tree)
+		case http.MethodPost:
+			var body artifactFolderCreateRequest
+			if !httpx.DecodeJSON(response, request, &body) {
+				return
+			}
+			folder, err := module.Service.CreateFolder(request.Context(), identity, projectID, CreateFolderInput{
+				Name: body.Name, ParentFolderID: body.ParentFolderID,
+			})
+			if err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			httpx.WriteJSON(response, http.StatusCreated, folder)
+		default:
+			writeArtifactError(response, request, methodNotAllowed("GET, POST"))
+		}
+		return
+	}
+	if len(segments) == 1 {
+		folderID := segments[0]
+		switch request.Method {
+		case http.MethodPatch:
+			var body artifactFolderRenameRequest
+			if !httpx.DecodeJSON(response, request, &body) {
+				return
+			}
+			folder, err := module.Service.RenameFolder(request.Context(), identity, projectID, folderID, body.Name)
+			if err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			httpx.WriteJSON(response, http.StatusOK, folder)
+		case http.MethodDelete:
+			recursive := false
+			if raw := request.URL.Query().Get("recursive"); raw != "" {
+				parsed, parseErr := strconv.ParseBool(raw)
+				if parseErr != nil {
+					writeArtifactError(response, request, ErrInvalid)
+					return
+				}
+				recursive = parsed
+			}
+			if err := module.Service.DeleteFolder(request.Context(), identity, projectID, folderID, recursive); err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			response.WriteHeader(http.StatusNoContent)
+		default:
+			writeArtifactError(response, request, methodNotAllowed("PATCH, DELETE"))
+		}
+		return
+	}
+	if len(segments) == 2 && segments[1] == "move" && request.Method == http.MethodPost {
+		var body artifactFolderMoveRequest
+		if !httpx.DecodeJSON(response, request, &body) {
+			return
+		}
+		input, err := body.input()
+		if err != nil {
+			writeArtifactError(response, request, err)
+			return
+		}
+		folder, err := module.Service.MoveFolder(request.Context(), identity, projectID, segments[0], input)
+		if err != nil {
+			writeArtifactError(response, request, err)
+			return
+		}
+		httpx.WriteJSON(response, http.StatusOK, folder)
 		return
 	}
 	writeArtifactError(response, request, ErrNotFound)
@@ -341,6 +433,25 @@ func (module Module) handleArtifact(
 				return
 			}
 			httpx.WriteJSON(response, http.StatusAccepted, job)
+		}
+		return
+	case "folder":
+		if len(segments) == 1 && httpx.RequireMethod(response, request, http.MethodPut) {
+			var body artifactMoveFolderRequest
+			if !httpx.DecodeJSON(response, request, &body) {
+				return
+			}
+			folderID, err := body.folderID()
+			if err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			detail, err := module.Service.MoveArtifact(request.Context(), identity, projectID, artifactID, folderID)
+			if err != nil {
+				writeArtifactError(response, request, err)
+				return
+			}
+			httpx.WriteJSON(response, http.StatusOK, detail)
 		}
 		return
 	case "download":
@@ -692,6 +803,47 @@ type semanticDescriptionRequest struct {
 	AgentInstanceID string `json:"agent_instance_id,omitempty"`
 }
 
+type artifactFolderCreateRequest struct {
+	Name           string  `json:"name"`
+	ParentFolderID *string `json:"parent_folder_id"`
+}
+
+type artifactFolderRenameRequest struct {
+	Name string `json:"name"`
+}
+
+type artifactFolderMoveRequest struct {
+	ParentFolderID json.RawMessage `json:"parent_folder_id"`
+	Position       *int            `json:"position,omitempty"`
+}
+
+type artifactMoveFolderRequest struct {
+	FolderID json.RawMessage `json:"folder_id"`
+}
+
+func (body artifactFolderMoveRequest) input() (MoveFolderInput, error) {
+	parentID, err := nullableFolderID(body.ParentFolderID)
+	if err != nil {
+		return MoveFolderInput{}, err
+	}
+	return MoveFolderInput{ParentFolderID: parentID, Position: body.Position}, nil
+}
+
+func (body artifactMoveFolderRequest) folderID() (*string, error) {
+	return nullableFolderID(body.FolderID)
+}
+
+func nullableFolderID(raw json.RawMessage) (*string, error) {
+	if len(raw) == 0 {
+		return nil, ErrInvalid
+	}
+	var value *string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, ErrInvalid
+	}
+	return value, nil
+}
+
 func (body updateRequest) Validate() error {
 	if body.Name == nil && body.Kind == nil &&
 		body.Tags == nil && len(body.Description) == 0 {
@@ -823,6 +975,21 @@ func writeArtifactError(
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusConflict, "ARTIFACT_UPLOAD_CONFLICT",
 			"Artifact upload conflicts with current state",
+		))
+	case errors.Is(err, ErrFolderConflict):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict, "ARTIFACT_FOLDER_CONFLICT",
+			"Artifact folder name conflicts with a sibling folder",
+		))
+	case errors.Is(err, ErrFolderHasChildren):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict, "ARTIFACT_FOLDER_HAS_CHILDREN",
+			"Artifact folder has child folders and cannot be deleted",
+		))
+	case errors.Is(err, ErrFolderCycle):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusConflict, "ARTIFACT_FOLDER_CYCLE",
+			"Artifact folder cannot be moved below itself",
 		))
 	case errors.Is(err, ErrUploadExpired):
 		httpx.WriteError(response, request, apperror.New(

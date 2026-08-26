@@ -51,6 +51,7 @@ def main() -> None:
         experiment_result_timeout_seconds=float(
             os.environ.get("MMDASH_WORKER_EXPERIMENT_RESULT_TIMEOUT_SECONDS", "3600")
         ),
+        transfer_origin_override=os.environ.get("MMDASH_WORKER_TRANSFER_ORIGIN_OVERRIDE", ""),
     )
     runtime = WorkerRuntime(
         client,

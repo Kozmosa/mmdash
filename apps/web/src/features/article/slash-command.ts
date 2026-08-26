@@ -3,6 +3,8 @@ import { isChangeOrigin } from "@tiptap/extension-collaboration";
 import Suggestion, { type SuggestionProps } from "@tiptap/suggestion";
 
 export const openArtifactLibraryEvent = "mmdash:article-open-artifact";
+export const openArticleImageUploadEvent = "mmdash:article-upload-image";
+export const openArticleSidebarEvent = "mmdash:article-open-sidebar";
 
 type SlashItem = {
   action: (editor: Editor) => void;
@@ -90,10 +92,50 @@ const slashItems: SlashItem[] = [
     },
   },
   {
+    label: "图片",
+    keywords: "image upload paste 图片 上传",
+    action: () => {
+      window.dispatchEvent(new CustomEvent(openArticleImageUploadEvent));
+    },
+  },
+  {
     label: "Artifact 引用",
     keywords: "artifact file image 附件 图片",
     action: () => {
       window.dispatchEvent(new CustomEvent(openArtifactLibraryEvent));
+    },
+  },
+  {
+    label: "Model 引用",
+    keywords: "model snapshot 模型 快照 引用",
+    action: () => {
+      window.dispatchEvent(
+        new CustomEvent(openArticleSidebarEvent, {
+          detail: { panel: "reference", referenceKind: "model_snapshot" },
+        }),
+      );
+    },
+  },
+  {
+    label: "Experiment 引用",
+    keywords: "experiment result 实验 结果 引用",
+    action: () => {
+      window.dispatchEvent(
+        new CustomEvent(openArticleSidebarEvent, {
+          detail: { panel: "reference", referenceKind: "experiment_result" },
+        }),
+      );
+    },
+  },
+  {
+    label: "Zotero 引用",
+    keywords: "zotero citation reference 文献 引用",
+    action: () => {
+      window.dispatchEvent(
+        new CustomEvent(openArticleSidebarEvent, {
+          detail: { panel: "zotero" },
+        }),
+      );
     },
   },
 ];

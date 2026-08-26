@@ -1,12 +1,31 @@
+export type ArticleRenderTheme = "md" | "latex";
+
+export const ARTICLE_RENDER_THEME_EVENT = "mmdash:article-render-theme";
+
 export type ArticleBlock = {
   block_id: string;
   node_type: string;
   ordinal: number;
   text: string;
   attrs: Record<string, unknown>;
-  tag: "ai_draft" | "human_draft" | "ai_revision" | "human_revision" | "reviewed";
+  tag:
+    "ai_draft" | "human_draft" | "ai_revision" | "human_revision" | "reviewed";
   provenance: Record<string, unknown>;
   updated_at: string;
+};
+
+export type ArticleChapterTag = {
+  chapter_tag_id: string;
+  project_id: string;
+  heading_block_id: string;
+  status: "unedited" | "unreviewed" | "reviewed" | "needs_review";
+  heading_block_type: string;
+  heading_fingerprint: string;
+  stale_reason?: string;
+  updated_by: string;
+  updated_at: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
 };
 
 export type ArticleDraft = {
@@ -24,7 +43,8 @@ export type ArticleDraft = {
 export type ArticleReference = {
   reference_id: string;
   project_id: string;
-  reference_type: "problem" | "model_snapshot" | "experiment_result" | "artifact" | "zotero";
+  reference_type:
+    "problem" | "model_snapshot" | "experiment_result" | "artifact" | "zotero";
   source_object_id: string;
   source_version_id: string;
   title: string;
@@ -47,7 +67,8 @@ export type ArticleCommit = {
 };
 
 export type ArticleBuildOutput = {
-  role: "pdf" | "tex_source" | "source_zip" | "build_report" | "log" | "synctex";
+  role:
+    "pdf" | "tex_source" | "source_zip" | "build_report" | "log" | "synctex";
   artifact_id: string;
   version_id: string;
   filename: string;
@@ -140,6 +161,7 @@ export type ArticleTemplate = {
 
 export type ArticleAggregate = {
   draft: ArticleDraft;
+  chapter_tags: ArticleChapterTag[];
   references: ArticleReference[];
   commits: ArticleCommit[];
   builds: ArticleBuild[];
@@ -147,6 +169,19 @@ export type ArticleAggregate = {
   templates: ArticleTemplate[];
   unreviewed_blocks: number;
   section_completion: number;
+  warnings: {
+    code: "ARTICLE_COMPONENT_UNAVAILABLE";
+    component:
+      | "references"
+      | "commits"
+      | "builds"
+      | "releases"
+      | "templates"
+      | "chapter_tags"
+      | "templates.bootstrap"
+      | "chapter_tags.bootstrap";
+    message: string;
+  }[];
 };
 
 export type ZoteroBinding = {

@@ -2546,6 +2546,101 @@ paths:
             application/json:
               schema:
                 $ref: "./core.yaml#/components/schemas/ArtifactPage"
+  /api/projects/{projectId}/artifacts/folders:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Artifact]
+      summary: Read the complete Project Artifact folder tree
+      operationId: bff.artifact.folders.list
+      responses:
+        "200":
+          description: Project-scoped folder hierarchy.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactFolderTree"
+    post:
+      tags: [Artifact]
+      summary: Create a Project Artifact folder
+      operationId: bff.artifact.folders.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactFolderCreateRequest"
+      responses:
+        "201":
+          description: Created folder.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactFolder"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/artifacts/folders/{folderId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactFolderId"
+    patch:
+      tags: [Artifact]
+      summary: Rename a Project Artifact folder
+      operationId: bff.artifact.folders.rename
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactFolderRenameRequest"
+      responses:
+        "200":
+          description: Renamed folder.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactFolder"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Artifact]
+      summary: Delete a Project Artifact folder
+      description: Artifacts are always preserved at the project root. By default child folders conflict; recursive mode removes the whole descendant folder structure.
+      operationId: bff.artifact.folders.delete
+      parameters:
+        - name: recursive
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: Remove descendant folders as well, moving every contained Artifact to the project root.
+      responses:
+        "204":
+          description: Folder deleted.
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/projects/{projectId}/artifacts/folders/{folderId}/move:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactFolderId"
+    post:
+      tags: [Artifact]
+      summary: Move a Project Artifact folder or make it a root folder
+      operationId: bff.artifact.folders.move
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactFolderMoveRequest"
+      responses:
+        "200":
+          description: Moved folder.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactFolder"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/projects/{projectId}/artifacts/trash:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -2621,6 +2716,29 @@ paths:
       responses:
         "204":
           description: Artifact moved to trash.
+  /api/projects/{projectId}/artifacts/{artifactId}/folder:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    put:
+      tags: [Artifact]
+      summary: Move an Artifact to a folder or the project root
+      operationId: bff.artifact.folder.move
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/ArtifactMoveFolderRequest"
+      responses:
+        "200":
+          description: Artifact with its new folder assignment.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArtifactDetail"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/projects/{projectId}/artifacts/{artifactId}/versions:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -3691,6 +3809,103 @@ paths:
           content:
             application/json:
               schema: { $ref: "./core.yaml#/components/schemas/ArticleBlock" }
+  /api/projects/{projectId}/article/chapter-tags:
+    get:
+      tags: [Article]
+      operationId: bff.article.chapter_tags.list
+      summary: List independent chapter tags
+      parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+      responses:
+        "200":
+          description: Chapter tag list.
+          content:
+            application/json:
+              schema:
+                {
+                  $ref: "./core.yaml#/components/schemas/ArticleChapterTagList",
+                }
+    post:
+      tags: [Article]
+      operationId: bff.article.chapter_tags.create
+      summary: Create a chapter tag
+      parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/CreateArticleChapterTagRequest",
+              }
+      responses:
+        "201":
+          description: Chapter tag.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ArticleChapterTag" }
+  /api/projects/{projectId}/article/chapter-tags/{chapterTagId}:
+    parameters:
+      - { $ref: "./core.yaml#/components/parameters/ProjectId" }
+      - name: chapterTagId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Article]
+      operationId: bff.article.chapter_tags.get
+      summary: Read one chapter tag
+      responses:
+        "200":
+          description: Chapter tag.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ArticleChapterTag" }
+    patch:
+      tags: [Article]
+      operationId: bff.article.chapter_tags.update
+      summary: Reset a chapter tag after inspecting a heading change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                $ref: "./core.yaml#/components/schemas/UpdateArticleChapterTagRequest",
+              }
+      responses:
+        "200":
+          description: Updated chapter tag.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ArticleChapterTag" }
+    delete:
+      tags: [Article]
+      operationId: bff.article.chapter_tags.delete
+      summary: Delete one chapter tag
+      responses:
+        "204": { description: Chapter tag deleted. }
+  /api/projects/{projectId}/article/chapter-tags/{chapterTagId}/review:
+    post:
+      tags: [Article]
+      operationId: bff.article.chapter_tags.review
+      summary: Review one unchanged chapter tag
+      parameters:
+        - { $ref: "./core.yaml#/components/parameters/ProjectId" }
+        - name: chapterTagId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Reviewed chapter tag.
+          content:
+            application/json:
+              schema:
+                { $ref: "./core.yaml#/components/schemas/ArticleChapterTag" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/projects/{projectId}/article/patches:
     get:
       tags: [Article]
@@ -4501,6 +4716,13 @@ components:
         pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
     ArtifactId:
       name: artifactId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactFolderId:
+      name: folderId
       in: path
       required: true
       schema:

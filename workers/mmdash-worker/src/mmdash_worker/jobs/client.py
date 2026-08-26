@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
@@ -34,6 +34,7 @@ class CoreJobClient:
         model_completion_timeout_seconds: float = 300.0,
         progress_evaluation_timeout_seconds: float = 900.0,
         experiment_result_timeout_seconds: float = 3600.0,
+        transfer_origin_override: str = "",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token.strip()
@@ -42,6 +43,9 @@ class CoreJobClient:
         self.model_completion_timeout_seconds = model_completion_timeout_seconds
         self.progress_evaluation_timeout_seconds = progress_evaluation_timeout_seconds
         self.experiment_result_timeout_seconds = experiment_result_timeout_seconds
+        self.transfer_origin_override = self._validated_transfer_origin_override(
+            transfer_origin_override
+        )
         if not self.base_url or not self.api_token:
             raise ValueError("Core base URL and API token are required")
         if (
@@ -218,7 +222,9 @@ class CoreJobClient:
         )
 
     def get_article_build_input(self, job_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/v1/internal/article-build-jobs/{job_id}/input", timeout_seconds=60)
+        return self._request(
+            "GET", f"/v1/internal/article-build-jobs/{job_id}/input", timeout_seconds=60
+        )
 
     def upload_article_build_output(
         self,
@@ -233,8 +239,12 @@ class CoreJobClient:
     ) -> dict[str, Any]:
         if size_bytes < 1 or source.stat().st_size != size_bytes:
             raise JobAPIError("ARTICLE_OUTPUT_CHANGED", "Article output size changed")
-        parsed = urlsplit(self.base_url + f"/v1/internal/article-build-jobs/{job_id}/outputs/{role}")
-        connection_type = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        parsed = urlsplit(
+            self.base_url + f"/v1/internal/article-build-jobs/{job_id}/outputs/{role}"
+        )
+        connection_type = (
+            http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        )
         connection = connection_type(parsed.hostname, port=parsed.port, timeout=300)
         target = parsed.path or "/"
         try:
@@ -279,7 +289,8 @@ class CoreJobClient:
     ) -> dict[str, Any]:
         method, url, headers = self._validated_transfer(grant, "GET")
         del method
-        request = Request(url, method="GET", headers=headers)
+        transfer_url, transfer_headers = self._transfer_target(url, headers)
+        request = Request(transfer_url, method="GET", headers=transfer_headers)
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 declared = response.headers.get("Content-Length", "").strip()
@@ -330,7 +341,8 @@ class CoreJobClient:
     ) -> str:
         method, url, headers = self._validated_transfer(grant, "PUT")
         del method
-        parsed = urlsplit(url)
+        transfer_url, transfer_headers = self._transfer_target(url, headers)
+        parsed = urlsplit(transfer_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username:
             raise JobAPIError("INVALID_TRANSFER_GRANT", "Artifact transfer URL is invalid")
         connection_type = (
@@ -346,8 +358,8 @@ class CoreJobClient:
         if parsed.query:
             target += "?" + parsed.query
         try:
-            connection.putrequest("PUT", target)
-            for name, value in headers.items():
+            connection.putrequest("PUT", target, skip_host="Host" in transfer_headers)
+            for name, value in transfer_headers.items():
                 connection.putheader(name, value)
             connection.putheader("Content-Length", str(size_bytes))
             connection.endheaders()
@@ -464,6 +476,65 @@ class CoreJobClient:
                 )
             headers[name] = value
         return method, url, headers
+
+    @staticmethod
+    def _validated_transfer_origin_override(value: str) -> SplitResult | None:
+        value = value.strip()
+        if not value:
+            return None
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("Worker transfer origin override must be an HTTP(S) origin")
+        return parsed
+
+    def _transfer_target(self, url: str, headers: Mapping[str, str]) -> tuple[str, dict[str, str]]:
+        original = urlsplit(url)
+        if (
+            original.scheme not in {"http", "https"}
+            or not original.hostname
+            or original.username
+            or original.password
+            or original.fragment
+        ):
+            raise JobAPIError("INVALID_TRANSFER_GRANT", "Artifact transfer URL is invalid")
+        result_headers = dict(headers)
+        override = self.transfer_origin_override
+        if override is None:
+            return url, result_headers
+        if original.hostname not in {"localhost", "127.0.0.1"}:
+            raise JobAPIError(
+                "INVALID_TRANSFER_GRANT",
+                "Worker transfer origin override only accepts local signed URLs",
+            )
+        if original.scheme != override.scheme:
+            raise JobAPIError(
+                "INVALID_TRANSFER_GRANT",
+                "Worker transfer origin override must preserve the signed URL scheme",
+            )
+        # Connect to the container-visible origin while preserving the signed
+        # Host header. S3 includes Host in its signature, so changing both the
+        # destination and Host would invalidate an otherwise valid grant.
+        result_headers["Host"] = original.netloc
+        return (
+            urlunsplit(
+                (
+                    override.scheme,
+                    override.netloc,
+                    original.path,
+                    original.query,
+                    "",
+                )
+            ),
+            result_headers,
+        )
 
     @staticmethod
     def _raise_transfer_error(status: int, payload: bytes) -> None:

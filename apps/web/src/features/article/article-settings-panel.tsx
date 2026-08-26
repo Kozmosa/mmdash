@@ -19,10 +19,15 @@ import { Input } from "@/components/ui/input";
 import { optionalRequest } from "@/features/repo/optional-request";
 import { apiClient } from "@/lib/api-client";
 
+import {
+  ARTICLE_RENDER_THEME_EVENT,
+  type ArticleRenderTheme,
+} from "./types";
+
 const settingType = "article.zotero";
 const redactedSecret = "********";
 
-type ArticleZoteroSetting = {
+type ArticleProjectSetting = {
   updated_at: string;
   values: Record<string, unknown>;
   version: number;
@@ -38,18 +43,32 @@ export function ArticleSettingsPanel() {
   const project = useCurrentProject();
   const queryClient = useQueryClient();
   const path = `/projects/${encodeURIComponent(project.id)}/settings/${encodeURIComponent(settingType)}`;
+  const renderingPath = `/projects/${encodeURIComponent(project.id)}/settings/article.rendering`;
   const [libraryType, setLibraryType] = useState<"user" | "group">("user");
   const [libraryId, setLibraryId] = useState("");
   const [collectionKey, setCollectionKey] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [renderTheme, setRenderTheme] = useState<ArticleRenderTheme>("md");
   const [testResult, setTestResult] = useState<ConnectionTest>();
   const initialized = useRef<string | undefined>(undefined);
   const configuredSecret = useRef(false);
   const setting = useQuery({
-    queryFn: () => optionalRequest<ArticleZoteroSetting>(apiClient, path),
+    queryFn: () => optionalRequest<ArticleProjectSetting>(apiClient, path),
     queryKey: ["article-zotero-setting", project.id],
     retry: false,
   });
+  const renderingSetting = useQuery({
+    queryFn: () =>
+      optionalRequest<ArticleProjectSetting>(apiClient, renderingPath),
+    queryKey: ["article-rendering-setting", project.id],
+    retry: false,
+  });
+
+  useEffect(() => {
+    setRenderTheme(
+      renderingSetting.data?.values.theme === "latex" ? "latex" : "md",
+    );
+  }, [renderingSetting.data]);
 
   useEffect(() => {
     const key = setting.data ? String(setting.data.version) : "empty";
@@ -68,7 +87,8 @@ export function ArticleSettingsPanel() {
   }, [setting.data, setting.isPending]);
 
   const configured = setting.data?.values.api_key === redactedSecret;
-  const configurationLoaded = !setting.isPending && initialized.current !== undefined;
+  const configurationLoaded =
+    !setting.isPending && initialized.current !== undefined;
   const canManage = project.role === "owner" || project.role === "maintainer";
   const values = () => {
     if (!libraryId.trim() || (!apiKey.trim() && !configuredSecret.current)) {
@@ -94,7 +114,7 @@ export function ArticleSettingsPanel() {
     ]);
   };
   const saveSetting = async () => {
-    const result = await apiClient.request<ArticleZoteroSetting>(path, {
+    const result = await apiClient.request<ArticleProjectSetting>(path, {
       body: { values: values() },
       method: "PATCH",
     });
@@ -127,6 +147,22 @@ export function ArticleSettingsPanel() {
     onSuccess: async () => {
       await invalidate();
       toast.success("已断开 Zotero；历史冻结引用仍保留");
+    },
+  });
+  const saveRendering = useMutation({
+    mutationFn: (theme: ArticleRenderTheme) =>
+      apiClient.request<ArticleProjectSetting>(renderingPath, {
+        body: { values: { theme } },
+        method: "PATCH",
+      }),
+    onSuccess: async (result) => {
+      const theme = result.values.theme === "latex" ? "latex" : "md";
+      setRenderTheme(theme);
+      await queryClient.invalidateQueries({
+        queryKey: ["article-rendering-setting", project.id],
+      });
+      window.dispatchEvent(new Event(ARTICLE_RENDER_THEME_EVENT));
+      toast.success("Article 渲染主题已保存到项目设置");
     },
   });
   const error = setting.error ?? save.error ?? test.error ?? disconnect.error;
@@ -222,14 +258,24 @@ export function ArticleSettingsPanel() {
             ) : null}
             <div className="flex flex-wrap gap-2">
               <Button
-                disabled={!canManage || !configurationLoaded || save.isPending || test.isPending}
+                disabled={
+                  !canManage ||
+                  !configurationLoaded ||
+                  save.isPending ||
+                  test.isPending
+                }
                 type="submit"
               >
                 <Save className="size-4" />
                 保存
               </Button>
               <Button
-                disabled={!canManage || !configurationLoaded || save.isPending || test.isPending}
+                disabled={
+                  !canManage ||
+                  !configurationLoaded ||
+                  save.isPending ||
+                  test.isPending
+                }
                 onClick={() => test.mutate()}
                 type="button"
                 variant="outline"
@@ -250,6 +296,41 @@ export function ArticleSettingsPanel() {
               ) : null}
             </div>
           </form>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Markdown 渲染格式</CardTitle>
+          <CardDescription>
+            作为项目设置由 Core 持久化，所有浏览器和协作者共享同一默认主题。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">渲染主题</span>
+            <select
+              aria-label="Article 渲染主题"
+              className="h-9 w-full rounded-md border bg-background px-3"
+              disabled={
+                !canManage ||
+                renderingSetting.isPending ||
+                saveRendering.isPending
+              }
+              onChange={(event) =>
+                saveRendering.mutate(
+                  event.target.value as ArticleRenderTheme,
+                )
+              }
+              value={renderTheme}
+            >
+              <option value="md">默认 md</option>
+              <option value="latex">LaTeX 风格 md</option>
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">
+            LaTeX
+            风格使用衬线体、章节序号、三线表，并将图注置于图片下方、表注置于表格上方。
+          </p>
         </CardContent>
       </Card>
       {testResult ? (

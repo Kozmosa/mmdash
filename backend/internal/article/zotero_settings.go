@@ -59,6 +59,9 @@ func (adapter ZoteroSettingAdapter) Test(ctx context.Context, resolved settings.
 	libraryID := strings.TrimSpace(resolved.Values["library_id"].(string))
 	apiKey := resolved.Values["api_key"].(string)
 	endpoint := "https://api.zotero.org/" + libraryType + "s/" + url.PathEscape(libraryID) + "/items?limit=1&format=json"
+	if collection, ok := resolved.Values["collection_key"].(string); ok && strings.TrimSpace(collection) != "" {
+		endpoint = "https://api.zotero.org/" + libraryType + "s/" + url.PathEscape(libraryID) + "/collections/" + url.PathEscape(strings.TrimSpace(collection)) + "/items?limit=1&format=json"
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err

@@ -34,6 +34,9 @@ tags:
       - ARTIFACT_PART_MISSING
       - ARTIFACT_UPLOAD_ABORTED
       - ARTIFACT_UPLOAD_CONFLICT
+      - ARTIFACT_FOLDER_CONFLICT
+      - ARTIFACT_FOLDER_HAS_CHILDREN
+      - ARTIFACT_FOLDER_CYCLE
       - ARTIFACT_KIND_INVALID
       - ARTIFACT_SOURCE_INVALID
       - ARTIFACT_TAG_INVALID
@@ -890,6 +893,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ArtifactPage"
+  /v1/projects/{projectId}/artifacts/folders:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Artifact]
+      summary: Read the complete Project Artifact folder tree
+      operationId: artifact.folders.list
+      responses:
+        "200":
+          description: Project-scoped folder hierarchy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactFolderTree"
+    post:
+      tags: [Artifact]
+      summary: Create a Project Artifact folder
+      operationId: artifact.folders.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactFolderCreateRequest"
+      responses:
+        "201":
+          description: Created folder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactFolder"
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/folders/{folderId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactFolderId"
+    patch:
+      tags: [Artifact]
+      summary: Rename a Project Artifact folder
+      operationId: artifact.folders.rename
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactFolderRenameRequest"
+      responses:
+        "200":
+          description: Renamed folder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactFolder"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Artifact]
+      summary: Delete a Project Artifact folder
+      description: Artifacts are always preserved at the project root. By default child folders conflict; recursive mode removes the whole descendant folder structure.
+      operationId: artifact.folders.delete
+      parameters:
+        - name: recursive
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: Remove descendant folders as well, moving every contained Artifact to the project root.
+      responses:
+        "204":
+          description: Folder deleted.
+        "409":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/folders/{folderId}/move:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactFolderId"
+    post:
+      tags: [Artifact]
+      summary: Move a Project Artifact folder or make it a root folder
+      operationId: artifact.folders.move
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactFolderMoveRequest"
+      responses:
+        "200":
+          description: Moved folder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactFolder"
+        "409":
+          $ref: "#/components/responses/Error"
   /v1/projects/{projectId}/artifacts/trash:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -953,6 +1051,29 @@ paths:
         "204":
           description: Artifact moved to trash idempotently.
         "404":
+          $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/artifacts/{artifactId}/folder:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/ArtifactId"
+    put:
+      tags: [Artifact]
+      summary: Move an Artifact to a folder or the project root
+      operationId: artifact.folder.move
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArtifactMoveFolderRequest"
+      responses:
+        "200":
+          description: Artifact with its new folder assignment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactDetail"
+        "409":
           $ref: "#/components/responses/Error"
   /v1/projects/{projectId}/artifacts/{artifactId}/versions:
     parameters:
@@ -4489,6 +4610,91 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ArticleBlock" }
         "404": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/chapter-tags:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List independent chapter tags bound to heading blocks
+      operationId: article.chapter_tags.list
+      responses:
+        "200":
+          description: Chapter tags.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleChapterTagList" }
+    post:
+      tags: [Article]
+      summary: Create a chapter tag for the current heading block
+      operationId: article.chapter_tags.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/CreateArticleChapterTagRequest" }
+      responses:
+        "201":
+          description: Chapter tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleChapterTag" }
+  /v1/projects/{projectId}/article/chapter-tags/{chapterTagId}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - name: chapterTagId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Article]
+      summary: Read one chapter tag
+      operationId: article.chapter_tags.get
+      responses:
+        "200":
+          description: Chapter tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleChapterTag" }
+    patch:
+      tags: [Article]
+      summary: Reset a chapter tag after inspecting a heading change
+      operationId: article.chapter_tags.update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/UpdateArticleChapterTagRequest" }
+      responses:
+        "200":
+          description: Updated chapter tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleChapterTag" }
+    delete:
+      tags: [Article]
+      summary: Delete one chapter tag
+      operationId: article.chapter_tags.delete
+      responses:
+        "204": { description: Chapter tag deleted. }
+  /v1/projects/{projectId}/article/chapter-tags/{chapterTagId}/review:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - name: chapterTagId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Article]
+      summary: Mark a current, unchanged chapter as human reviewed
+      operationId: article.chapter_tags.review
+      responses:
+        "200":
+          description: Reviewed chapter tag with reviewer provenance.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleChapterTag" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/patches:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -5231,6 +5437,13 @@ components:
       schema:
         type: string
         format: uuid
+    ArtifactFolderId:
+      name: folderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     ArtifactUploadId:
       name: uploadId
       in: path
@@ -5651,6 +5864,56 @@ components:
           }
         provenance: { type: object, additionalProperties: true }
         updated_at: { type: string, format: date-time }
+    ChapterTagStatus:
+      type: string
+      enum: [unedited, unreviewed, reviewed, needs_review]
+    ArticleChapterTag:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          chapter_tag_id,
+          project_id,
+          heading_block_id,
+          status,
+          heading_block_type,
+          heading_fingerprint,
+          updated_by,
+          updated_at,
+        ]
+      properties:
+        chapter_tag_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        heading_block_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/ChapterTagStatus" }
+        heading_block_type: { type: string }
+        heading_fingerprint: { type: string, pattern: "^[0-9a-f]{64}$" }
+        stale_reason: { type: string }
+        updated_by: { type: string }
+        updated_at: { type: string, format: date-time }
+        reviewed_by: { type: string }
+        reviewed_at: { type: string, format: date-time }
+    ArticleChapterTagList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ArticleChapterTag" }
+    CreateArticleChapterTagRequest:
+      type: object
+      additionalProperties: false
+      required: [heading_block_id]
+      properties:
+        heading_block_id: { type: string, format: uuid }
+        status: { type: string, enum: [unedited, unreviewed] }
+    UpdateArticleChapterTagRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [unedited, unreviewed] }
     ArticleDraft:
       type: object
       additionalProperties: false
@@ -6055,8 +6318,10 @@ components:
           builds,
           releases,
           templates,
+          chapter_tags,
           unreviewed_blocks,
           section_completion,
+          warnings,
         ]
       properties:
         draft: { $ref: "#/components/schemas/ArticleDraft" }
@@ -6079,8 +6344,34 @@ components:
             type: array,
             items: { $ref: "#/components/schemas/ArticleTemplate" },
           }
+        chapter_tags:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleChapterTag" },
+          }
         unreviewed_blocks: { type: integer, minimum: 0 }
         section_completion: { type: number, minimum: 0, maximum: 1 }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/ArticleAggregateWarning" }
+    ArticleAggregateWarning:
+      type: object
+      additionalProperties: false
+      required: [code, component, message]
+      properties:
+        code: { type: string, enum: [ARTICLE_COMPONENT_UNAVAILABLE] }
+        component:
+          type: string
+          enum:
+            - references
+            - commits
+            - builds
+            - releases
+            - templates
+            - chapter_tags
+            - templates.bootstrap
+            - chapter_tags.bootstrap
+        message: { type: string }
     ArtifactSemanticDescriptionInput:
       type: object
       additionalProperties: false
@@ -7639,6 +7930,9 @@ components:
           ARTIFACT_STORAGE_UNAVAILABLE,
           ARTIFACT_NOT_TRASHED,
           ARTIFACT_PURGE_CONFLICT,
+          ARTIFACT_FOLDER_CONFLICT,
+          ARTIFACT_FOLDER_HAS_CHILDREN,
+          ARTIFACT_FOLDER_CYCLE,
         ]
     ArtifactPublicKind:
       type: string
@@ -7843,6 +8137,81 @@ components:
         description:
           type: [string, "null"]
           maxLength: 4000
+    ArtifactFolder:
+      type: object
+      additionalProperties: false
+      required:
+        [folder_id, project_id, parent_folder_id, name, position, children]
+      properties:
+        folder_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        parent_folder_id:
+          type: [string, "null"]
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        position:
+          type: integer
+          minimum: 0
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactFolder"
+    ArtifactFolderTree:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactFolder"
+    ArtifactFolderCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        parent_folder_id:
+          type: [string, "null"]
+          format: uuid
+    ArtifactFolderRenameRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+    ArtifactFolderMoveRequest:
+      type: object
+      additionalProperties: false
+      required: [parent_folder_id]
+      properties:
+        parent_folder_id:
+          type: [string, "null"]
+          format: uuid
+        position:
+          type: integer
+          minimum: 0
+    ArtifactMoveFolderRequest:
+      type: object
+      additionalProperties: false
+      required: [folder_id]
+      properties:
+        folder_id:
+          type: [string, "null"]
+          format: uuid
     ArtifactRestoreVersionRequest:
       type: object
       additionalProperties: false
@@ -7944,6 +8313,9 @@ components:
           items:
             type: string
         current_version_id:
+          type: [string, "null"]
+          format: uuid
+        folder_id:
           type: [string, "null"]
           format: uuid
         status:

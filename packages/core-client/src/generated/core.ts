@@ -677,6 +677,70 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/artifacts/folders": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the complete Project Artifact folder tree */
+    get: operations["artifact.folders.list"];
+    put?: never;
+    /** Create a Project Artifact folder */
+    post: operations["artifact.folders.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/folders/{folderId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        folderId: components["parameters"]["ArtifactFolderId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a Project Artifact folder
+     * @description Artifacts are always preserved at the project root. By default child folders conflict; recursive mode removes the whole descendant folder structure.
+     */
+    delete: operations["artifact.folders.delete"];
+    options?: never;
+    head?: never;
+    /** Rename a Project Artifact folder */
+    patch: operations["artifact.folders.rename"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/folders/{folderId}/move": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        folderId: components["parameters"]["ArtifactFolderId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Move a Project Artifact folder or make it a root folder */
+    post: operations["artifact.folders.move"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/artifacts/trash": {
     parameters: {
       query?: never;
@@ -716,6 +780,26 @@ export interface paths {
     head?: never;
     /** Update editable Artifact display metadata */
     patch: operations["artifact.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/artifacts/{artifactId}/folder": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /** Move an Artifact to a folder or the project root */
+    put: operations["artifact.folder.move"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/v1/projects/{projectId}/artifacts/{artifactId}/versions": {
@@ -3727,6 +3811,68 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/article/chapter-tags": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List independent chapter tags bound to heading blocks */
+    get: operations["article.chapter_tags.list"];
+    put?: never;
+    /** Create a chapter tag for the current heading block */
+    post: operations["article.chapter_tags.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/chapter-tags/{chapterTagId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        chapterTagId: string;
+      };
+      cookie?: never;
+    };
+    /** Read one chapter tag */
+    get: operations["article.chapter_tags.get"];
+    put?: never;
+    post?: never;
+    /** Delete one chapter tag */
+    delete: operations["article.chapter_tags.delete"];
+    options?: never;
+    head?: never;
+    /** Reset a chapter tag after inspecting a heading change */
+    patch: operations["article.chapter_tags.update"];
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/chapter-tags/{chapterTagId}/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        chapterTagId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark a current, unchanged chapter as human reviewed */
+    post: operations["article.chapter_tags.review"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/article/patches": {
     parameters: {
       query?: never;
@@ -4361,6 +4507,39 @@ export interface components {
       /** Format: date-time */
       updated_at: string;
     };
+    /** @enum {string} */
+    ChapterTagStatus: "unedited" | "unreviewed" | "reviewed" | "needs_review";
+    ArticleChapterTag: {
+      /** Format: uuid */
+      chapter_tag_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      heading_block_id: string;
+      status: components["schemas"]["ChapterTagStatus"];
+      heading_block_type: string;
+      heading_fingerprint: string;
+      stale_reason?: string;
+      updated_by: string;
+      /** Format: date-time */
+      updated_at: string;
+      reviewed_by?: string;
+      /** Format: date-time */
+      reviewed_at?: string;
+    };
+    ArticleChapterTagList: {
+      items: components["schemas"]["ArticleChapterTag"][];
+    };
+    CreateArticleChapterTagRequest: {
+      /** Format: uuid */
+      heading_block_id: string;
+      /** @enum {string} */
+      status?: "unedited" | "unreviewed";
+    };
+    UpdateArticleChapterTagRequest: {
+      /** @enum {string} */
+      status: "unedited" | "unreviewed";
+    };
     ArticleDraft: {
       /** Format: uuid */
       project_id: string;
@@ -4620,8 +4799,25 @@ export interface components {
       builds: components["schemas"]["ArticleBuild"][];
       releases: components["schemas"]["ArticleRelease"][];
       templates: components["schemas"]["ArticleTemplate"][];
+      chapter_tags: components["schemas"]["ArticleChapterTag"][];
       unreviewed_blocks: number;
       section_completion: number;
+      warnings: components["schemas"]["ArticleAggregateWarning"][];
+    };
+    ArticleAggregateWarning: {
+      /** @enum {string} */
+      code: "ARTICLE_COMPONENT_UNAVAILABLE";
+      /** @enum {string} */
+      component:
+        | "references"
+        | "commits"
+        | "builds"
+        | "releases"
+        | "templates"
+        | "chapter_tags"
+        | "templates.bootstrap"
+        | "chapter_tags.bootstrap";
+      message: string;
     };
     ArtifactSemanticDescriptionInput: {
       /**
@@ -5556,7 +5752,10 @@ export interface components {
       | "ARTIFACT_PREVIEW_UNAVAILABLE"
       | "ARTIFACT_STORAGE_UNAVAILABLE"
       | "ARTIFACT_NOT_TRASHED"
-      | "ARTIFACT_PURGE_CONFLICT";
+      | "ARTIFACT_PURGE_CONFLICT"
+      | "ARTIFACT_FOLDER_CONFLICT"
+      | "ARTIFACT_FOLDER_HAS_CHILDREN"
+      | "ARTIFACT_FOLDER_CYCLE";
     /** @enum {string} */
     ArtifactPublicKind: "problem" | "attachment" | "other";
     /** @enum {string} */
@@ -5640,6 +5839,37 @@ export interface components {
       tags?: string[];
       description?: string | null;
     };
+    ArtifactFolder: {
+      /** Format: uuid */
+      folder_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** Format: uuid */
+      parent_folder_id: string | null;
+      name: string;
+      position: number;
+      children: components["schemas"]["ArtifactFolder"][];
+    };
+    ArtifactFolderTree: {
+      items: components["schemas"]["ArtifactFolder"][];
+    };
+    ArtifactFolderCreateRequest: {
+      name: string;
+      /** Format: uuid */
+      parent_folder_id?: string | null;
+    };
+    ArtifactFolderRenameRequest: {
+      name: string;
+    };
+    ArtifactFolderMoveRequest: {
+      /** Format: uuid */
+      parent_folder_id: string | null;
+      position?: number;
+    };
+    ArtifactMoveFolderRequest: {
+      /** Format: uuid */
+      folder_id: string | null;
+    };
     ArtifactRestoreVersionRequest: {
       idempotency_key: string;
     };
@@ -5676,6 +5906,8 @@ export interface components {
       recommended_usage: string[];
       /** Format: uuid */
       current_version_id: string | null;
+      /** Format: uuid */
+      folder_id?: string | null;
       status: components["schemas"]["ArtifactStatus"];
       /** Format: uuid */
       created_by: string;
@@ -8165,6 +8397,7 @@ export interface components {
     NotificationTypeKey: string;
     NotificationDeliveryId: string;
     ArtifactId: string;
+    ArtifactFolderId: string;
     ArtifactUploadId: string;
     ArtifactVersionId: string;
     ArtifactSignedToken: string;
@@ -9311,6 +9544,136 @@ export interface operations {
       };
     };
   };
+  "artifact.folders.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Project-scoped folder hierarchy. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactFolderTree"];
+        };
+      };
+    };
+  };
+  "artifact.folders.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactFolderCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Created folder. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactFolder"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.folders.delete": {
+    parameters: {
+      query?: {
+        /** @description Remove descendant folders as well, moving every contained Artifact to the project root. */
+        recursive?: boolean;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        folderId: components["parameters"]["ArtifactFolderId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Folder deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.folders.rename": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        folderId: components["parameters"]["ArtifactFolderId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactFolderRenameRequest"];
+      };
+    };
+    responses: {
+      /** @description Renamed folder. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactFolder"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.folders.move": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        folderId: components["parameters"]["ArtifactFolderId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactFolderMoveRequest"];
+      };
+    };
+    responses: {
+      /** @description Moved folder. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactFolder"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
   "artifact.trash.list": {
     parameters: {
       query?: {
@@ -9401,6 +9764,34 @@ export interface operations {
     };
     responses: {
       /** @description Updated Artifact detail. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArtifactDetail"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "artifact.folder.move": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        artifactId: components["parameters"]["ArtifactId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArtifactMoveFolderRequest"];
+      };
+    };
+    responses: {
+      /** @description Artifact with its new folder assignment. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -14036,6 +14427,149 @@ export interface operations {
         };
       };
       404: components["responses"]["Error"];
+    };
+  };
+  "article.chapter_tags.list": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Chapter tags. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleChapterTagList"];
+        };
+      };
+    };
+  };
+  "article.chapter_tags.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticleChapterTagRequest"];
+      };
+    };
+    responses: {
+      /** @description Chapter tag. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleChapterTag"];
+        };
+      };
+    };
+  };
+  "article.chapter_tags.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        chapterTagId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Chapter tag. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleChapterTag"];
+        };
+      };
+    };
+  };
+  "article.chapter_tags.delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        chapterTagId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Chapter tag deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  "article.chapter_tags.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        chapterTagId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateArticleChapterTagRequest"];
+      };
+    };
+    responses: {
+      /** @description Updated chapter tag. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleChapterTag"];
+        };
+      };
+    };
+  };
+  "article.chapter_tags.review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        chapterTagId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Reviewed chapter tag with reviewer provenance. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleChapterTag"];
+        };
+      };
+      409: components["responses"]["Error"];
     };
   };
   "article.patches.list": {

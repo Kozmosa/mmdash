@@ -16,6 +16,7 @@
     "@fastify/websocket": "^11.0.0",
     "@hocuspocus/server": "4.4.0",
     "@mmdash/core-client": "workspace:*",
+    "@tiptap/pm": "3.29.0",
     "fastify": "^5.6.2",
     "pino": "^9.7.0",
     "ws": "^8.18.0",

@@ -1240,7 +1240,7 @@ const artifactSelect = `
 	       ),
 	       to_json(artifact.tags),artifact.name,artifact.description,
 	       artifact.recommended_usage,artifact.current_version_id::text,
-	       artifact.status,artifact.created_by,artifact.trashed_at,
+	       artifact.folder_id::text,artifact.status,artifact.created_by,artifact.trashed_at,
 	       artifact.created_at,artifact.updated_at
 	FROM artifact_artifacts AS artifact
 `
@@ -1282,11 +1282,12 @@ func scanArtifact(scan scanner) (Artifact, error) {
 	var description sql.NullString
 	var recommended sql.NullString
 	var currentVersion sql.NullString
+	var folderID sql.NullString
 	var sourceObjectID string
 	err := scan(
 		&artifact.ID, &artifact.ProjectID, &artifact.Kind, &artifact.Source,
 		&sourceObjectID, &tags, &artifact.Name, &description, &recommended,
-		&currentVersion,
+		&currentVersion, &folderID,
 		&artifact.Status, &artifact.CreatedBy, &artifact.TrashedAt,
 		&artifact.CreatedAt, &artifact.UpdatedAt,
 	)
@@ -1312,6 +1313,9 @@ func scanArtifact(scan scanner) (Artifact, error) {
 	}
 	if currentVersion.Valid {
 		artifact.CurrentVersionID = &currentVersion.String
+	}
+	if folderID.Valid {
+		artifact.FolderID = &folderID.String
 	}
 	if sourceObjectID != "" {
 		artifact.SourceObjectID = &sourceObjectID
@@ -1375,16 +1379,16 @@ func insertArtifact(
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO artifact_artifacts(
 			artifact_id,project_id,kind,source,name,tags,description,
-			recommended_usage,status,current_version_id,created_by,
+			recommended_usage,status,current_version_id,folder_id,created_by,
 			created_at,updated_at
 		) VALUES(
 			$1,$2,$3,$4,$5,
 			ARRAY(SELECT jsonb_array_elements_text($6::jsonb)),
-			$7,$8,$9,$10,$11,$12,$12
+			$7,$8,$9,$10,NULLIF($11,'')::uuid,$12,$13,$13
 		)
 	`, artifact.ID, artifact.ProjectID, artifact.Kind, artifact.Source,
 		artifact.Name, tags, artifact.Description, recommended,
-		artifact.Status, artifact.CurrentVersionID, artifact.CreatedBy,
+		artifact.Status, artifact.CurrentVersionID, folderParentArg(artifact.FolderID), artifact.CreatedBy,
 		artifact.CreatedAt)
 	return err
 }

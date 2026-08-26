@@ -19,6 +19,12 @@ type TransactionalAuditRecorder interface {
 
 // Store is the authoritative Artifact persistence boundary.
 type Store interface {
+	CreateFolder(context.Context, Folder) (Folder, error)
+	GetFolderTree(context.Context, string) (FolderTree, error)
+	RenameFolder(context.Context, string, string, string, time.Time) (Folder, error)
+	MoveFolder(context.Context, string, string, *string, *int, time.Time) (Folder, error)
+	DeleteFolder(context.Context, string, string, bool, time.Time) error
+	MoveArtifact(context.Context, string, string, *string, time.Time) (Detail, error)
 	CreateFirst(context.Context, Artifact, Version, UploadSession) error
 	CreateGit(context.Context, Artifact, Version, string) error
 	CreateVersion(context.Context, string, string, Version, UploadSession) (UploadSession, error)

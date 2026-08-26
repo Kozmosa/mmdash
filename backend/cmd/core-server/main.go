@@ -394,6 +394,9 @@ func run(logger *logging.Logger) error {
 	if err := settingsRegistry.Register(article.SettingDefinitionZotero(zoteroHTTPClient)); err != nil {
 		return err
 	}
+	if err := settingsRegistry.Register(article.SettingDefinitionRendering()); err != nil {
+		return err
+	}
 	if err := settingsRegistry.Register(settings.TypeDefinition{
 		Description: "Project Feishu webhook notification channel.",
 		Fields: []settings.FieldDefinition{

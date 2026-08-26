@@ -10,6 +10,7 @@ import type { ArticleAggregate } from "@/features/article/types";
 import { ApiError } from "@/lib/api-client";
 
 const aggregate: ArticleAggregate = {
+  chapter_tags: [],
   builds: [],
   commits: [],
   draft: {
@@ -28,6 +29,7 @@ const aggregate: ArticleAggregate = {
   section_completion: 0,
   templates: [],
   unreviewed_blocks: 0,
+  warnings: [],
 };
 
 describe("Article commit readiness", () => {
