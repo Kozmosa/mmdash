@@ -63,6 +63,44 @@ LATEX_PNG_IMAGE_SUFFIXES = {
 }
 
 
+PANDOC_CSL_COMPATIBILITY = r"""% mmdash Pandoc 2.17.1.1 citeproc compatibility
+\providecommand{\citeproctext}{}
+\providecommand{\citeproc}[2]{%
+  \begingroup\def\citeproctext{#2}\cite{#1}\endgroup}
+\providecommand{\phantomsection}{}
+
+\makeatletter
+% Match Pandoc 2.17.1.1's paragraph-based CSLReferences environment.
+% Do not use a list environment here: Pandoc 2.17 citeproc bibliography
+% entries are paragraphs and do not necessarily contain \item.
+\@ifundefined{cslhangindent}{\newlength{\cslhangindent}}{}
+\setlength{\cslhangindent}{1.5em}
+\@ifundefined{csllabelwidth}{\newlength{\csllabelwidth}}{}
+\setlength{\csllabelwidth}{3em}
+\@ifundefined{cslentryspacingunit}{\newlength{\cslentryspacingunit}}{}
+\setlength{\cslentryspacingunit}{\parskip}
+\@ifundefined{CSLReferences}{%
+  \newenvironment{CSLReferences}[2]
+   {%
+    \setlength{\parindent}{0pt}%
+    \ifodd #1
+      \let\oldpar\par
+      \def\par{\hangindent=\cslhangindent\oldpar}%
+    \fi
+    \setlength{\parskip}{#2\cslentryspacingunit}%
+   }
+   {}
+}{}
+\makeatother
+
+\providecommand{\CSLBlock}[1]{#1\hfill\break}
+\providecommand{\CSLLeftMargin}[1]{%
+  \parbox[t]{\csllabelwidth}{#1}}
+\providecommand{\CSLRightInline}[1]{%
+  \parbox[t]{\dimexpr\linewidth-\csllabelwidth\relax}{#1}\break}
+\providecommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
+"""
+
 class ArticleClient(Protocol):
     def get_article_build_input(self, job_id: str) -> dict[str, Any]: ...
     def update_article_build_progress(
@@ -206,6 +244,8 @@ class ArticleBuildHandler:
                         limits=limits,
                     )
                 )
+                if bibliography.stat().st_size:
+                    _inject_pandoc_citeproc_compatibility(content_target)
                 _check_disk(root, limits["disk_bytes"])
                 self.client.update_article_build_progress(context.job_id, 55, "compiling")
                 log_parts.append(
@@ -330,6 +370,29 @@ def _validate_input(value: Mapping[str, Any]) -> None:
     resources = value.get("resources", [])
     if not isinstance(resources, list) or len(resources) > 500:
         raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article resources are invalid")
+
+
+def _inject_pandoc_citeproc_compatibility(content_target: Path) -> None:
+    """Make a non-standalone Pandoc LaTeX fragment self-contained for citeproc.
+
+    `pandoc --to=latex --citeproc` emits `CSLReferences`, `citeproctext`,
+    `CSLBlock`, and related commands in the body, while their definitions live
+    in Pandoc's standalone LaTeX template. mmdash intentionally generates only
+    a fragment and then includes it from the selected Article template, so we
+    must carry the citeproc compatibility definitions with that fragment.
+    """
+    try:
+        generated = content_target.read_text(encoding="utf-8")
+        content_target.write_text(
+            PANDOC_CSL_COMPATIBILITY + "\n" + generated,
+            encoding="utf-8",
+            newline="\n",
+        )
+    except OSError as error:
+        raise HandlerError(
+            "ARTICLE_BUILD_FAILED",
+            "Pandoc citation output could not be prepared for LaTeX",
+        ) from error
 
 
 def _resource_filename(index: int, resource: Mapping[str, Any]) -> str:

@@ -447,6 +447,14 @@ func (service *Service) CreateBuild(ctx context.Context, caller auth.Identity, p
 	}
 	return service.createBuild(ctx, caller.ActorID(), projectID, BuildFormal, commitID, nil, templateID, engine, bibliographyTool, idempotency)
 }
+type previewBuildSnapshot struct {
+	ArticleManifest    map[string]interface{} `json:"article_manifest"`
+	DraftRevision      int64                  `json:"draft_revision"`
+	Manuscript         string                 `json:"manuscript"`
+	ReferencesBIB      string                 `json:"references_bib"`
+	ResourceReferences []Reference            `json:"resource_references"`
+	SchemaVersion      string                 `json:"schema_version"`
+}
 func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity, projectID string, draftRevision int64, templateID, engine, bibliographyTool string) (Build, bool, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleBuild); err != nil {
 		return Build{}, false, err
@@ -458,7 +466,46 @@ func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity,
 	if draft.DraftRevision != draftRevision {
 		return Build{}, false, ErrConflict
 	}
-	return service.createBuild(ctx, caller.ActorID(), projectID, BuildPreview, "", &draftRevision, templateID, engine, bibliographyTool, fmt.Sprintf("preview:%d:%s:%s:%s", draftRevision, templateID, engine, bibliographyTool))
+	references, err := service.Store.ListReferences(ctx, projectID)
+	if err != nil {
+		return Build{}, false, err
+	}
+	resourceReferences := make([]Reference, 0)
+	for _, reference := range references {
+		if reference.ReferenceType != "artifact" {
+			continue
+		}
+		resourceReferences = append(resourceReferences, Reference{
+			ReferenceType:   reference.ReferenceType,
+			SourceObjectID:  reference.SourceObjectID,
+			SourceVersionID: reference.SourceVersionID,
+			Title:           reference.Title,
+		})
+	}
+	item, jobInput, err := service.prepareBuild(
+		ctx,
+		caller.ActorID(),
+		projectID,
+		BuildPreview,
+		"",
+		&draftRevision,
+		templateID,
+		engine,
+		bibliographyTool,
+		fmt.Sprintf("preview:%d:%s:%s:%s", draftRevision, templateID, engine, bibliographyTool),
+	)
+	if err != nil {
+		return Build{}, false, err
+	}
+	jobInput.Payload["preview_snapshot"] = previewBuildSnapshot{
+		ArticleManifest:    cloneObject(draft.Manifest),
+		DraftRevision:      draftRevision,
+		Manuscript:         draft.Markdown,
+		ReferencesBIB:      Bibliography(references),
+		ResourceReferences: resourceReferences,
+		SchemaVersion:      "1.0",
+	}
+	return service.Store.CreateBuild(ctx, item, jobInput, service.JobWriter)
 }
 func (service *Service) createBuild(ctx context.Context, actorID, projectID, kind, commitID string, draftRevision *int64, templateID, engine, bibliographyTool, idempotency string) (Build, bool, error) {
 	item, jobInput, err := service.prepareBuild(ctx, actorID, projectID, kind, commitID, draftRevision, templateID, engine, bibliographyTool, idempotency)
@@ -698,6 +745,31 @@ func (service *Service) RetryPublication(ctx context.Context, caller auth.Identi
 	return service.Store.RetryPublicationBuild(ctx, publication, previous.BuildID, build, jobInput, service.JobWriter)
 }
 
+func previewSnapshotFromJob(job jobs.Job, build Build) (previewBuildSnapshot, bool, error) {
+	raw, exists := job.Payload["preview_snapshot"]
+	if !exists {
+		return previewBuildSnapshot{}, false, nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return previewBuildSnapshot{}, true, ErrInvalid
+	}
+	var snapshot previewBuildSnapshot
+	if err = json.Unmarshal(encoded, &snapshot); err != nil {
+		return previewBuildSnapshot{}, true, ErrInvalid
+	}
+	if snapshot.SchemaVersion != "1.0" ||
+		snapshot.ArticleManifest == nil ||
+		build.DraftRevision == nil ||
+		snapshot.DraftRevision != *build.DraftRevision {
+		return previewBuildSnapshot{}, true, ErrInvalid
+	}
+	if snapshot.ResourceReferences == nil {
+		snapshot.ResourceReferences = []Reference{}
+	}
+	return snapshot, true, nil
+}
+
 func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, jobID string) (BuildJobInput, error) {
 	job, build, template, err := service.workerBuild(ctx, caller, jobID)
 	if err != nil {
@@ -733,17 +805,30 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			}
 		}
 	case BuildPreview:
-		draft, err := service.Store.GetDraft(ctx, job.ProjectID)
-		if err != nil {
-			return BuildJobInput{}, err
+		snapshot, frozen, snapshotErr := previewSnapshotFromJob(job, build)
+		if snapshotErr != nil {
+			return BuildJobInput{}, snapshotErr
 		}
-		if build.DraftRevision == nil || draft.DraftRevision != *build.DraftRevision {
-			return BuildJobInput{}, ErrSuperseded
-		}
-		manuscript, referencesBIB, manifest = draft.Markdown, draft.ReferencesBIB, draft.Manifest
-		frozenReferences, err = service.Store.ListReferences(ctx, job.ProjectID)
-		if err != nil {
-			return BuildJobInput{}, err
+		if frozen {
+			manuscript = snapshot.Manuscript
+			referencesBIB = snapshot.ReferencesBIB
+			manifest = snapshot.ArticleManifest
+			frozenReferences = snapshot.ResourceReferences
+		} else {
+			// Rolling-deploy compatibility for Preview jobs queued by an older
+			// Core before immutable job snapshots were introduced.
+			draft, err := service.Store.GetDraft(ctx, job.ProjectID)
+			if err != nil {
+				return BuildJobInput{}, err
+			}
+			if build.DraftRevision == nil || draft.DraftRevision != *build.DraftRevision {
+				return BuildJobInput{}, ErrSuperseded
+			}
+			manuscript, referencesBIB, manifest = draft.Markdown, draft.ReferencesBIB, draft.Manifest
+			frozenReferences, err = service.Store.ListReferences(ctx, job.ProjectID)
+			if err != nil {
+				return BuildJobInput{}, err
+			}
 		}
 	case BuildTemplateTest:
 		manuscript = "# Template validation\n\nA citation-free equation: $x^2$.\n"
