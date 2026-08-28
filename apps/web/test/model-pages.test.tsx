@@ -143,13 +143,18 @@ describe("Model pages", () => {
 
     render(<ModelListPage />, { wrapper: Providers });
 
+    // Open the create modal
+    const openModalButton = await screen.findByRole("button", { name: "新建题号" });
+    fireEvent.click(openModalButton);
+
     const codeInput = await screen.findByLabelText("题号");
     expect(codeInput).toHaveValue("Q2");
     fireEvent.change(codeInput, { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("题目标题"), {
       target: { value: "新模型" },
     });
-    const createButton = screen.getByRole("button", { name: "新建题号" });
+    // Submit using the confirm button inside the modal
+    const createButton = screen.getByRole("button", { name: "确认新建" });
     expect(createButton).toBeEnabled();
     fireEvent.click(createButton);
 

@@ -5,7 +5,7 @@ export function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
     <Image
       alt=""
       aria-hidden="true"
-      className={spinning ? "size-4 animate-spin invert dark:invert-0" : "size-4 invert dark:invert-0"}
+      className={spinning ? "size-4 animate-spin dark:invert" : "size-4 dark:invert"}
       height={16}
       src="/icons/refresh-cw.svg"
       width={16}
