@@ -4972,7 +4972,7 @@ export interface components {
     /** @enum {string} */
     ExperimentType: "box" | "box-re" | "self";
     /** @enum {string} */
-    RuntimePolicy: "auto" | "e2b" | "local-docker";
+    RuntimePolicy: "auto" | "e2b" | "local-docker" | "local-process";
     /** @enum {string} */
     BoxStatus: "registering" | "online" | "offline" | "draining" | "revoked";
     /** @enum {string} */
@@ -4993,9 +4993,10 @@ export interface components {
     };
     BoxRuntime: {
       /** @enum {string} */
-      name: "local-docker" | "e2b";
+      name: "local-docker" | "e2b" | "local-process";
       version: string;
       image?: string;
+      features?: string[];
     };
     BoxResourceLimits: {
       cpu_millis: number;
@@ -5182,7 +5183,7 @@ export interface components {
       /** Format: uuid */
       box_id?: string;
       /** @enum {string} */
-      runtime?: "local-docker" | "e2b";
+      runtime?: "local-docker" | "e2b" | "local-process";
       attempt: number;
       retryable: boolean;
       cleanup_result: {
@@ -5237,7 +5238,7 @@ export interface components {
         [key: string]: unknown;
       };
       /** @enum {string} */
-      actual_runtime: "local-docker" | "e2b";
+      actual_runtime: "local-docker" | "e2b" | "local-process";
       runtime_version: string;
       /** Format: date-time */
       created_at: string;
@@ -5407,7 +5408,7 @@ export interface components {
       /** Format: uuid */
       requested_box_id?: string;
       /** @enum {string} */
-      actual_runtime?: "local-docker" | "e2b";
+      actual_runtime?: "local-docker" | "e2b" | "local-process";
       runtime_version?: string;
       limits: components["schemas"]["BoxResourceLimits"];
       /** Format: uuid */
