@@ -172,7 +172,7 @@ func (runtime *Runtime) reattach(ctx context.Context, request sandbox.RunRequest
 			"the Box host restarted while local-process task "+record.TaskID+" was recorded")
 	}
 	if taskTerminal(record.State) {
-		return runtime.resultFromRecord(record, request), nil
+		return runtime.resultFromRecord(record, request)
 	}
 	supervisedPID := record.TaskPID
 	if supervisedPID <= 0 {
@@ -324,7 +324,7 @@ func (runtime *Runtime) follow(ctx context.Context, request sandbox.RunRequest, 
 		}
 		sleepMilli(int(runtime.pollInterval() / time.Millisecond))
 	}
-	return runtime.resultFromRecord(*record, request), nil
+	return runtime.resultFromRecord(*record, request)
 }
 
 // emitOutput forwards newly written task output to the Gateway writers. It
@@ -372,7 +372,7 @@ func emitFile(path string, offset int64, destination io.Writer) (int64, error) {
 	return offset + written, nil
 }
 
-func (runtime *Runtime) resultFromRecord(record taskRecord, request sandbox.RunRequest) sandbox.RunResult {
+func (runtime *Runtime) resultFromRecord(record taskRecord, request sandbox.RunRequest) (sandbox.RunResult, error) {
 	result := sandbox.RunResult{ExitCode: 0}
 	if record.ExitCode != nil {
 		result.ExitCode = *record.ExitCode
@@ -382,9 +382,18 @@ func (runtime *Runtime) resultFromRecord(record taskRecord, request sandbox.RunR
 		result.TimedOut = true
 	case taskStateCanceled:
 		result.Canceled = true
+	case taskStateFailed:
+		// A failed record means the supervisor could not run the task at
+		// all; reporting it as a zero-exit success would fabricate a pass.
+		detail := record.LastError
+		if detail == "" {
+			detail = "no launch failure reason was recorded"
+		}
+		return sandbox.RunResult{}, codedError(ErrCodeRunnerFailed,
+			"local-process task "+record.TaskID+" could not be started: "+detail)
 	}
 	result.ResourceUsage = runtime.resourceUsage(request, record)
-	return result
+	return result, nil
 }
 
 func (runtime *Runtime) resourceUsage(request sandbox.RunRequest, record taskRecord) map[string]interface{} {

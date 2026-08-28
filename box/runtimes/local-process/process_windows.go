@@ -5,6 +5,7 @@ package localprocess
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -79,10 +80,11 @@ func newTaskJob(limits contractLimits) (*jobObject, error) {
 }
 
 // jobObjectCpuRateControlInformation mirrors JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
-// which the pinned golang.org/x/sys version does not define.
+// which the pinned golang.org/x/sys version does not define. The OS reads
+// ControlFlags from the first word, so the field order must not change.
 type jobObjectCpuRateControlInformation struct {
-	CpuRate      uint32
 	ControlFlags uint32
+	CpuRate      uint32
 }
 
 const (
@@ -90,10 +92,13 @@ const (
 	jobObjectCpuRateControlHardLimit = 0x4
 )
 
-func startTaskProcess(argv []string, env []string, dir string, job *jobObject) (*exec.Cmd, error) {
+func startTaskProcess(argv []string, env []string, dir string, job *jobObject,
+	stdoutLog, stderrLog *os.File) (*exec.Cmd, error) {
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = dir
 	command.Env = env
+	command.Stdout = stdoutLog
+	command.Stderr = stderrLog
 	// CREATE_SUSPENDED lets the runner assign the process to its Job Object
 	// before any code of the task (and therefore any descendant) can run.
 	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}

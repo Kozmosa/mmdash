@@ -26,15 +26,16 @@ const (
 )
 
 type taskRecord struct {
-	SchemaVersion int        `json:"schema_version"`
-	TaskID        string     `json:"task_id"`
+	SchemaVersion int    `json:"schema_version"`
+	TaskID        string `json:"task_id"`
 	ExecutionEpoch string    `json:"execution_epoch,omitempty"`
-	BootID        string     `json:"boot_id"`
-	RunnerPID     int        `json:"runner_pid"`
-	TaskPID       int        `json:"task_pid"`
-	State         string     `json:"state"`
-	ExitCode      *int       `json:"exit_code,omitempty"`
-	StartedAt     time.Time  `json:"started_at,omitempty"`
+	BootID        string    `json:"boot_id"`
+	RunnerPID     int       `json:"runner_pid"`
+	TaskPID       int       `json:"task_pid"`
+	State         string    `json:"state"`
+	ExitCode      *int      `json:"exit_code,omitempty"`
+	LastError     string    `json:"last_error,omitempty"`
+	StartedAt     time.Time `json:"started_at,omitempty"`
 	FinishedAt    *time.Time `json:"finished_at,omitempty"`
 }
 
