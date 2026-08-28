@@ -56,6 +56,67 @@ func TestEvaluationFactsExcludeSelfGeneratedProgressHistoryAndTimestamps(t *test
 	}
 }
 
+func TestEvaluationEvidenceSeedIsMinimalNavigableAndSemantic(t *testing.T) {
+	project := map[string]interface{}{
+		"project_id": "project-1", "problem_title": "Optimize a model",
+	}
+	objects := []map[string]interface{}{
+		{"object_id": "object-1", "object_type": "model_snapshot", "version": 1},
+		{"object_id": "object-2", "object_type": "repo_commit", "version": 2},
+		{"object_id": "object-3", "object_type": "repo_commit", "version": 3},
+	}
+	seed, err := evaluationEvidenceSeed(
+		"project-1", project, objects,
+		[]map[string]interface{}{{"activity_id": "activity-1"}},
+		[]map[string]interface{}{{"context_id": "context-1", "content": "confirmed"}},
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seed["facts_schema_version"] != 2 {
+		t.Fatalf("unexpected facts schema version: %#v", seed)
+	}
+	for _, forbidden := range []string{"data_objects", "recent_activity", "confirmed_context"} {
+		if _, exists := seed[forbidden]; exists {
+			t.Fatalf("minimal evaluation seed leaked %s: %#v", forbidden, seed)
+		}
+	}
+	if !reflect.DeepEqual(seed["project"], map[string]interface{}{"project_id": "project-1"}) {
+		t.Fatalf("evaluation seed leaked Project content: %#v", seed["project"])
+	}
+	catalog, ok := seed["evidence_catalog"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("evaluation seed lost its evidence catalog: %#v", seed)
+	}
+	if !reflect.DeepEqual(catalog["available_object_types"], []string{"model_snapshot", "repo_commit"}) ||
+		!reflect.DeepEqual(catalog["object_type_counts"], map[string]int{"model_snapshot": 1, "repo_commit": 2}) ||
+		catalog["catalog_truncated"] != true {
+		t.Fatalf("unexpected evidence catalog: %#v", catalog)
+	}
+	firstRevision, _ := catalog["revision"].(string)
+	if len(firstRevision) != 64 {
+		t.Fatalf("evaluation evidence revision is not SHA-256: %q", firstRevision)
+	}
+	changed, err := evaluationEvidenceSeed(
+		"project-1", project,
+		[]map[string]interface{}{
+			{"object_id": "object-1", "object_type": "model_snapshot", "version": 2},
+			objects[1], objects[2],
+		},
+		[]map[string]interface{}{{"activity_id": "activity-1"}},
+		[]map[string]interface{}{{"context_id": "context-1", "content": "confirmed"}},
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedCatalog := changed["evidence_catalog"].(map[string]interface{})
+	if changedCatalog["revision"] == firstRevision {
+		t.Fatalf("semantic evidence change did not change the revision: %#v", changedCatalog)
+	}
+}
+
 type accessStub struct {
 	authorized []project.Permission
 	err        error

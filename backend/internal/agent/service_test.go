@@ -1341,6 +1341,57 @@ func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
 	if len(fixture.adapter.createSessionRequests) != 1 || fixture.adapter.createSessionRequests[0].Title == "Progress automation" {
 		t.Fatalf("progress Session did not use a collision-safe identity: %#v", fixture.adapter.createSessionRequests)
 	}
+	if !strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "evidence auditor") ||
+		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "untrusted data") ||
+		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "required mmdash MCP read workflow") ||
+		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "first character must be {") ||
+		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "Use only read tools") {
+		t.Fatalf("progress Session lost its evidence and read-only boundaries: %#v", fixture.adapter.createSessionRequests)
+	}
+}
+
+func TestProgressEvaluationInstructionsDefineEvidenceAndReadableFeedbackRubric(t *testing.T) {
+	prompt := progressEvaluationInstructions("project-1", "evaluation-1")
+	required := []string{
+		"MANDATORY MCP EVIDENCE WORKFLOW",
+		"Do not produce the final answer until you complete these steps in order",
+		"Call project.get for exactly project project-1",
+		"Call progress.get for the same Project",
+		"recover them with data.list for milestone and task",
+		"Never ask the user for tool-owned fields merely because a response was truncated",
+		"Call data.list for project-context",
+		"Investigate each domain in this order: code, model, experiment, article",
+		"data.list is only an index",
+		"call data.read before making a material claim",
+		"previous output are navigation/comparison hints, never evidence",
+		"never call progress.recalculate",
+		"A Commit, Artifact, build, Snapshot, or archived Experiment proves a deliverable exists",
+		"Never describe \"no activity\" as a change",
+		"Never inspect progress_evaluation or progress_risk",
+		"CORE_UNAVAILABLE, and other mmdash infrastructure health are not Project work",
+		"possible future problem is a risk",
+		"summary is 1-2 short sentences and at most 180 Unicode characters",
+		"Use at most five non-duplicated items per section",
+		"work_state_updates applies automatically",
+		"task.complete:<task_id>",
+		"Completion uses task.complete or milestone.complete with changes {}",
+		"task.create requires an explicit evidence-sourced start_at or due_at",
+		"never emit empty-string, null, empty-array, or guessed placeholders",
+		"Return exactly one valid JSON object, with every array present even when empty",
+		"Each risk has only key, title, severity, detail",
+		"never add severity_note",
+		"remove every unlisted key at every nesting level",
+		"never announce that reads are complete",
+		"internal IDs, hashes, revision values, timestamps, or tool names",
+	}
+	for _, fragment := range required {
+		if !strings.Contains(prompt, fragment) {
+			t.Fatalf("progress evaluation prompt is missing %q", fragment)
+		}
+	}
+	if !strings.Contains(prompt, "project-1") || !strings.Contains(prompt, "evaluation-1") {
+		t.Fatalf("progress evaluation prompt lost Run identity: %q", prompt)
+	}
 }
 
 func TestEvaluateProgressAdoptsDeterministicRemoteSession(t *testing.T) {
