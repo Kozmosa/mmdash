@@ -7,17 +7,37 @@ import type { ToolModule, ToolRegistrationContext } from "./registry.js";
 
 const projectIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$/);
 const dataListInput = z.object({
-  cursor: z.string().max(4_096).optional(),
-  limit: z.number().int().min(1).max(200).optional(),
-  project_id: projectIdSchema,
+  cursor: z
+    .string()
+    .max(4_096)
+    .optional()
+    .describe("Opaque cursor from the preceding page; paginate only to answer a specific evidence question."),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Bounded discovery size; prefer a small page such as 20 for evidence assessment."),
+  project_id: projectIdSchema.describe(
+    "Exact Project ID supplied by the evaluation or user request.",
+  ),
   type: z
     .string()
     .regex(/^[a-z][a-z0-9_-]{0,99}$/)
-    .optional(),
+    .optional()
+    .describe(
+      "One evidence type to inspect, for example repo_commit, model_snapshot, experiment_run, or article_draft.",
+    ),
 });
 const dataReadInput = z.object({
-  object_id: z.string().uuid(),
-  project_id: projectIdSchema,
+  object_id: z
+    .string()
+    .uuid()
+    .describe("Object ID selected from data.list because its full content can answer a material question."),
+  project_id: projectIdSchema.describe(
+    "Exact Project ID used in the preceding data.list call.",
+  ),
 });
 
 export const dataListTool: ToolModule = {
@@ -33,7 +53,7 @@ export const dataListTool: ToolModule = {
           title: "List project data",
         },
         description:
-          "List authorized Data Hub projections, including Artifact, attachment registry, repository, commit, and file metadata.",
+          "Evidence discovery index for one Project. Filter by one domain type and keep the page small. Titles, summaries, counts, and status are navigation hints, not proof of object content; follow relevant results with data.read.",
         inputSchema: dataListInput,
       },
       async ({ cursor, limit, project_id, type }) =>
@@ -61,7 +81,7 @@ export const dataReadTool: ToolModule = {
           title: "Read project data",
         },
         description:
-          "Read one Data Hub object through its authoritative module adapter. Artifact reads issue only short-lived controlled transfers; Repo files remain revision-pinned.",
+          "Authoritative evidence read for one object selected through data.list. Use the returned domain content to support material claims; read only decision-relevant objects rather than the whole Project. Artifact transfers remain controlled and Repo files revision-pinned.",
         inputSchema: dataReadInput,
       },
       async ({ object_id, project_id }) =>

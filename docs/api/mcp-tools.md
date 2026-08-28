@@ -63,6 +63,11 @@ requires `project_id`, applies Gateway scope, and calls Core `projects.get` for
 the authoritative problem metadata and source references. Both calls are
 read-only, audited, and never query PostgreSQL from the Gateway.
 
+For evidence-led Agent work, `project.get` is the first read: it establishes
+the goal, problem, constraints, and source references before the Agent judges
+implementation progress. Domain progress is deliberately left to the Data Hub
+readers rather than inferred from Project metadata.
+
 ## `data.list` and `data.read`
 
 These read-only tools call the generated Core Client and never access Git or
@@ -70,6 +75,15 @@ PostgreSQL directly. `data.list` accepts a `project_id` plus optional `type`,
 `cursor`, and `limit`. Stage 1 Repo types are `repository`, `repo_commit`, and
 `repo_file`. `data.read` accepts a `project_id` and Data Hub `object_id`, then
 Core resolves full content through the owning module's authorized reader.
+
+`data.list` is an evidence discovery index: Agents should filter one domain
+type at a time, request a small page, and treat titles, summaries, counts, and
+status as navigation hints. A material claim about content or results should
+follow a relevant list item with `data.read`. Agents should select only the
+newest or decision-relevant objects, avoid bulk-reading `repo_file`, and
+paginate only to answer a specific unresolved question. Typical progress
+discovery uses `repo_commit`, `model_snapshot`, `experiment_run`, and
+`article_draft`, with the adjacent types documented below as fallbacks.
 
 Stage 4 adds Progress projections for `milestone`, `task`, and
 `progress_proposal`. Their full content is resolved by Core's Progress reader;
@@ -87,6 +101,13 @@ countdown; `model_question` resolves the question detail and latest Snapshot;
 `model_snapshot` resolves one immutable version by its question and Snapshot
 identifiers. MCP remains a read-only `data.list/read` surface for Model and
 never receives the Notion integration token or a temporary media URL.
+
+Stage 8 adds `experiment`, `experiment_run`, and `result_bundle`; Stage 9 adds
+`article_draft`, `article_block`, `article_patch`, `article_commit`,
+`article_build`, and `article_release`. Their readers resolve current domain
+records through Core, so an Agent can distinguish planned work, active runs or
+drafts, verified results/builds, and reviewed releases without treating a
+projection summary as the full record.
 
 For `repo_file`, the returned content remains pinned to the full commit SHA
 stored in the projection. Binary, oversized, LFS, symlink, and submodule
@@ -146,6 +167,14 @@ full Agent conversation history into the Project Data Hub.
 `progress.get` reads the same authorized aggregate used by the Web Progress
 page: detected and effective stage, active human override, latest evaluation,
 history-linked Tasks/Proposals, and tracking Settings. It is read-only.
+For evidence-led evaluation it is the second read after `project.get`: current
+Tasks, Milestones, and the effective human override are authoritative work
+state, while the latest automatic evaluation is comparison history rather than
+proof of current code, model, experiment, or article progress. Evaluator
+failures and tool availability are operational provenance, never Project risk.
+If the aggregate is truncated, an Agent recovers current `milestone` and `task`
+objects through bounded `data.list`/`data.read` calls instead of asking the user
+for fields already owned by mmdash.
 
 `progress.recalculate` schedules work in the Core-owned PostgreSQL Job Queue;
 the Gateway never evaluates or writes Progress directly. Product Agent Tokens

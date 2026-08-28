@@ -41,8 +41,12 @@ export const projectGetTool: ToolModule = {
           title: "Read project metadata",
         },
         description:
-          "Read one authorized project's metadata, problem statement, and source references.",
-        inputSchema: z.object({ project_id: projectIdSchema }),
+          "First evidence step for understanding a Project: read its authoritative goal, problem statement, constraints, metadata, and source references. Use domain data tools for implementation progress.",
+        inputSchema: z.object({
+          project_id: projectIdSchema.describe(
+            "Exact Project ID supplied by the evaluation or user request.",
+          ),
+        }),
       },
       async ({ project_id }) =>
         executeProjectRead(context, this.name, project_id, () =>
