@@ -20,8 +20,12 @@ export const progressGetTool: ToolModule = {
           title: "Read project progress",
         },
         description:
-          "Read the authoritative Progress aggregate, including detected stage, effective human override, latest evaluation, tasks, milestones, proposals, and tracking settings.",
-        inputSchema: z.object({ project_id: projectId }),
+          "Second evidence step after project.get: read authoritative current Tasks, Milestones, effective human override, proposals, and tracking state. The latest automatic evaluation and evaluator failures are comparison provenance, not proof of current domain progress or Project risk. If a large result is truncated, recover work items through data.list/data.read instead of asking the user.",
+        inputSchema: z.object({
+          project_id: projectId.describe(
+            "Exact Project ID used for the preceding project.get call.",
+          ),
+        }),
       },
       async ({ project_id }) =>
         execute(context, this.name, project_id, (requestContext) =>

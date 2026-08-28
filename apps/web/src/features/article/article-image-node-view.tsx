@@ -299,12 +299,12 @@ export function ArticleImageNodeView({
     >
       {dropIndicatorSide === "left" ? (
         <div className="pointer-events-none absolute -left-1.5 top-1 bottom-1 z-30 flex items-center justify-center">
-          <div className="h-full w-0.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]" />
+          <div className="h-full w-0.5 rounded-full bg-foreground dark:bg-white shadow-[0_0_6px_rgba(0,0,0,0.15)] dark:shadow-[0_0_6px_rgba(255,255,255,0.5)]" />
         </div>
       ) : null}
       {dropIndicatorSide === "right" ? (
         <div className="pointer-events-none absolute -right-1.5 top-1 bottom-1 z-30 flex items-center justify-center">
-          <div className="h-full w-0.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]" />
+          <div className="h-full w-0.5 rounded-full bg-foreground dark:bg-white shadow-[0_0_6px_rgba(0,0,0,0.15)] dark:shadow-[0_0_6px_rgba(255,255,255,0.5)]" />
         </div>
       ) : null}
       {groupInfo && canEdit ? (

@@ -544,10 +544,20 @@ func (store PostgresStore) EvaluationContext(ctx context.Context, projectID stri
 	if last != nil && last.Output != nil {
 		previousOutput = last.Output
 	}
+	stateRevision, err := canonicalInputVersion(map[string]interface{}{
+		"milestones": stableMilestones, "tasks": stableTasks,
+		"tracker_state": stableState, "settings": stableSettings,
+		"active_stage_override": stableOverride,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return map[string]interface{}{
 		"progress": map[string]interface{}{
-			"milestones": stableMilestones, "tasks": stableTasks, "tracker_state": stableState,
-			"settings": stableSettings, "active_stage_override": stableOverride,
+			"state_revision": stateRevision,
+			"settings": map[string]interface{}{
+				"reasoning_effort": settings.ReasoningEffort,
+			},
 			"previous_evaluation_output": previousOutput,
 		},
 	}, nil

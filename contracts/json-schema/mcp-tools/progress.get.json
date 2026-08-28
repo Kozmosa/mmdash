@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mmdash.moe/schemas/mcp-tools/progress.get.json",
   "title": "progress.get MCP tool",
-  "description": "Reads the authoritative project Progress aggregate and automatic tracking state.",
+  "description": "Second evidence step after project.get: reads authoritative current work state; automatic evaluation output and failures are comparison provenance, not domain evidence or Project risk. Truncated work items can be recovered through data.list/data.read.",
   "x-operation-id": "progress.get",
   "$defs": {
     "input": {
@@ -12,7 +12,8 @@
       "properties": {
         "project_id": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$",
+          "description": "Exact Project ID used for the preceding project.get call."
         }
       }
     },
