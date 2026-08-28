@@ -71,6 +71,59 @@ describe("Experiment and Box BFF routes", () => {
     expect(headers.get("x-request-id")).toBe("experiment-create-request");
   });
 
+  it("forwards a local-process runtime policy create request and settings update", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json({ experiment_id: experimentId, project_id: projectId, status: "created" }, { status: 201 }),
+    );
+    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const createResponse = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      payload: {
+        name: "bare-metal run",
+        experiment_type: "box",
+        source_commit: "b".repeat(40),
+        entrypoint: "python:run.py",
+        parameters: {},
+        environment: {},
+        inputs: {},
+        runtime_policy: "local-process",
+        idempotency_key: "bare-metal-1",
+      },
+      url: `/api/projects/${projectId}/experiments`,
+    });
+    expect(createResponse.statusCode).toBe(201);
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body)).runtime_policy).toBe(
+      "local-process",
+    );
+
+    const settingsResponse = await app.inject({
+      headers: { cookie },
+      method: "PATCH",
+      payload: {
+        timezone: "Asia/Shanghai",
+        default_runtime_policy: "local-process",
+        default_limits: {
+          cpu_millis: 1000,
+          memory_bytes: 1 << 30,
+          timeout_seconds: 3600,
+          disk_bytes: 1 << 30,
+          pids: 128,
+          network: "enabled",
+        },
+        git_large_file_threshold_bytes: 52428800,
+      },
+      url: `/api/projects/${projectId}/experiments/settings`,
+    });
+    expect(settingsResponse.statusCode).toBe(200);
+    expect(
+      JSON.parse(String(fetchImplementation.mock.calls[1]?.[1]?.body)).default_runtime_policy,
+    ).toBe("local-process");
+  });
+
   it("forwards comparison IDs and many-to-many Box assignment through the project boundary", async () => {
     const fetchImplementation = vi.fn<typeof fetch>();
     fetchImplementation
