@@ -1,27 +1,27 @@
 # mmdash v0.1 Stage 8 `local-process` bare-metal Runtime (issue #47, WIP)
 
-- Updated: 2026-08-28
+- Updated: 2026-08-29
 - Branch: `feat/box-local-process-runtime` (worktree
   `.worktrees/local-process-runtime`, base `90d657f` = `main`)
 - Scope: implement Kozmosa/mmdash#47 — a stable `local-process` (裸机进程)
   trusted-host Sandbox Runtime for Boxes without Docker, reusing the existing
-  Core → Gateway → Runtime → log/result chain. This is a paused work snapshot;
-  the Box/Core/contracts vertical is implemented, the Web/BFF/MCP/CLI/Worker
-  surface and the full repository gate are not.
+  Core → Gateway → Runtime → log/result chain. The Box/Core/contracts
+  vertical and the Web/BFF/MCP/CLI/Worker surface are implemented with
+  tests; remaining work is listed at the end of this section.
 - Runtime ID `local-process`, descriptor features report probed enforcement
   (`enforce:timeout:hard`, `enforce:process-tree:process-group|job-object`,
   `enforce:cpu|memory|pids:cgroup-v2|job-object`, `enforce:disk:output-collection`,
   `network:unsupported`). The feature array rides on the existing
   `contracts.Runtime` descriptor (`features` added to the Box runtime schemas).
-- Contracts edited but **not yet regenerated**: `run_spec.schema.json` (runtime
+- Contracts edited and regenerated: `run_spec.schema.json` (runtime
   enum + optional `environment_selection.python_manifest`), `box.schema.json`
   (runtime enum + `features`), `manifest.schema.json` (runtime enum +
   `provider` + optional `resolved_dependencies`), `box.heartbeat.received` /
   `experiment.started` events, `mcp-tools/experiment.create.json`,
   `core.yaml` (`RuntimePolicy`, `BoxRuntime`, `ExperimentFailure.runtime`,
-  `BoxTask.actual_runtime`, Experiment `actual_runtime`). Run
-  `pnpm contracts:generate` before any TS work; the generated core client is
-  stale by design right now.
+  `BoxTask.actual_runtime`, Experiment `actual_runtime`). `contracts:check`,
+  the compatibility baseline, and `api:check` pass with the regenerated
+  core client and handler types.
 - Migration `000049_local_process_runtime` (up/down) widens the append-only
   CHECK value sets on `box_tasks.actual_runtime`,
   `experiments.actual_runtime`, `experiments.requested_runtime_policy` and
@@ -96,28 +96,42 @@
   venv identity as environment identity, plus `provider` and the resolved
   dependency list into the result Manifest).
 - Tests status: box module `go build`/`go vet` clean on Windows and
-  cross-compiles for linux/darwin; all pre-existing box packages still pass.
-  New passing suites: manifest discovery (family detection, ambiguity, conda
-  unsupported, hash-pin detection), environment cache (miss/hit, key
-  sensitivity to manifest content, failed-build exclusion, 96h TTL GC with
-  reference protection, capacity LRU, bare-interpreter path).
-- **Known broken (paused mid-debug)**: the process-level integration tests in
-  `local_process_test.go` (`TestRun*`, `TestProbe*`) fail on Windows: the
-  supervised helper exits 0 immediately with no streamed output. Strongly
-  suspected cause: during the runner rewrite the stdout/stderr capture into
-  `task-stdout.log`/`task-stderr.log` was dropped — `startTaskProcess` never
-  assigns the child's `Stdout`/`Stderr` to those files, so `follow`/`emitOutput`
-  stream nothing; the always-0 exit codes additionally point at the job-spec
-  loading / terminal-record path in `RunTaskRunner` needing re-verification.
-  A `TestDebugRunnerDirect` scratch test was used for diagnosis and removed.
-- Not started: Web experiment types/settings/detail runtime options and the
-  trusted-host risk warning; Web BFF and MCP Gateway zod enums; CLI
-  `experiment create` policy validation; Worker `experiment.py` runtime
-  handling; `pnpm contracts:generate` + `contracts:check` + `api:check` +
-  `docs/api/endpoints.md`; Core backend tests; `pnpm check` and Box acceptance;
-  docs under `docs/development/box.md` / `experiment.md` (enablement, accounts,
-  cache, security). `config.LocalProcess.User` is accepted but not yet applied
-  when spawning the runner (low-privilege account execution is still TODO).
+  cross-compiles for linux/darwin (CGO_ENABLED=0); all pre-existing box
+  packages still pass. New passing suites: manifest discovery (family
+  detection, ambiguity, conda unsupported, hash-pin detection), environment
+  cache (miss/hit, key sensitivity to manifest content, failed-build
+  exclusion, 96h TTL GC with reference protection, capacity LRU,
+  bare-interpreter path).
+- **Resolved on this workstation (2026-08-29)**: the Windows process-level
+  failures are fixed and all local-process tests pass. Root causes were
+  (1) a reversed `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION` field order in
+  `process_windows.go` (ControlFlags must precede CpuRate), which failed
+  every launch with a swallowed error — the always-0 exit codes came from
+  this, not from the job-spec path; (2) the suspected dropped stdout/stderr
+  capture — `launchTask` now opens `task-stdout.log`/`task-stderr.log` and
+  wires them into `startTaskProcess` on both platforms; (3) the 1MB test
+  memory limit is a hard Job Object limit on Windows (stack overflow under
+  enforcement) and was raised to 256MB in `testSpec`. The real launch error
+  is now persisted in the task record (`last_error`) and surfaces as stable
+  `RUNNER_FAILED` instead of a fabricated zero exit. See
+  `docs/bitter-lessons.md` BL-001..004.
+- Completed surface (2026-08-29): contracts regenerated
+  (`pnpm contracts:generate`, `contracts:check`, `api:check` pass); Web BFF
+  and MCP Gateway zod enums accept `local-process`; Worker validates
+  local-process result manifests (environment evidence with optional
+  `provider`/`resolved_dependencies` required like Local Docker); CLI
+  `experiment create` accepts the new policy; Web types/settings/create
+  options expose `local-process` with a trusted-host risk warning;
+  `docs/development/box.md` and `experiment.md` describe the Runtime.
+  Verified with web-bff 71/71, mcp-gateway 39/39, worker pytest, CLI go
+  tests, web vitest 215/215, and a real-binary runner smoke on Windows.
+- Remaining: `config.LocalProcess.User` is accepted but not yet applied when
+  spawning the runner (low-privilege account execution is still TODO); full
+  `pnpm check` is blocked by three pre-existing worker files from the branch
+  base failing `ruff format --check` (`article/handler.py`,
+  `jobs/handlers.py`, `progress_tracking/handler.py`) and by the branch
+  being 16 commits behind current `main`; end-to-end Box acceptance against
+  a live stack is still pending.
 
 # mmdash v0.1 Stage 9 Article repair candidate
 
@@ -1369,3 +1383,39 @@ Stage 7 browser acceptance.
   or logs.
 - PostgreSQL and MinIO volumes were preserved.
 - The next product stage is Stage 8 Experiment, Box, and Sandbox.
+
+## 2026-08-18 Manual acceptance snapshot (issue #45)
+
+- Acceptance was performed through the in-app browser against the Pixi local
+  stack; product source was not modified during the run. PostgreSQL and MinIO
+  state were preserved.
+- Stage 1 Repo was re-tested after the fixture repository was pushed and its
+  shallow clone was converted with `git fetch --unshallow`. The three mapped
+  workspaces (`mmdash-test`, `article`, `result`) reached `ready`; the external
+  acceptance commit is `e38a7dd3bd27c29fb045d84dd39eb033f4c47bd8`.
+- Stage 2 remains blocked only because the IAB can trigger but cannot operate
+  the Windows native file chooser. The chooser did open; no file was selected
+  and no file-chooser workaround was used.
+- Stage 5 was skipped because Hermes credentials were not configured. Stage 7
+  was skipped because Notion Client ID/Secret were not configured. Stage 6
+  manual mock evaluation and read-only Session checks passed; the second-click
+  and missing Proposal cases remain recorded as their documented expected
+  limitations.
+- Stage 8: the acceptance Box was visible as online with `local-docker`, but
+  Project assignment returned the GUI Toast `Project not found`. A frozen
+  experiment (`3066979f-b7b9-421b-9b19-6ee219a2e871`) was nevertheless created
+  from the fixed SHA and `python:experiments/q1_smoke.py`; after confirmation
+  it remained `queued` at `10% · 尚未开始` with no Terminal logs and no result
+  commit. This is consistent with no eligible online/registered/assigned Box
+  claiming the Core task. CLI T3.1 still fails because the device-authorization
+  request omits required `client_kind`; T8.4 and T8.5 therefore remain blocked.
+- Stage 9: the Article workbench opened with visible connection state and one
+  collaborator. A real editor write followed by `Ctrl+S` returned to `已同步`
+  and advanced the draft from `r1` to `r3`. Template registration is empty,
+  there is no Article commit, and Preview/Build/Release controls are disabled
+  until a tested template is registered. Zotero is also visibly unconfigured;
+  T9.3/T9.4 are blocked/expected-fail under #41, while T9.1/T9.2 passed.
+- Stage 8, Stage 9, and the external-dependency skip results were posted to
+  issue #45. The remaining acceptance work is product defect follow-up, not a
+  request to change the acceptance evidence or merge the fixture branch into
+  `main`.
