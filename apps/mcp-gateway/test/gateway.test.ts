@@ -243,6 +243,54 @@ describe("MCP Gateway", () => {
     );
   });
 
+  it("creates a local-process experiment through the frozen contract", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000091";
+    const createExperiment = vi.fn().mockResolvedValue({
+      experiment_id: "00000000-0000-4000-8000-000000000092",
+      execution_status: "created",
+      project_id: projectId,
+    });
+    const gateway = buildGateway({
+      config: testConfig,
+      coreClient: { createExperiment } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const client = new Client(
+      { name: "mmdash-local-process-create-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), {
+        fetch: sessionFetch.fetch,
+      }),
+    );
+
+    const result = await client.callTool({
+      arguments: {
+        entrypoint: "python:run.py",
+        environment: {},
+        experiment_type: "box",
+        idempotency_key: "bare-metal-mcp-1",
+        inputs: {},
+        name: "bare-metal run",
+        parameters: {},
+        project_id: projectId,
+        runtime_policy: "local-process",
+        source_commit: "c".repeat(40),
+      },
+      name: "experiment.create",
+    });
+    await client.close();
+
+    expect(result.isError).not.toBe(true);
+    expect(createExperiment).toHaveBeenCalledWith(
+      projectId,
+      expect.objectContaining({ runtime_policy: "local-process" }),
+      expect.objectContaining({ accessToken: cliToken, projectId }),
+    );
+  });
+
   it("reads and recalculates Progress through the delegated Core boundary", async () => {
     const audit = new MemoryAuditSink();
     const getProgress = vi.fn().mockResolvedValue({
