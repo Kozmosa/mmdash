@@ -16,11 +16,13 @@ export function UserAvatar({
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [fallbackToCravatar, setFallbackToCravatar] = useState(false);
   useEffect(() => {
     let active = true;
     setFailed(false);
     setLoaded(false);
     setUrl(undefined);
+    setFallbackToCravatar(false);
     if (!email) {
       return;
     }
@@ -29,7 +31,7 @@ export function UserAvatar({
       .then((buffer) => {
         if (active)
           setUrl(
-            `https://www.gravatar.com/avatar/${[...new Uint8Array(buffer)].map((value) => value.toString(16).padStart(2, "0")).join("")}?d=404&s=96`,
+            `https://www.gravatar.com/avatar/${[...new Uint8Array(buffer)].map((value) => value.toString(16).padStart(2, "0")).join("")}?d=404&s=400`,
           );
       });
     return () => {
@@ -54,8 +56,14 @@ export function UserAvatar({
             loaded ? "opacity-100" : "opacity-0",
           )}
           onError={() => {
-            setFailed(true);
-            setLoaded(false);
+            if (url.includes("gravatar.com") && !fallbackToCravatar) {
+              setFallbackToCravatar(true);
+              setLoaded(false);
+              setUrl(url.replace("www.gravatar.com", "cravatar.cn"));
+            } else {
+              setFailed(true);
+              setLoaded(false);
+            }
           }}
           onLoad={() => setLoaded(true)}
           src={url}
