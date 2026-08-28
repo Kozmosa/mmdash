@@ -44,9 +44,14 @@ function ExperimentSettingsForm({ canManage, initial, projectId }: Readonly<{ ca
     <Card><CardHeader><CardTitle className="text-base">默认运行策略</CardTitle><CardDescription>{canManage ? "只影响新建实验；已有实验保留创建时冻结的时区和目录。" : "当前角色可以查看，但不能修改项目级默认值。"}</CardDescription></CardHeader><CardContent><form className="space-y-5" onSubmit={submit}>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Field label="IANA 时区"><Input disabled={!canManage} onChange={(event) => setTimezone(event.target.value)} placeholder="Asia/Shanghai" required value={timezone} /></Field>
-        <Field label="默认 Runtime"><select className={selectClass} disabled={!canManage} onChange={(event) => setRuntime(event.target.value as RuntimePolicy)} value={runtime}><option value="auto">自动（E2B 优先）</option><option value="e2b">仅 E2B</option><option value="local-docker">仅 Local Docker</option></select></Field>
+        <Field label="默认 Runtime"><select className={selectClass} disabled={!canManage} onChange={(event) => setRuntime(event.target.value as RuntimePolicy)} value={runtime}><option value="auto">自动（E2B 优先）</option><option value="e2b">仅 E2B</option><option value="local-docker">仅 Local Docker</option><option value="local-process">仅 Local Process（裸机）</option></select></Field>
         <NumberField disabled={!canManage} label="Git 大文件阈值（bytes）" min={1} onChange={setThreshold} value={threshold} />
       </div>
+      {runtime === "local-process" ? (
+        <p className="rounded-md bg-amber-500/10 p-3 text-xs text-amber-700" role="note">
+          默认 Runtime 设为 Local Process 后，新建实验将直接在 Box 宿主机上以裸机进程运行：没有容器隔离，仅适合完全信任的 Box 与代码（trusted-host）。
+        </p>
+      ) : null}
       <div><p className="mb-3 text-sm font-medium">默认资源限制</p><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"><LimitField disabled={!canManage} field="cpu_millis" label="CPU（millicores）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="memory_bytes" label="内存（bytes）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="timeout_seconds" label="超时（秒）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="disk_bytes" label="磁盘（bytes）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="pids" label="进程数" limits={limits} setLimits={setLimits} /><Field label="网络策略"><select className={selectClass} disabled={!canManage} onChange={(event) => setLimits((value) => ({ ...value, network: event.target.value as ResourceLimits["network"] }))} value={limits.network}><option value="disabled">禁用</option><option value="restricted">受限</option><option value="enabled">允许</option></select></Field></div></div>
       {canManage ? <Button disabled={save.isPending} type="submit"><Save className="size-4" />{save.isPending ? "保存中…" : "保存 Experiment 设置"}</Button> : null}
     </form></CardContent></Card>

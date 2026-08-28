@@ -96,7 +96,12 @@ export function ExperimentWorkbench() {
           <Input aria-label="完整 Commit SHA" placeholder="完整 Commit SHA" value={commit} onChange={(event) => setCommit(event.target.value)} />
           <Input aria-label="固定入口" placeholder="python:run.py" value={entrypoint} onChange={(event) => setEntrypoint(event.target.value)} />
           <LabeledSelect label="运行方式" value={experimentType} onChange={(value) => setExperimentType(value as "box" | "self")}><option value="box">Box 托管运行</option><option value="self">Coding Agent 自行运行</option></LabeledSelect>
-          <LabeledSelect disabled={experimentType === "self"} label="Runtime 策略" value={runtimePolicy} onChange={(value) => setRuntimePolicy(value as RuntimePolicy)}><option value="auto">自动（E2B 优先）</option><option value="e2b">仅 E2B</option><option value="local-docker">仅 Local Docker</option></LabeledSelect>
+          <LabeledSelect disabled={experimentType === "self"} label="Runtime 策略" value={runtimePolicy} onChange={(value) => setRuntimePolicy(value as RuntimePolicy)}><option value="auto">自动（E2B 优先）</option><option value="e2b">仅 E2B</option><option value="local-docker">仅 Local Docker</option><option value="local-process">仅 Local Process（裸机）</option></LabeledSelect>
+          {experimentType === "box" && runtimePolicy === "local-process" ? (
+            <p className="rounded-md bg-amber-500/10 p-3 text-xs text-amber-700 md:col-span-2 xl:col-span-3" role="note">
+              Local Process 直接在 Box 宿主机上以裸机进程运行任务：没有容器隔离，任务可访问宿主机文件与网络，仅适合完全信任的 Box 与代码（trusted-host）。
+            </p>
+          ) : null}
           <LabeledSelect disabled={experimentType === "self"} label="指定 Box（可选）" value={requestedBoxId} onChange={setRequestedBoxId}><option value="">最低负载自动选择</option>{boxes.data?.items.map((box) => <option key={box.box_id} value={box.box_id}>{box.name} · {box.status}</option>)}</LabeledSelect>
           <Button className="md:col-span-2 xl:col-span-3" disabled={!name.trim() || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(commit) || create.isPending} onClick={() => create.mutate()}><FlaskConical className="size-4" />{create.isPending ? "创建中…" : "创建冻结实验"}</Button>
         </CardContent>
