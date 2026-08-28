@@ -447,6 +447,7 @@ func (service *Service) CreateBuild(ctx context.Context, caller auth.Identity, p
 	}
 	return service.createBuild(ctx, caller.ActorID(), projectID, BuildFormal, commitID, nil, templateID, engine, bibliographyTool, idempotency)
 }
+
 type previewBuildSnapshot struct {
 	ArticleManifest    map[string]interface{} `json:"article_manifest"`
 	DraftRevision      int64                  `json:"draft_revision"`
@@ -455,6 +456,7 @@ type previewBuildSnapshot struct {
 	ResourceReferences []Reference            `json:"resource_references"`
 	SchemaVersion      string                 `json:"schema_version"`
 }
+
 func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity, projectID string, draftRevision int64, templateID, engine, bibliographyTool string) (Build, bool, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleBuild); err != nil {
 		return Build{}, false, err
