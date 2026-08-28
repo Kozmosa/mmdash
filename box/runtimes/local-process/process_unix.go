@@ -30,10 +30,13 @@ func newTaskJob(_ contractLimits) (*jobObject, error) {
 func (job *jobObject) terminate() error { return nil }
 func (job *jobObject) close()           {}
 
-func startTaskProcess(argv []string, env []string, dir string, _ *jobObject) (*exec.Cmd, error) {
+func startTaskProcess(argv []string, env []string, dir string, _ *jobObject,
+	stdoutLog, stderrLog *os.File) (*exec.Cmd, error) {
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = dir
 	command.Env = env
+	command.Stdout = stdoutLog
+	command.Stderr = stderrLog
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return nil, err

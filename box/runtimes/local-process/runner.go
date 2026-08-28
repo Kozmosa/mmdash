@@ -96,8 +96,12 @@ func RunTaskRunner(args []string, stdout, stderr io.Writer) error {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
-	process, taskJob, launchErr := launchTask(&job)
+	process, taskJob, launchErr := launchTask(&job, taskDir)
 	if launchErr != nil {
+		// The durable record is the only surviving evidence: the runner's
+		// stderr is discarded by the Gateway, so the launch failure reason
+		// must be persisted for the Gateway and the operator to see.
+		record.LastError = launchErr.Error()
 		return persistTerminal(recordPath, record, *taskID, taskStateFailed, nil)
 	}
 	defer taskJob.close()
@@ -158,17 +162,29 @@ func RunTaskRunner(args []string, stdout, stderr io.Writer) error {
 // launchTask starts the task suspended where the platform requires it and
 // applies the frozen hard limits before the first instruction of the task can
 // run. A limit that cannot be applied aborts the launch: an unenforced limit
-// must never silently degrade into an advisory value.
-func launchTask(job *jobSpec) (*exec.Cmd, *jobObject, error) {
+// must never silently degrade into an advisory value. The task output is
+// captured into the durable per-task logs that the Gateway spool streams.
+func launchTask(job *jobSpec, taskDir string) (*exec.Cmd, *jobObject, error) {
 	taskJob, err := newTaskJob(job.limits())
 	if err != nil {
 		return nil, nil, err
 	}
-	process, err := startTaskProcess(job.Command, job.Environment, job.Workspace, taskJob)
+	stdoutLog, stderrLog, err := openTaskLogs(taskDir)
 	if err != nil {
 		taskJob.close()
 		return nil, nil, err
 	}
+	process, err := startTaskProcess(job.Command, job.Environment, job.Workspace, taskJob, stdoutLog, stderrLog)
+	if err != nil {
+		stdoutLog.Close()
+		stderrLog.Close()
+		taskJob.close()
+		return nil, nil, err
+	}
+	// The child owns inherited handles now; the runner never writes to the
+	// logs itself and must not keep them open.
+	stdoutLog.Close()
+	stderrLog.Close()
 	if job.CgroupPath != "" {
 		if err := applyCgroupLimits(job.CgroupPath, process.Process.Pid, job.limits()); err != nil {
 			_ = taskJob.terminate()
@@ -179,6 +195,23 @@ func launchTask(job *jobSpec) (*exec.Cmd, *jobObject, error) {
 		}
 	}
 	return process, taskJob, nil
+}
+
+// openTaskLogs creates the runner-owned task output logs. The Gateway streams
+// and replays them by byte offsets, so only the runner may write them.
+func openTaskLogs(taskDir string) (*os.File, *os.File, error) {
+	stdoutLog, err := os.OpenFile(filepath.Join(taskDir, "task-stdout.log"),
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, nil, err
+	}
+	stderrLog, err := os.OpenFile(filepath.Join(taskDir, "task-stderr.log"),
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		stdoutLog.Close()
+		return nil, nil, err
+	}
+	return stdoutLog, stderrLog, nil
 }
 
 func loadJobSpec(path string) (jobSpec, error) {

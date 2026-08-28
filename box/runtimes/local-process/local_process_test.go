@@ -171,7 +171,7 @@ func testSpec(t *testing.T, workspace, entrypointFile string, environment map[st
 		Environment: environment, Inputs: map[string]interface{}{},
 		Runtime: "local-process", RuntimeVersion: "1",
 		Limits: contracts.ResourceLimits{
-			CPUMillis: 1000, MemoryBytes: 1 << 20, TimeoutSecond: timeout,
+			CPUMillis: 1000, MemoryBytes: 1 << 28, TimeoutSecond: timeout,
 			DiskBytes: 1 << 20, PIDs: 64, Network: "enabled",
 		},
 		ResultContract: contracts.ResultContract{
@@ -303,6 +303,31 @@ func TestRunReportsNonZeroExit(t *testing.T) {
 	}
 	if !strings.Contains(request.Stderr.(*syncBuffer).String(), "deliberate failure") {
 		t.Fatal("stderr was not streamed")
+	}
+}
+
+func TestRunLaunchFailureSurfacesStableError(t *testing.T) {
+	runtime, _ := newTestRuntime(t)
+	workspace, spec := prepareHelperWorkspace(t, nil, "echo")
+	spec.Entrypoint = "binary:missing-task-binary.exe"
+	request := newRunRequest(t, workspace, spec)
+	_, err := runtime.Run(context.Background(), request)
+	if err == nil {
+		t.Fatal("a launch failure must not surface as a zero-exit success")
+	}
+	var stable interface{ ErrorCode() string }
+	if !errors.As(err, &stable) || stable.ErrorCode() != ErrCodeRunnerFailed {
+		t.Fatalf("expected a %s failure, got %v", ErrCodeRunnerFailed, err)
+	}
+	if !strings.Contains(err.Error(), "missing-task-binary") {
+		t.Fatalf("the launch failure reason is missing from the error: %v", err)
+	}
+	record, exists, recordErr := loadTaskRecord(runtime.recordPath(request.ID))
+	if recordErr != nil || !exists {
+		t.Fatalf("terminal record missing: %v %v", exists, recordErr)
+	}
+	if record.State != taskStateFailed || record.LastError == "" {
+		t.Fatalf("the durable record must keep state=failed and the failure reason: %+v", record)
 	}
 }
 
