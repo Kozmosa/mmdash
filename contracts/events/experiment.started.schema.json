@@ -10,7 +10,7 @@
     "task_id": { "type": "string", "format": "uuid" },
     "box_id": { "type": "string", "format": "uuid" },
     "execution_epoch": { "type": "string", "format": "uuid" },
-    "runtime": { "type": "string", "enum": ["e2b", "local-docker"] },
+    "runtime": { "type": "string", "enum": ["e2b", "local-docker", "local-process"] },
     "runtime_version": { "type": "string", "minLength": 1, "maxLength": 100 },
     "execution_status": { "type": "string", "enum": ["preparing", "running"] }
   }

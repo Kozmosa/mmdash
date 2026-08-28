@@ -558,7 +558,8 @@ func validateExperiment(item *Experiment, projectID string, rerun bool) error {
 		return ErrInvalid
 	}
 	if item.RequestedRuntimePolicy != "auto" && item.RequestedRuntimePolicy != "local-docker" &&
-		item.RequestedRuntimePolicy != "e2b" || !validLimits(item.Limits) {
+		item.RequestedRuntimePolicy != "e2b" && item.RequestedRuntimePolicy != "local-process" ||
+		!validLimits(item.Limits) {
 		return ErrInvalid
 	}
 	if item.Type == TypeSelf && item.RequestedBoxID != "" {
@@ -584,7 +585,7 @@ func validSettingsPatch(patch SettingsPatch) bool {
 	}
 	if patch.DefaultRuntimePolicy != nil {
 		value := strings.TrimSpace(*patch.DefaultRuntimePolicy)
-		if value != "auto" && value != "local-docker" && value != "e2b" {
+		if value != "auto" && value != "local-docker" && value != "e2b" && value != "local-process" {
 			return false
 		}
 		*patch.DefaultRuntimePolicy = value

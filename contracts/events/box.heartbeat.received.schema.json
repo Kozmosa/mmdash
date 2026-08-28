@@ -11,6 +11,6 @@
     "status": { "type": "string", "enum": ["online", "offline", "draining"] },
     "version": { "type": "string", "minLength": 1, "maxLength": 100 },
     "running_tasks": { "type": "integer", "minimum": 0 },
-    "runtimes": { "type": "array", "items": { "type": "string", "enum": ["e2b", "local-docker"] }, "uniqueItems": true }
+    "runtimes": { "type": "array", "items": { "type": "string", "enum": ["e2b", "local-docker", "local-process"] }, "uniqueItems": true }
   }
 }

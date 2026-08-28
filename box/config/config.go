@@ -18,16 +18,27 @@ import (
 const schemaVersion = 1
 
 type Config struct {
-	SchemaVersion int         `json:"schema_version"`
-	ControlURL    string      `json:"control_url"`
-	Name          string      `json:"name"`
-	LocalDocker   LocalDocker `json:"local_docker"`
-	E2B           E2B         `json:"e2b"`
+	SchemaVersion int           `json:"schema_version"`
+	ControlURL    string        `json:"control_url"`
+	Name          string        `json:"name"`
+	LocalDocker   LocalDocker   `json:"local_docker"`
+	E2B           E2B           `json:"e2b"`
+	LocalProcess  LocalProcess  `json:"local_process"`
 }
 
 type LocalDocker struct {
 	Enabled bool   `json:"enabled"`
 	Image   string `json:"image"`
+}
+
+// LocalProcess is the trusted-host bare-metal Runtime. It is disabled by
+// default and must be enabled explicitly by the Box owner; it provides no
+// container-equivalent isolation, only process-tree supervision and the
+// resource limits reported by the Runtime probe.
+type LocalProcess struct {
+	Enabled bool   `json:"enabled"`
+	Python  string `json:"python,omitempty"`
+	User    string `json:"user,omitempty"`
 }
 
 type E2B struct {
@@ -57,7 +68,18 @@ func Default(root string) Config {
 			User:      "user",
 			AdminUser: "root",
 		},
+		LocalProcess: LocalProcess{
+			Enabled: false,
+			Python:  defaultPython(),
+		},
 	}
+}
+
+func defaultPython() string {
+	if runtime.GOOS == "windows" {
+		return "python"
+	}
+	return "python3"
 }
 
 func DefaultRoot() string {
@@ -140,7 +162,7 @@ func Validate(config Config) error {
 	if strings.TrimSpace(config.Name) == "" {
 		return errors.New("Box name is required")
 	}
-	if !config.LocalDocker.Enabled && !config.E2B.Enabled {
+	if !config.LocalDocker.Enabled && !config.E2B.Enabled && !config.LocalProcess.Enabled {
 		return errors.New("at least one Runtime must be enabled")
 	}
 	if config.LocalDocker.Enabled && strings.TrimSpace(config.LocalDocker.Image) == "" {
@@ -148,6 +170,19 @@ func Validate(config Config) error {
 	}
 	if config.E2B.Enabled && strings.TrimSpace(config.E2B.APIKey) == "" {
 		return errors.New("E2B API key is required when E2B is enabled")
+	}
+	// The bare-metal Runtime is trusted-host execution: the opt-in flag must be
+	// the deliberate choice of the Box owner and the interpreter must resolve.
+	if config.LocalProcess.Enabled {
+		if strings.TrimSpace(config.LocalProcess.Python) == "" {
+			return errors.New("a Python interpreter is required when Local Process is enabled")
+		}
+		if strings.ContainsAny(config.LocalProcess.Python, "\x00\r\n") {
+			return errors.New("Local Process Python interpreter path is invalid")
+		}
+		if strings.ContainsAny(config.LocalProcess.User, "\x00\r\n") {
+			return errors.New("Local Process user is invalid")
+		}
 	}
 	return nil
 }

@@ -1,3 +1,124 @@
+# mmdash v0.1 Stage 8 `local-process` bare-metal Runtime (issue #47, WIP)
+
+- Updated: 2026-08-28
+- Branch: `feat/box-local-process-runtime` (worktree
+  `.worktrees/local-process-runtime`, base `90d657f` = `main`)
+- Scope: implement Kozmosa/mmdash#47 — a stable `local-process` (裸机进程)
+  trusted-host Sandbox Runtime for Boxes without Docker, reusing the existing
+  Core → Gateway → Runtime → log/result chain. This is a paused work snapshot;
+  the Box/Core/contracts vertical is implemented, the Web/BFF/MCP/CLI/Worker
+  surface and the full repository gate are not.
+- Runtime ID `local-process`, descriptor features report probed enforcement
+  (`enforce:timeout:hard`, `enforce:process-tree:process-group|job-object`,
+  `enforce:cpu|memory|pids:cgroup-v2|job-object`, `enforce:disk:output-collection`,
+  `network:unsupported`). The feature array rides on the existing
+  `contracts.Runtime` descriptor (`features` added to the Box runtime schemas).
+- Contracts edited but **not yet regenerated**: `run_spec.schema.json` (runtime
+  enum + optional `environment_selection.python_manifest`), `box.schema.json`
+  (runtime enum + `features`), `manifest.schema.json` (runtime enum +
+  `provider` + optional `resolved_dependencies`), `box.heartbeat.received` /
+  `experiment.started` events, `mcp-tools/experiment.create.json`,
+  `core.yaml` (`RuntimePolicy`, `BoxRuntime`, `ExperimentFailure.runtime`,
+  `BoxTask.actual_runtime`, Experiment `actual_runtime`). Run
+  `pnpm contracts:generate` before any TS work; the generated core client is
+  stale by design right now.
+- Migration `000049_local_process_runtime` (up/down) widens the append-only
+  CHECK value sets on `box_tasks.actual_runtime`,
+  `experiments.actual_runtime`, `experiments.requested_runtime_policy` and
+  `experiment_project_settings.default_runtime_policy` to include
+  `local-process`. No data rewrite; down migration restores the old sets.
+- Core: `boxcontrol.validateRegistration` accepts the new Runtime;
+  `ClaimTask` SQL now resolves the actual runtime explicitly — `auto` keeps
+  matching only E2B/Local Docker Boxes (never `local-process`), while an
+  explicit `runtime_policy` selects exactly that reported runtime;
+  `experiment` create/settings validation accepts the new policy value.
+- Box config/CLI: `LocalProcess` section (`enabled` default false, `python`
+  interpreter, optional low-privilege `user`) with validation; mbox `setup`
+  gains `--enable-local-process` / `--local-process-python` plus an
+  interactive prompt that only offers bare-metal when Local Docker is off;
+  `mbox config set local-process.enabled|local-process.python` supported.
+- New package `box/runtimes/local-process`:
+  - `mmdash-task-runner` supervisor implemented as a re-executed subcommand of
+    the Box binary (dispatch added in `cmd/mmdash-box/main.go` before mbox).
+    One runner per task; starts the frozen entrypoint from an argument array,
+    no shell; Linux process group + cgroup v2 (memory/swap-off, cpu.max,
+    pids.max), Windows Job Object (CPU rate hard limit mapped through core
+    count, JobMemoryLimit, ActiveProcessLimit, CREATE_SUSPENDED assignment
+    then main-thread resume); timeout and cancel sentinel both terminate the
+    full tree; durable per-task record (boot ID, runner/task PID, state, exit
+    code) under `<root>/runner/<task>/`.
+  - Reconnect semantics: a restarted Gateway reattaches by task record; a
+    different boot ID terminates the task with stable `HOST_RESTARTED` (no
+    replay); a dead supervisor on the same boot yields `RUNNER_LOST`. Gap
+    output replay after restart uses runner-owned `task-stdout.log` /
+    `task-stderr.log` plus persisted spool byte offsets, so stdout/stderr
+    resume from the last acknowledged bytes.
+  - Stable failure codes `HOST_RESTARTED`, `LIMITS_NOT_ENFORCEABLE`,
+    `RUNNER_LOST`, `RUNNER_FAILED` flow through a new `ErrorCode()` interface
+    mapped in `gateway.execute`/`PrepareEnvironment` failure paths.
+  - Unenforceable policy is rejected, never degraded: the bare-metal runtime
+    only serves tasks whose frozen limits request `network=enabled` (it has no
+    netns/firewall capability) and refuses cpu/memory/pids when the platform
+    probe cannot guarantee kernel enforcement; `Probe` then does not advertise
+    the runtime at all.
+  - Task environment is a documented whitelist (PATH, platform system vars,
+    LANG/TZ, per-task `HOME`/temp dirs, `MMDASH_WORKSPACE`,
+    `MMDASH_OUTPUT_DIR`, `MMDASH_EXPERIMENT_ID`, `MMDASH_PARAMETERS_FILE`,
+    `PYTHONDONTWRITEBYTECODE`, `PYTHONUNBUFFERED`, optional `VIRTUAL_ENV`) plus
+    the frozen task environment; no Gateway/Box-token/Git/SSH/cloud variables
+    can leak, and the frozen task env may not override the allowlist or PATH.
+  - Python manifest discovery is allowlist-only at workspace root:
+    `requirements.lock`, `requirements.txt` (best-effort unless fully
+    hash-pinned, detected by parsing `--hash` on every requirement line),
+    `pyproject.toml`+`uv.lock` (`uv sync --frozen --no-install-project`),
+    `pyproject.toml`+`poetry.lock` (`poetry install --no-root` with lock-hash
+    verification), `Pipfile`+`Pipfile.lock` (`pipenv requirements` export +
+    `pip --require-hashes`). Conda `environment.yml/yaml` returns
+    `ENVIRONMENT_MANIFEST_UNSUPPORTED`; multiple families return
+    `ENVIRONMENT_MANIFEST_AMBIGUOUS` unless the frozen RunSpec carries an
+    explicit `environment_selection.python_manifest` (contract exists; Core
+    experiment settings plumbing for the selection is deferred, per the issue
+    the stable ambiguity error is the first-delivery behavior). Builds stage
+    the verified manifest bytes into a temp build dir, never the workspace.
+  - Content-addressed environment cache
+    `<env-root>/local-process/python/<environment-key>`: key covers builder
+    strategy + package-index version, OS/arch, interpreter identity (path +
+    detected version), installer tool identity (pip/uv/poetry/pipenv version),
+    and manifest paths + content hashes. Singleflight per key; build in a temp
+    directory, atomic rename publish, failed builds never cached; per-entry
+    `entry.json` records family, identities, manifest paths/hashes, resolved
+    dependency set (`pip freeze` / `uv pip freeze`), size, `last_used_at` and
+    active task references. GC removes entries idle >96h with zero refs and
+    supports a total-capacity budget (`MMDASH_BOX_LOCAL_PROCESS_CACHE_MAX_BYTES`)
+    with LRU eviction of unreferenced entries.
+- Gateway: `manifestEnvironment` is now provider-neutral (local-docker keeps
+  image IDs; local-process reports interpreter identity as base identity,
+  venv identity as environment identity, plus `provider` and the resolved
+  dependency list into the result Manifest).
+- Tests status: box module `go build`/`go vet` clean on Windows and
+  cross-compiles for linux/darwin; all pre-existing box packages still pass.
+  New passing suites: manifest discovery (family detection, ambiguity, conda
+  unsupported, hash-pin detection), environment cache (miss/hit, key
+  sensitivity to manifest content, failed-build exclusion, 96h TTL GC with
+  reference protection, capacity LRU, bare-interpreter path).
+- **Known broken (paused mid-debug)**: the process-level integration tests in
+  `local_process_test.go` (`TestRun*`, `TestProbe*`) fail on Windows: the
+  supervised helper exits 0 immediately with no streamed output. Strongly
+  suspected cause: during the runner rewrite the stdout/stderr capture into
+  `task-stdout.log`/`task-stderr.log` was dropped — `startTaskProcess` never
+  assigns the child's `Stdout`/`Stderr` to those files, so `follow`/`emitOutput`
+  stream nothing; the always-0 exit codes additionally point at the job-spec
+  loading / terminal-record path in `RunTaskRunner` needing re-verification.
+  A `TestDebugRunnerDirect` scratch test was used for diagnosis and removed.
+- Not started: Web experiment types/settings/detail runtime options and the
+  trusted-host risk warning; Web BFF and MCP Gateway zod enums; CLI
+  `experiment create` policy validation; Worker `experiment.py` runtime
+  handling; `pnpm contracts:generate` + `contracts:check` + `api:check` +
+  `docs/api/endpoints.md`; Core backend tests; `pnpm check` and Box acceptance;
+  docs under `docs/development/box.md` / `experiment.md` (enablement, accounts,
+  cache, security). `config.LocalProcess.User` is accepted but not yet applied
+  when spawning the runner (low-privilege account execution is still TODO).
+
 # mmdash v0.1 Stage 9 Article repair candidate
 
 - Updated: 2026-08-24

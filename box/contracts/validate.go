@@ -24,7 +24,7 @@ func (spec RunSpec) Validate() error {
 		!entryPattern.MatchString(spec.Entrypoint) {
 		return errors.New("invalid frozen run specification")
 	}
-	if spec.Runtime != "local-docker" && spec.Runtime != "e2b" {
+	if spec.Runtime != "local-docker" && spec.Runtime != "e2b" && spec.Runtime != "local-process" {
 		return errors.New("unsupported runtime")
 	}
 	if spec.RuntimeVersion == "" || spec.SourceTransfer.SourceCommit != spec.SourceCommit ||
@@ -59,7 +59,7 @@ func (manifest Manifest) Validate() error {
 	if manifest.SchemaVersion != "2" || manifest.ExperimentID == "" ||
 		!commitPattern.MatchString(manifest.SourceCommit) || manifest.ResultDirectory == "" ||
 		manifest.StartedAt.IsZero() || manifest.FinishedAt.Before(manifest.StartedAt) ||
-		(manifest.Runtime != "local-docker" && manifest.Runtime != "e2b") ||
+		(manifest.Runtime != "local-docker" && manifest.Runtime != "e2b" && manifest.Runtime != "local-process") ||
 		manifest.RuntimeVersion == "" ||
 		(manifest.Status != "succeeded" && manifest.Status != "failed" && manifest.Status != "canceled" && manifest.Status != "timed_out") {
 		return errors.New("invalid manifest header")

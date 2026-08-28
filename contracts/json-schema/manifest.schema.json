@@ -13,7 +13,7 @@
     "status": { "type": "string", "enum": ["succeeded", "failed", "canceled", "timed_out"] },
     "started_at": { "type": "string", "format": "date-time" },
     "finished_at": { "type": "string", "format": "date-time" },
-    "runtime": { "type": "string", "enum": ["local-docker", "e2b"] },
+    "runtime": { "type": "string", "enum": ["local-docker", "e2b", "local-process"] },
     "runtime_version": { "type": "string", "minLength": 1, "maxLength": 100 },
     "logs_truncated": { "type": "boolean" },
     "summary": { "type": "string", "maxLength": 20000 },
@@ -23,9 +23,15 @@
       "additionalProperties": false,
       "required": ["environment_key", "base_image_id", "environment_image_id", "manifest_paths", "manifest_hashes", "builder_version", "cache_hit"],
       "properties": {
+        "provider": { "type": "string", "enum": ["local-docker", "local-process"] },
         "environment_key": { "type": "string", "minLength": 1, "maxLength": 128 },
         "base_image_id": { "type": "string", "minLength": 1, "maxLength": 512 },
         "environment_image_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "resolved_dependencies": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "type": "string", "maxLength": 500 }
+        },
         "manifest_paths": {
           "type": "array",
           "maxItems": 32,
