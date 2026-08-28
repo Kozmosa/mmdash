@@ -50,7 +50,7 @@ export const experimentCreateTool: ToolModule = {
             parameters: z.record(z.string(), z.unknown()),
             environment: z.record(z.string(), z.string()),
             inputs: z.record(z.string(), z.unknown()),
-            runtime_policy: z.enum(["auto", "e2b", "local-docker"]).optional(),
+            runtime_policy: z.enum(["auto", "e2b", "local-docker", "local-process"]).optional(),
             requested_box_id: z.string().uuid().optional(),
             limits_override: limits.optional(),
             idempotency_key: z.string().trim().min(1).max(200),
