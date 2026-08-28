@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Clock3, FileText, Plus, Settings2, Waypoints } from "lucide-react";
+import { ArrowRight, Clock3, FileText, Plus, Settings2, Waypoints, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -10,7 +10,7 @@ import { useCurrentProject } from "@/components/providers/project-provider";
 import { EmptyState } from "@/components/states/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { apiClient } from "@/lib/api-client";
 
@@ -30,6 +30,7 @@ export function ModelListPage() {
       return data?.source?.sync_status === "queued" || data?.source?.sync_status === "running" || data?.questions.some((item) => item.sync_status === "queued" || item.sync_status === "running") ? 1_500 : false;
     },
   });
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [code, setCode] = useState("");
   const [codeTouched, setCodeTouched] = useState(false);
   const [title, setTitle] = useState("");
@@ -50,7 +51,7 @@ export function ModelListPage() {
   });
   const create = useMutation({
     mutationFn: () => apiClient.request(`${base}/questions`, { body: { code: code.trim() || defaultCode, title: title.trim(), notion_page_id: pageId, position: overview.data?.questions.length ?? 0 }, method: "POST" }),
-    onSuccess: async () => { setCodeTouched(false); setCode(""); setTitle(""); await refresh(); toast.success("题号已创建并绑定 Notion 子页面"); },
+    onSuccess: async () => { setCodeTouched(false); setCode(""); setTitle(""); setIsCreateOpen(false); await refresh(); toast.success("题号已创建并绑定 Notion 子页面"); },
   });
   const configured = overview.data?.configured ?? false;
 
@@ -65,7 +66,13 @@ export function ModelListPage() {
         <div className="flex items-center gap-2">
           {overview.data?.source?.auto_sync_enabled ? <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 className="size-3.5" />{formatCountdown(countdown)}</span> : null}
           <Link className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium shadow-xs hover:bg-accent" href={`/projects/${encodeURIComponent(project.id)}/settings#model-settings`}><Settings2 className="size-4" />设置</Link>
-          <Button disabled={!configured || sync.isPending} onClick={() => sync.mutate()}><RefreshIcon spinning={sync.isPending} />同步</Button>
+          <Button disabled={!configured || sync.isPending} onClick={() => sync.mutate()} variant="outline"><RefreshIcon spinning={sync.isPending} />同步</Button>
+          {configured && (
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="size-4" />
+              新建题号
+            </Button>
+          )}
         </div>
       </header>
 
@@ -78,9 +85,85 @@ export function ModelListPage() {
         <Card><CardContent className="flex flex-wrap items-center justify-between gap-4 p-4"><div><p className="font-medium">{overview.data.source.notion_root_title || "Notion 根页面"}</p><p className="text-xs text-muted-foreground">已发现 {overview.data.source.discovered_page_count} 个子页面 · 每 {Math.round(overview.data.source.auto_sync_interval_seconds / 60)} 分钟同步</p></div><Badge>{overview.data.source.sync_status}</Badge></CardContent></Card>
       ) : null}
 
-      {configured ? (
-        <Card><CardContent className="grid gap-3 p-4 lg:grid-cols-[8rem_minmax(12rem,1fr)_minmax(14rem,1.2fr)_auto]"><Input aria-label="题号" onChange={(event) => { setCodeTouched(true); setCode(event.target.value); }} placeholder={defaultCode || "Q1"} value={code} /><Input aria-label="题目标题" onChange={(event) => setTitle(event.target.value)} placeholder="问题标题" value={title} /><select aria-label="Notion 子页面" className="h-9 rounded-md border border-input bg-background px-3 text-sm" onChange={(event) => setPageId(event.target.value)} value={pageId}><option value="">选择未绑定的子页面</option>{availablePages.map((page) => <option key={page.notion_page_id} value={page.notion_page_id}>{"　".repeat(Math.max(0, page.depth - 1))}{page.title}</option>)}</select><Button disabled={!title.trim() || !pageId || create.isPending} onClick={() => create.mutate()}><Plus className="size-4" />新建题号</Button></CardContent></Card>
-      ) : null}
+      {isCreateOpen && (
+        <div
+          aria-labelledby="create-question-title"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+        >
+          <Card className="w-full max-w-md shadow-xl animate-in fade-in-50 zoom-in-95 duration-150">
+            <CardHeader className="relative pr-10">
+              <CardTitle id="create-question-title">新建题号</CardTitle>
+              <CardDescription>
+                新建题号并绑定一个已发现的 Notion 子页面。
+              </CardDescription>
+              <Button
+                aria-label="关闭弹窗"
+                className="absolute right-4 top-4 size-8 p-0"
+                onClick={() => setIsCreateOpen(false)}
+                variant="ghost"
+              >
+                <X className="size-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <label className="grid gap-1.5 text-sm font-medium">
+                题号
+                <Input
+                  aria-label="题号"
+                  onChange={(event) => {
+                    setCodeTouched(true);
+                    setCode(event.target.value);
+                  }}
+                  placeholder={defaultCode || "Q1"}
+                  value={code}
+                />
+              </label>
+              <label className="grid gap-1.5 text-sm font-medium">
+                题目标题
+                <Input
+                  aria-label="题目标题"
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="请输入标题"
+                  value={title}
+                />
+              </label>
+              <label className="grid gap-1.5 text-sm font-medium">
+                Notion 子页面
+                <select
+                  aria-label="Notion 子页面"
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm w-full"
+                  onChange={(event) => setPageId(event.target.value)}
+                  value={pageId}
+                >
+                  <option value="">选择未绑定的子页面</option>
+                  {availablePages.map((page) => (
+                    <option key={page.notion_page_id} value={page.notion_page_id}>
+                      {"　".repeat(Math.max(0, page.depth - 1))}
+                      {page.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </CardContent>
+            <CardFooter className="flex justify-end gap-2 pt-0">
+              <Button
+                onClick={() => setIsCreateOpen(false)}
+                variant="outline"
+              >
+                取消
+              </Button>
+              <Button
+                disabled={!title.trim() || !pageId || create.isPending}
+                onClick={() => create.mutate()}
+              >
+                {create.isPending ? "新建中…" : "确认新建"}
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      )}
       {create.error ? <p className="text-sm text-destructive">{create.error.message}</p> : null}
 
       <div className="space-y-3">

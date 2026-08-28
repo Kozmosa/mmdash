@@ -1,10 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FlaskConical, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, FlaskConical, RotateCcw, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/states/empty-state";
@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { UserMenu } from "@/components/user-menu";
 import { ApiError, apiClient } from "@/lib/api-client";
 
@@ -33,6 +34,7 @@ type TrashedProject = {
 export default function ProjectTrashPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
   const trash = useQuery({
     queryFn: () =>
       apiClient.request<{ items: TrashedProject[] }>("/projects/trash"),
@@ -64,7 +66,17 @@ export default function ProjectTrashPage() {
     },
   });
 
-  const items = trash.data?.items ?? [];
+  const rawItems = trash.data?.items ?? [];
+  const items = rawItems.filter((project) => {
+    if (!search.trim()) return true;
+    const term = search.toLowerCase();
+    return (
+      project.name.toLowerCase().includes(term) ||
+      (project.problem_title || "").toLowerCase().includes(term) ||
+      (project.problem_summary || "").toLowerCase().includes(term)
+    );
+  });
+
   return (
     <div className="min-h-screen bg-muted/20">
       <header className="border-b border-border bg-background">
@@ -110,6 +122,18 @@ export default function ProjectTrashPage() {
           </p>
         </section>
 
+        {!trash.isLoading && !trash.error && rawItems.length > 0 && (
+          <div className="mb-6 max-w-md relative">
+            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+            <Input
+              className="pl-9 h-9 bg-card border border-border"
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索被删除的项目..."
+              value={search}
+            />
+          </div>
+        )}
+
         {trash.isLoading ? (
           <p className="text-sm text-muted-foreground">正在加载回收站…</p>
         ) : null}
@@ -117,10 +141,16 @@ export default function ProjectTrashPage() {
         !(trash.error instanceof ApiError && trash.error.status === 401) ? (
           <p className="text-sm text-destructive">{trash.error.message}</p>
         ) : null}
-        {!trash.isLoading && !trash.error && items.length === 0 ? (
+        {!trash.isLoading && !trash.error && rawItems.length === 0 ? (
           <EmptyState
             description="移入回收站的项目会在这里保留 30 天。"
             title="回收站为空"
+          />
+        ) : null}
+        {!trash.isLoading && !trash.error && rawItems.length > 0 && items.length === 0 ? (
+          <EmptyState
+            description="尝试调整你的搜索词。"
+            title="没有找到匹配的项目"
           />
         ) : null}
 

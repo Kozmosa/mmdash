@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, LogOut, Server, Trash2, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, Moon, Server, Sun, Trash2, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +22,18 @@ export function UserMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains("dark"));
+    function handleThemeChange() {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    }
+    window.addEventListener("theme-change", handleThemeChange);
+    return () => {
+      window.removeEventListener("theme-change", handleThemeChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -135,6 +147,29 @@ export function UserMenu({
               <Trash2 aria-hidden="true" className="size-4" />
               项目回收站
             </Link>
+            <button
+              className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+              onClick={() => {
+                const nextDark = !document.documentElement.classList.contains("dark");
+                if (nextDark) {
+                  document.documentElement.classList.add("dark");
+                  localStorage.setItem("theme", "dark");
+                } else {
+                  document.documentElement.classList.remove("dark");
+                  localStorage.setItem("theme", "light");
+                }
+                window.dispatchEvent(new Event("theme-change"));
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {isDark ? (
+                <Sun className="size-4 shrink-0 text-amber-500" />
+              ) : (
+                <Moon className="size-4 shrink-0 text-slate-500" />
+              )}
+              <span>{isDark ? "日间模式" : "黑夜模式"}</span>
+            </button>
             <button
               className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm text-destructive outline-none hover:bg-destructive/10 focus-visible:bg-destructive/10 disabled:opacity-50"
               disabled={loggingOut}
