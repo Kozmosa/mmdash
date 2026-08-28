@@ -16,7 +16,7 @@
     "parameters": { "type": "object", "additionalProperties": true },
     "environment": { "type": "object", "additionalProperties": { "type": "string" }, "maxProperties": 100 },
     "inputs": { "type": "object", "additionalProperties": true },
-    "runtime_policy": { "type": "string", "enum": ["auto", "e2b", "local-docker"], "default": "auto" },
+    "runtime_policy": { "type": "string", "enum": ["auto", "e2b", "local-docker", "local-process"], "default": "auto" },
     "requested_box_id": { "type": "string", "format": "uuid" },
     "limits_override": {
       "type": "object",

@@ -19,9 +19,10 @@ type Capability struct {
 }
 
 type Runtime struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Image   string `json:"image,omitempty"`
+	Name     string   `json:"name"`
+	Version  string   `json:"version"`
+	Image    string   `json:"image,omitempty"`
+	Features []string `json:"features,omitempty"`
 }
 
 type Load struct {
@@ -60,6 +61,10 @@ type RunSpec struct {
 	Limits              ResourceLimits         `json:"limits"`
 	ResultContract      ResultContract         `json:"result_contract"`
 	ReadonlyCredentials []CredentialRef        `json:"readonly_credentials,omitempty"`
+	// EnvironmentSelection optionally disambiguates multiple environment
+	// manifests in the frozen source tree, for example python_manifest. It is
+	// part of the frozen RunSpec so a Box never guesses precedence.
+	EnvironmentSelection map[string]string `json:"environment_selection,omitempty"`
 }
 
 type CredentialRef struct {
@@ -148,14 +153,19 @@ type Manifest struct {
 
 // ManifestEnvironment is the durable, provider-neutral evidence needed to
 // reproduce the dependency environment after a Box-local cache entry is gone.
+// For the container-based local-docker Runtime the image IDs are Docker image
+// identifiers. For the bare-metal local-process Runtime BaseImageID carries the
+// interpreter identity and EnvironmentImageID the built environment identity.
 type ManifestEnvironment struct {
-	EnvironmentKey     string            `json:"environment_key"`
-	BaseImageID        string            `json:"base_image_id"`
-	EnvironmentImageID string            `json:"environment_image_id"`
-	ManifestPaths      []string          `json:"manifest_paths"`
-	ManifestHashes     map[string]string `json:"manifest_hashes"`
-	BuilderVersion     string            `json:"builder_version"`
-	CacheHit           bool              `json:"cache_hit"`
+	Provider             string            `json:"provider,omitempty"`
+	EnvironmentKey       string            `json:"environment_key"`
+	BaseImageID          string            `json:"base_image_id"`
+	EnvironmentImageID   string            `json:"environment_image_id"`
+	ManifestPaths        []string          `json:"manifest_paths"`
+	ManifestHashes       map[string]string `json:"manifest_hashes"`
+	ResolvedDependencies []string          `json:"resolved_dependencies,omitempty"`
+	BuilderVersion       string            `json:"builder_version"`
+	CacheHit             bool              `json:"cache_hit"`
 }
 
 type ManifestFile struct {

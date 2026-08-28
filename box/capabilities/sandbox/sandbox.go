@@ -101,18 +101,11 @@ func (capability Capability) Run(ctx context.Context, request RunRequest) (RunRe
 }
 
 func EntrypointCommand(entrypoint string) ([]string, error) {
-	if strings.ContainsAny(entrypoint, " \t\r\n;&|$`()<>\"") {
-		return nil, errors.New("entrypoint contains shell syntax")
+	kind, file, err := ParseEntrypoint(entrypoint)
+	if err != nil {
+		return nil, err
 	}
-	parts := strings.SplitN(entrypoint, ":", 2)
-	if len(parts) != 2 || parts[1] == "" || strings.ContainsRune(parts[1], 0) {
-		return nil, errors.New("invalid fixed entrypoint")
-	}
-	file := filepath.ToSlash(filepath.Clean(parts[1]))
-	if file == "." || strings.HasPrefix(file, "../") || file == ".." || filepath.IsAbs(file) {
-		return nil, errors.New("entrypoint escapes workspace")
-	}
-	switch parts[0] {
+	switch kind {
 	case "python", "python3":
 		return []string{"python3", path.Join("/workspace", file)}, nil
 	case "node":
@@ -122,8 +115,26 @@ func EntrypointCommand(entrypoint string) ([]string, error) {
 	case "binary":
 		return []string{path.Join("/workspace", file)}, nil
 	default:
-		return nil, fmt.Errorf("unsupported entrypoint kind %q", parts[0])
+		return nil, fmt.Errorf("unsupported entrypoint kind %q", kind)
 	}
+}
+
+// ParseEntrypoint validates the frozen fixed entrypoint syntax and splits it
+// into its kind and workspace-relative file so non-container Runtimes can map
+// it onto host paths themselves.
+func ParseEntrypoint(entrypoint string) (kind, file string, err error) {
+	if strings.ContainsAny(entrypoint, " \t\r\n;&|$`()<>\"") {
+		return "", "", errors.New("entrypoint contains shell syntax")
+	}
+	parts := strings.SplitN(entrypoint, ":", 2)
+	if len(parts) != 2 || parts[1] == "" || strings.ContainsRune(parts[1], 0) {
+		return "", "", errors.New("invalid fixed entrypoint")
+	}
+	relative := filepath.ToSlash(filepath.Clean(parts[1]))
+	if relative == "." || strings.HasPrefix(relative, "../") || relative == ".." || filepath.IsAbs(relative) {
+		return "", "", errors.New("entrypoint escapes workspace")
+	}
+	return parts[0], relative, nil
 }
 
 func ensureOutputDirectory(path string) error {

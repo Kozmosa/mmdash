@@ -430,27 +430,31 @@ func (gateway *Gateway) execute(ctx context.Context, taskID string) error {
 		gateway.failTask(taskID, "preparing", "RUNTIME_UNAVAILABLE", err.Error(), false, nil)
 		return nil
 	}
-	if preparer, ok := runtime.(sandbox.EnvironmentPreparer); ok {
-		if err := preparer.PrepareEnvironment(ctx, sandbox.EnvironmentRequest{
-			ID: taskID, Spec: spec, Workspace: workspace,
-			System: io.MultiWriter(gateway.logWriter(taskID, "system"), stdoutFile),
-			SystemFields: func(message string, fields map[string]interface{}) error {
-				_, err := gateway.logWriter(taskID, "system").WriteFields([]byte(message), fields)
-				return err
-			},
-		}); err != nil {
-			if releaser, releaseOK := runtime.(sandbox.EnvironmentReleaser); releaseOK {
-				_ = releaser.ReleaseEnvironment(context.Background(), taskID)
+		if preparer, ok := runtime.(sandbox.EnvironmentPreparer); ok {
+			if err := preparer.PrepareEnvironment(ctx, sandbox.EnvironmentRequest{
+				ID: taskID, Spec: spec, Workspace: workspace,
+				System: io.MultiWriter(gateway.logWriter(taskID, "system"), stdoutFile),
+				SystemFields: func(message string, fields map[string]interface{}) error {
+					_, err := gateway.logWriter(taskID, "system").WriteFields([]byte(message), fields)
+					return err
+				},
+			}); err != nil {
+				if releaser, releaseOK := runtime.(sandbox.EnvironmentReleaser); releaseOK {
+					_ = releaser.ReleaseEnvironment(context.Background(), taskID)
+				}
+				code := "ENVIRONMENT_UNAVAILABLE"
+				var coded interface{ EnvironmentCode() string }
+				if errors.As(err, &coded) && coded.EnvironmentCode() != "" {
+					code = coded.EnvironmentCode()
+				}
+				var stable interface{ ErrorCode() string }
+				if errors.As(err, &stable) && stable.ErrorCode() != "" {
+					code = stable.ErrorCode()
+				}
+				gateway.failTask(taskID, "preparing", code, err.Error(), true, nil)
+				return nil
 			}
-			code := "ENVIRONMENT_UNAVAILABLE"
-			var coded interface{ EnvironmentCode() string }
-			if errors.As(err, &coded) && coded.EnvironmentCode() != "" {
-				code = coded.EnvironmentCode()
-			}
-			gateway.failTask(taskID, "preparing", code, err.Error(), true, nil)
-			return nil
 		}
-	}
 	if gateway.attachRuntime(taskID, runtime) {
 		cancelCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		_ = runtime.Cancel(cancelCtx, taskID)
@@ -486,7 +490,15 @@ func (gateway *Gateway) execute(ctx context.Context, taskID string) error {
 		}
 	}
 	if runErr != nil {
-		gateway.failTask(taskID, "running", "RUNTIME_FAILED", runErr.Error(), false, cleanupResult)
+		// Runtimes can surface stable failure codes for restart-recovery and
+		// enforcement outcomes; the Gateway keeps them intact so Experiment
+		// operators see the exact cause instead of a generic runtime failure.
+		code := "RUNTIME_FAILED"
+		var stable interface{ ErrorCode() string }
+		if errors.As(runErr, &stable) && stable.ErrorCode() != "" {
+			code = stable.ErrorCode()
+		}
+		gateway.failTask(taskID, "running", code, runErr.Error(), false, cleanupResult)
 		return nil
 	}
 	if result.TimedOut {
@@ -549,7 +561,10 @@ func (gateway *Gateway) execute(ctx context.Context, taskID string) error {
 }
 
 func manifestEnvironment(runtimeName string, usage map[string]interface{}) (*contracts.ManifestEnvironment, error) {
-	if runtimeName != "local-docker" {
+	provider := "local-docker"
+	if runtimeName == "local-process" {
+		provider = "local-process"
+	} else if runtimeName != "local-docker" {
 		return nil, nil
 	}
 	stringValue := func(name string) (string, bool) {
@@ -557,20 +572,33 @@ func manifestEnvironment(runtimeName string, usage map[string]interface{}) (*con
 		return value, ok && strings.TrimSpace(value) != ""
 	}
 	environmentKey, keyOK := stringValue("environment_key")
-	baseImageID, baseOK := stringValue("base_image_id")
-	imageID, imageOK := stringValue("image_id")
 	builderVersion, builderOK := stringValue("builder_version")
 	cacheHit, cacheOK := usage["cache_hit"].(bool)
 	paths, pathsOK := usage["environment_manifest_paths"].([]string)
 	hashes, hashesOK := usage["environment_manifest_hashes"].(map[string]string)
-	if !keyOK || !baseOK || !imageOK || !builderOK || !cacheOK || !pathsOK || !hashesOK {
-		return nil, errors.New("Local Docker environment evidence is incomplete")
+	baseIdentity, baseOK := stringValue("base_image_id")
+	environmentIdentity, environmentOK := stringValue("image_id")
+	if runtimeName == "local-process" {
+		// Provider-neutral evidence: the interpreter identity plays the base
+		// role and the built environment identity the environment role.
+		baseIdentity, baseOK = stringValue("interpreter_identity")
+		environmentIdentity, environmentOK = stringValue("environment_identity")
 	}
-	return &contracts.ManifestEnvironment{
-		EnvironmentKey: environmentKey, BaseImageID: baseImageID,
-		EnvironmentImageID: imageID, ManifestPaths: paths,
-		ManifestHashes: hashes, BuilderVersion: builderVersion, CacheHit: cacheHit,
-	}, nil
+	if !keyOK || !baseOK || !environmentOK || !builderOK || !cacheOK || !pathsOK || !hashesOK {
+		return nil, errors.New("sandbox environment evidence is incomplete")
+	}
+	environment := &contracts.ManifestEnvironment{
+		Provider: provider, EnvironmentKey: environmentKey,
+		BaseImageID: baseIdentity, EnvironmentImageID: environmentIdentity,
+		ManifestPaths: paths, ManifestHashes: hashes,
+		BuilderVersion: builderVersion, CacheHit: cacheHit,
+	}
+	if runtimeName == "local-process" {
+		if dependencies, ok := usage["resolved_dependencies"].([]string); ok {
+			environment.ResolvedDependencies = dependencies
+		}
+	}
+	return environment, nil
 }
 
 func decodeRunSpec(value map[string]interface{}) (contracts.RunSpec, error) {
