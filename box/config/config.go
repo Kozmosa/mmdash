@@ -18,12 +18,12 @@ import (
 const schemaVersion = 1
 
 type Config struct {
-	SchemaVersion int           `json:"schema_version"`
-	ControlURL    string        `json:"control_url"`
-	Name          string        `json:"name"`
-	LocalDocker   LocalDocker   `json:"local_docker"`
-	E2B           E2B           `json:"e2b"`
-	LocalProcess  LocalProcess  `json:"local_process"`
+	SchemaVersion int          `json:"schema_version"`
+	ControlURL    string       `json:"control_url"`
+	Name          string       `json:"name"`
+	LocalDocker   LocalDocker  `json:"local_docker"`
+	E2B           E2B          `json:"e2b"`
+	LocalProcess  LocalProcess `json:"local_process"`
 }
 
 type LocalDocker struct {
