@@ -737,25 +737,27 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
       shutdownRequested,
     );
 
-    const web = startManagedProcess(
-      "web",
-      "pnpm",
-      [
-        "--filter",
-        "@mmdash/web",
-        "exec",
-        "next",
-        "dev",
-        "--hostname",
-        host,
-        "--port",
-        String(ports.web),
-      ],
-      {
-        environment: { ...environment, ...configuration.environments.web },
-        layout,
-      },
-    );
+    const webArguments = [
+      "--filter",
+      "@mmdash/web",
+      "exec",
+      "next",
+      "dev",
+      "--hostname",
+      host,
+      "--port",
+      String(ports.web),
+    ];
+    if (environment.MMDASH_TESTENV_WEB_WEBPACK === "1") {
+      // Escape hatch for hosts where the default Turbopack dev server
+      // crashes natively (seen as next exiting with 0xC0000409 on some
+      // Windows machines): fall back to the webpack dev server.
+      webArguments.push("--webpack");
+    }
+    const web = startManagedProcess("web", "pnpm", webArguments, {
+      environment: { ...environment, ...configuration.environments.web },
+      layout,
+    });
     services.push(web);
     await waitForHttp(
       `${configuration.webUrl}/projects`,

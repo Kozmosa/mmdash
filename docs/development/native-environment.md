@@ -97,6 +97,23 @@ $env:MMDASH_TESTENV_WEB_PORT = "13010"
 .\scripts\testenv.ps1 dev
 ```
 
+### Webpack fallback for the web dev server
+
+Next 16 starts the web dev server with Turbopack by default. On hosts whose
+commit memory runs out (small page files plus memory-heavy resident apps) the
+Turbopack native binding can abort the process with exit code `0xC0000409`.
+Set the following variable before `dev` to start the web dev server with
+webpack instead; everything else in the stack is unaffected:
+
+```powershell
+$env:MMDASH_TESTENV_WEB_WEBPACK = "1"
+.\scripts\testenv.ps1 dev
+```
+
+```bash
+MMDASH_TESTENV_WEB_WEBPACK=1 ./scripts/testenv.sh dev
+```
+
 ## Inspect, stop, and reset
 
 ```powershell
