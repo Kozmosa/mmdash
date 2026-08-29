@@ -9,6 +9,7 @@ members = ["workers/*"]
 
 [tool.uv]
 package = false
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [tool.pytest.ini_options]
 addopts = ["--basetemp=.testenv/pytest-workspace", "-p", "no:cacheprovider"]

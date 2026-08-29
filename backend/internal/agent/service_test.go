@@ -1370,6 +1370,9 @@ func TestProgressEvaluationInstructionsDefineEvidenceAndReadableFeedbackRubric(t
 		"Never inspect progress_evaluation or progress_risk",
 		"CORE_UNAVAILABLE, and other mmdash infrastructure health are not Project work",
 		"possible future problem is a risk",
+		"Write a decision brief for a Project member, not an audit log",
+		"say \"论文草稿\" instead of \"article pipeline\"",
+		"Never inventory revisions, repeated builds, files, Artifacts, timestamps, error codes, or tool activity",
 		"summary is 1-2 short sentences and at most 180 Unicode characters",
 		"Use at most five non-duplicated items per section",
 		"work_state_updates applies automatically",
@@ -1417,6 +1420,46 @@ func TestEvaluateProgressAdoptsDeterministicRemoteSession(t *testing.T) {
 	}
 	if len(fixture.adapter.createSessionRequests) != 0 {
 		t.Fatalf("existing deterministic remote Session was recreated: %#v", fixture.adapter.createSessionRequests)
+	}
+}
+
+func TestEvaluateProgressRotatesAnActiveSessionFromAnOlderPromptVersion(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	fixture.store.sessions["old-progress-session"] = SessionRecord{
+		AgentInstanceID: "agent-1", CreatedAt: agentServiceTestNow,
+		CreatedBy: "user-1", GrantID: "grant-1", ID: "old-progress-session",
+		ProjectID: "project-1", RemoteSessionID: "old-progress-remote",
+		SessionType: SessionProgress, Status: SessionActive,
+		Title:     "Progress automation (old-progress-remote)",
+		UpdatedAt: agentServiceTestNow, Version: 1,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(
+		ctx,
+		"project-1",
+		"agent-1",
+		"00000000-0000-4000-8000-000000000097",
+		map[string]interface{}{"project_id": "project-1"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("rotate Progress Session: %v", err)
+	}
+	run := fixture.store.runs[result.AgentRunID]
+	if run.SessionID == "old-progress-session" {
+		t.Fatalf("evaluation reused a Session with a stale system prompt: %#v", run)
+	}
+	created := fixture.store.sessions[run.SessionID]
+	if created.RemoteSessionID != progressSessionRemoteID("project-1", "agent-1") {
+		t.Fatalf("evaluation did not create the current prompt-version Session: %#v", created)
+	}
+	if len(fixture.adapter.createSessionRequests) != 1 ||
+		fixture.adapter.createSessionRequests[0].SystemPrompt != progressEvaluationSystemPrompt {
+		t.Fatalf("rotated Session lost the current system prompt: %#v", fixture.adapter.createSessionRequests)
 	}
 }
 

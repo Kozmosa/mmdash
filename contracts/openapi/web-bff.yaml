@@ -4637,6 +4637,65 @@ paths:
       summary: Delete Zotero binding
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
       responses: { "204": { description: Binding removed. } }
+  /api/projects/{projectId}/article/zotero/collections:
+    get:
+      tags: [Article]
+      operationId: bff.article.zotero.collections
+      summary: List Zotero collections
+      parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+      responses:
+        {
+          "200":
+            {
+              description: Zotero collections list.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ZoteroCollectionList",
+                        },
+                    },
+                },
+            },
+        }
+  /api/projects/{projectId}/article/zotero/items:
+    get:
+      tags: [Article]
+      operationId: bff.article.zotero.items
+      summary: List or search Zotero items
+      parameters:
+        - { $ref: "./core.yaml#/components/parameters/ProjectId" }
+        - {
+            name: collection,
+            in: query,
+            required: false,
+            schema: { type: string, maxLength: 200 },
+          }
+        - {
+            name: q,
+            in: query,
+            required: false,
+            schema: { type: string, maxLength: 200 },
+          }
+      responses:
+        {
+          "200":
+            {
+              description: Zotero items.,
+              content:
+                {
+                  application/json:
+                    {
+                      schema:
+                        {
+                          $ref: "./core.yaml#/components/schemas/ZoteroItemList",
+                        },
+                    },
+                },
+            },
+        }
   /api/projects/{projectId}/article/zotero/search:
     get:
       tags: [Article]

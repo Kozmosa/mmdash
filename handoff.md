@@ -1,3 +1,14 @@
+# mmdash v0.1 Article editing UX, Zotero hierarchy & Progress evaluation improvements
+
+- Updated: 2026-08-29
+- Branch: `main`
+- PR: [#56](https://github.com/Kozmosa/mmdash/pull/56) (`feat(article,progress): improve article editing UX, zotero workflow, and progress evaluation`)
+- Delivery:
+  - Article Editor UX & Model Reference: Added block-level copy buttons with fast hover transitions on model documents; automatic scanning of pasted text for `$$...$$` / `$$$$...$$$$` block formulas and `$...$` inline formulas; copying and pasting image blocks directly as immutable `artifactReference` nodes; fixed Tag Rail expand button sizing and review `Check` icons; added mouse wheel scrolling during block dragging.
+  - Zotero Citation Workflow: Implemented category/collection hierarchy tree with folder navigation in the writing workspace; supported dragging Zotero items directly into text with an inline drop cursor indicator (vertical caret) inserting `@citationKey` inline citations aligned with build/LaTeX pipelines.
+  - Progress Evaluation: Improved evaluation status clarity, failure recovery, and evidence workflow.
+- Verification: Full repository gate `pnpm check` passed (all TypeScript, Go, and Python tests/linters, contracts, and API catalog check).
+
 # mmdash v0.1 Stage 9 Article repair candidate
 
 - Updated: 2026-08-24

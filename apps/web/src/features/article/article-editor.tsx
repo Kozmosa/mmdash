@@ -12,7 +12,12 @@ import {
   NodeRangeSelection,
 } from "@tiptap/extension-node-range";
 import { TableKit } from "@tiptap/extension-table";
-import { Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import {
+  Fragment,
+  Slice,
+  type Node as ProseMirrorNode,
+  type Schema,
+} from "@tiptap/pm/model";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import UniqueID from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -79,6 +84,7 @@ import {
   moveArrayItem,
   rectangleFromPoints,
   rectanglesIntersect,
+  wheelScrollDelta,
   type EditorRectangle,
 } from "./article-editor-interactions";
 import {
@@ -321,6 +327,176 @@ export function parseArticleZoteroDrop(raw: string): ArticleZoteroDrop {
   };
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function transformMathInHtml(html: string): string {
+  let result = html.replace(
+    /\$\$\$\$([\s\S]+?)\$\$\$\$/g,
+    (_, latex) =>
+      `<div data-type="blockMath" data-latex="${escapeHtml(latex.trim())}">$$${escapeHtml(latex.trim())}$$</div>`,
+  );
+  result = result.replace(
+    /(?<!\$)\$\$([\s\S]+?)\$\$(?!\$)/g,
+    (_, latex) =>
+      `<div data-type="blockMath" data-latex="${escapeHtml(latex.trim())}">$$${escapeHtml(latex.trim())}$$</div>`,
+  );
+  result = result.replace(
+    /\\\[([\s\S]+?)\\\]/g,
+    (_, latex) =>
+      `<div data-type="blockMath" data-latex="${escapeHtml(latex.trim())}">$$${escapeHtml(latex.trim())}$$</div>`,
+  );
+  result = result.replace(
+    /(?<![$\w\\])\$(?!\$)([^$\n\r]+?)(?<!\\)\$(?![$\w])/g,
+    (_, latex) =>
+      `<span data-type="inlineMath" data-latex="${escapeHtml(latex.trim())}">$${escapeHtml(latex.trim())}$</span>`,
+  );
+  result = result.replace(
+    /\\\(([\s\S]+?)\\\)/g,
+    (_, latex) =>
+      `<span data-type="inlineMath" data-latex="${escapeHtml(latex.trim())}">$${escapeHtml(latex.trim())}$</span>`,
+  );
+  return result;
+}
+
+export function parseTextWithMath(
+  text: string,
+  schema: Schema,
+): ProseMirrorNode[] {
+  const blockMathType = schema.nodes.blockMath;
+  const inlineMathType = schema.nodes.inlineMath;
+  const paragraphType = schema.nodes.paragraph;
+
+  if (!blockMathType && !inlineMathType) return [];
+
+  const normalized = text.replace(/\r\n/g, "\n");
+  const trimmed = normalized.trim();
+
+  // If the entire text is a single block equation:
+  if (
+    (trimmed.startsWith("$$$$") &&
+      trimmed.endsWith("$$$$") &&
+      trimmed.length >= 8) ||
+    (trimmed.startsWith("$$") &&
+      trimmed.endsWith("$$") &&
+      trimmed.length >= 4 &&
+      !trimmed.slice(2, -2).includes("$$")) ||
+    (trimmed.startsWith("\\[") &&
+      trimmed.endsWith("\\]") &&
+      trimmed.length >= 4)
+  ) {
+    let latex = "";
+    if (trimmed.startsWith("$$$$")) latex = trimmed.slice(4, -4).trim();
+    else if (trimmed.startsWith("$$")) latex = trimmed.slice(2, -2).trim();
+    else if (trimmed.startsWith("\\[")) latex = trimmed.slice(2, -2).trim();
+    if (blockMathType) {
+      return [blockMathType.create({ latex })];
+    }
+  }
+
+  // If the entire text is a single inline equation:
+  if (
+    (trimmed.startsWith("$") &&
+      trimmed.endsWith("$") &&
+      trimmed.length >= 2 &&
+      !trimmed.slice(1, -1).includes("$") &&
+      !trimmed.includes("\n")) ||
+    (trimmed.startsWith("\\(") &&
+      trimmed.endsWith("\\)") &&
+      trimmed.length >= 4)
+  ) {
+    let latex = "";
+    if (trimmed.startsWith("$")) latex = trimmed.slice(1, -1).trim();
+    else if (trimmed.startsWith("\\(")) latex = trimmed.slice(2, -2).trim();
+    if (inlineMathType) {
+      return [inlineMathType.create({ latex })];
+    }
+  }
+
+  // Regex to match block equations across multi-line text:
+  const blockMathRegex =
+    /(?:\$\$\$\$([\s\S]+?)\$\$\$\$|\\\[([\s\S]+?)\\\]|(?:\n|^)\s*(?<!\$)\$\$(?!\$)([\s\S]+?)(?<!\$)\$\$(?!\$)\s*(?:\n|$))/g;
+
+  const nodes: ProseMirrorNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  const parseInlineInParagraph = (
+    paragraphText: string,
+  ): ProseMirrorNode | null => {
+    if (!paragraphText.trim()) return null;
+    const inlineNodes: ProseMirrorNode[] = [];
+    const inlineRegex =
+      /(?:(?<!\$)\$\$(?!\$)([^$\n]+?)(?<!\$)\$\$(?!\$)|(?<!\$)\$(?!\$)([^$\n]+?)(?<!\\)\$(?!\$)|\\\(([\s\S]+?)\\\))/g;
+    let inlineLastIndex = 0;
+    let inlineMatch: RegExpExecArray | null;
+
+    while ((inlineMatch = inlineRegex.exec(paragraphText)) !== null) {
+      const before = paragraphText.slice(inlineLastIndex, inlineMatch.index);
+      if (before) {
+        inlineNodes.push(schema.text(before));
+      }
+      const latex = (
+        inlineMatch[1] ??
+        inlineMatch[2] ??
+        inlineMatch[3] ??
+        ""
+      ).trim();
+      if (latex && inlineMathType) {
+        inlineNodes.push(inlineMathType.create({ latex }));
+      } else if (inlineMatch[0]) {
+        inlineNodes.push(schema.text(inlineMatch[0]));
+      }
+      inlineLastIndex = inlineMatch.index + inlineMatch[0].length;
+    }
+
+    const remaining = paragraphText.slice(inlineLastIndex);
+    if (remaining) {
+      inlineNodes.push(schema.text(remaining));
+    }
+
+    if (inlineNodes.length === 0) return null;
+    return paragraphType ? paragraphType.create(null, inlineNodes) : null;
+  };
+
+  const processTextSegment = (segment: string) => {
+    const paragraphs = segment.split(/\n\n+/);
+    for (const pText of paragraphs) {
+      const lines = pText.split("\n");
+      const combined = lines.join(" ");
+      const pNode = parseInlineInParagraph(combined);
+      if (pNode) {
+        nodes.push(pNode);
+      }
+    }
+  };
+
+  while ((match = blockMathRegex.exec(normalized)) !== null) {
+    const segmentBefore = normalized.slice(lastIndex, match.index);
+    if (segmentBefore) {
+      processTextSegment(segmentBefore);
+    }
+    const latex = (match[1] ?? match[2] ?? match[3] ?? "").trim();
+    if (latex && blockMathType) {
+      nodes.push(blockMathType.create({ latex }));
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  const segmentAfter = normalized.slice(lastIndex);
+  if (segmentAfter) {
+    processTextSegment(segmentAfter);
+  }
+
+  return nodes;
+}
+
 type Collaborator = { color: string; name: string };
 
 export function ArticleEditor({
@@ -385,6 +561,21 @@ export function ArticleEditor({
   }>();
   const [blockDraggingPos, setBlockDraggingPos] = useState<number>();
   const [dropIndicator, setDropIndicator] = useState<ArticleDropIndicator>();
+  const [inlineDropIndicator, setInlineDropIndicator] = useState<{
+    height: number;
+    left: number;
+    pos: number;
+    top: number;
+  }>();
+  const inlineDropIndicatorRef = useRef<
+    | {
+        height: number;
+        left: number;
+        pos: number;
+        top: number;
+      }
+    | undefined
+  >(undefined);
   const [tableEdgeHandle, setTableEdgeHandle] =
     useState<ArticleTableEdgeHandle>();
   const [tableEdgeMenuOpen, setTableEdgeMenuOpen] = useState(false);
@@ -408,6 +599,8 @@ export function ArticleEditor({
     from: number;
     to: number;
   } | null>(null);
+  const blockPointerDragActiveRef = useRef(false);
+  const blockPointerDragCleanupRef = useRef<() => void>(() => undefined);
   const dropIndicatorRef = useRef<ArticleDropIndicator | undefined>(undefined);
   const marqueeRef = useRef<HTMLDivElement>(null);
   const blockMenuOpenRef = useRef(false);
@@ -415,6 +608,22 @@ export function ArticleEditor({
   const tableDragSessionRef = useRef<TableDragSession | undefined>(undefined);
   const tableDragCleanupRef = useRef<() => void>(() => undefined);
   const suppressTableHandleClickRef = useRef(false);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const lastDragClientYRef = useRef<number | null>(null);
+  const lastDragCoordsRef = useRef<{ clientX: number; clientY: number } | null>(
+    null,
+  );
+  const lastDragOptionsRef = useRef<{
+    autoScroll: boolean;
+    dropEffect: "copy" | "move";
+  } | null>(null);
+  const updateDropIndicatorRef = useRef<
+    | ((
+        event: globalThis.DragEvent,
+        options: { autoScroll: boolean; dropEffect: "copy" | "move" },
+      ) => boolean)
+    | null
+  >(null);
   const openMathEditor = useCallback(
     (kind: ArticleMathKind, node: ProseMirrorNode, pos: number) => {
       setMathDraft(String(node.attrs.latex ?? ""));
@@ -478,6 +687,155 @@ export function ArticleEditor({
         CollaborationCaret.configure({ provider, user: collaborator }),
       ],
       editorProps: {
+        transformPastedHTML: (html) => transformMathInHtml(html),
+        handlePaste: (view, event) => {
+          if (!view.editable) return false;
+
+          // 1. Check for artifact in clipboard (from Model Reference or Artifact copy)
+          const jsonText =
+            event.clipboardData?.getData(
+              "application/vnd.mmdash.artifact+json",
+            ) || event.clipboardData?.getData("application/json");
+          const htmlText = event.clipboardData?.getData("text/html");
+          const text = event.clipboardData?.getData("text/plain");
+
+          let artifactPayload: ArticleArtifactDrop | undefined;
+
+          if (jsonText) {
+            try {
+              const parsed = JSON.parse(jsonText);
+              if (
+                parsed &&
+                typeof parsed.artifactId === "string" &&
+                typeof parsed.versionId === "string"
+              ) {
+                artifactPayload = {
+                  artifactId: parsed.artifactId,
+                  filename: String(parsed.filename || "image.png"),
+                  mimeType: String(parsed.mimeType || "image/png"),
+                  title: String(parsed.title || "模型图片"),
+                  versionId: parsed.versionId,
+                };
+              }
+            } catch {
+              // ignore json parse error
+            }
+          }
+
+          if (!artifactPayload && htmlText) {
+            const match = htmlText.match(
+              /data-artifact-id="([^"]+)"[\s\S]*?data-version-id="([^"]+)"/i,
+            );
+            if (match) {
+              const artifactId = match[1];
+              const versionId = match[2];
+              const titleMatch = htmlText.match(/data-title="([^"]+)"/i);
+              const mimeMatch = htmlText.match(/data-mime-type="([^"]+)"/i);
+              const filenameMatch = htmlText.match(/data-filename="([^"]+)"/i);
+              artifactPayload = {
+                artifactId,
+                filename: filenameMatch ? filenameMatch[1] : "image.png",
+                mimeType: mimeMatch ? mimeMatch[1] : "image/png",
+                title: titleMatch ? titleMatch[1] : "模型图片",
+                versionId,
+              };
+            }
+          }
+
+          if (!artifactPayload && text) {
+            const match = text
+              .trim()
+              .match(
+                /^!\[(.*?)\]\(artifact:\/\/([0-9a-fA-F-]+)\?version=([0-9a-fA-F-]+)\)$/,
+              );
+            if (match) {
+              artifactPayload = {
+                artifactId: match[2],
+                filename: "image.png",
+                mimeType: "image/png",
+                title: match[1] || "模型图片",
+                versionId: match[3],
+              };
+            }
+          }
+
+          if (artifactPayload) {
+            event.preventDefault();
+            void (async () => {
+              try {
+                const reference = await onInsertArtifact(artifactPayload!);
+                const node = view.state.schema.nodes.artifactReference.create({
+                  alt: artifactPayload!.title,
+                  align: "center",
+                  artifactId: artifactPayload!.artifactId,
+                  mimeType: artifactPayload!.mimeType,
+                  objectId: artifactPayload!.artifactId,
+                  referenceId: reference.reference_id,
+                  title: artifactPayload!.title,
+                  versionId: artifactPayload!.versionId,
+                  width: 100,
+                });
+                const { $from } = view.state.selection;
+                if (
+                  $from.parent.isTextblock &&
+                  $from.parent.content.size === 0
+                ) {
+                  view.dispatch(
+                    view.state.tr
+                      .replaceWith($from.before(), $from.after(), node)
+                      .scrollIntoView(),
+                  );
+                } else {
+                  view.dispatch(
+                    view.state.tr.replaceSelectionWith(node).scrollIntoView(),
+                  );
+                }
+              } catch (err) {
+                console.error("Failed to paste artifact reference", err);
+              }
+            })();
+            return true;
+          }
+
+          // 2. Math formula pasting
+          if (!text) return false;
+          const hasMath =
+            text.includes("$") || text.includes("\\[") || text.includes("\\(");
+          if (!hasMath) return false;
+
+          const nodes = parseTextWithMath(text, view.state.schema);
+          if (nodes.length === 0) return false;
+
+          event.preventDefault();
+
+          if (nodes.length === 1 && nodes[0].type.name === "inlineMath") {
+            view.dispatch(
+              view.state.tr.replaceSelectionWith(nodes[0]).scrollIntoView(),
+            );
+            return true;
+          }
+
+          if (nodes.length === 1 && nodes[0].type.name === "blockMath") {
+            const { $from } = view.state.selection;
+            if ($from.parent.isTextblock && $from.parent.content.size === 0) {
+              view.dispatch(
+                view.state.tr
+                  .replaceWith($from.before(), $from.after(), nodes[0])
+                  .scrollIntoView(),
+              );
+              return true;
+            }
+            view.dispatch(
+              view.state.tr.replaceSelectionWith(nodes[0]).scrollIntoView(),
+            );
+            return true;
+          }
+
+          const fragment = Fragment.fromArray(nodes);
+          const slice = new Slice(fragment, 0, 0);
+          view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+          return true;
+        },
         handleKeyDown: (view, event) => {
           if (
             event.key === "Escape" &&
@@ -521,8 +879,251 @@ export function ArticleEditor({
       },
       immediatelyRender: false,
     },
-    [openMathEditor, projectId, provider],
+    [onInsertArtifact, openMathEditor, projectId, provider],
   );
+
+  function blockAt(position: number) {
+    if (!editor) return;
+    const node = editor.state.doc.nodeAt(position);
+    if (!node || editor.state.doc.resolve(position).depth !== 0) return;
+    return node;
+  }
+
+  function clearDropIndicator() {
+    dropIndicatorRef.current = undefined;
+    setDropIndicator(undefined);
+    inlineDropIndicatorRef.current = undefined;
+    setInlineDropIndicator(undefined);
+  }
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+    lastDragClientYRef.current = null;
+  }, []);
+
+  const startAutoScroll = useCallback(
+    (clientY: number) => {
+      lastDragClientYRef.current = clientY;
+
+      if (autoScrollFrameRef.current !== null) return;
+
+      const scrollLoop = () => {
+        const surface = editorSurfaceRef.current;
+        if (!surface || lastDragClientYRef.current === null) {
+          stopAutoScroll();
+          return;
+        }
+
+        const rect = surface.getBoundingClientRect();
+        const y = lastDragClientYRef.current;
+        const margin = 72;
+        const maxSpeed = 15;
+        let speed = 0;
+        if (y < rect.top + margin) {
+          const ratio = Math.max(0, (rect.top + margin - y) / margin);
+          speed = -ratio * maxSpeed;
+        } else if (y > rect.bottom - margin) {
+          const ratio = Math.max(0, (y - (rect.bottom - margin)) / margin);
+          speed = ratio * maxSpeed;
+        }
+
+        if (speed !== 0) {
+          const prevScrollTop = surface.scrollTop;
+          surface.scrollTop += speed;
+          if (
+            surface.scrollTop !== prevScrollTop &&
+            lastDragCoordsRef.current &&
+            lastDragOptionsRef.current
+          ) {
+            const dummyEvent = {
+              clientX: lastDragCoordsRef.current.clientX,
+              clientY: lastDragCoordsRef.current.clientY,
+              dataTransfer: {
+                dropEffect: lastDragOptionsRef.current.dropEffect,
+                types: ["Files"],
+              },
+              preventDefault: () => undefined,
+            } as unknown as globalThis.DragEvent;
+            updateDropIndicator(dummyEvent, lastDragOptionsRef.current);
+          }
+          autoScrollFrameRef.current = requestAnimationFrame(scrollLoop);
+        } else {
+          stopAutoScroll();
+        }
+      };
+
+      autoScrollFrameRef.current = requestAnimationFrame(scrollLoop);
+    },
+    [stopAutoScroll],
+  );
+
+  function updateDropIndicator(
+    event: DragEvent<HTMLDivElement> | globalThis.DragEvent,
+    options: { autoScroll: boolean; dropEffect: "copy" | "move" },
+  ) {
+    const surface = editorSurfaceRef.current;
+    if (!surface || !editor) return false;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = options.dropEffect;
+    }
+
+    lastDragCoordsRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+    lastDragOptionsRef.current = options;
+
+    const root = surface.getBoundingClientRect();
+    if (options.autoScroll) {
+      startAutoScroll(event.clientY);
+    }
+
+    const coordinates = editor.view.posAtCoords({
+      left: event.clientX,
+      top: event.clientY,
+    });
+    if (!coordinates) return true;
+    let blockPosition: number | undefined;
+    let blockNode: ReturnType<typeof blockAt>;
+    let offset = 0;
+    editor.state.doc.forEach((node) => {
+      if (
+        blockPosition === undefined &&
+        coordinates.pos >= offset &&
+        coordinates.pos <= offset + node.nodeSize
+      ) {
+        blockPosition = offset;
+        blockNode = node;
+      }
+      offset += node.nodeSize;
+    });
+    if (blockPosition === undefined || !blockNode) return true;
+
+    const isImageOrArtifact =
+      event.dataTransfer &&
+      (event.dataTransfer.types.includes(articleArtifactMime) ||
+        event.dataTransfer.types.includes("Files") ||
+        event.dataTransfer.types.includes(
+          "application/vnd.mmdash.image-group-item",
+        ));
+
+    const targetEl =
+      typeof document !== "undefined"
+        ? document.elementFromPoint(event.clientX, event.clientY)
+        : null;
+
+    const isOverImageContainer = Boolean(
+      targetEl?.closest?.(
+        "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
+      ) ||
+      (blockNode &&
+        (blockNode.type.name === "articleImageGroup" ||
+          blockNode.type.name === "articleImage" ||
+          (blockNode.type.name === "artifactReference" &&
+            String(blockNode.attrs.mimeType ?? "").startsWith("image/")))),
+    );
+
+    if (isImageOrArtifact && isOverImageContainer) {
+      clearDropIndicator();
+      return true;
+    }
+
+    const dom = editor.view.nodeDOM(blockPosition);
+    if (!(dom instanceof HTMLElement)) return true;
+    const rect = dom.getBoundingClientRect();
+    let before = event.clientY < rect.top + rect.height / 2;
+
+    const draggingPosition = blockDraggingPosRef.current;
+    if (draggingPosition !== null && draggingPosition !== undefined) {
+      const range = blockDraggingRangeRef.current;
+      let rangeFrom = draggingPosition;
+      let rangeTo = draggingPosition;
+      if (range) {
+        rangeFrom = range.from;
+        rangeTo = range.to;
+      } else {
+        const draggedNode = editor.state.doc.nodeAt(draggingPosition);
+        if (draggedNode) {
+          rangeTo = draggingPosition + draggedNode.nodeSize;
+        }
+      }
+
+      if (blockPosition === rangeTo) {
+        before = false;
+      } else if (blockPosition + blockNode.nodeSize === rangeFrom) {
+        before = true;
+      }
+    }
+
+    const nextIndicator = {
+      label: before ? "放在此块之前" : "放在此块之后",
+      position: dropTargetPosition(blockPosition, blockNode.nodeSize, before),
+      top: dropIndicatorOffset(
+        before ? rect.top : rect.bottom,
+        root.top,
+        surface.scrollTop,
+      ),
+    } satisfies ArticleDropIndicator;
+    dropIndicatorRef.current = nextIndicator;
+    setDropIndicator(nextIndicator);
+    return true;
+  }
+
+  updateDropIndicatorRef.current = updateDropIndicator;
+
+  useEffect(() => {
+    const handleDragWheel = (event: WheelEvent) => {
+      if (blockDraggingPosRef.current === null) return;
+      const surface = editorSurfaceRef.current;
+      if (!surface) return;
+      const delta = wheelScrollDelta(
+        event.deltaY,
+        event.deltaMode,
+        surface.clientHeight,
+      );
+      if (delta === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      const previousScrollTop = surface.scrollTop;
+      surface.scrollTop += delta;
+      if (
+        surface.scrollTop !== previousScrollTop &&
+        lastDragCoordsRef.current &&
+        lastDragOptionsRef.current
+      ) {
+        const syntheticDragEvent = {
+          clientX: lastDragCoordsRef.current.clientX,
+          clientY: lastDragCoordsRef.current.clientY,
+          dataTransfer: {
+            dropEffect: lastDragOptionsRef.current.dropEffect,
+            types: ["Files"],
+          },
+          preventDefault: () => undefined,
+        } as unknown as globalThis.DragEvent;
+        updateDropIndicatorRef.current?.(
+          syntheticDragEvent,
+          lastDragOptionsRef.current,
+        );
+      }
+    };
+
+    window.addEventListener("wheel", handleDragWheel, {
+      capture: true,
+      passive: false,
+    });
+    return () => {
+      window.removeEventListener("wheel", handleDragWheel, { capture: true });
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => blockPointerDragCleanupRef.current();
+  }, []);
 
   useEffect(() => {
     const readTheme = () => void renderingSetting.refetch();
@@ -1279,15 +1880,21 @@ export function ArticleEditor({
   }, [canEdit, editor, provider]);
 
   const handleElementDragEnd = useCallback(() => {
+    if (blockPointerDragActiveRef.current) return;
     blockDraggingPosRef.current = null;
     blockDraggingRangeRef.current = null;
     dropIndicatorRef.current = undefined;
     setBlockDraggingPos(undefined);
     setDropIndicator(undefined);
-  }, []);
+    stopAutoScroll();
+  }, [stopAutoScroll]);
 
   const handleElementDragStart = useCallback(
     (event: globalThis.DragEvent) => {
+      if (blockPointerDragActiveRef.current) {
+        event.preventDefault();
+        return;
+      }
       if (!editor) return;
       const position = dragHandlePos.current;
       if (position === null || position === undefined) return;
@@ -1532,17 +2139,26 @@ export function ArticleEditor({
           title: payload.title,
           version: payload.version,
         };
+        const target =
+          insertionPosition === undefined
+            ? editor.view.posAtCoords({
+                left: event.clientX,
+                top: event.clientY,
+              })
+            : undefined;
+        const targetPos =
+          insertionPosition ?? target?.pos ?? editor.state.selection.to;
         if (editor.schema.nodes.zoteroCitation) {
           editor
             .chain()
             .focus()
-            .insertContent({ attrs, type: "zoteroCitation" })
+            .insertContentAt(targetPos, { attrs, type: "zoteroCitation" })
             .run();
         } else {
           editor
             .chain()
             .focus()
-            .insertContent(`[@${payload.citationKey}]`)
+            .insertContentAt(targetPos, `[@${payload.citationKey}]`)
             .run();
         }
         return;
@@ -1587,12 +2203,6 @@ export function ArticleEditor({
       .run();
     editor.commands.setTextSelection(position + 1);
     editor.view.focus();
-  };
-
-  const blockAt = (position: number) => {
-    const node = editor.state.doc.nodeAt(position);
-    if (!node || editor.state.doc.resolve(position).depth !== 0) return;
-    return node;
   };
 
   const openBlockMenu = () => {
@@ -1701,6 +2311,134 @@ export function ArticleEditor({
     const blockPos = dragHandlePos.current;
     if (blockPos === null || !editor.state.doc.nodeAt(blockPos)) return;
     selectArticleBlock(editor, blockPos, { scrollIntoView: false });
+  };
+
+  const startPointerBlockDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    const position = dragHandlePos.current;
+    if (position === null || !editor.state.doc.nodeAt(position)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    blockPointerDragCleanupRef.current();
+
+    const selection = editor.state.selection;
+    const selectedRange =
+      isNodeRangeSelection(selection) &&
+      position >= selection.from &&
+      position < selection.to
+        ? { from: selection.from, to: selection.to }
+        : null;
+    if (!selectedRange) {
+      selectArticleBlock(editor, position, { scrollIntoView: false });
+    }
+
+    const dragHandle = event.currentTarget.closest<HTMLElement>(".drag-handle");
+    if (dragHandle) dragHandle.draggable = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    blockPointerDragActiveRef.current = true;
+    blockDraggingPosRef.current = position;
+    blockDraggingRangeRef.current = selectedRange;
+    dropIndicatorRef.current = undefined;
+    lastDragCoordsRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+    lastDragOptionsRef.current = { autoScroll: true, dropEffect: "move" };
+    setBlockDraggingPos(position);
+    setDropIndicator(undefined);
+
+    const clearPointerDrag = () => {
+      window.removeEventListener("pointermove", pointerMove, true);
+      window.removeEventListener("pointerup", pointerUp, true);
+      window.removeEventListener("pointercancel", pointerCancel, true);
+      if (dragHandle) dragHandle.draggable = true;
+      blockPointerDragActiveRef.current = false;
+      blockPointerDragCleanupRef.current = () => undefined;
+    };
+    const finishPointerDrag = (moveBlock: boolean) => {
+      const insertionPosition = dropIndicatorRef.current?.position;
+      const draggingPosition = blockDraggingPosRef.current;
+      const range = blockDraggingRangeRef.current;
+
+      clearPointerDrag();
+      blockDraggingPosRef.current = null;
+      blockDraggingRangeRef.current = null;
+      dropIndicatorRef.current = undefined;
+      setBlockDraggingPos(undefined);
+      setDropIndicator(undefined);
+      stopAutoScroll();
+
+      if (
+        !moveBlock ||
+        insertionPosition === undefined ||
+        draggingPosition === null
+      ) {
+        return;
+      }
+      if (range) {
+        moveArticleBlockRange(editor, range.from, range.to, insertionPosition);
+        return;
+      }
+      const draggedNode = editor.state.doc.nodeAt(draggingPosition);
+      if (!draggedNode) return;
+      moveArticleBlockRange(
+        editor,
+        draggingPosition,
+        draggingPosition + draggedNode.nodeSize,
+        insertionPosition,
+      );
+    };
+    const pointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== event.pointerId) return;
+      pointerEvent.preventDefault();
+      const surface = editorSurfaceRef.current;
+      if (!surface) return;
+      const rect = surface.getBoundingClientRect();
+      if (
+        pointerEvent.clientX < rect.left ||
+        pointerEvent.clientX > rect.right ||
+        pointerEvent.clientY < rect.top ||
+        pointerEvent.clientY > rect.bottom
+      ) {
+        clearDropIndicator();
+        stopAutoScroll();
+        return;
+      }
+      const syntheticDragEvent = {
+        clientX: pointerEvent.clientX,
+        clientY: pointerEvent.clientY,
+        dataTransfer: { dropEffect: "move", types: [] },
+        preventDefault: () => undefined,
+      } as unknown as globalThis.DragEvent;
+      updateDropIndicatorRef.current?.(syntheticDragEvent, {
+        autoScroll: true,
+        dropEffect: "move",
+      });
+    };
+    const pointerUp = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== event.pointerId) return;
+      pointerEvent.preventDefault();
+      finishPointerDrag(true);
+    };
+    const pointerCancel = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== event.pointerId) return;
+      finishPointerDrag(false);
+    };
+
+    blockPointerDragCleanupRef.current = () => finishPointerDrag(false);
+    window.addEventListener("pointermove", pointerMove, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("pointerup", pointerUp, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("pointercancel", pointerCancel, { capture: true });
   };
 
   const locateBlock = (blockId: string) => {
@@ -2327,112 +3065,11 @@ export function ArticleEditor({
     setTableEdgeMenuOpen((current) => !current);
   };
 
-  const clearDropIndicator = () => {
-    dropIndicatorRef.current = undefined;
-    setDropIndicator(undefined);
-  };
-
-  const updateDropIndicator = (
-    event: DragEvent<HTMLDivElement>,
-    options: { autoScroll: boolean; dropEffect: "copy" | "move" },
-  ) => {
-    const surface = editorSurfaceRef.current;
-    if (!surface) return false;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = options.dropEffect;
-    const root = surface.getBoundingClientRect();
-    if (options.autoScroll) {
-      const margin = 72;
-      const maxStep = 24;
-      if (event.clientY < root.top + margin) {
-        surface.scrollTop -= Math.min(
-          maxStep,
-          Math.max(4, root.top + margin - event.clientY),
-        );
-      } else if (event.clientY > root.bottom - margin) {
-        surface.scrollTop += Math.min(
-          maxStep,
-          Math.max(4, event.clientY - (root.bottom - margin)),
-        );
-      }
-    }
-
-    const coordinates = editor.view.posAtCoords({
-      left: event.clientX,
-      top: event.clientY,
-    });
-    if (!coordinates) return true;
-    let blockPosition: number | undefined;
-    let blockNode: ReturnType<typeof blockAt>;
-    let offset = 0;
-    editor.state.doc.forEach((node) => {
-      if (
-        blockPosition === undefined &&
-        coordinates.pos >= offset &&
-        coordinates.pos <= offset + node.nodeSize
-      ) {
-        blockPosition = offset;
-        blockNode = node;
-      }
-      offset += node.nodeSize;
-    });
-    if (blockPosition === undefined || !blockNode) return true;
-
-    const isImageOrArtifact =
-      event.dataTransfer.types.includes(articleArtifactMime) ||
-      event.dataTransfer.types.includes("Files") ||
-      event.dataTransfer.types.includes(
-        "application/vnd.mmdash.image-group-item",
-      );
-
-    const targetEl =
-      typeof document !== "undefined"
-        ? document.elementFromPoint(event.clientX, event.clientY)
-        : null;
-
-    const isOverImageContainer = Boolean(
-      targetEl?.closest?.(
-        "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
-      ) ||
-      (blockNode &&
-        (blockNode.type.name === "articleImageGroup" ||
-          blockNode.type.name === "articleImage" ||
-          (blockNode.type.name === "artifactReference" &&
-            String(blockNode.attrs.mimeType ?? "").startsWith("image/")))),
-    );
-
-    if (isImageOrArtifact && isOverImageContainer) {
-      clearDropIndicator();
-      return true;
-    }
-
-    const dom = editor.view.nodeDOM(blockPosition);
-    if (!(dom instanceof HTMLElement)) return true;
-    const rect = dom.getBoundingClientRect();
-    const before = event.clientY < rect.top + rect.height / 2;
-    const nextIndicator = {
-      label: before ? "放在此块之前" : "放在此块之后",
-      position: dropTargetPosition(blockPosition, blockNode.nodeSize, before),
-      top: dropIndicatorOffset(
-        before ? rect.top : rect.bottom,
-        root.top,
-        surface.scrollTop,
-      ),
-    } satisfies ArticleDropIndicator;
-    dropIndicatorRef.current = nextIndicator;
-    setDropIndicator(nextIndicator);
-    return true;
-  };
-
   const updateInternalDragOver = (event: DragEvent<HTMLDivElement>) => {
     const draggingPosition = blockDraggingPosRef.current;
     if (draggingPosition === null) return false;
-    const draggingNode = blockAt(draggingPosition);
     return updateDropIndicator(event, {
-      autoScroll:
-        draggingNode?.type.name !== "artifactReference" &&
-        draggingNode?.type.name !== "articleImage" &&
-        draggingNode?.type.name !== "articleImageGroup",
+      autoScroll: true,
       dropEffect: "move",
     });
   };
@@ -2445,10 +3082,57 @@ export function ArticleEditor({
     ) {
       return false;
     }
+    if (inlineDropIndicatorRef.current !== undefined) {
+      inlineDropIndicatorRef.current = undefined;
+      setInlineDropIndicator(undefined);
+    }
     return updateDropIndicator(event, {
-      autoScroll: false,
+      autoScroll: true,
       dropEffect: "copy",
     });
+  };
+
+  const updateZoteroDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !event.dataTransfer.types.includes(articleZoteroMime)) {
+      return false;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+
+    if (dropIndicatorRef.current !== undefined) {
+      dropIndicatorRef.current = undefined;
+      setDropIndicator(undefined);
+    }
+
+    const surface = editorSurfaceRef.current;
+    if (!surface) return true;
+
+    const target = editor.view.posAtCoords({
+      left: event.clientX,
+      top: event.clientY,
+    });
+    if (!target) {
+      inlineDropIndicatorRef.current = undefined;
+      setInlineDropIndicator(undefined);
+      return true;
+    }
+
+    const coords = editor.view.coordsAtPos(target.pos);
+    const surfaceRect = surface.getBoundingClientRect();
+    const left = coords.left - surfaceRect.left + surface.scrollLeft;
+    const top = coords.top - surfaceRect.top + surface.scrollTop;
+    const height = Math.max(16, coords.bottom - coords.top);
+
+    const indicator = {
+      height,
+      left,
+      pos: target.pos,
+      top,
+    };
+    inlineDropIndicatorRef.current = indicator;
+    setInlineDropIndicator(indicator);
+
+    return true;
   };
 
   const mathEditorNode = mathEditorTarget
@@ -2490,6 +3174,72 @@ export function ArticleEditor({
     <div
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-background shadow-sm"
       data-article-editor-shell
+      onDragOver={(event) => {
+        if (
+          event.dataTransfer.types.includes(
+            "application/vnd.mmdash.image-group-item",
+          )
+        ) {
+          clearDropIndicator();
+          return;
+        }
+        const targetEl =
+          typeof document !== "undefined"
+            ? document.elementFromPoint(event.clientX, event.clientY)
+            : null;
+        if (
+          targetEl?.closest?.(
+            "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
+          )
+        ) {
+          clearDropIndicator();
+          return;
+        }
+        if (updateInternalDragOver(event)) return;
+        if (updateZoteroDragOver(event)) return;
+        if (updateExternalArtifactDragOver(event)) return;
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+          clearDropIndicator();
+          stopAutoScroll();
+        }
+      }}
+      onDrop={(event) => {
+        stopAutoScroll();
+        if (
+          event.dataTransfer.types.includes(
+            "application/vnd.mmdash.image-group-item",
+          )
+        ) {
+          clearDropIndicator();
+          return;
+        }
+        const targetEl =
+          typeof document !== "undefined"
+            ? document.elementFromPoint(event.clientX, event.clientY)
+            : null;
+        if (
+          targetEl?.closest?.(
+            "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
+          )
+        ) {
+          clearDropIndicator();
+          return;
+        }
+        const insertionPosition = dropIndicatorRef.current?.position;
+        const inlinePosition = inlineDropIndicatorRef.current?.pos;
+        clearDropIndicator();
+        const localImage = Array.from(event.dataTransfer?.files ?? []).find(
+          (item) => item.type.startsWith("image/"),
+        );
+        if (localImage) {
+          event.preventDefault();
+          void uploadImage(localImage, undefined, insertionPosition);
+          return;
+        }
+        void dropArtifact(event, inlinePosition ?? insertionPosition);
+      }}
     >
       <div className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center gap-1 border-b bg-background/95 p-2 backdrop-blur">
         <EditorButton
@@ -2654,101 +3404,6 @@ export function ArticleEditor({
           }}
           ref={editorSurfaceRef}
           style={{ scrollbarGutter: "stable" }}
-          onDragOver={(event) => {
-            if (
-              event.dataTransfer.types.includes(
-                "application/vnd.mmdash.image-group-item",
-              )
-            ) {
-              clearDropIndicator();
-              return;
-            }
-            const targetEl =
-              typeof document !== "undefined"
-                ? document.elementFromPoint(event.clientX, event.clientY)
-                : null;
-            if (
-              targetEl?.closest?.(
-                "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
-              )
-            ) {
-              clearDropIndicator();
-              return;
-            }
-            if (updateInternalDragOver(event)) return;
-            if (updateExternalArtifactDragOver(event)) return;
-            if (canEdit && event.dataTransfer.types.includes(articleZoteroMime))
-              event.preventDefault();
-          }}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node))
-              clearDropIndicator();
-          }}
-          onDrop={(event) => {
-            if (
-              event.dataTransfer.types.includes(
-                "application/vnd.mmdash.image-group-item",
-              )
-            ) {
-              clearDropIndicator();
-              return;
-            }
-            const targetEl =
-              typeof document !== "undefined"
-                ? document.elementFromPoint(event.clientX, event.clientY)
-                : null;
-            if (
-              targetEl?.closest?.(
-                "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
-              )
-            ) {
-              clearDropIndicator();
-              return;
-            }
-            const insertionPosition = dropIndicatorRef.current?.position;
-            clearDropIndicator();
-            // Handle internal block drag-and-drop (single or multi-block)
-            if (blockDraggingPosRef.current !== null) {
-              event.preventDefault();
-              event.stopPropagation();
-              if (insertionPosition === undefined || !editor) return;
-              const range = blockDraggingRangeRef.current;
-              if (range) {
-                // Multi-block move
-                moveArticleBlockRange(
-                  editor,
-                  range.from,
-                  range.to,
-                  insertionPosition,
-                );
-              } else {
-                // Single-block move
-                const draggedNode = editor.state.doc.nodeAt(
-                  blockDraggingPosRef.current,
-                );
-                if (draggedNode) {
-                  moveArticleBlockRange(
-                    editor,
-                    blockDraggingPosRef.current,
-                    blockDraggingPosRef.current + draggedNode.nodeSize,
-                    insertionPosition,
-                  );
-                }
-              }
-              blockDraggingPosRef.current = null;
-              blockDraggingRangeRef.current = null;
-              return;
-            }
-            const localImage = Array.from(event.dataTransfer?.files ?? []).find(
-              (item) => item.type.startsWith("image/"),
-            );
-            if (localImage) {
-              event.preventDefault();
-              void uploadImage(localImage, undefined, insertionPosition);
-              return;
-            }
-            void dropArtifact(event, insertionPosition);
-          }}
         >
           <div
             aria-hidden="true"
@@ -2769,6 +3424,18 @@ export function ArticleEditor({
                 {dropIndicator.label}
               </span>
             </div>
+          ) : null}
+          {inlineDropIndicator ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute z-30 w-0.5 rounded-full bg-primary shadow-xs animate-pulse"
+              data-article-inline-drop-indicator
+              style={{
+                height: `${inlineDropIndicator.height}px`,
+                left: `${inlineDropIndicator.left}px`,
+                top: `${inlineDropIndicator.top}px`,
+              }}
+            />
           ) : null}
           {canEdit ? (
             <DragHandle
@@ -2792,10 +3459,7 @@ export function ArticleEditor({
                 <button
                   aria-label="拖动当前块排序"
                   className="flex size-6 cursor-grab items-center justify-center rounded hover:bg-muted hover:text-foreground active:cursor-grabbing"
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                    selectBlockFromHandle();
-                  }}
+                  onPointerDown={startPointerBlockDrag}
                   onClick={(event) => {
                     event.stopPropagation();
                     selectBlockFromHandle();

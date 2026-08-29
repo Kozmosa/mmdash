@@ -249,10 +249,9 @@ export function moveArticleBlockRange(
 
   // Collect the nodes in the range
   const nodes: import("@tiptap/pm/model").Node[] = [];
-  doc.nodesBetween(rangeFrom, rangeTo, (node, pos) => {
-    if (doc.resolve(pos).depth === 0) {
+  doc.forEach((node, offset) => {
+    if (offset >= rangeFrom && offset < rangeTo) {
       nodes.push(node);
-      return false; // don't descend
     }
   });
   if (nodes.length === 0) return false;

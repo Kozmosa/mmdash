@@ -78,6 +78,8 @@ export function registerArticleRoutes(
   collection("releases", ["GET", "POST"]);
   collection("templates", ["GET", "POST"]);
   collection("zotero", ["GET", "PUT", "DELETE"]);
+  collection("zotero/collections", ["GET"]);
+  collection("zotero/items", ["GET"]);
   collection("zotero/search", ["GET"]);
   for (const [name, suffix, methods] of [
     ["blocks", "review", ["POST"]],
