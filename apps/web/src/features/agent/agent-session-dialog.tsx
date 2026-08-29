@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Brain, Clock3, Wrench, X } from "lucide-react";
+import { Bot, Brain, Clock3, RefreshCw, Wrench, X } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -50,14 +50,13 @@ export function AgentSessionDialog({
   >("idle");
   const [streamDraft, setStreamDraft] = useState<AgentMessage | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamReconnectAttempt, setStreamReconnectAttempt] = useState(0);
   const [streamTools, setStreamTools] = useState<AgentToolCall[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const terminalRefreshRunId = useRef<string | null>(null);
 
-  const initialIdentifiersReady = Boolean(
-    agentInstanceId && sessionId && runId,
-  );
   const evaluation = useQuery({
-    enabled: open && !initialIdentifiersReady,
+    enabled: open,
     queryFn: () =>
       apiClient.request<ProgressEvaluation>(
         `/projects/${encodeURIComponent(projectId)}/progress/evaluations/${encodeURIComponent(evaluationId)}`,
@@ -69,7 +68,7 @@ export function AgentSessionDialog({
       if (item?.status === "failed" || item?.status === "succeeded") {
         return false;
       }
-      return item?.agent_run_id ? false : 1_000;
+      return 1_000;
     },
     refetchIntervalInBackground: true,
   });
@@ -131,7 +130,9 @@ export function AgentSessionDialog({
     setReasoningState("idle");
     setStreamDraft(null);
     setStreamError(null);
+    setStreamReconnectAttempt(0);
     setStreamTools([]);
+    terminalRefreshRunId.current = null;
   }, [evaluationId, resolvedRunId, resolvedSessionId]);
 
   useEffect(() => {
@@ -154,6 +155,17 @@ export function AgentSessionDialog({
     const controller = new AbortController();
     let pendingDraft: AgentMessage | null = null;
     let draftTimer: number | undefined;
+    let reconnectTimer: number | undefined;
+    const scheduleReconnect = () => {
+      if (reconnectTimer !== undefined) return;
+      const delay = Math.min(1_000 * 2 ** streamReconnectAttempt, 8_000);
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = undefined;
+        if (!controller.signal.aborted) {
+          setStreamReconnectAttempt((current) => current + 1);
+        }
+      }, delay);
+    };
     const publishDraft = () => {
       draftTimer = undefined;
       if (pendingDraft) setStreamDraft(pendingDraft);
@@ -180,6 +192,10 @@ export function AgentSessionDialog({
             sessionId: resolvedSessionId!,
           },
           async (event) => {
+            const recoverableStreamError =
+              event.event === "error" &&
+              event.safe_error_code === "runtime_stream_failed";
+            if (event.event !== "error") setStreamError(null);
             if (event.run) {
               setActiveRun((current) =>
                 sameRunSnapshot(current, event.run!) ? current : event.run!,
@@ -219,7 +235,9 @@ export function AgentSessionDialog({
                 upsertToolCall(current, event.tool_call!),
               );
             }
-            const terminalStatus = terminalStatusForEvent(event.event);
+            const terminalStatus = recoverableStreamError
+              ? null
+              : terminalStatusForEvent(event.event);
             if (terminalStatus) {
               if (pendingDraft) publishDraftNow(pendingDraft);
               setReasoningState((current) =>
@@ -240,8 +258,15 @@ export function AgentSessionDialog({
             }
             if (event.event === "error") {
               setStreamError(
-                event.safe_error_message ?? "Agent 评估输出流暂时不可用。",
+                recoverableStreamError
+                  ? "实时过程连接暂时中断，评估仍在后台执行；完成后会自动补全记录。"
+                  : (event.safe_error_message ??
+                      "Agent 评估输出流暂时不可用。"),
               );
+              if (recoverableStreamError) {
+                await Promise.all([refetchMessages(), refetchRun()]);
+                scheduleReconnect();
+              }
             }
           },
           { signal: controller.signal },
@@ -249,17 +274,18 @@ export function AgentSessionDialog({
         if (!controller.signal.aborted) {
           await refetchMessages();
         }
-      } catch (error: unknown) {
+      } catch {
         if (!controller.signal.aborted) {
-          setStreamError(
-            error instanceof Error ? error.message : "Agent 评估输出流已中断。",
-          );
+          setStreamError("实时过程连接暂时中断，正在从已保存记录恢复。");
+          await Promise.all([refetchMessages(), refetchRun()]);
+          scheduleReconnect();
         }
       }
     })();
     return () => {
       controller.abort();
       if (draftTimer !== undefined) window.clearTimeout(draftTimer);
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
     };
   }, [
     identifiersReady,
@@ -271,7 +297,23 @@ export function AgentSessionDialog({
     resolvedRunId,
     resolvedSessionId,
     runBusy,
+    streamReconnectAttempt,
   ]);
+
+  useEffect(() => {
+    if (
+      !open ||
+      !identifiersReady ||
+      !run ||
+      !terminalStatuses.has(run.status) ||
+      terminalRefreshRunId.current === run.run_id
+    ) {
+      return;
+    }
+    terminalRefreshRunId.current = run.run_id;
+    setStreamError(null);
+    void Promise.all([refetchMessages(), refetchRun()]);
+  }, [identifiersReady, open, refetchMessages, refetchRun, run]);
 
   useEffect(() => {
     if (!open) return;
@@ -302,6 +344,13 @@ export function AgentSessionDialog({
         messageComparisonKey(message.content) ===
           messageComparisonKey(streamDraft.content),
     ),
+  );
+  const hasAssistantOutput = currentMessages.some(
+    (message) => message.role === "assistant" && message.content.trim(),
+  );
+  const showEvaluationFallback = Boolean(
+    evaluation.data?.status === "succeeded" &&
+    (!hasAssistantOutput || messages.isError),
   );
 
   useEffect(() => {
@@ -401,9 +450,24 @@ export function AgentSessionDialog({
                   正在读取评估会话…
                 </p>
               ) : null}
-              {messages.isError || persistedRun.isError ? (
+              {messages.isError ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100">
+                  <p>
+                    原始会话消息暂时无法读取；下面仍会显示已保存的工具步骤和评估结论。
+                  </p>
+                  <Button
+                    onClick={() => void refetchMessages()}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <RefreshCw aria-hidden="true" className="size-3.5" />
+                    重新读取会话
+                  </Button>
+                </div>
+              ) : null}
+              {persistedRun.isError ? (
                 <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-                  无法读取该评估 Session，请稍后重试。
+                  无法刷新 Run 状态，正在使用已保存的评估记录。
                 </p>
               ) : null}
               {currentMessages.map((message) => (
@@ -425,8 +489,11 @@ export function AgentSessionDialog({
                   streaming={runBusy}
                 />
               ) : null}
-              {streamError ? (
-                <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+              {showEvaluationFallback && evaluation.data ? (
+                <PersistedEvaluationResult evaluation={evaluation.data} />
+              ) : null}
+              {streamError && runBusy ? (
+                <p className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100">
                   {streamError}
                 </p>
               ) : null}
@@ -553,8 +620,7 @@ const SessionRunActivity = memo(function SessionRunActivity({
         {settled.length ? <SessionToolCallList toolCalls={settled} /> : null}
         {reasoningState === "idle" ? (
           <p className="mt-2 text-xs text-muted-foreground">
-            此 Run 没有收到可展示的 reasoning.available
-            事件；不能据此判断模型未思考，隐藏推理文本按安全策略不输出。
+            为保护模型内部推理，这里不展示隐藏思考文本；可核验的工具步骤和最终结论会完整保留。
           </p>
         ) : null}
       </>
@@ -579,7 +645,7 @@ const SessionRunActivity = memo(function SessionRunActivity({
       {toolCalls.length ? <SessionToolCallList toolCalls={toolCalls} /> : null}
       {reasoningState === "idle" && toolCalls.length === 0 ? (
         <p className="text-muted-foreground">
-          未收到可展示的思考事件；模型的隐藏推理不会在 Session 中输出。
+          正在准备项目证据；隐藏思考文本不会展示，可核验的工具步骤会保留在这里。
         </p>
       ) : null}
     </div>
@@ -599,10 +665,17 @@ const SessionToolCallList = memo(function SessionToolCallList({
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs">
             <span className="flex min-w-0 items-center gap-2">
               <Wrench aria-hidden="true" className="size-3.5 shrink-0" />
-              <code className="truncate">{tool.name || "工具调用"}</code>
+              <span className="truncate font-medium">
+                {toolStepLabel(tool.name)}
+              </span>
             </span>
             <Badge>{toolStatusLabel(tool.status)}</Badge>
           </summary>
+          {tool.name ? (
+            <code className="mt-2 block truncate text-[11px] text-muted-foreground">
+              {tool.name}
+            </code>
+          ) : null}
           {tool.input_summary ? (
             <p className="mt-2 text-xs text-muted-foreground">
               {tool.input_summary}
@@ -623,6 +696,89 @@ const SessionToolCallList = memo(function SessionToolCallList({
     </div>
   );
 });
+
+const PersistedEvaluationResult = memo(function PersistedEvaluationResult({
+  evaluation,
+}: Readonly<{ evaluation: ProgressEvaluation }>) {
+  const sections = [
+    { items: evaluation.changes_since_last, title: "本轮确认的变化" },
+    { items: evaluation.completed_items, title: "已经完成" },
+    { items: evaluation.in_progress_items, title: "正在进行" },
+    { items: evaluation.blockers, title: "当前阻塞" },
+    { items: evaluation.pending_questions, title: "需要你确认" },
+  ].filter((section) => section.items?.length);
+  return (
+    <section className="rounded-xl border border-border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">评估结论（已保存）</h3>
+        <Badge>{evaluation.detected_stage || "阶段待确认"}</Badge>
+      </div>
+      <p className="mt-3 whitespace-pre-wrap text-sm leading-7">
+        {evaluation.summary || "本轮评估已完成，但没有生成摘要。"}
+      </p>
+      {sections.map((section) => (
+        <div className="mt-4" key={section.title}>
+          <h4 className="text-xs font-medium text-muted-foreground">
+            {section.title}
+          </h4>
+          <ul className="mt-2 space-y-1.5 text-sm leading-6">
+            {section.items.map((item) => (
+              <li className="flex gap-2" key={item}>
+                <span aria-hidden="true" className="text-muted-foreground">
+                  ·
+                </span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {evaluation.risks?.length ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-medium text-muted-foreground">
+            需要关注的风险
+          </h4>
+          <ul className="mt-2 space-y-2">
+            {evaluation.risks.map((risk) => (
+              <li
+                className="rounded-lg border border-border bg-background/70 p-3"
+                key={risk.risk_id}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium">
+                  <span>{risk.title}</span>
+                  <Badge>{riskSeverityLabel(risk.severity)}</Badge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {risk.detail}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+});
+
+function toolStepLabel(name?: string): string {
+  const normalized = (name ?? "").toLowerCase();
+  if (normalized.includes("tool_describe")) return "确认可用工具";
+  if (normalized.endsWith("project_get")) return "读取项目目标与约束";
+  if (normalized.endsWith("progress_get")) return "读取当前任务与里程碑";
+  if (normalized.endsWith("data_list")) return "查找项目证据";
+  if (normalized.endsWith("data_read")) return "读取证据详情";
+  if (normalized.endsWith("project.get")) return "读取项目目标与约束";
+  if (normalized.endsWith("progress.get")) return "读取当前任务与里程碑";
+  if (normalized.endsWith("data.list")) return "查找项目证据";
+  if (normalized.endsWith("data.read")) return "读取证据详情";
+  return name || "工具调用";
+}
+
+function riskSeverityLabel(
+  severity: ProgressEvaluation["risks"][number]["severity"],
+): string {
+  return { critical: "严重", high: "高", low: "低", medium: "中" }[severity];
+}
 
 function prepareSessionMessages(
   messages: AgentMessage[],
