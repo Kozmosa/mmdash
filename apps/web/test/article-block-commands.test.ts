@@ -173,6 +173,28 @@ describe("Article block commands", () => {
     editor.destroy();
   });
 
+  it("can move a block range", () => {
+    const editor = makeEditor();
+    let posA = -1;
+    let posB = -1;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.attrs.id === "block-a") posA = pos;
+      if (node.attrs.id === "block-b") posB = pos;
+    });
+    const nodeA = editor.state.doc.nodeAt(posA)!;
+    const nodeB = editor.state.doc.nodeAt(posB)!;
+
+    const result = moveArticleBlockRange(
+      editor,
+      posA,
+      posA + nodeA.nodeSize,
+      posB + nodeB.nodeSize,
+    );
+    expect(result).toBe(true);
+    expect(editor.getText()).toBe("第二块\n\n第一块");
+    editor.destroy();
+  });
+
   it("moves one block to each requested boundary exactly once", () => {
     const makeThreeBlockEditor = () =>
       new Editor({

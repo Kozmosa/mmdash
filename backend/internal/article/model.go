@@ -237,6 +237,14 @@ type ZoteroBinding struct {
 	ReadOnly         bool   `json:"read_only"`
 }
 
+type ZoteroCollection struct {
+	CollectionKey       string  `json:"collection_key"`
+	Name                string  `json:"name"`
+	NumCollections      int     `json:"num_collections"`
+	NumItems            int     `json:"num_items"`
+	ParentCollectionKey *string `json:"parent_collection_key"`
+}
+
 type ZoteroItem struct {
 	Authors     []string               `json:"authors"`
 	CitationKey string                 `json:"citation_key"`
