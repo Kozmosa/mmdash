@@ -57,6 +57,26 @@ func loadTaskRecord(path string) (taskRecord, bool, error) {
 	return record, true, nil
 }
 
+// loadTaskRecordRetry tolerates the transient sharing violations of the
+// atomic rename publish on Windows: a reader can hit "being used by another
+// process" for the instant the supervisor replaces the record. Only genuine
+// read errors are retried; a missing record returns immediately.
+func loadTaskRecordRetry(path string, attempts int, interval time.Duration) (taskRecord, bool, error) {
+	var record taskRecord
+	var exists bool
+	var err error
+	for index := 0; index < attempts; index++ {
+		record, exists, err = loadTaskRecord(path)
+		if err == nil {
+			return record, exists, nil
+		}
+		if index+1 < attempts {
+			time.Sleep(interval)
+		}
+	}
+	return record, exists, err
+}
+
 func saveTaskRecord(path string, record taskRecord) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -69,11 +89,18 @@ func saveTaskRecord(path string, record taskRecord) error {
 	if err := os.WriteFile(temporary, append(data, '\n'), 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(temporary, path); err != nil {
-		_ = os.Remove(temporary)
-		return err
+	// The Gateway polls this record while the runner replaces it, so the
+	// rename can hit a transient Windows sharing violation; losing it would
+	// drop the terminal record and lose the task. Retry briefly.
+	var renameErr error
+	for attempt := 0; attempt < 10; attempt++ {
+		if renameErr = os.Rename(temporary, path); renameErr == nil {
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	return nil
+	_ = os.Remove(temporary)
+	return renameErr
 }
 
 // spoolOffsets tracks how much of the runner-owned task output the Gateway has

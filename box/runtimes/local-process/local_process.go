@@ -172,7 +172,8 @@ func (runtime *Runtime) Run(ctx context.Context, request sandbox.RunRequest) (sa
 	if !filepath.IsAbs(request.OutputDir) || request.Workspace == "" {
 		return sandbox.RunResult{}, errors.New("sandbox paths must be absolute directories")
 	}
-	record, exists, err := loadTaskRecord(runtime.recordPath(request.ID))
+	record, exists, err := loadTaskRecordRetry(
+		runtime.recordPath(request.ID), 5, runtime.pollInterval())
 	if err != nil {
 		return sandbox.RunResult{}, err
 	}
@@ -310,14 +311,19 @@ func (runtime *Runtime) start(ctx context.Context, request sandbox.RunRequest) (
 	}
 	// Record the supervisor PID only while the runner has not persisted its
 	// own record yet: an unconditional rewrite here could clobber the record
-	// of a task that finished before this process resumed scheduling.
-	if current, exists, loadErr := loadTaskRecord(runtime.recordPath(request.ID)); loadErr == nil && exists {
+	// of a task that finished before this process resumed scheduling. A
+	// transient read failure (rename publish window) must also never fall
+	// through to the fresh-record write, so the load retries and the fallback
+	// only fires when no record file exists at all.
+	current, exists, loadErr := loadTaskRecordRetry(
+		runtime.recordPath(request.ID), 5, runtime.pollInterval())
+	if loadErr == nil && exists {
 		if current.RunnerPID == 0 {
 			current.RunnerPID = runner.Process.Pid
 			_ = saveTaskRecord(runtime.recordPath(request.ID), current)
 		}
 		record = current
-	} else {
+	} else if _, statErr := os.Stat(runtime.recordPath(request.ID)); os.IsNotExist(statErr) {
 		_ = saveTaskRecord(runtime.recordPath(request.ID), record)
 	}
 	return runtime.follow(ctx, request, &record)
@@ -348,7 +354,8 @@ func (runtime *Runtime) follow(ctx context.Context, request sandbox.RunRequest, 
 		if progress {
 			_ = saveSpoolOffsets(spoolPath, offsets)
 		}
-		current, exists, err := loadTaskRecord(runtime.recordPath(request.ID))
+		current, exists, err := loadTaskRecordRetry(
+			runtime.recordPath(request.ID), 5, runtime.pollInterval())
 		if err != nil {
 			return sandbox.RunResult{}, err
 		}
@@ -520,8 +527,13 @@ func (runtime *Runtime) Destroy(ctx context.Context, id string) error {
 	if runtime.Environments != nil {
 		_ = runtime.ReleaseEnvironment(ctx, id)
 	}
-	record, exists, err := loadTaskRecord(runtime.recordPath(id))
-	if err == nil && exists && !taskTerminal(record.State) {
+	record, exists, err := loadTaskRecordRetry(runtime.recordPath(id), 5, 20*time.Millisecond)
+	if err != nil {
+		// A readable record is a precondition for the liveness check below:
+		// an unreadable record must never fall through to RemoveAll.
+		return err
+	}
+	if exists && !taskTerminal(record.State) {
 		// Defensive: a live task must never lose its supervision state.
 		return errors.New("refusing to destroy local-process state of a running task")
 	}

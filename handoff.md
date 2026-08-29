@@ -160,7 +160,16 @@
   in the supervisor PID only while the runner has not persisted its own
   record), and all branch Go files are gofmt-clean so the repository
   `check-go-format` gate passes (several local-process/config/gateway files
-  were committed unformatted).
+  were committed unformatted). Post-merge hardening (2026-08-29): the
+  cross-process task-record file is now read and written with short retries
+  on both sides, because the Gateway's poll and the runner's atomic
+  rename-publish collide as transient Windows sharing violations — a failed
+  terminal write lost the task to `RUNNER_LOST` (suite now stable at
+  `-count=5`), and `Destroy` refuses to remove state it cannot read. The
+  branch merges `main` (the cards-layout modal) with the `local-process`
+  option and trusted-host warning ported into the new create dialog, and the
+  seven branch files that introduced new prettier violations are formatted;
+  the repo-wide prettier 3.9 debt on `main` is fixed separately in PR #55.
 - Platform scope decision (2026-08-29, recorded as ADR 0005 in
   `docs/adr/0005-local-process-linux-support-scope.md` and on issue #47):
   the product support target for `local-process` is **Linux** (VMs/containers
