@@ -1052,13 +1052,17 @@ describe("Agent workbench", () => {
       title: "Secondary",
     });
     prepareQueries(runningSession);
-    mocks.listSessions.mockResolvedValue({ items: [runningSession, secondary] });
+    mocks.listSessions.mockResolvedValue({
+      items: [runningSession, secondary],
+    });
     mocks.getRun.mockResolvedValue(runFixture({ status: "running" }));
     mocks.streamAgentRun.mockResolvedValue("event-running");
 
     render(<AgentWorkbench />, { wrapper: Providers });
     await waitFor(() => expect(mocks.streamAgentRun).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "停止输出" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "停止输出" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Secondary active" }));
     await waitFor(() =>
@@ -1074,7 +1078,9 @@ describe("Agent workbench", () => {
         streamCallsBeforeReturn,
       ),
     );
-    expect(screen.getByRole("button", { name: "停止输出" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "停止输出" }),
+    ).toBeInTheDocument();
     expect(mocks.getRun).toHaveBeenCalledWith(
       "project-1",
       "instance-1",

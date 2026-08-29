@@ -4,7 +4,14 @@
   "title": "box.revoked payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["box_id", "owner_user_id", "name", "status", "mode", "failed_experiment_count"],
+  "required": [
+    "box_id",
+    "owner_user_id",
+    "name",
+    "status",
+    "mode",
+    "failed_experiment_count"
+  ],
   "properties": {
     "box_id": { "type": "string", "format": "uuid" },
     "owner_user_id": { "type": "string", "format": "uuid" },

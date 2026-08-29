@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -17,7 +23,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/components/providers/project-provider", () => ({
-  useCurrentProject: () => ({ id: "project-1", name: "Project", role: "owner" }),
+  useCurrentProject: () => ({
+    id: "project-1",
+    name: "Project",
+    role: "owner",
+  }),
 }));
 
 vi.mock("@/features/agent/agent-api", () => ({
@@ -50,7 +60,9 @@ describe("Agent settings", () => {
     });
 
     render(<AgentSettingsPanel />, { wrapper: Providers });
-    fireEvent.click(await screen.findByRole("button", { name: "配置 Hermes 连接" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "配置 Hermes 连接" }),
+    );
 
     const apiKey = screen.getByLabelText("Hermes API Key");
     expect(apiKey).toHaveAttribute("type", "password");
@@ -86,7 +98,9 @@ describe("Agent settings", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "关闭一次性 Token" }));
-    expect(screen.queryByText("mmdash_agent_plaintext_once")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("mmdash_agent_plaintext_once"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps auto-management credentials and accidental plaintext out of the DOM", async () => {
@@ -114,9 +128,15 @@ describe("Agent settings", () => {
     const apiKey = await screen.findByLabelText("Hermes API Key");
     expect(apiKey).toHaveValue("");
     expect(apiKey).toHaveAttribute("placeholder", "已加密配置；留空保持原值");
-    expect(await screen.findByLabelText("Dashboard Session Token")).toHaveValue("");
-    expect(screen.getByLabelText(/Cloudflare Access Client Secret/)).toHaveValue("");
-    expect(screen.queryByText("auto-token-must-not-enter-dom")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Dashboard Session Token")).toHaveValue(
+      "",
+    );
+    expect(
+      screen.getByLabelText(/Cloudflare Access Client Secret/),
+    ).toHaveValue("");
+    expect(
+      screen.queryByText("auto-token-must-not-enter-dom"),
+    ).not.toBeInTheDocument();
     expect(screen.getAllByText(/cloudflare_access/).length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByLabelText("显示名称"), {
@@ -129,7 +149,9 @@ describe("Agent settings", () => {
     expect(update).not.toHaveProperty("hermes_api_key");
     expect(update).not.toHaveProperty("dashboard_session_token");
     expect(update).not.toHaveProperty("cloudflare_access_client_secret");
-    expect(screen.queryByText("auto-token-must-not-enter-dom")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("auto-token-must-not-enter-dom"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -161,7 +183,10 @@ function Providers({ children }: Readonly<{ children: ReactNode }>) {
     <QueryClientProvider
       client={
         new QueryClient({
-          defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+          defaultOptions: {
+            mutations: { retry: false },
+            queries: { retry: false },
+          },
         })
       }
     >
@@ -193,7 +218,12 @@ function instanceFixture(overrides: Record<string, unknown> = {}) {
     display_name: "Hermes",
     grant: {
       agent_instance_id: "instance-1",
-      allowed_tools: ["project.get", "data.list", "data.read", "context.promote"],
+      allowed_tools: [
+        "project.get",
+        "data.list",
+        "data.read",
+        "context.promote",
+      ],
       created_at: "2026-08-06T00:00:00Z",
       grant_id: "grant-1",
       project_access_status: "verified",

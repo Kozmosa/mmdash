@@ -11,16 +11,16 @@ projection tables.
 
 ## Operations
 
-| `operationId`                   | Method | Path                                                                  | Purpose                                     |
-| ------------------------------- | ------ | --------------------------------------------------------------------- | ------------------------------------------- |
-| `data.list`                     | GET    | `/v1/data/projects/{projectId}/objects`                               | List searchable project objects             |
-| `data.read`                     | GET    | `/v1/data/projects/{projectId}/objects/{objectId}`                    | Route a stable Object ID to full content    |
-| `data.activity.list`            | GET    | `/v1/data/projects/{projectId}/activity`                              | Read the project activity timeline          |
-| `data.context.list`             | GET    | `/v1/data/projects/{projectId}/context`                               | List only human-confirmed context           |
-| `data.context.proposals.list`   | GET    | `/v1/data/projects/{projectId}/context/proposals`                     | List context proposals                      |
-| `data.context.proposals.create` | POST   | `/v1/data/projects/{projectId}/context/proposals`                     | Suggest an item for formal Project Context  |
-| `data.context.proposals.review` | POST   | `/v1/data/projects/{projectId}/context/proposals/{proposalId}/review` | Human acceptance or rejection               |
-| `data.home.get`                 | GET    | `/v1/data/projects/{projectId}/home`                                  | Read the typed project-home aggregate |
+| `operationId`                   | Method | Path                                                                  | Purpose                                    |
+| ------------------------------- | ------ | --------------------------------------------------------------------- | ------------------------------------------ |
+| `data.list`                     | GET    | `/v1/data/projects/{projectId}/objects`                               | List searchable project objects            |
+| `data.read`                     | GET    | `/v1/data/projects/{projectId}/objects/{objectId}`                    | Route a stable Object ID to full content   |
+| `data.activity.list`            | GET    | `/v1/data/projects/{projectId}/activity`                              | Read the project activity timeline         |
+| `data.context.list`             | GET    | `/v1/data/projects/{projectId}/context`                               | List only human-confirmed context          |
+| `data.context.proposals.list`   | GET    | `/v1/data/projects/{projectId}/context/proposals`                     | List context proposals                     |
+| `data.context.proposals.create` | POST   | `/v1/data/projects/{projectId}/context/proposals`                     | Suggest an item for formal Project Context |
+| `data.context.proposals.review` | POST   | `/v1/data/projects/{projectId}/context/proposals/{proposalId}/review` | Human acceptance or rejection              |
+| `data.home.get`                 | GET    | `/v1/data/projects/{projectId}/home`                                  | Read the typed project-home aggregate      |
 
 Object and activity lists use opaque cursor pagination. `type` filters the
 object list by its stable `object_type`; clients must not inspect cursor
@@ -41,17 +41,17 @@ Every business module contributing an object must register both:
 the registry row, and dispatches to the registered Adapter. No cross-module
 table read or whole-project dump is permitted. Current registrations are:
 
-| Object type        | Projection source         | Full-content owner |
-| ------------------ | ------------------------- | ------------------ |
-| `project`          | `project.created`         | Project module     |
-| `context-proposal` | Context Proposal mutation | Data Hub           |
-| `project-context`  | Human acceptance          | Data Hub           |
-| `repository`       | `repo.connected`          | Repo module        |
-| `repo_commit`      | Repo commit events        | Repo module        |
-| `repo_file`        | Current Code head index   | Repo module        |
-| `milestone`        | Progress lifecycle events | Progress module    |
-| `task`             | Progress lifecycle events | Progress module    |
-| `progress_proposal`| Progress lifecycle events | Progress module    |
+| Object type         | Projection source         | Full-content owner |
+| ------------------- | ------------------------- | ------------------ |
+| `project`           | `project.created`         | Project module     |
+| `context-proposal`  | Context Proposal mutation | Data Hub           |
+| `project-context`   | Human acceptance          | Data Hub           |
+| `repository`        | `repo.connected`          | Repo module        |
+| `repo_commit`       | Repo commit events        | Repo module        |
+| `repo_file`         | Current Code head index   | Repo module        |
+| `milestone`         | Progress lifecycle events | Progress module    |
+| `task`              | Progress lifecycle events | Progress module    |
+| `progress_proposal` | Progress lifecycle events | Progress module    |
 
 The `datahub.projections` Event Bus consumer registers Project and Repo
 events. Repo connection projects all three current workspace commits and the

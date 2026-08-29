@@ -3,25 +3,25 @@
 Search this file by tool name, project scope, token kind, or contract. The
 machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 
-| Tool                   | Purpose                                              | Project scoped | Token kinds | Input/output contract       | Status                  |
-| ---------------------- | ---------------------------------------------------- | -------------- | ----------- | --------------------------- | ----------------------- |
-| `project.list`         | List projects visible to the identity                | No             | CLI, Agent  | `project.list.json`         | Stage 3 read            |
-| `project.get`          | Read one authorized Project                          | Yes            | CLI, Agent  | `project.get.json`          | Stage 3 read            |
-| `project.member.list`  | List members and roles for an authorized project     | Yes            | CLI, Agent  | `project.member.list.json`  | Stage 3.16 read         |
-| `project.member.get`   | Read one project member and role                     | Yes            | CLI, Agent  | `project.member.get.json`   | Stage 3.16 read         |
-| `data.list`            | List Data Hub object projections                     | Yes            | CLI, Agent  | `data.list.json`            | Stage 1 read            |
-| `data.read`            | Read through the authoritative adapter               | Yes            | CLI, Agent  | `data.read.json`            | Stage 1 read            |
-| `context.promote`      | Submit a pending Context Proposal                    | Yes            | CLI, Agent  | `context.promote.json`      | Stage 5 proposal        |
-| `progress.get`         | Read Progress state and evaluation provenance        | Yes            | CLI, Agent  | `progress.get.json`         | Stage 6 read            |
-| `progress.recalculate` | Schedule a versioned Progress evaluation             | Yes            | CLI, Agent  | `progress.recalculate.json` | Stage 6 mutation        |
-| `artifact.read`        | Obtain a short-lived grant for one attached Artifact | Yes            | Agent       | `artifact.read.json`        | Agent attachment read   |
-| `artifact.upload`      | Upload an image/file as an Agent Artifact            | Yes            | Agent       | `artifact.upload.json`      | Agent Artifact mutation |
-| `experiment.create`    | Register a managed or self-run Experiment             | Yes            | CLI, Agent  | `experiment.create.json`    | Stage 8 mutation        |
-| `experiment.run`       | Queue a frozen managed Experiment                     | Yes            | CLI, Agent  | `experiment.run.json`       | Stage 8 mutation        |
-| `experiment.status`    | Read status, logs, failure, and retry guidance         | Yes            | CLI, Agent  | `experiment.status.json`    | Stage 8 read            |
-| `experiment.result.bind` | Bind a pushed self-run result Commit                | Yes            | CLI, Agent  | `experiment.result.bind.json` | Stage 8 mutation      |
-| `result.get`           | Read a verified result tree and Artifact pointers     | Yes            | CLI, Agent  | `result.get.json`           | Stage 8 read            |
-| `system.echo`          | Verify the complete MCP Gateway boundary             | Yes            | CLI, Agent  | `system.echo.json`          | Foundation test tool    |
+| Tool                     | Purpose                                              | Project scoped | Token kinds | Input/output contract         | Status                  |
+| ------------------------ | ---------------------------------------------------- | -------------- | ----------- | ----------------------------- | ----------------------- |
+| `project.list`           | List projects visible to the identity                | No             | CLI, Agent  | `project.list.json`           | Stage 3 read            |
+| `project.get`            | Read one authorized Project                          | Yes            | CLI, Agent  | `project.get.json`            | Stage 3 read            |
+| `project.member.list`    | List members and roles for an authorized project     | Yes            | CLI, Agent  | `project.member.list.json`    | Stage 3.16 read         |
+| `project.member.get`     | Read one project member and role                     | Yes            | CLI, Agent  | `project.member.get.json`     | Stage 3.16 read         |
+| `data.list`              | List Data Hub object projections                     | Yes            | CLI, Agent  | `data.list.json`              | Stage 1 read            |
+| `data.read`              | Read through the authoritative adapter               | Yes            | CLI, Agent  | `data.read.json`              | Stage 1 read            |
+| `context.promote`        | Submit a pending Context Proposal                    | Yes            | CLI, Agent  | `context.promote.json`        | Stage 5 proposal        |
+| `progress.get`           | Read Progress state and evaluation provenance        | Yes            | CLI, Agent  | `progress.get.json`           | Stage 6 read            |
+| `progress.recalculate`   | Schedule a versioned Progress evaluation             | Yes            | CLI, Agent  | `progress.recalculate.json`   | Stage 6 mutation        |
+| `artifact.read`          | Obtain a short-lived grant for one attached Artifact | Yes            | Agent       | `artifact.read.json`          | Agent attachment read   |
+| `artifact.upload`        | Upload an image/file as an Agent Artifact            | Yes            | Agent       | `artifact.upload.json`        | Agent Artifact mutation |
+| `experiment.create`      | Register a managed or self-run Experiment            | Yes            | CLI, Agent  | `experiment.create.json`      | Stage 8 mutation        |
+| `experiment.run`         | Queue a frozen managed Experiment                    | Yes            | CLI, Agent  | `experiment.run.json`         | Stage 8 mutation        |
+| `experiment.status`      | Read status, logs, failure, and retry guidance       | Yes            | CLI, Agent  | `experiment.status.json`      | Stage 8 read            |
+| `experiment.result.bind` | Bind a pushed self-run result Commit                 | Yes            | CLI, Agent  | `experiment.result.bind.json` | Stage 8 mutation        |
+| `result.get`             | Read a verified result tree and Artifact pointers    | Yes            | CLI, Agent  | `result.get.json`             | Stage 8 read            |
+| `system.echo`            | Verify the complete MCP Gateway boundary             | Yes            | CLI, Agent  | `system.echo.json`            | Foundation test tool    |
 
 ## Client and principal paths
 

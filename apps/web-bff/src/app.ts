@@ -29,7 +29,10 @@ import { registerSettingsRoutes } from "./routes/settings.js";
 import { registerNotificationRoutes } from "./routes/notification.js";
 import { registerAgentRoutes } from "./routes/agent.js";
 import { registerExperimentRoutes } from "./routes/experiments.js";
-import { ArticleCollaboration, registerArticleCollaboration } from "./article/collaboration.js";
+import {
+  ArticleCollaboration,
+  registerArticleCollaboration,
+} from "./article/collaboration.js";
 import { registerArticleRoutes } from "./routes/article.js";
 import { registerBoxRoutes } from "./routes/box.js";
 

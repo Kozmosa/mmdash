@@ -9,14 +9,36 @@
     "resource_limits": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["cpu_millis", "memory_bytes", "timeout_seconds", "disk_bytes", "pids", "network"],
+      "required": [
+        "cpu_millis",
+        "memory_bytes",
+        "timeout_seconds",
+        "disk_bytes",
+        "pids",
+        "network"
+      ],
       "properties": {
         "cpu_millis": { "type": "integer", "minimum": 1, "maximum": 100000 },
-        "memory_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1099511627776 },
-        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
-        "disk_bytes": { "type": "integer", "minimum": 1048576, "maximum": 1099511627776 },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1048576,
+          "maximum": 1099511627776
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "disk_bytes": {
+          "type": "integer",
+          "minimum": 1048576,
+          "maximum": 1099511627776
+        },
         "pids": { "type": "integer", "minimum": 1, "maximum": 100000 },
-        "network": { "type": "string", "enum": ["disabled", "restricted", "enabled"] }
+        "network": {
+          "type": "string",
+          "enum": ["disabled", "restricted", "enabled"]
+        }
       }
     },
     "capability": {
@@ -26,7 +48,11 @@
       "properties": {
         "name": { "type": "string", "pattern": "^[a-z][a-z0-9._-]*$" },
         "version": { "type": "string", "maxLength": 100 },
-        "features": { "type": "array", "maxItems": 100, "items": { "type": "string", "maxLength": 100 } }
+        "features": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "maxLength": 100 }
+        }
       }
     },
     "runtime": {
@@ -54,7 +80,13 @@
     "artifact_pointer": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["artifact_id", "version_id", "filename", "sha256", "size_bytes"],
+      "required": [
+        "artifact_id",
+        "version_id",
+        "filename",
+        "sha256",
+        "size_bytes"
+      ],
       "properties": {
         "artifact_id": { "type": "string", "format": "uuid" },
         "version_id": { "type": "string", "format": "uuid" },

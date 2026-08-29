@@ -19,7 +19,14 @@
     },
     "output": {
       "type": "object",
-      "required": ["project_id", "milestones", "tasks", "proposals", "tracking", "settings"],
+      "required": [
+        "project_id",
+        "milestones",
+        "tasks",
+        "proposals",
+        "tracking",
+        "settings"
+      ],
       "properties": {
         "project_id": { "type": "string" },
         "milestones": { "type": "array" },

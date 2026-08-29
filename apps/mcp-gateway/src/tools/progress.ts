@@ -138,7 +138,11 @@ function mapError(error: unknown): GatewayError {
     );
   }
   if (error.status >= 500) {
-    return new GatewayError("CORE_UNAVAILABLE", "Core is temporarily unavailable", 503);
+    return new GatewayError(
+      "CORE_UNAVAILABLE",
+      "Core is temporarily unavailable",
+      503,
+    );
   }
   return new GatewayError(
     "CORE_REQUEST_FAILED",

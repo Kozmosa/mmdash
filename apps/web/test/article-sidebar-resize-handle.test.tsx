@@ -77,6 +77,8 @@ describe("ArticleSidebarResizeHandle", () => {
     const handle = screen.getByRole("separator");
     fireEvent.keyDown(handle, { key: "ArrowRight" });
     fireEvent.doubleClick(handle);
-    expect(onResizeEnd.mock.calls.map(([ratio]) => ratio)).toEqual([0.27, 0.25]);
+    expect(onResizeEnd.mock.calls.map(([ratio]) => ratio)).toEqual([
+      0.27, 0.25,
+    ]);
   });
 });

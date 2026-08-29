@@ -76,9 +76,9 @@ export default function ProjectHomePage() {
   const project = useCurrentProject();
   const home = useQuery({
     queryFn: () =>
-      apiClient.request<{ fragments: { home: HomeAggregate; project: Project } }>(
-        `/projects/${encodeURIComponent(project.id)}/pages/home`,
-      ),
+      apiClient.request<{
+        fragments: { home: HomeAggregate; project: Project };
+      }>(`/projects/${encodeURIComponent(project.id)}/pages/home`),
     queryKey: ["project-home", project.id],
   });
   const aggregate = home.data?.fragments.home;
@@ -255,7 +255,9 @@ function AgentHomeCard({ projectId }: Readonly<{ projectId: string }>) {
         {instance ? (
           <>
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate font-medium">{instance.display_name}</span>
+              <span className="truncate font-medium">
+                {instance.display_name}
+              </span>
               <Badge>{instance.status}</Badge>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -300,10 +302,21 @@ function ProgressHomeCard({
         <div className="rounded-lg border border-border p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-muted-foreground">当前阶段</span>
-            <Badge>{aggregate?.progress_tracking?.effective_stage || "尚未评估"}</Badge>
+            <Badge>
+              {aggregate?.progress_tracking?.effective_stage || "尚未评估"}
+            </Badge>
           </div>
-          {aggregate?.progress_tracking?.summary ? <p className="mt-2 text-xs text-muted-foreground">{aggregate.progress_tracking.summary}</p> : null}
-          {aggregate?.progress_tracking?.stage_overridden ? <p className="mt-2 text-xs text-muted-foreground">人工覆盖（自动检测：{aggregate.progress_tracking.detected_stage || "—"}）</p> : null}
+          {aggregate?.progress_tracking?.summary ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {aggregate.progress_tracking.summary}
+            </p>
+          ) : null}
+          {aggregate?.progress_tracking?.stage_overridden ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              人工覆盖（自动检测：
+              {aggregate.progress_tracking.detected_stage || "—"}）
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">关键节点</span>
@@ -346,7 +359,10 @@ function ModelHomeCard({
         ) : (
           <ul className="space-y-2">
             {models.slice(0, 3).map((model) => (
-              <li className="flex items-center justify-between gap-3" key={model.question_id}>
+              <li
+                className="flex items-center justify-between gap-3"
+                key={model.question_id}
+              >
                 <Link
                   className="min-w-0 truncate font-medium hover:text-primary hover:underline"
                   href={`/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(model.question_id)}`}
@@ -371,8 +387,11 @@ function ModelHomeCard({
   );
 }
 
-function EmptyModule({
-  label,
-}: Readonly<{ label: string }>) {
-  return <EmptyState description="该首页区域属于后续产品阶段，当前没有临时或模拟数据。" title={`${label}尚未接入`} />;
+function EmptyModule({ label }: Readonly<{ label: string }>) {
+  return (
+    <EmptyState
+      description="该首页区域属于后续产品阶段，当前没有临时或模拟数据。"
+      title={`${label}尚未接入`}
+    />
+  );
 }

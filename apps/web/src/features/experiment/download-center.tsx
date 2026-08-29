@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Box, Download, TerminalSquare, Copy, Check, FlaskConical } from "lucide-react";
+import {
+  Box,
+  Download,
+  TerminalSquare,
+  Copy,
+  Check,
+  FlaskConical,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/cn";
@@ -57,10 +64,15 @@ export function DownloadCenter() {
           }
         });
       },
-      { rootMargin: "-20% 0px -60% 0px" }
+      { rootMargin: "-20% 0px -60% 0px" },
     );
 
-    const targets = ["download-center", "windows-install", "linux-install", "notes"];
+    const targets = [
+      "download-center",
+      "windows-install",
+      "linux-install",
+      "notes",
+    ];
     targets.forEach((id) => {
       const el = document.getElementById(id);
       if (el) observer.observe(el);
@@ -83,7 +95,7 @@ export function DownloadCenter() {
               "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
               activeSection === "download-center"
                 ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
             <Download className="size-4" />
@@ -95,7 +107,7 @@ export function DownloadCenter() {
               "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
               activeSection === "windows-install"
                 ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
             <TerminalSquare className="size-4" />
@@ -107,7 +119,7 @@ export function DownloadCenter() {
               "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
               activeSection === "linux-install"
                 ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
             <Box className="size-4" />
@@ -119,7 +131,7 @@ export function DownloadCenter() {
               "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
               activeSection === "notes"
                 ? "bg-secondary text-secondary-foreground"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
             )}
           >
             <FlaskConical className="size-4" />
@@ -137,7 +149,8 @@ export function DownloadCenter() {
               下载 mmdash 工具
             </h1>
             <p className="mt-2 text-base text-muted-foreground">
-              这里提供 Box Gateway (网关守护服务) 与 CLI (命令行客户端) 的官方预编译可执行文件，无需登录即可快速下载。
+              这里提供 Box Gateway (网关守护服务) 与 CLI (命令行客户端)
+              的官方预编译可执行文件，无需登录即可快速下载。
             </p>
           </div>
 
@@ -148,7 +161,8 @@ export function DownloadCenter() {
               </div>
               <h2 className="mt-5 text-lg font-semibold">mmdash Box Gateway</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                在你的 Windows 或 Linux 机器上运行 Box Gateway，连接本地 Docker/e2b Sandbox 运行环境，并随时接收调度实验任务。
+                在你的 Windows 或 Linux 机器上运行 Box Gateway，连接本地
+                Docker/e2b Sandbox 运行环境，并随时接收调度实验任务。
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
                 <a
@@ -169,7 +183,8 @@ export function DownloadCenter() {
                 </a>
               </div>
               <p className="mt-4 text-xs text-muted-foreground">
-                下载后可运行 `mbox setup`，再执行 `mbox account login` 完成初次绑定。
+                下载后可运行 `mbox setup`，再执行 `mbox account login`
+                完成初次绑定。
               </p>
             </article>
 
@@ -179,7 +194,8 @@ export function DownloadCenter() {
               </div>
               <h2 className="mt-5 text-lg font-semibold">mmdash CLI</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                本地进行项目环境绑定、认证登录以及启用 local MCP stdio 桥接开发的重要命令行工具。当前提供开发环境的测试构建版本。
+                本地进行项目环境绑定、认证登录以及启用 local MCP stdio
+                桥接开发的重要命令行工具。当前提供开发环境的测试构建版本。
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
                 <a
@@ -213,7 +229,8 @@ export function DownloadCenter() {
               Windows 平台安装教程
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              通过 PowerShell 将下载的文件重命名并注册为 Windows 后台服务的完整命令。
+              通过 PowerShell 将下载的文件重命名并注册为 Windows
+              后台服务的完整命令。
             </p>
           </div>
           <ol className="space-y-8">
@@ -225,7 +242,8 @@ export function DownloadCenter() {
                 <p className="text-sm font-semibold">放置并重命名文件</p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                将下载的 Box 文件改名为 `mbox.exe`，将 CLI 文件改名为 `mmdash.exe`，并放入用户目录的 bin 文件夹：
+                将下载的 Box 文件改名为 `mbox.exe`，将 CLI 文件改名为
+                `mmdash.exe`，并放入用户目录的 bin 文件夹：
               </p>
               <CodeBlock
                 code={String.raw`New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\mmdash\bin"
@@ -242,7 +260,8 @@ Move-Item .\mmdash-cli-win32-x64.exe "$env:LOCALAPPDATA\mmdash\bin\mmdash.exe"`}
                 <p className="text-sm font-semibold">添加到系统用户 PATH</p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                将 `%LocalAppData%\mmdash\bin` 目录路径追加到用户的 PATH 环境变量中，然后重新打开 PowerShell：
+                将 `%LocalAppData%\mmdash\bin` 目录路径追加到用户的 PATH
+                环境变量中，然后重新打开 PowerShell：
               </p>
               <CodeBlock
                 code={String.raw`$bin = "$env:LOCALAPPDATA\mmdash\bin"
@@ -260,7 +279,9 @@ mmdash --help`}
                 <p className="text-sm font-semibold">初始化并启动后台服务</p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground font-mono leading-relaxed">
-                首先在普通 PowerShell 下初始化 mbox 并登录（浏览器会弹窗授权）。然后**右键点击以管理员身份重新打开 PowerShell** 来注册和启动 Windows 后台服务：
+                首先在普通 PowerShell 下初始化 mbox
+                并登录（浏览器会弹窗授权）。然后**右键点击以管理员身份重新打开
+                PowerShell** 来注册和启动 Windows 后台服务：
               </p>
               <CodeBlock
                 code={String.raw`mbox setup
@@ -279,10 +300,13 @@ mbox service logs`}
                 <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground">
                   4
                 </span>
-                <p className="text-sm font-semibold">登录 CLI 命令行工具（可选）</p>
+                <p className="text-sm font-semibold">
+                  登录 CLI 命令行工具（可选）
+                </p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                CLI 登录是一个独立的终端认证，如果只使用 Box 服务接收实验可以跳过这一步：
+                CLI 登录是一个独立的终端认证，如果只使用 Box
+                服务接收实验可以跳过这一步：
               </p>
               <CodeBlock code="mmdash login\nmmdash doctor" />
             </li>
@@ -341,10 +365,13 @@ mmdash --help`}
                 <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground">
                   3
                 </span>
-                <p className="text-sm font-semibold">初始化并以 systemd 后台启动</p>
+                <p className="text-sm font-semibold">
+                  初始化并以 systemd 后台启动
+                </p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                通过 `mbox setup` 配置连接参数并登录绑定，随后以 `sudo` 管理员权限初始化并配置 systemd 常驻服务：
+                通过 `mbox setup` 配置连接参数并登录绑定，随后以 `sudo`
+                管理员权限初始化并配置 systemd 常驻服务：
               </p>
               <CodeBlock
                 code={String.raw`mbox setup
@@ -361,10 +388,13 @@ sudo mbox service status`}
                 <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground">
                   4
                 </span>
-                <p className="text-sm font-semibold">登录 CLI 命令端认证（可选）</p>
+                <p className="text-sm font-semibold">
+                  登录 CLI 命令端认证（可选）
+                </p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                对于需要在本地开发桥接 MCP 的开发者，执行以下命令完成用户身份绑定：
+                对于需要在本地开发桥接 MCP
+                的开发者，执行以下命令完成用户身份绑定：
               </p>
               <CodeBlock code="mmdash login\nmmdash doctor" />
             </li>
@@ -383,7 +413,11 @@ sudo mbox service status`}
             <div>
               <p className="font-semibold text-base">开发构建版本说明</p>
               <p className="mt-1">
-                当前下载通道分发的是预发布和开发联调的临时二进制镜像。正式版本（v0.1）上线发布后，我们将在此页面提供语义化版本号（Semantic Versioning）过滤以及带有数字签名的正式安装包下载。如果在搭建 Docker Sandbox Runtime 过程中发生容器端口占用或网络通信中断，可参阅 `docs/development/` 内的技术指引手册。
+                当前下载通道分发的是预发布和开发联调的临时二进制镜像。正式版本（v0.1）上线发布后，我们将在此页面提供语义化版本号（Semantic
+                Versioning）过滤以及带有数字签名的正式安装包下载。如果在搭建
+                Docker Sandbox Runtime
+                过程中发生容器端口占用或网络通信中断，可参阅 `docs/development/`
+                内的技术指引手册。
               </p>
             </div>
           </div>

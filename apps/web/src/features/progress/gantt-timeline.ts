@@ -36,7 +36,9 @@ const TICK_OFFSETS = [0, 0.25, 0.5, 0.75, 1];
  * browser/server local timezone. Date-only values are deliberately treated as
  * UTC midnight; date-times must carry an explicit Z or numeric offset.
  */
-export function parseTimelineDate(value: string | null | undefined): number | null {
+export function parseTimelineDate(
+  value: string | null | undefined,
+): number | null {
   if (!value || typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -58,8 +60,14 @@ export function formatTimelineDate(timestamp: number): string {
  * only one usable endpoint is represented as a point at that date. Reversed
  * endpoints are normalized so stale data cannot create negative CSS widths.
  */
-export function calculateGanttTimeline(items: GanttTimelineInput[]): GanttTimeline {
-  const scheduled: Array<{ item: GanttTimelineInput; startAt: number; targetAt: number }> = [];
+export function calculateGanttTimeline(
+  items: GanttTimelineInput[],
+): GanttTimeline {
+  const scheduled: Array<{
+    item: GanttTimelineInput;
+    startAt: number;
+    targetAt: number;
+  }> = [];
   const unscheduled: GanttTimelineInput[] = [];
 
   for (const item of items) {
@@ -71,11 +79,22 @@ export function calculateGanttTimeline(items: GanttTimelineInput[]): GanttTimeli
     }
     const first = start ?? target!;
     const last = target ?? start!;
-    scheduled.push({ item, startAt: Math.min(first, last), targetAt: Math.max(first, last) });
+    scheduled.push({
+      item,
+      startAt: Math.min(first, last),
+      targetAt: Math.max(first, last),
+    });
   }
 
   if (!scheduled.length) {
-    return { startAt: null, targetAt: null, rangeMs: 0, items: [], unscheduled, ticks: [] };
+    return {
+      startAt: null,
+      targetAt: null,
+      rangeMs: 0,
+      items: [],
+      unscheduled,
+      ticks: [],
+    };
   }
 
   const firstAt = Math.min(...scheduled.map(({ startAt }) => startAt));

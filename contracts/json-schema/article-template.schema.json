@@ -18,11 +18,22 @@
   "properties": {
     "schema_version": { "const": "1.0" },
     "name": { "type": "string", "minLength": 1, "maxLength": 120 },
-    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$" },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+    },
     "entrypoint": { "$ref": "#/$defs/relativeTexPath" },
-    "output": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.pdf$", "maxLength": 255 },
+    "output": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.pdf$",
+      "maxLength": 255
+    },
     "content_target": { "$ref": "#/$defs/relativeTexPath" },
-    "bibliography_target": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+\\.bib$", "maxLength": 255 },
+    "bibliography_target": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+\\.bib$",
+      "maxLength": 255
+    },
     "engine": { "enum": ["auto", "pdflatex", "xelatex", "lualatex"] },
     "bibliography_tool": { "enum": ["auto", "bibtex", "biber", "none"] }
   },

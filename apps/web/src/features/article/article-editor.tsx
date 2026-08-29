@@ -1145,9 +1145,7 @@ export function ArticleEditor({
           }
         }
       } catch (error) {
-        setDropError(
-          error instanceof Error ? error.message : "图片上传失败",
-        );
+        setDropError(error instanceof Error ? error.message : "图片上传失败");
       }
     };
 
@@ -2396,11 +2394,11 @@ export function ArticleEditor({
       targetEl?.closest?.(
         "[data-article-image-group], figure[data-article-image], [data-article-artifact-image]",
       ) ||
-        (blockNode &&
-          (blockNode.type.name === "articleImageGroup" ||
-            blockNode.type.name === "articleImage" ||
-            (blockNode.type.name === "artifactReference" &&
-              String(blockNode.attrs.mimeType ?? "").startsWith("image/")))),
+      (blockNode &&
+        (blockNode.type.name === "articleImageGroup" ||
+          blockNode.type.name === "articleImage" ||
+          (blockNode.type.name === "artifactReference" &&
+            String(blockNode.attrs.mimeType ?? "").startsWith("image/")))),
     );
 
     if (isImageOrArtifact && isOverImageContainer) {
@@ -2568,9 +2566,7 @@ export function ArticleEditor({
         </EditorButton>
         <div className="ml-auto flex items-center gap-1.5">
           {immersive && draftRevision !== undefined ? (
-            <Badge className="text-xs font-normal">
-              草稿 r{draftRevision}
-            </Badge>
+            <Badge className="text-xs font-normal">草稿 r{draftRevision}</Badge>
           ) : null}
           {immersive && onOpenCommit ? (
             <Button

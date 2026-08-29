@@ -97,10 +97,12 @@ describe("ArticleImageNodeView drag-and-drop", () => {
 
     fireEvent.dragStart(dragHandle, { dataTransfer });
     expect(dataTransfer.effectAllowed).toBe("move");
-    expect(dataTransfer.getData("application/vnd.mmdash.image-group-item")).toBe(
-      JSON.stringify({ fromIndex: 0, groupPos: 0 }),
+    expect(
+      dataTransfer.getData("application/vnd.mmdash.image-group-item"),
+    ).toBe(JSON.stringify({ fromIndex: 0, groupPos: 0 }));
+    expect(dataTransfer.getData("text/plain")).toBe(
+      "mmdash-image-group-item:0:0",
     );
-    expect(dataTransfer.getData("text/plain")).toBe("mmdash-image-group-item:0:0");
 
     editor.destroy();
   });
@@ -301,4 +303,3 @@ describe("ArticleImageNodeView drag-and-drop", () => {
     editor.destroy();
   });
 });
-

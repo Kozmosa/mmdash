@@ -8,7 +8,10 @@
   "properties": {
     "source_id": { "type": "string", "format": "uuid" },
     "notion_root_page_id": { "type": "string", "format": "uuid" },
-    "action": { "type": "string", "enum": ["configured", "updated", "disabled"] },
+    "action": {
+      "type": "string",
+      "enum": ["configured", "updated", "disabled"]
+    },
     "status": { "type": "string", "enum": ["active", "hidden"] }
   }
 }

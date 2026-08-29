@@ -5,15 +5,15 @@ dependencies, reminders, and human-reviewed proposals. The machine-readable
 contracts are in [`contracts/openapi/core.yaml`](../../contracts/openapi/core.yaml)
 and [`contracts/openapi/web-bff.yaml`](../../contracts/openapi/web-bff.yaml).
 
-| Operation | Core | Browser BFF | Policy |
-| --- | --- | --- | --- |
-| Progress aggregate | `progress.get` | `bff.progress.get` | Project Progress read |
-| Milestones | `progress.milestones.*` | `bff.progress.milestones.*` | Human session mutations |
-| Tasks | `progress.tasks.*` | `bff.progress.tasks.*` | Human mutations; Agent scheduling changes are Proposals |
-| Dependencies | `progress.dependencies.*` | `bff.progress.dependencies.*` | Human session mutations |
-| Reminders | `progress.reminders.*` | `bff.progress.reminders.*` | Core automatically publishes due events to Notification |
-| Proposals | `progress.proposals.*` | `bff.progress.proposals.*` | Non-human creation; individual or atomic batch human review |
-| Settings | `progress.settings.*` | `bff.progress.settings.*` | Human Project management |
+| Operation          | Core                      | Browser BFF                   | Policy                                                      |
+| ------------------ | ------------------------- | ----------------------------- | ----------------------------------------------------------- |
+| Progress aggregate | `progress.get`            | `bff.progress.get`            | Project Progress read                                       |
+| Milestones         | `progress.milestones.*`   | `bff.progress.milestones.*`   | Human session mutations                                     |
+| Tasks              | `progress.tasks.*`        | `bff.progress.tasks.*`        | Human mutations; Agent scheduling changes are Proposals     |
+| Dependencies       | `progress.dependencies.*` | `bff.progress.dependencies.*` | Human session mutations                                     |
+| Reminders          | `progress.reminders.*`    | `bff.progress.reminders.*`    | Core automatically publishes due events to Notification     |
+| Proposals          | `progress.proposals.*`    | `bff.progress.proposals.*`    | Non-human creation; individual or atomic batch human review |
+| Settings           | `progress.settings.*`     | `bff.progress.settings.*`     | Human Project management                                    |
 
 All browser routes use the selected Project context from the BFF session and
 forward the browser identity to Core. Core performs the final Project RBAC and

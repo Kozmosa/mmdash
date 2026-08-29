@@ -27,7 +27,9 @@ export function localDayKey(value: Date): string {
 export function snapDate(value: Date): Date {
   const snapped = new Date(value);
   snapped.setSeconds(0, 0);
-  snapped.setMinutes(Math.round(snapped.getMinutes() / SNAP_MINUTES) * SNAP_MINUTES);
+  snapped.setMinutes(
+    Math.round(snapped.getMinutes() / SNAP_MINUTES) * SNAP_MINUTES,
+  );
   return snapped;
 }
 
@@ -60,13 +62,23 @@ export function formatTime(value: Date): string {
 export function periodForDate(value: Date) {
   const minutes = minutesFromDayStart(value);
   if (minutes < 8 * 60) return PERIODS[3];
-  return PERIODS.find((period) => minutes >= period.start && minutes < Math.min(period.end, MINUTES_PER_DAY)) ?? PERIODS[3];
+  return (
+    PERIODS.find(
+      (period) =>
+        minutes >= period.start &&
+        minutes < Math.min(period.end, MINUTES_PER_DAY),
+    ) ?? PERIODS[3]
+  );
 }
 
 export type LaneItem = { id: string; start: number; end: number };
 
-export function assignOverlapLanes(items: LaneItem[]): Map<string, { lane: number; lanes: number }> {
-  const sorted = [...items].sort((left, right) => left.start - right.start || left.end - right.end);
+export function assignOverlapLanes(
+  items: LaneItem[],
+): Map<string, { lane: number; lanes: number }> {
+  const sorted = [...items].sort(
+    (left, right) => left.start - right.start || left.end - right.end,
+  );
   const result = new Map<string, { lane: number; lanes: number }>();
   let group: LaneItem[] = [];
   let groupEnd = -1;
@@ -80,7 +92,11 @@ export function assignOverlapLanes(items: LaneItem[]): Map<string, { lane: numbe
       laneEnds[lane] = item.end;
       assignments.set(item.id, lane);
     }
-    for (const item of group) result.set(item.id, { lane: assignments.get(item.id) ?? 0, lanes: laneEnds.length });
+    for (const item of group)
+      result.set(item.id, {
+        lane: assignments.get(item.id) ?? 0,
+        lanes: laneEnds.length,
+      });
     group = [];
     groupEnd = -1;
   };
