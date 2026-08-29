@@ -8,21 +8,30 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 // fakeRunner records the executed commands and materialises a minimal fake
 // virtual environment so the cache logic is testable without a Python
-// installation.
+// installation. The command log is mutex-guarded because concurrent Gateway
+// tasks exercise one manager (and therefore one runner) in parallel.
 type fakeRunner struct {
+	mu       sync.Mutex
 	commands [][]string
 	failOn   func(argv []string) error
 	freeze   []string
 }
 
-func (runner *fakeRunner) Run(_ context.Context, _ string, _ []string, _, _ io.Writer, argv ...string) error {
+func (runner *fakeRunner) record(argv []string) {
+	runner.mu.Lock()
 	runner.commands = append(runner.commands, argv)
+	runner.mu.Unlock()
+}
+
+func (runner *fakeRunner) Run(_ context.Context, _ string, _ []string, _, _ io.Writer, argv ...string) error {
+	runner.record(argv)
 	if runner.failOn != nil {
 		if err := runner.failOn(argv); err != nil {
 			return err
@@ -39,7 +48,7 @@ func (runner *fakeRunner) Run(_ context.Context, _ string, _ []string, _, _ io.W
 }
 
 func (runner *fakeRunner) Output(_ context.Context, _ string, _ []string, argv ...string) ([]byte, error) {
-	runner.commands = append(runner.commands, argv)
+	runner.record(argv)
 	joined := strings.Join(argv, " ")
 	switch {
 	case strings.Contains(joined, "sys.version_info"):
