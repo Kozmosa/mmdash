@@ -8,7 +8,10 @@ const contractFiles = (await readdir(contractDirectory))
 const operationIds = [];
 
 for (const contractFile of contractFiles) {
-  const openapi = await readFile(`${contractDirectory}/${contractFile}`, "utf8");
+  const openapi = await readFile(
+    `${contractDirectory}/${contractFile}`,
+    "utf8",
+  );
   operationIds.push(
     ...[...openapi.matchAll(/^\s+operationId:\s+([A-Za-z0-9_.-]+)\s*$/gm)].map(
       (match) => match[1],

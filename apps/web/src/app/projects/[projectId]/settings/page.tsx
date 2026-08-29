@@ -172,7 +172,7 @@ export default function SettingsPage() {
                   "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
                   active
                     ? "bg-secondary text-secondary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon className="size-4 shrink-0" />
@@ -195,7 +195,7 @@ export default function SettingsPage() {
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors text-left w-full",
                   active
                     ? "bg-secondary text-secondary-foreground"
-                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
                 )}
               >
                 <Icon className="size-4 shrink-0" />
@@ -210,7 +210,10 @@ export default function SettingsPage() {
           {/* Repo Tab */}
           <div
             id="repo-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "repo" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "repo" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">代码仓库</h2>
@@ -224,7 +227,10 @@ export default function SettingsPage() {
           {/* Model Tab */}
           <div
             id="model-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "model" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "model" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">模型来源</h2>
@@ -238,7 +244,10 @@ export default function SettingsPage() {
           {/* Agent Tab */}
           <div
             id="agent-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "agent" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "agent" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">智能助手</h2>
@@ -252,7 +261,10 @@ export default function SettingsPage() {
           {/* Progress Tab */}
           <div
             id="progress-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "progress" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "progress" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">自动评估</h2>
@@ -266,7 +278,10 @@ export default function SettingsPage() {
           {/* Notification Tab */}
           <div
             id="notification-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "notification" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "notification" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">通知渠道</h2>
@@ -280,10 +295,15 @@ export default function SettingsPage() {
           {/* Sandbox Tab */}
           <div
             id="sandbox-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "sandbox" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "sandbox" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
-              <h2 className="text-xl font-semibold tracking-tight">沙箱与实验</h2>
+              <h2 className="text-xl font-semibold tracking-tight">
+                沙箱与实验
+              </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 管理分配的 Sandbox Runtimes 与实验资源超时策略
               </p>
@@ -295,7 +315,10 @@ export default function SettingsPage() {
           {/* Article Tab */}
           <div
             id="article-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "article" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "article" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">论文写作</h2>
@@ -309,7 +332,10 @@ export default function SettingsPage() {
           {/* Members Tab */}
           <div
             id="members-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "members" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "members" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">成员管理</h2>
@@ -323,7 +349,10 @@ export default function SettingsPage() {
           {/* Advanced Tab */}
           <div
             id="advanced-settings"
-            className={cn("scroll-mt-6 space-y-4", activeTab !== "advanced" && "hidden")}
+            className={cn(
+              "scroll-mt-6 space-y-4",
+              activeTab !== "advanced" && "hidden",
+            )}
           >
             <div className="border-b border-border pb-4 mb-4">
               <h2 className="text-xl font-semibold tracking-tight">扩展配置</h2>
@@ -331,7 +360,10 @@ export default function SettingsPage() {
                 查看已注册的配置插槽与插件类型的契约状态
               </p>
             </div>
-            <section className="space-y-3" aria-labelledby="settings-slots-title">
+            <section
+              className="space-y-3"
+              aria-labelledby="settings-slots-title"
+            >
               <div>
                 <h3 className="text-lg font-semibold" id="settings-slots-title">
                   插槽绑定列表
@@ -350,13 +382,19 @@ export default function SettingsPage() {
                       slot.id !== "agent" &&
                       slot.id !== "progress" &&
                       slot.id !== "experiment" &&
-                      slot.id !== "article"
+                      slot.id !== "article",
                   )}
               />
             </section>
-            <section className="space-y-3" aria-labelledby="registered-settings-title-section">
+            <section
+              className="space-y-3"
+              aria-labelledby="registered-settings-title-section"
+            >
               <div>
-                <h3 className="text-lg font-semibold" id="registered-settings-title-section">
+                <h3
+                  className="text-lg font-semibold"
+                  id="registered-settings-title-section"
+                >
                   已注册配置类型
                 </h3>
                 <p className="text-sm text-muted-foreground">

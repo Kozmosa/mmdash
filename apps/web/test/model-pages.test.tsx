@@ -144,7 +144,9 @@ describe("Model pages", () => {
     render(<ModelListPage />, { wrapper: Providers });
 
     // Open the create modal
-    const openModalButton = await screen.findByRole("button", { name: "新建题号" });
+    const openModalButton = await screen.findByRole("button", {
+      name: "新建题号",
+    });
     fireEvent.click(openModalButton);
 
     const codeInput = await screen.findByLabelText("题号");
@@ -751,5 +753,113 @@ describe("Model pages", () => {
       }),
     );
     expect(screen.getByText(/自动同步倒计时/)).toBeInTheDocument();
+  });
+
+  it("renders a copy button on model blocks that copies block content to clipboard with hover transition", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: { writeText },
+    });
+
+    apiRequest.mockImplementation(async (path: string) => {
+      if (path.endsWith(`/models/questions/${questionId}`)) {
+        return {
+          latest_snapshot: {
+            assets: [
+              {
+                artifact_id: "artifact-img-1",
+                artifact_version_id: "version-img-1",
+                filename: "system-diagram.png",
+                mime_type: "image/png",
+                source_block_id: "block-3",
+              },
+            ],
+            blocks: [
+              {
+                block_id: "block-1",
+                children: [],
+                rich_text: [{ text: "模型核心方程" }],
+                text: "模型核心方程",
+                type: "paragraph",
+              },
+              {
+                block_id: "block-2",
+                children: [],
+                expression: "E = mc^2",
+                rich_text: [],
+                text: "E = mc^2",
+                type: "equation",
+              },
+              {
+                artifact_id: "artifact-img-1",
+                artifact_version_id: "version-img-1",
+                block_id: "block-3",
+                caption: "系统架构图",
+                children: [],
+                rich_text: [],
+                text: "",
+                type: "image",
+              },
+            ],
+            captured_at: "2026-08-09T00:00:00Z",
+            content_hash: "hash-1",
+            previous_snapshot_id: undefined,
+            question_id: questionId,
+            snapshot_id: firstSnapshot,
+            summary: "初版",
+            tags: [],
+            outline: [],
+            title: "模型文档",
+          },
+          project_id: projectId,
+          question: {
+            code: "Q1",
+            created_at: "2026-08-09T00:00:00Z",
+            latest_snapshot_id: firstSnapshot,
+            notion_page_id: "page",
+            notion_page_url: "https://www.notion.so/page",
+            position: 0,
+            project_id: projectId,
+            question_id: questionId,
+            snapshot_count: 1,
+            sync_status: "succeeded",
+            title: "人口模型",
+            updated_at: "2026-08-09T00:00:00Z",
+          },
+          snapshots: [
+            {
+              captured_at: "2026-08-09T00:00:00Z",
+              content_hash: "hash-1",
+              question_id: questionId,
+              snapshot_id: firstSnapshot,
+              summary: "初版",
+              tags: [],
+              title: "模型文档",
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request ${path}`);
+    });
+
+    render(<ModelQuestionPage questionId={questionId} />, {
+      wrapper: Providers,
+    });
+
+    expect(await screen.findByText("模型核心方程")).toBeInTheDocument();
+    const copyButtons = screen.getAllByRole("button", { name: "复制块内容" });
+    expect(copyButtons).toHaveLength(3);
+    expect(copyButtons[0]).toHaveClass("duration-[1ms]");
+
+    fireEvent.click(copyButtons[0]);
+    expect(writeText).toHaveBeenCalledWith("模型核心方程");
+
+    fireEvent.click(copyButtons[1]);
+    expect(writeText).toHaveBeenCalledWith("$$E = mc^2$$");
+
+    fireEvent.click(copyButtons[2]);
+    expect(writeText).toHaveBeenCalledWith(
+      "![系统架构图](artifact://artifact-img-1?version=version-img-1)",
+    );
   });
 });

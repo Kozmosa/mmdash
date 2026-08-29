@@ -1,7 +1,15 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FlaskConical, Lock, Mail, Moon, Sun, User } from "lucide-react";
+import {
+  ArrowLeft,
+  FlaskConical,
+  Lock,
+  Mail,
+  Moon,
+  Sun,
+  User,
+} from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -21,7 +29,7 @@ export default function AccountPage() {
 
   useEffect(() => {
     setCurrentTheme(localStorage.getItem("theme") ?? "system");
-    
+
     function handleThemeChange() {
       setCurrentTheme(localStorage.getItem("theme") ?? "system");
     }
@@ -34,14 +42,16 @@ export default function AccountPage() {
   function handleThemeChange(val: string) {
     setCurrentTheme(val);
     localStorage.setItem("theme", val);
-    
+
     if (val === "dark") {
       document.documentElement.classList.add("dark");
     } else if (val === "light") {
       document.documentElement.classList.remove("dark");
     } else {
       // system theme
-      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const systemDark = window.matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches;
       if (systemDark) {
         document.documentElement.classList.add("dark");
       } else {
@@ -132,7 +142,10 @@ export default function AccountPage() {
                 className="space-y-4 max-w-lg"
               >
                 <div className="space-y-1.5">
-                  <label htmlFor="display_name" className="text-sm font-medium text-foreground">
+                  <label
+                    htmlFor="display_name"
+                    className="text-sm font-medium text-foreground"
+                  >
                     显示名称 (Name)
                   </label>
                   <div className="relative">
@@ -153,7 +166,10 @@ export default function AccountPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label htmlFor="email" className="text-sm font-medium text-foreground">
+                  <label
+                    htmlFor="email"
+                    className="text-sm font-medium text-foreground"
+                  >
                     电子邮箱 (Email)
                   </label>
                   <div className="relative">
@@ -174,7 +190,10 @@ export default function AccountPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label htmlFor="current_password" className="text-sm font-medium text-foreground">
+                  <label
+                    htmlFor="current_password"
+                    className="text-sm font-medium text-foreground"
+                  >
                     确认当前密码 (Current password)
                   </label>
                   <div className="relative">
@@ -210,7 +229,10 @@ export default function AccountPage() {
               </div>
               <form onSubmit={password} className="space-y-4 max-w-lg">
                 <div className="space-y-1.5">
-                  <label htmlFor="sec_current_password" className="text-sm font-medium text-foreground">
+                  <label
+                    htmlFor="sec_current_password"
+                    className="text-sm font-medium text-foreground"
+                  >
                     当前密码 (Old password)
                   </label>
                   <div className="relative">
@@ -227,7 +249,10 @@ export default function AccountPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label htmlFor="new_password" className="text-sm font-medium text-foreground">
+                  <label
+                    htmlFor="new_password"
+                    className="text-sm font-medium text-foreground"
+                  >
                     新密码 (New password)
                   </label>
                   <div className="relative">
@@ -272,7 +297,10 @@ export default function AccountPage() {
               </div>
               <div className="space-y-4 max-w-lg">
                 <div className="space-y-1.5">
-                  <label htmlFor="theme-select" className="text-sm font-medium text-foreground">
+                  <label
+                    htmlFor="theme-select"
+                    className="text-sm font-medium text-foreground"
+                  >
                     主题模式
                   </label>
                   <select
@@ -307,7 +335,8 @@ export default function AccountPage() {
                 {user?.email}
               </p>
               <p className="text-xs text-muted-foreground mt-4 leading-relaxed border-t border-border/50 pt-4">
-                头像由 Gravatar 服务基于邮箱自动托管。您可前往 Gravatar 更改全球通用头像。
+                头像由 Gravatar 服务基于邮箱自动托管。您可前往 Gravatar
+                更改全球通用头像。
               </p>
             </div>
           </div>

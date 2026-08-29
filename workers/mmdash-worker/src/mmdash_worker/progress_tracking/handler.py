@@ -66,13 +66,58 @@ def _parse_agent_output(value: Any) -> dict[str, Any]:
     encoded = value.strip().encode()
     if len(encoded) > MAX_AGENT_OUTPUT_BYTES:
         raise HandlerError("PROGRESS_INVALID_OUTPUT", "Agent Progress output is too large")
+    parsed = _decode_agent_json(value)
+    return _validate_output(parsed)
+
+
+def _decode_agent_json(value: str) -> Any:
+    """Decode a strict response or one final JSON object after harmless preamble.
+
+    Some runtimes persist short progress notes in the same assistant message as
+    the final structured answer. Only a complete trailing object is accepted;
+    commentary after it, a partial object, or an embedded object remains an
+    invalid Progress result.
+    """
+
+    stripped = value.strip()
     try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError as error:
+        return json.loads(stripped)
+    except json.JSONDecodeError as strict_error:
+        candidate_start: int | None = None
+        depth = 0
+        in_string = False
+        escaped = False
+        for index, character in enumerate(stripped):
+            if depth == 0:
+                if character == "{":
+                    candidate_start = index
+                    depth = 1
+                continue
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+            if character == '"':
+                in_string = True
+            elif character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0 and candidate_start is not None:
+                    suffix = stripped[index + 1 :].strip()
+                    if suffix in {"", "```"}:
+                        try:
+                            return json.loads(stripped[candidate_start : index + 1])
+                        except json.JSONDecodeError:
+                            pass
+                    candidate_start = None
         raise HandlerError(
             "PROGRESS_INVALID_OUTPUT", "Agent Progress output is not valid JSON"
-        ) from error
-    return _validate_output(parsed)
+        ) from strict_error
 
 
 def _validate_output(value: Any) -> dict[str, Any]:

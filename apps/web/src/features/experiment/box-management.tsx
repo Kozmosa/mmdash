@@ -110,14 +110,18 @@ export function BoxInstallerCard() {
           快速安装 Box Gateway
         </CardTitle>
         <CardDescription>
-          Box Gateway（mbox）是部署在您的沙箱或物理服务器上的轻量化网关，通过安全的底层通道将本地执行能力接入 mmdash。
+          Box
+          Gateway（mbox）是部署在您的沙箱或物理服务器上的轻量化网关，通过安全的底层通道将本地执行能力接入
+          mmdash。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid gap-6 md:grid-cols-3">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">1</span>
+              <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                1
+              </span>
               <span className="text-sm font-medium">下载 mbox 执行文件</span>
             </div>
             <div className="flex flex-wrap gap-2 pt-1">
@@ -142,23 +146,31 @@ export function BoxInstallerCard() {
 
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">2</span>
+              <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                2
+              </span>
               <span className="text-sm font-medium">初始化配置环境</span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               在目标机器的命令行终端，解压并运行初始化配置命令：
-              <code className="block mt-1.5 rounded bg-muted px-2 py-1 font-mono text-[11px] border border-border/50 text-foreground">mbox setup</code>
+              <code className="block mt-1.5 rounded bg-muted px-2 py-1 font-mono text-[11px] border border-border/50 text-foreground">
+                mbox setup
+              </code>
             </p>
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">3</span>
+              <span className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                3
+              </span>
               <span className="text-sm font-medium">浏览器登录授权</span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               执行以下登录指令，系统会拉起浏览器完成安全的账号授权：
-              <code className="block mt-1.5 rounded bg-muted px-2 py-1 font-mono text-[11px] border border-border/50 text-foreground">mbox account login</code>
+              <code className="block mt-1.5 rounded bg-muted px-2 py-1 font-mono text-[11px] border border-border/50 text-foreground">
+                mbox account login
+              </code>
             </p>
           </div>
         </div>
@@ -168,10 +180,14 @@ export function BoxInstallerCard() {
 }
 
 const statusColors: Record<string, string> = {
-  online: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-300 border",
-  offline: "bg-rose-500/10 text-rose-700 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-300 border",
-  draining: "bg-amber-500/10 text-amber-700 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-300 border",
-  revoked: "bg-zinc-500/10 text-zinc-700 border-zinc-500/20 dark:bg-zinc-500/20 dark:text-zinc-300 border",
+  online:
+    "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:bg-emerald-500/20 dark:text-emerald-300 border",
+  offline:
+    "bg-rose-500/10 text-rose-700 border-rose-500/20 dark:bg-rose-500/20 dark:text-rose-300 border",
+  draining:
+    "bg-amber-500/10 text-amber-700 border-amber-500/20 dark:bg-amber-500/20 dark:text-amber-300 border",
+  revoked:
+    "bg-zinc-500/10 text-zinc-700 border-zinc-500/20 dark:bg-zinc-500/20 dark:text-zinc-300 border",
 };
 
 const statusLabels: Record<string, string> = {
@@ -214,7 +230,12 @@ function BoxCard({
               {box.box_id}
             </CardDescription>
           </div>
-          <Badge className={cn("font-medium shrink-0 shadow-none px-2 py-0.5 text-xs", statusColors[box.status] ?? "bg-zinc-500/10 text-zinc-700")}>
+          <Badge
+            className={cn(
+              "font-medium shrink-0 shadow-none px-2 py-0.5 text-xs",
+              statusColors[box.status] ?? "bg-zinc-500/10 text-zinc-700",
+            )}
+          >
             {statusLabels[box.status] ?? box.status}
           </Badge>
         </div>
@@ -314,8 +335,12 @@ function BoxCard({
 function Metric({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div className="bg-muted/30 p-2.5 rounded-lg border border-border/40 flex flex-col justify-center min-h-[56px] transition-colors hover:bg-muted/50">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
-      <p className="mt-0.5 break-all text-xs font-semibold text-foreground leading-tight">{value}</p>
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+        {label}
+      </p>
+      <p className="mt-0.5 break-all text-xs font-semibold text-foreground leading-tight">
+        {value}
+      </p>
     </div>
   );
 }

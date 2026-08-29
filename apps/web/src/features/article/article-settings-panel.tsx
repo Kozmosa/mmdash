@@ -19,10 +19,7 @@ import { Input } from "@/components/ui/input";
 import { optionalRequest } from "@/features/repo/optional-request";
 import { apiClient } from "@/lib/api-client";
 
-import {
-  ARTICLE_RENDER_THEME_EVENT,
-  type ArticleRenderTheme,
-} from "./types";
+import { ARTICLE_RENDER_THEME_EVENT, type ArticleRenderTheme } from "./types";
 
 const settingType = "article.zotero";
 const redactedSecret = "********";
@@ -317,9 +314,7 @@ export function ArticleSettingsPanel() {
                 saveRendering.isPending
               }
               onChange={(event) =>
-                saveRendering.mutate(
-                  event.target.value as ArticleRenderTheme,
-                )
+                saveRendering.mutate(event.target.value as ArticleRenderTheme)
               }
               value={renderTheme}
             >

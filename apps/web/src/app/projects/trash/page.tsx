@@ -1,7 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FlaskConical, RotateCcw, Search, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  FlaskConical,
+  RotateCcw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -147,7 +153,10 @@ export default function ProjectTrashPage() {
             title="回收站为空"
           />
         ) : null}
-        {!trash.isLoading && !trash.error && rawItems.length > 0 && items.length === 0 ? (
+        {!trash.isLoading &&
+        !trash.error &&
+        rawItems.length > 0 &&
+        items.length === 0 ? (
           <EmptyState
             description="尝试调整你的搜索词。"
             title="没有找到匹配的项目"

@@ -4,11 +4,19 @@
   "title": "experiment.archived payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["experiment_id", "experiment_type", "previous_status", "execution_status"],
+  "required": [
+    "experiment_id",
+    "experiment_type",
+    "previous_status",
+    "execution_status"
+  ],
   "properties": {
     "experiment_id": { "type": "string", "format": "uuid" },
     "experiment_type": { "type": "string", "enum": ["box", "box-re", "self"] },
-    "previous_status": { "type": "string", "enum": ["succeeded", "failed", "canceled", "timed_out"] },
+    "previous_status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "canceled", "timed_out"]
+    },
     "execution_status": { "type": "string", "const": "archived" }
   }
 }

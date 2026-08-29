@@ -4,7 +4,13 @@
   "title": "progress.reminder.due payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resource_id", "resource_type", "title", "status", "reminder_id"],
+  "required": [
+    "resource_id",
+    "resource_type",
+    "title",
+    "status",
+    "reminder_id"
+  ],
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "reminder" },

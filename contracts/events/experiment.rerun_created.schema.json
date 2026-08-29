@@ -4,7 +4,12 @@
   "title": "experiment.rerun_created payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["experiment_id", "retry_of_experiment_id", "root_experiment_id", "retry_sequence"],
+  "required": [
+    "experiment_id",
+    "retry_of_experiment_id",
+    "root_experiment_id",
+    "retry_sequence"
+  ],
   "properties": {
     "experiment_id": { "type": "string", "format": "uuid" },
     "retry_of_experiment_id": { "type": "string", "format": "uuid" },

@@ -188,14 +188,7 @@ export type AgentSession = {
 };
 
 export type AgentReasoningEffort =
-  | "none"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh"
-  | "max"
-  | "ultra";
+  "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 export type AgentToolCall = {
   completed_at?: string;

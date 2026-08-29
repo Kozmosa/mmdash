@@ -4,7 +4,12 @@
   "title": "article.draft.flushed payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["draft_revision", "state_vector_sha256", "block_count", "status"],
+  "required": [
+    "draft_revision",
+    "state_vector_sha256",
+    "block_count",
+    "status"
+  ],
   "properties": {
     "draft_revision": { "type": "integer", "minimum": 1 },
     "state_vector_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },

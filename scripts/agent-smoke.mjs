@@ -41,7 +41,12 @@ const email = process.env.MMDASH_SMOKE_EMAIL ?? "admin@mmdash.local";
 const password = process.env.MMDASH_SMOKE_PASSWORD ?? "mmdash-local-admin";
 const runId = `${Date.now()}-${process.pid}`;
 
-const allowedTools = ["project.get", "data.list", "data.read", "context.promote"];
+const allowedTools = [
+  "project.get",
+  "data.list",
+  "data.read",
+  "context.promote",
+];
 
 let failures = 0;
 function assert(condition, message) {
@@ -125,7 +130,12 @@ async function mcpRequest(endpoint, token, sessionId, id, method, params) {
         authorization: `Bearer ${token}`,
         ...(sessionId ? { "x-mmdash-session-id": sessionId } : {}),
       },
-      body: JSON.stringify({ id, jsonrpc: "2.0", method, ...(params ? { params } : {}) }),
+      body: JSON.stringify({
+        id,
+        jsonrpc: "2.0",
+        method,
+        ...(params ? { params } : {}),
+      }),
     },
     null,
   );
@@ -245,7 +255,8 @@ async function main() {
   );
   const agentMcpEndpoint = `${mcpUrl}/mcp${new URL(issuedMcpEndpoint).search}`;
   assert(
-    instance.management_mode === "manual" && instance.status === "setup_pending",
+    instance.management_mode === "manual" &&
+      instance.status === "setup_pending",
     `instance starts setup_pending (${instance.status})`,
   );
   assert(
@@ -277,9 +288,18 @@ async function main() {
 
   // 3. MCP Gateway: initialize + exact tools/list create verification evidence.
   const gatewaySession = await mcpInitialize(agentMcpEndpoint, agentToken);
-  assert(Boolean(gatewaySession), "MCP initialize negotiates a gateway session");
+  assert(
+    Boolean(gatewaySession),
+    "MCP initialize negotiates a gateway session",
+  );
 
-  const listed = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 2, "tools/list");
+  const listed = await mcpRequest(
+    agentMcpEndpoint,
+    agentToken,
+    gatewaySession,
+    2,
+    "tools/list",
+  );
   const toolNames = listed.body?.result?.tools?.map((tool) => tool.name) ?? [];
   assert(
     listed.status === 200 &&
@@ -287,16 +307,30 @@ async function main() {
     `tools/list returns exactly the reviewed tools (${toolNames.join(",")})`,
   );
 
-  const denied = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 3, "tools/call", {
-    arguments: { project_id: projectId },
-    name: "project.member.list",
-  });
+  const denied = await mcpRequest(
+    agentMcpEndpoint,
+    agentToken,
+    gatewaySession,
+    3,
+    "tools/call",
+    {
+      arguments: { project_id: projectId },
+      name: "project.member.list",
+    },
+  );
   assert(denied.status === 403, "exact Tool scope denies an unlisted tool");
 
-  const deniedBusiness = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 4, "tools/call", {
-    arguments: { project_id: projectId },
-    name: "data.list",
-  });
+  const deniedBusiness = await mcpRequest(
+    agentMcpEndpoint,
+    agentToken,
+    gatewaySession,
+    4,
+    "tools/call",
+    {
+      arguments: { project_id: projectId },
+      name: "data.list",
+    },
+  );
   assert(
     deniedBusiness.status === 403 &&
       deniedBusiness.body?.code === "AGENT_CREDENTIAL_PENDING",
@@ -327,10 +361,17 @@ async function main() {
   );
 
   // 5. The active Token can call authorized business tools.
-  const dataCall = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 5, "tools/call", {
-    arguments: { project_id: projectId },
-    name: "data.list",
-  });
+  const dataCall = await mcpRequest(
+    agentMcpEndpoint,
+    agentToken,
+    gatewaySession,
+    5,
+    "tools/call",
+    {
+      arguments: { project_id: projectId },
+      name: "data.list",
+    },
+  );
   assert(
     dataCall.status === 200 && dataCall.body?.result?.isError !== true,
     "authorized data.list call succeeds through Gateway",
@@ -340,7 +381,11 @@ async function main() {
   const created = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions`,
     {
-      body: JSON.stringify({ default: true, session_type: "main", title: "Main" }),
+      body: JSON.stringify({
+        default: true,
+        session_type: "main",
+        title: "Main",
+      }),
       method: "POST",
     },
     token,
@@ -382,7 +427,10 @@ async function main() {
   // 6. Run lifecycle: start, status, SSE stream, stop.
   const started = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/sessions/${sessionId}/runs`,
-    { body: JSON.stringify({ message: "analyze the project" }), method: "POST" },
+    {
+      body: JSON.stringify({ message: "analyze the project" }),
+      method: "POST",
+    },
     token,
   );
   const runIdValue = started.run?.run_id;
@@ -447,17 +495,24 @@ async function main() {
   assert(ended.status === "ended", "session end marks the local index");
 
   // 9. context.promote through MCP with paired provenance lands as a Proposal.
-  const promote = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 6, "tools/call", {
-    arguments: {
-      agent_run_id: runIdValue,
-      agent_session_id: sessionId,
-      content: "smoke conclusion",
-      context_type: "finding",
-      project_id: projectId,
-      title: "Smoke finding",
+  const promote = await mcpRequest(
+    agentMcpEndpoint,
+    agentToken,
+    gatewaySession,
+    6,
+    "tools/call",
+    {
+      arguments: {
+        agent_run_id: runIdValue,
+        agent_session_id: sessionId,
+        content: "smoke conclusion",
+        context_type: "finding",
+        project_id: projectId,
+        title: "Smoke finding",
+      },
+      name: "context.promote",
     },
-    name: "context.promote",
-  });
+  );
   assert(
     promote.status === 200 && promote.body?.result?.isError !== true,
     "context.promote accepts paired Agent provenance",
@@ -476,7 +531,10 @@ async function main() {
   );
   const custom = await core(
     `/projects/${projectId}/agent-instances/${instanceId}/prompt`,
-    { body: JSON.stringify({ content: "custom smoke prompt" }), method: "PATCH" },
+    {
+      body: JSON.stringify({ content: "custom smoke prompt" }),
+      method: "PATCH",
+    },
     token,
   );
   assert(
@@ -530,7 +588,13 @@ async function main() {
   assert(revoked.status === 204, "explicit revoke takes effect immediately");
 
   // 14. Revoked Token can no longer list tools.
-  const revokedList = await mcpRequest(agentMcpEndpoint, agentToken, gatewaySession, 7, "tools/list");
+  const revokedList = await mcpRequest(
+    agentMcpEndpoint,
+    agentToken,
+    gatewaySession,
+    7,
+    "tools/list",
+  );
   assert(
     revokedList.status === 401 || revokedList.status === 403,
     "revoked Agent Token is rejected by Gateway",
@@ -579,7 +643,10 @@ async function main() {
     { method: "POST" },
     token,
   );
-  assert(autoVerified.verified === true, "auto project access remains verified");
+  assert(
+    autoVerified.verified === true,
+    "auto project access remains verified",
+  );
 
   const autoRotated = await core(
     `/projects/${projectId}/agent-instances/${autoInstanceId}/tokens/rotate`,

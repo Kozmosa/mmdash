@@ -4,13 +4,23 @@
   "title": "model.sync.requested payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["sync_id", "source_id", "scope", "trigger", "job_id", "requested_at"],
+  "required": [
+    "sync_id",
+    "source_id",
+    "scope",
+    "trigger",
+    "job_id",
+    "requested_at"
+  ],
   "properties": {
     "sync_id": { "type": "string", "format": "uuid" },
     "source_id": { "type": "string", "format": "uuid" },
     "question_id": { "type": "string", "format": "uuid" },
     "scope": { "type": "string", "enum": ["source", "question"] },
-    "trigger": { "type": "string", "enum": ["manual", "scheduled", "settings"] },
+    "trigger": {
+      "type": "string",
+      "enum": ["manual", "scheduled", "settings"]
+    },
     "job_id": { "type": "string", "format": "uuid" },
     "requested_at": { "type": "string", "format": "date-time" }
   }

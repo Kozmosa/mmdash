@@ -4,16 +4,41 @@
   "title": "mmdash experiment result manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "experiment_id", "source_commit", "result_directory", "status", "started_at", "finished_at", "runtime", "runtime_version", "logs_truncated", "files"],
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "source_commit",
+    "result_directory",
+    "status",
+    "started_at",
+    "finished_at",
+    "runtime",
+    "runtime_version",
+    "logs_truncated",
+    "files"
+  ],
   "properties": {
     "schema_version": { "type": "string", "const": "2" },
     "experiment_id": { "type": "string", "format": "uuid" },
-    "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
-    "result_directory": { "type": "string", "pattern": "^experiments/[0-9a-f-]+_[0-9]{8}_[0-9]{4}/$", "maxLength": 4096 },
-    "status": { "type": "string", "enum": ["succeeded", "failed", "canceled", "timed_out"] },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "result_directory": {
+      "type": "string",
+      "pattern": "^experiments/[0-9a-f-]+_[0-9]{8}_[0-9]{4}/$",
+      "maxLength": 4096
+    },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "canceled", "timed_out"]
+    },
     "started_at": { "type": "string", "format": "date-time" },
     "finished_at": { "type": "string", "format": "date-time" },
-    "runtime": { "type": "string", "enum": ["local-docker", "e2b", "local-process"] },
+    "runtime": {
+      "type": "string",
+      "enum": ["local-docker", "e2b", "local-process"]
+    },
     "runtime_version": { "type": "string", "minLength": 1, "maxLength": 100 },
     "logs_truncated": { "type": "boolean" },
     "summary": { "type": "string", "maxLength": 20000 },
@@ -21,12 +46,31 @@
     "environment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["environment_key", "base_image_id", "environment_image_id", "manifest_paths", "manifest_hashes", "builder_version", "cache_hit"],
+      "required": [
+        "environment_key",
+        "base_image_id",
+        "environment_image_id",
+        "manifest_paths",
+        "manifest_hashes",
+        "builder_version",
+        "cache_hit"
+      ],
       "properties": {
-        "provider": { "type": "string", "enum": ["local-docker", "local-process"] },
-        "environment_key": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider": {
+          "type": "string",
+          "enum": ["local-docker", "local-process"]
+        },
+        "environment_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "base_image_id": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "environment_image_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "environment_image_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
         "resolved_dependencies": {
           "type": "array",
           "maxItems": 2000,
@@ -36,14 +80,25 @@
           "type": "array",
           "maxItems": 32,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*(?:^|/)\\.\\.\\s*$)[^\\x00]+$", "maxLength": 4096 }
+          "items": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*(?:^|/)\\.\\.\\s*$)[^\\x00]+$",
+            "maxLength": 4096
+          }
         },
         "manifest_hashes": {
           "type": "object",
           "maxProperties": 32,
-          "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
         },
-        "builder_version": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "builder_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
         "cache_hit": { "type": "boolean" }
       }
     },
@@ -55,10 +110,29 @@
         "additionalProperties": false,
         "required": ["path", "sha256", "size_bytes", "kind"],
         "properties": {
-          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*(?:^|/)\\.\\.\\s*$)[^\\x00]+$", "maxLength": 4096 },
+          "path": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*(?:^|/)\\.\\.\\s*$)[^\\x00]+$",
+            "maxLength": 4096
+          },
           "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-          "size_bytes": { "type": "integer", "minimum": 0, "maximum": 10737418240 },
-          "kind": { "type": "string", "enum": ["file", "log", "figure", "table", "data", "model", "summary"] },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10737418240
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "log",
+              "figure",
+              "table",
+              "data",
+              "model",
+              "summary"
+            ]
+          },
           "mime_type": { "type": "string", "maxLength": 200 }
         }
       }

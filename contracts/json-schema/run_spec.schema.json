@@ -4,13 +4,31 @@
   "title": "mmdash frozen experiment run specification",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "experiment_id", "project_id", "execution_epoch", "source_commit", "source_transfer", "entrypoint", "parameters", "environment", "inputs", "runtime", "runtime_version", "limits", "result_contract"],
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "project_id",
+    "execution_epoch",
+    "source_commit",
+    "source_transfer",
+    "entrypoint",
+    "parameters",
+    "environment",
+    "inputs",
+    "runtime",
+    "runtime_version",
+    "limits",
+    "result_contract"
+  ],
   "properties": {
     "schema_version": { "type": "string", "const": "2" },
     "experiment_id": { "type": "string", "format": "uuid" },
     "project_id": { "type": "string", "format": "uuid" },
     "execution_epoch": { "type": "string", "format": "uuid" },
-    "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
     "source_transfer": {
       "type": "object",
       "additionalProperties": false,
@@ -18,32 +36,68 @@
       "properties": {
         "url": { "type": "string", "format": "uri" },
         "expires_at": { "type": "string", "format": "date-time" },
-        "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        "source_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        }
       }
     },
-    "entrypoint": { "type": "string", "pattern": "^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$", "maxLength": 500 },
+    "entrypoint": {
+      "type": "string",
+      "pattern": "^(python3?|node|go|binary):[a-zA-Z0-9_./-]+$",
+      "maxLength": 500
+    },
     "parameters": { "type": "object", "additionalProperties": true },
-    "environment": { "type": "object", "additionalProperties": { "type": "string" }, "maxProperties": 100 },
+    "environment": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "maxProperties": 100
+    },
     "inputs": { "type": "object", "additionalProperties": true },
-    "runtime": { "type": "string", "enum": ["local-docker", "e2b", "local-process"] },
+    "runtime": {
+      "type": "string",
+      "enum": ["local-docker", "e2b", "local-process"]
+    },
     "runtime_version": { "type": "string", "minLength": 1, "maxLength": 100 },
     "environment_selection": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "python_manifest": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        "python_manifest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
       }
     },
-    "limits": { "$ref": "https://mmdash.moe/contracts/box.schema.json#/$defs/resource_limits" },
+    "limits": {
+      "$ref": "https://mmdash.moe/contracts/box.schema.json#/$defs/resource_limits"
+    },
     "result_contract": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["directory", "bundle_filename", "manifest_schema", "max_bundle_bytes"],
+      "required": [
+        "directory",
+        "bundle_filename",
+        "manifest_schema",
+        "max_bundle_bytes"
+      ],
       "properties": {
-        "directory": { "type": "string", "pattern": "^experiments/[0-9a-f-]+_[0-9]{8}_[0-9]{4}/$", "maxLength": 4096 },
-        "bundle_filename": { "type": "string", "const": "execution-bundle.zip" },
+        "directory": {
+          "type": "string",
+          "pattern": "^experiments/[0-9a-f-]+_[0-9]{8}_[0-9]{4}/$",
+          "maxLength": 4096
+        },
+        "bundle_filename": {
+          "type": "string",
+          "const": "execution-bundle.zip"
+        },
         "manifest_schema": { "type": "string", "format": "uri" },
-        "max_bundle_bytes": { "type": "integer", "minimum": 1, "maximum": 5368709120 }
+        "max_bundle_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5368709120
+        }
       }
     },
     "readonly_credentials": {
