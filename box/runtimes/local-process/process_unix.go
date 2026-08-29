@@ -67,7 +67,29 @@ func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	return syscall.Kill(pid, 0) == nil
+	if err := syscall.Kill(pid, 0); err != nil {
+		return false
+	}
+	// The detached supervisor is never waited for directly, so an exited
+	// runner lingers as a zombie that still answers kill(pid, 0). Reap it
+	// opportunistically and report it as gone. A runner started by a previous
+	// Gateway process is not our child: Wait4 then fails with ECHILD and the
+	// process counts as alive.
+	var status syscall.WaitStatus
+	if waited, err := syscall.Wait4(pid, &status, syscall.WNOHANG, nil); err == nil && waited == pid {
+		return false
+	}
+	return true
+}
+
+// reapProcess best-effort reaps an exited child so detached runners never
+// accumulate as zombies.
+func reapProcess(pid int) {
+	if pid <= 0 {
+		return
+	}
+	var status syscall.WaitStatus
+	_, _ = syscall.Wait4(pid, &status, syscall.WNOHANG, nil)
 }
 
 func venvPython(python, venv string) string {

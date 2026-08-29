@@ -161,9 +161,9 @@ func testSpec(t *testing.T, workspace, entrypointFile string, environment map[st
 	expires := time.Now().Add(time.Hour).UTC()
 	return contracts.RunSpec{
 		SchemaVersion: "2", ExperimentID: "0196c800-0000-7000-8000-000000000001",
-		ProjectID: "0196c800-0000-7000-8000-000000000002",
+		ProjectID:      "0196c800-0000-7000-8000-000000000002",
 		ExecutionEpoch: "0196c800-0000-7000-8000-000000000003",
-		SourceCommit: "0000000000000000000000000000000000000001",
+		SourceCommit:   "0000000000000000000000000000000000000001",
 		SourceTransfer: contracts.SourceTransfer{
 			URL: "http://127.0.0.1:1/source.zip", ExpiresAt: expires, SourceCommit: "0000000000000000000000000000000000000001",
 		},
@@ -175,7 +175,7 @@ func testSpec(t *testing.T, workspace, entrypointFile string, environment map[st
 			DiskBytes: 1 << 20, PIDs: 64, Network: "enabled",
 		},
 		ResultContract: contracts.ResultContract{
-			Directory: "experiments/0196c800-0000-7000-8000-000000000001_20260828_1200/",
+			Directory:      "experiments/0196c800-0000-7000-8000-000000000001_20260828_1200/",
 			BundleFilename: "execution-bundle.zip", ManifestSchema: "https://mmdash.moe/contracts/manifest.schema.json",
 			MaxBundleBytes: 1 << 20,
 		},
@@ -189,7 +189,7 @@ func newRunRequest(t *testing.T, workspace string, spec contracts.RunSpec) sandb
 		name = name[:90]
 	}
 	return sandbox.RunRequest{
-		ID: "task-" + name,
+		ID:   "task-" + name,
 		Spec: spec, Workspace: workspace,
 		OutputDir: filepath.Join(workspace, "output"),
 		Stdout:    &syncBuffer{}, Stderr: &syncBuffer{},
@@ -481,6 +481,116 @@ func TestRunRunnerLostStableError(t *testing.T) {
 	if !errors.As(err, &stable) || stable.ErrorCode() != ErrCodeRunnerLost {
 		t.Fatalf("expected RUNNER_LOST, got %v", err)
 	}
+}
+
+func TestRunReattachReportsDeadSupervisorWhileTaskAlive(t *testing.T) {
+	runtime, testBinary := newTestRuntime(t)
+	// A live task process whose supervisor is already gone: nobody enforces
+	// its timeout anymore, so reattach must terminate it and report
+	// RUNNER_LOST instead of following it forever.
+	child := exec.Command(testBinary)
+	child.Env = []string{"MMDASH_SLEEP_HELPER=1", "PATH=" + os.Getenv("PATH")}
+	if systemRoot := os.Getenv("SystemRoot"); systemRoot != "" {
+		child.Env = append(child.Env, "SystemRoot="+systemRoot, "SystemDrive="+os.Getenv("SystemDrive"))
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	childDone := make(chan error, 1)
+	go func() { childDone <- child.Wait() }()
+	defer func() { _ = killTree(child.Process.Pid) }()
+	workspace, spec := prepareHelperWorkspace(t, nil, "echo")
+	request := newRunRequest(t, workspace, spec)
+	if err := saveTaskRecord(runtime.recordPath(request.ID), taskRecord{
+		SchemaVersion: taskStateSchemaVersion, TaskID: request.ID,
+		BootID: bootID(), RunnerPID: 999_999_999, TaskPID: child.Process.Pid,
+		State: taskStateRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.Run(context.Background(), request)
+	var stable interface{ ErrorCode() string }
+	if !errors.As(err, &stable) || stable.ErrorCode() != ErrCodeRunnerLost {
+		t.Fatalf("expected RUNNER_LOST, got %v", err)
+	}
+	// TerminateProcess is asynchronous and the handle we hold keeps the
+	// process object queryable briefly, so termination is observed through
+	// the exit wait rather than an immediate liveness probe.
+	select {
+	case <-childDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the surviving task tree was not terminated")
+	}
+}
+
+func TestRunFollowReportsRunnerLossAfterGrace(t *testing.T) {
+	runtime, _ := newTestRuntime(t)
+	runtime.RunnerLossGrace = 250 * time.Millisecond
+	workspace, spec := prepareHelperWorkspace(t, nil, "tree")
+	request := newRunRequest(t, workspace, spec)
+	done := make(chan error, 1)
+	go func() {
+		_, err := runtime.Run(context.Background(), request)
+		done <- err
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	record, exists := taskRecord{}, false
+	for record.TaskPID <= 0 || record.State != taskStateRunning {
+		if time.Now().After(deadline) {
+			t.Fatal("task never reached the running state")
+		}
+		time.Sleep(10 * time.Millisecond)
+		record, exists, _ = loadTaskRecord(runtime.recordPath(request.ID))
+		if !exists {
+			record.TaskPID = 0
+		}
+	}
+	if record.RunnerPID <= 0 {
+		t.Fatal("runner PID was not recorded")
+	}
+	// Kill only the supervisor: the task keeps running, so follow must notice
+	// the lost supervisor and fail with RUNNER_LOST after the grace period.
+	if err := killTree(record.RunnerPID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		var stable interface{ ErrorCode() string }
+		if !errors.As(err, &stable) || stable.ErrorCode() != ErrCodeRunnerLost {
+			t.Fatalf("expected RUNNER_LOST, got %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run kept following a task whose supervisor was lost")
+	}
+	if processAlive(record.TaskPID) {
+		t.Fatal("the unsupervised task tree was not terminated")
+	}
+}
+
+func TestEnvironmentAccessIsConcurrencySafe(t *testing.T) {
+	root := t.TempDir()
+	manager, _ := newTestManager(t, fakePython(t, root))
+	runtime := NewRuntime(filepath.Join(root, "runner"), manager.Python, manager)
+	previousProbe := probeEnforcement
+	probeEnforcement = func(contractLimits) error { return nil }
+	t.Cleanup(func() { probeEnforcement = previousProbe })
+	workspace, spec := prepareHelperWorkspace(t, nil, "echo")
+	var group sync.WaitGroup
+	for index := 0; index < 8; index++ {
+		taskID := fmt.Sprintf("task-concurrent-%d", index)
+		group.Add(2)
+		go func() {
+			defer group.Done()
+			_ = runtime.PrepareEnvironment(context.Background(), sandbox.EnvironmentRequest{
+				ID: taskID, Spec: spec, Workspace: workspace,
+			})
+		}()
+		go func() {
+			defer group.Done()
+			_ = runtime.environmentFor(taskID)
+		}()
+	}
+	group.Wait()
 }
 
 func TestPrepareEnvironmentRejectsNetworkPolicy(t *testing.T) {

@@ -190,17 +190,24 @@ rejects every other network policy instead of degrading silently.
 One detached runner process (`mmdash-box task-runner --state-dir ... --task-id
 ...`) exists per task. It starts the frozen entrypoint from an argument array
 without a shell, applies the frozen hard limits to the complete process tree
-before the first task instruction (cgroup v2 on Linux, CREATE_SUSPENDED plus
-Job Object CPU/memory/PID limits on Windows), and enforces timeout and the
-cancel sentinel over the whole tree. Task stdout/stderr are captured into
-runner-owned `task-stdout.log` / `task-stderr.log` files.
+(CREATE_SUSPENDED plus Job Object CPU/memory/PID limits before the first task
+instruction on Windows; a fresh cgroup v2 subtree whose limits are written
+before the process is moved into it on Linux, which leaves a brief
+pre-enforcement start window), and enforces timeout and the cancel sentinel
+over the whole tree. Task stdout/stderr are captured into runner-owned
+`task-stdout.log` / `task-stderr.log` files.
 
 Supervision state is durable under `<state-root>/runner/<task>/state.json`
 (boot ID, runner/task PID, state, exit code, and the launch failure reason for
 `RUNNER_FAILED`). A restarted Gateway reattaches to a live runner; a different
 boot ID terminates the recorded task with `HOST_RESTARTED`; a dead supervisor
-on the same boot yields `RUNNER_LOST`. Output replays from persisted spool
-byte offsets, so gap output survives Gateway restarts.
+on the same boot yields `RUNNER_LOST` — reattach terminates the surviving
+tree immediately, and a Gateway following a live task fails with `RUNNER_LOST`
+after a short grace period once the supervisor disappears, because a dead
+supervisor enforces neither timeout nor cancellation (on Windows the Job
+Object additionally kills the whole tree when the supervisor dies). Output
+replays from persisted spool byte offsets, so gap output survives Gateway
+restarts.
 
 Python environments use a content-addressed cache keyed by builder strategy,
 platform, interpreter and installer identities, and manifest paths + content
