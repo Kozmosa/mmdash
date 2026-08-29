@@ -187,6 +187,12 @@ container-equivalent isolation** and serves only experiments that explicitly
 select `runtime_policy: local-process` with `network: enabled` — the Runtime
 rejects every other network policy instead of degrading silently.
 
+The product support target is **Linux** (VMs/containers without nested
+virtualization); Windows is not a support target — use Docker Desktop
+(`local-docker`) or run the Box inside WSL. The Windows Job Object path below
+is a best-effort implementation for development/testing only (see ADR 0005 in
+`docs/adr/0005-local-process-linux-support-scope.md`).
+
 One detached runner process (`mmdash-box task-runner --state-dir ... --task-id
 ...`) exists per task. It starts the frozen entrypoint from an argument array
 without a shell, applies the frozen hard limits to the complete process tree
