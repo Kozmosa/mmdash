@@ -173,7 +173,7 @@
   0005 only the Linux `setuid/setgid` path needs to be designed); full
   `pnpm check` was blocked by three pre-existing worker files failing
   `ruff format --check`, now fixed in `style(worker): apply ruff format to
-  three legacy files`; the branch still trails `main` and may need a rebase;
+three legacy files`; the branch still trails `main` and may need a rebase;
   end-to-end Box acceptance against a live stack is still pending.
 
 # mmdash v0.1 Stage 9 Article repair candidate
