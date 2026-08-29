@@ -9,9 +9,9 @@ describe("Agent SSE parser", () => {
   it("parses fragmented CRLF frames, comments, and multiline data", async () => {
     const chunks = [
       ": heartbeat\r",
-      "\n\r\nid: event-1\r\ndata: {\"event\":\"message.delta\",\r\n",
-      "data: \"event_id\":\"event-1\",\"sequence\":1,\"occurred_at\":\"2026-08-06T00:00:00Z\",\"run_id\":\"run-1\",\"session_id\":\"session-1\",\"delta\":\"Hi\"}\r\n\r\n",
-      "id: event-2\ndata: {\"event\":\"done\",\"event_id\":\"event-2\",\"sequence\":2,\"occurred_at\":\"2026-08-06T00:00:01Z\",\"run_id\":\"run-1\",\"session_id\":\"session-1\"}\n\n",
+      '\n\r\nid: event-1\r\ndata: {"event":"message.delta",\r\n',
+      'data: "event_id":"event-1","sequence":1,"occurred_at":"2026-08-06T00:00:00Z","run_id":"run-1","session_id":"session-1","delta":"Hi"}\r\n\r\n',
+      'id: event-2\ndata: {"event":"done","event_id":"event-2","sequence":2,"occurred_at":"2026-08-06T00:00:01Z","run_id":"run-1","session_id":"session-1"}\n\n',
     ];
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -40,12 +40,14 @@ describe("Agent SSE parser", () => {
 
   it("sends resume headers and emits normalized events incrementally", async () => {
     const onEvent = vi.fn();
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        'id: event-3\ndata: {"event":"tool.progress","event_id":"event-3","sequence":3,"occurred_at":"2026-08-06T00:00:02Z","run_id":"run-1","session_id":"session-1","tool_call":{"tool_call_id":"tool-1","name":"data.read","status":"running"}}\n\n',
-        { headers: { "content-type": "text/event-stream" } },
-      ),
-    );
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          'id: event-3\ndata: {"event":"tool.progress","event_id":"event-3","sequence":3,"occurred_at":"2026-08-06T00:00:02Z","run_id":"run-1","session_id":"session-1","tool_call":{"tool_call_id":"tool-1","name":"data.read","status":"running"}}\n\n',
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      );
 
     const lastId = await streamAgentRun(
       {

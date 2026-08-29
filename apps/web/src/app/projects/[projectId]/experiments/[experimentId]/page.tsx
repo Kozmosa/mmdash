@@ -4,7 +4,9 @@ type ExperimentDetailPageProps = {
   params: Promise<{ experimentId: string }>;
 };
 
-export default async function ExperimentDetailPage({ params }: Readonly<ExperimentDetailPageProps>) {
+export default async function ExperimentDetailPage({
+  params,
+}: Readonly<ExperimentDetailPageProps>) {
   const { experimentId } = await params;
   return <ExperimentDetailWorkbench experimentId={experimentId} />;
 }

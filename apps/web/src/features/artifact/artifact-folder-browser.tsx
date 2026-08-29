@@ -48,7 +48,8 @@ export function ArtifactFolderBrowser({
     event.preventDefault();
     event.stopPropagation();
     setDropTarget(undefined);
-    if (artifact?.artifactId) onMoveArtifact(artifact.artifactId, targetFolderId);
+    if (artifact?.artifactId)
+      onMoveArtifact(artifact.artifactId, targetFolderId);
     if (folder?.folderId && folder.folderId !== targetFolderId) {
       onMoveFolder(folder.folderId, targetFolderId);
     }
@@ -70,10 +71,7 @@ export function ArtifactFolderBrowser({
   return (
     <section
       aria-label="Artifact 文件夹浏览器"
-      className={cn(
-        "rounded-lg border bg-muted/15",
-        compact ? "p-2" : "p-3",
-      )}
+      className={cn("rounded-lg border bg-muted/15", compact ? "p-2" : "p-3")}
     >
       <nav
         aria-label="Artifact 文件夹路径"

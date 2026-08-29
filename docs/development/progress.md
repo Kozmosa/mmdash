@@ -259,16 +259,16 @@ processor logs never include Reminder note content.
 
 ## Reminder processor configuration
 
-| Variable                          | Default      | Meaning                                                       |
-| --------------------------------- | ------------ | ------------------------------------------------------------- |
-| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`         | Idle scan interval                                            |
-| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`         | Maximum rows claimed per scan                                 |
-| `PROGRESS_REMINDER_LEASE`         | `30s`        | Recoverable processing lease                                  |
-| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`         | Delay after an event-write failure                            |
+| Variable                          | Default      | Meaning                                                        |
+| --------------------------------- | ------------ | -------------------------------------------------------------- |
+| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`         | Idle scan interval                                             |
+| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`         | Maximum rows claimed per scan                                  |
+| `PROGRESS_REMINDER_LEASE`         | `30s`        | Recoverable processing lease                                   |
+| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`         | Delay after an event-write failure                             |
 | `PROGRESS_TRACKING_POLL_INTERVAL` | `1s`         | Idle request/local Cron due scan interval                      |
-| `PROGRESS_TRACKING_LEASE`         | `2m`         | Recoverable assembly/Cron claim lease                         |
+| `PROGRESS_TRACKING_LEASE`         | `2m`         | Recoverable assembly/Cron claim lease                          |
 | `PROGRESS_TRACKING_RETRY_DELAY`   | `30s`        | Retry after input assembly, queue, or local scheduling failure |
-| `MMDASH_PROGRESS_EVALUATOR_MODE`  | `core_agent` | `core_agent` or deterministic `mock` evaluator                |
+| `MMDASH_PROGRESS_EVALUATOR_MODE`  | `core_agent` | `core_agent` or deterministic `mock` evaluator                 |
 
 ## HTTP and views
 

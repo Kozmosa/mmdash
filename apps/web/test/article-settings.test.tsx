@@ -39,7 +39,8 @@ describe("Article Zotero settings", () => {
             version: options?.method === "PATCH" ? 2 : 1,
           } as never;
         }
-        if (path.endsWith("/settings/article.zotero")) return setting() as never;
+        if (path.endsWith("/settings/article.zotero"))
+          return setting() as never;
         throw new Error(`unexpected request ${path} ${options?.method}`);
       });
     render(

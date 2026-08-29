@@ -4,7 +4,15 @@
   "title": "experiment.failed payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["experiment_id", "execution_status", "failure_stage", "failure_code", "failed_at", "retryable", "logs_truncated"],
+  "required": [
+    "experiment_id",
+    "execution_status",
+    "failure_stage",
+    "failure_code",
+    "failed_at",
+    "retryable",
+    "logs_truncated"
+  ],
   "properties": {
     "experiment_id": { "type": "string", "format": "uuid" },
     "task_id": { "type": "string", "format": "uuid" },

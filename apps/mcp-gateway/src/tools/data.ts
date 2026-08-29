@@ -11,14 +11,18 @@ const dataListInput = z.object({
     .string()
     .max(4_096)
     .optional()
-    .describe("Opaque cursor from the preceding page; paginate only to answer a specific evidence question."),
+    .describe(
+      "Opaque cursor from the preceding page; paginate only to answer a specific evidence question.",
+    ),
   limit: z
     .number()
     .int()
     .min(1)
     .max(200)
     .optional()
-    .describe("Bounded discovery size; prefer a small page such as 20 for evidence assessment."),
+    .describe(
+      "Bounded discovery size; prefer a small page such as 20 for evidence assessment.",
+    ),
   project_id: projectIdSchema.describe(
     "Exact Project ID supplied by the evaluation or user request.",
   ),
@@ -34,7 +38,9 @@ const dataReadInput = z.object({
   object_id: z
     .string()
     .uuid()
-    .describe("Object ID selected from data.list because its full content can answer a material question."),
+    .describe(
+      "Object ID selected from data.list because its full content can answer a material question.",
+    ),
   project_id: projectIdSchema.describe(
     "Exact Project ID used in the preceding data.list call.",
   ),

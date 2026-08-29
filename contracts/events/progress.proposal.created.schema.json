@@ -4,7 +4,14 @@
   "title": "progress.proposal.created payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resource_id", "resource_type", "title", "status", "proposal_type", "source"],
+  "required": [
+    "resource_id",
+    "resource_type",
+    "title",
+    "status",
+    "proposal_type",
+    "source"
+  ],
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "progress_proposal" },

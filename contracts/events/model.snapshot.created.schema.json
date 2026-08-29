@@ -4,7 +4,14 @@
   "title": "model.snapshot.created payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["snapshot_id", "question_id", "source_id", "content_hash", "previous_snapshot_id", "captured_at"],
+  "required": [
+    "snapshot_id",
+    "question_id",
+    "source_id",
+    "content_hash",
+    "previous_snapshot_id",
+    "captured_at"
+  ],
   "properties": {
     "snapshot_id": { "type": "string", "format": "uuid" },
     "question_id": { "type": "string", "format": "uuid" },

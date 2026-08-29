@@ -76,11 +76,7 @@ function InviteContent() {
   const emailMismatch = Boolean(currentUser && preview.data && !emailMatches);
   const autoAccept = search.get("autoAccept") === "1";
   useEffect(() => {
-    if (
-      autoAccept &&
-      emailMatches &&
-      !autoAcceptAttempted.current
-    ) {
+    if (autoAccept && emailMatches && !autoAcceptAttempted.current) {
       autoAcceptAttempted.current = true;
       accept.mutate();
     }

@@ -144,7 +144,9 @@ describe("Model pages", () => {
     render(<ModelListPage />, { wrapper: Providers });
 
     // Open the create modal
-    const openModalButton = await screen.findByRole("button", { name: "新建题号" });
+    const openModalButton = await screen.findByRole("button", {
+      name: "新建题号",
+    });
     fireEvent.click(openModalButton);
 
     const codeInput = await screen.findByLabelText("题号");

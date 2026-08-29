@@ -216,15 +216,15 @@ on this path.
 
 After a successful start, report the reachable services to the user:
 
-| Service       | Pixi path (preferred)      | Docker wrapper fallback  |
-| ------------- | -------------------------- | ------------------------ |
-| Web           | `http://127.0.0.1:13000`   | `http://localhost:3000`  |
-| Web BFF       | `http://127.0.0.1:13001`   | `http://localhost:3001`  |
-| Core          | `http://127.0.0.1:18080`   | `http://localhost:8080`  |
-| MCP Gateway   | `http://127.0.0.1:13002`   | `http://localhost:3002`  |
-| PostgreSQL    | `127.0.0.1:15432`          | `localhost:15432` (*)    |
-| MinIO API     | `http://127.0.0.1:19000`   | `http://localhost:9000`  |
-| MinIO Console | `http://127.0.0.1:19001`   | `http://localhost:9001`  |
+| Service       | Pixi path (preferred)    | Docker wrapper fallback |
+| ------------- | ------------------------ | ----------------------- |
+| Web           | `http://127.0.0.1:13000` | `http://localhost:3000` |
+| Web BFF       | `http://127.0.0.1:13001` | `http://localhost:3001` |
+| Core          | `http://127.0.0.1:18080` | `http://localhost:8080` |
+| MCP Gateway   | `http://127.0.0.1:13002` | `http://localhost:3002` |
+| PostgreSQL    | `127.0.0.1:15432`        | `localhost:15432` (*)   |
+| MinIO API     | `http://127.0.0.1:19000` | `http://localhost:9000` |
+| MinIO Console | `http://127.0.0.1:19001` | `http://localhost:9001` |
 
 (*) Docker wrapper: 5432 by default, 15432 with the local `.env` override
 described above.

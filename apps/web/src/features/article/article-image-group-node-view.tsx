@@ -89,8 +89,8 @@ export function ArticleImageGroupNodeView({
       return;
     }
 
-    const localImage = Array.from(event.dataTransfer?.files ?? []).find((item) =>
-      item.type.startsWith("image/"),
+    const localImage = Array.from(event.dataTransfer?.files ?? []).find(
+      (item) => item.type.startsWith("image/"),
     );
     if (localImage) {
       event.preventDefault();
@@ -136,7 +136,9 @@ export function ArticleImageGroupNodeView({
             图片组合 · {count} 张 · 每行 {columns} 张（宽度自适应）
           </span>
         </div>
-        <span className="text-[11px] opacity-75">支持拖拽调整图片顺序与添加</span>
+        <span className="text-[11px] opacity-75">
+          支持拖拽调整图片顺序与添加
+        </span>
       </div>
       <NodeViewContent
         className="min-w-0"

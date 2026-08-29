@@ -7,3 +7,4 @@ node_modules/
 .pnpm-store/
 pnpm-lock.yaml
 uv.lock
+.testenv/

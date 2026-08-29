@@ -1,9 +1,6 @@
 import { loadConfig } from "./config.js";
 import { buildGateway } from "./gateway.js";
-import {
-  createGatewayHttpServer,
-  listenGateway,
-} from "./http-server.js";
+import { createGatewayHttpServer, listenGateway } from "./http-server.js";
 
 const config = loadConfig();
 const gateway = buildGateway({ config });
