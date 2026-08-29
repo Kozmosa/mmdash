@@ -79,6 +79,7 @@ import {
   moveArrayItem,
   rectangleFromPoints,
   rectanglesIntersect,
+  wheelScrollDelta,
   type EditorRectangle,
 } from "./article-editor-interactions";
 import {
@@ -408,6 +409,8 @@ export function ArticleEditor({
     from: number;
     to: number;
   } | null>(null);
+  const blockPointerDragActiveRef = useRef(false);
+  const blockPointerDragCleanupRef = useRef<() => void>(() => undefined);
   const dropIndicatorRef = useRef<ArticleDropIndicator | undefined>(undefined);
   const marqueeRef = useRef<HTMLDivElement>(null);
   const blockMenuOpenRef = useRef(false);
@@ -415,6 +418,20 @@ export function ArticleEditor({
   const tableDragSessionRef = useRef<TableDragSession | undefined>(undefined);
   const tableDragCleanupRef = useRef<() => void>(() => undefined);
   const suppressTableHandleClickRef = useRef(false);
+  const lastDragCoordsRef = useRef<{ clientX: number; clientY: number } | null>(
+    null,
+  );
+  const lastDragOptionsRef = useRef<{
+    autoScroll: boolean;
+    dropEffect: "copy" | "move";
+  } | null>(null);
+  const updateDropIndicatorRef = useRef<
+    | ((
+        event: globalThis.DragEvent,
+        options: { autoScroll: boolean; dropEffect: "copy" | "move" },
+      ) => boolean)
+    | null
+  >(null);
   const openMathEditor = useCallback(
     (kind: ArticleMathKind, node: ProseMirrorNode, pos: number) => {
       setMathDraft(String(node.attrs.latex ?? ""));
@@ -537,6 +554,53 @@ export function ArticleEditor({
   useEffect(() => {
     editor?.setEditable(canEdit);
   }, [canEdit, editor]);
+
+  useEffect(() => {
+    const handleDragWheel = (event: WheelEvent) => {
+      if (blockDraggingPosRef.current === null) return;
+      const surface = editorSurfaceRef.current;
+      if (!surface) return;
+      const delta = wheelScrollDelta(
+        event.deltaY,
+        event.deltaMode,
+        surface.clientHeight,
+      );
+      if (delta === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      const previousScrollTop = surface.scrollTop;
+      surface.scrollTop += delta;
+      if (
+        surface.scrollTop !== previousScrollTop &&
+        lastDragCoordsRef.current &&
+        lastDragOptionsRef.current
+      ) {
+        const syntheticDragEvent = {
+          clientX: lastDragCoordsRef.current.clientX,
+          clientY: lastDragCoordsRef.current.clientY,
+          dataTransfer: {
+            dropEffect: lastDragOptionsRef.current.dropEffect,
+            types: [],
+          },
+          preventDefault: () => undefined,
+        } as unknown as globalThis.DragEvent;
+        updateDropIndicatorRef.current?.(
+          syntheticDragEvent,
+          lastDragOptionsRef.current,
+        );
+      }
+    };
+
+    window.addEventListener("wheel", handleDragWheel, {
+      capture: true,
+      passive: false,
+    });
+    return () => {
+      window.removeEventListener("wheel", handleDragWheel, { capture: true });
+      blockPointerDragCleanupRef.current();
+    };
+  }, []);
 
   useEffect(() => {
     if (!editor || !canEdit) return;
@@ -1281,6 +1345,7 @@ export function ArticleEditor({
   }, [canEdit, editor, provider]);
 
   const handleElementDragEnd = useCallback(() => {
+    if (blockPointerDragActiveRef.current) return;
     blockDraggingPosRef.current = null;
     blockDraggingRangeRef.current = null;
     dropIndicatorRef.current = undefined;
@@ -1290,6 +1355,10 @@ export function ArticleEditor({
 
   const handleElementDragStart = useCallback(
     (event: globalThis.DragEvent) => {
+      if (blockPointerDragActiveRef.current) {
+        event.preventDefault();
+        return;
+      }
       if (!editor) return;
       const position = dragHandlePos.current;
       if (position === null || position === undefined) return;
@@ -2335,13 +2404,18 @@ export function ArticleEditor({
   };
 
   const updateDropIndicator = (
-    event: DragEvent<HTMLDivElement>,
+    event: DragEvent<HTMLDivElement> | globalThis.DragEvent,
     options: { autoScroll: boolean; dropEffect: "copy" | "move" },
   ) => {
     const surface = editorSurfaceRef.current;
     if (!surface) return false;
     event.preventDefault();
-    event.dataTransfer.dropEffect = options.dropEffect;
+    if (event.dataTransfer) event.dataTransfer.dropEffect = options.dropEffect;
+    lastDragCoordsRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+    lastDragOptionsRef.current = options;
     const root = surface.getBoundingClientRect();
     if (options.autoScroll) {
       const margin = 72;
@@ -2380,10 +2454,11 @@ export function ArticleEditor({
     });
     if (blockPosition === undefined || !blockNode) return true;
 
+    const dataTransferTypes = event.dataTransfer?.types ?? [];
     const isImageOrArtifact =
-      event.dataTransfer.types.includes(articleArtifactMime) ||
-      event.dataTransfer.types.includes("Files") ||
-      event.dataTransfer.types.includes(
+      dataTransferTypes.includes(articleArtifactMime) ||
+      dataTransferTypes.includes("Files") ||
+      dataTransferTypes.includes(
         "application/vnd.mmdash.image-group-item",
       );
 
@@ -2424,6 +2499,139 @@ export function ArticleEditor({
     dropIndicatorRef.current = nextIndicator;
     setDropIndicator(nextIndicator);
     return true;
+  };
+
+  updateDropIndicatorRef.current = updateDropIndicator;
+
+  const startPointerBlockDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    const position = dragHandlePos.current;
+    if (position === null || !editor.state.doc.nodeAt(position)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    blockPointerDragCleanupRef.current();
+
+    const selection = editor.state.selection;
+    const selectedRange =
+      isNodeRangeSelection(selection) &&
+      position >= selection.from &&
+      position < selection.to
+        ? { from: selection.from, to: selection.to }
+        : null;
+    if (!selectedRange) {
+      selectArticleBlock(editor, position, { scrollIntoView: false });
+    }
+
+    const dragHandle = event.currentTarget.closest<HTMLElement>(".drag-handle");
+    if (dragHandle) dragHandle.draggable = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    blockPointerDragActiveRef.current = true;
+    blockDraggingPosRef.current = position;
+    blockDraggingRangeRef.current = selectedRange;
+    dropIndicatorRef.current = undefined;
+    lastDragCoordsRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    };
+    lastDragOptionsRef.current = { autoScroll: true, dropEffect: "move" };
+    setBlockDraggingPos(position);
+    setDropIndicator(undefined);
+
+    const clearPointerDrag = () => {
+      window.removeEventListener("pointermove", pointerMove, true);
+      window.removeEventListener("pointerup", pointerUp, true);
+      window.removeEventListener("pointercancel", pointerCancel, true);
+      if (dragHandle) dragHandle.draggable = true;
+      blockPointerDragActiveRef.current = false;
+      blockPointerDragCleanupRef.current = () => undefined;
+    };
+    const finishPointerDrag = (moveBlock: boolean) => {
+      const insertionPosition = dropIndicatorRef.current?.position;
+      const draggingPosition = blockDraggingPosRef.current;
+      const range = blockDraggingRangeRef.current;
+
+      clearPointerDrag();
+      blockDraggingPosRef.current = null;
+      blockDraggingRangeRef.current = null;
+      dropIndicatorRef.current = undefined;
+      setBlockDraggingPos(undefined);
+      setDropIndicator(undefined);
+
+      if (
+        !moveBlock ||
+        insertionPosition === undefined ||
+        draggingPosition === null
+      ) {
+        return;
+      }
+      if (range) {
+        moveArticleBlockRange(
+          editor,
+          range.from,
+          range.to,
+          insertionPosition,
+        );
+        return;
+      }
+      const draggedNode = editor.state.doc.nodeAt(draggingPosition);
+      if (!draggedNode) return;
+      moveArticleBlockRange(
+        editor,
+        draggingPosition,
+        draggingPosition + draggedNode.nodeSize,
+        insertionPosition,
+      );
+    };
+    const pointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== event.pointerId) return;
+      pointerEvent.preventDefault();
+      const surface = editorSurfaceRef.current;
+      if (!surface) return;
+      const rect = surface.getBoundingClientRect();
+      if (
+        pointerEvent.clientX < rect.left ||
+        pointerEvent.clientX > rect.right ||
+        pointerEvent.clientY < rect.top ||
+        pointerEvent.clientY > rect.bottom
+      ) {
+        clearDropIndicator();
+        return;
+      }
+      const syntheticDragEvent = {
+        clientX: pointerEvent.clientX,
+        clientY: pointerEvent.clientY,
+        dataTransfer: { dropEffect: "move", types: [] },
+        preventDefault: () => undefined,
+      } as unknown as globalThis.DragEvent;
+      updateDropIndicatorRef.current?.(syntheticDragEvent, {
+        autoScroll: true,
+        dropEffect: "move",
+      });
+    };
+    const pointerUp = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== event.pointerId) return;
+      pointerEvent.preventDefault();
+      finishPointerDrag(true);
+    };
+    const pointerCancel = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId !== event.pointerId) return;
+      finishPointerDrag(false);
+    };
+
+    blockPointerDragCleanupRef.current = () => finishPointerDrag(false);
+    window.addEventListener("pointermove", pointerMove, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("pointerup", pointerUp, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("pointercancel", pointerCancel, { capture: true });
   };
 
   const updateInternalDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -2796,10 +3004,7 @@ export function ArticleEditor({
                 <button
                   aria-label="拖动当前块排序"
                   className="flex size-6 cursor-grab items-center justify-center rounded hover:bg-muted hover:text-foreground active:cursor-grabbing"
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                    selectBlockFromHandle();
-                  }}
+                  onPointerDown={startPointerBlockDrag}
                   onClick={(event) => {
                     event.stopPropagation();
                     selectBlockFromHandle();
