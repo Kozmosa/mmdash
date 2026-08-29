@@ -13,6 +13,7 @@ import {
   duplicateArticleBlock,
   insertArticleBlock,
   moveArticleBlock,
+  moveArticleBlockRange,
   replaceArticleImageWithArtifact,
   selectArticleBlock,
 } from "@/features/article/article-block-commands";
@@ -170,5 +171,74 @@ describe("Article block commands", () => {
       }),
     );
     editor.destroy();
+  });
+
+  it("can move a block range", () => {
+    const editor = makeEditor();
+    let posA = -1;
+    let posB = -1;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.attrs.id === "block-a") posA = pos;
+      if (node.attrs.id === "block-b") posB = pos;
+    });
+    const nodeA = editor.state.doc.nodeAt(posA)!;
+    const nodeB = editor.state.doc.nodeAt(posB)!;
+
+    const result = moveArticleBlockRange(
+      editor,
+      posA,
+      posA + nodeA.nodeSize,
+      posB + nodeB.nodeSize,
+    );
+    expect(result).toBe(true);
+    expect(editor.getText()).toBe("第二块\n\n第一块");
+    editor.destroy();
+  });
+
+  it("moves one block to each requested boundary exactly once", () => {
+    const makeThreeBlockEditor = () =>
+      new Editor({
+        content: {
+          content: ["1", "2", "3"].map((text) => ({
+            attrs: { id: `block-${text}` },
+            content: [{ text, type: "text" }],
+            type: "paragraph",
+          })),
+          type: "doc",
+        },
+        extensions: [
+          StarterKit,
+          UniqueID.configure({
+            types: ["paragraph", "heading", "blockquote", "codeBlock"],
+          }),
+        ],
+      });
+
+    const afterSecond = makeThreeBlockEditor();
+    const firstSize = afterSecond.state.doc.child(0).nodeSize;
+    const secondSize = afterSecond.state.doc.child(1).nodeSize;
+    expect(
+      moveArticleBlockRange(
+        afterSecond,
+        0,
+        firstSize,
+        firstSize + secondSize,
+      ),
+    ).toBe(true);
+    expect(afterSecond.getText()).toBe("2\n\n1\n\n3");
+    afterSecond.destroy();
+
+    const afterThird = makeThreeBlockEditor();
+    const draggedSize = afterThird.state.doc.child(0).nodeSize;
+    expect(
+      moveArticleBlockRange(
+        afterThird,
+        0,
+        draggedSize,
+        afterThird.state.doc.content.size,
+      ),
+    ).toBe(true);
+    expect(afterThird.getText()).toBe("2\n\n3\n\n1");
+    afterThird.destroy();
   });
 });

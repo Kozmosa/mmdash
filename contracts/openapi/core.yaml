@@ -5193,6 +5193,47 @@ paths:
       summary: Remove the project Zotero binding and secret
       operationId: article.zotero.delete
       responses: { "204": { description: Binding removed. } }
+  /v1/projects/{projectId}/article/zotero/collections:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: List collections in the configured Zotero library
+      operationId: article.zotero.collections
+      responses:
+        "200":
+          description: Zotero collections list.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ZoteroCollectionList" } },
+            }
+  /v1/projects/{projectId}/article/zotero/items:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - {
+          name: collection,
+          in: query,
+          required: false,
+          schema: { type: string, maxLength: 200 },
+        }
+      - {
+          name: q,
+          in: query,
+          required: false,
+          schema: { type: string, maxLength: 200 },
+        }
+    get:
+      tags: [Article]
+      summary: List or search items in the configured Zotero library
+      operationId: article.zotero.items
+      responses:
+        "200":
+          description: Zotero items list.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ZoteroItemList" } },
+            }
   /v1/projects/{projectId}/article/zotero/search:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
@@ -6340,6 +6381,34 @@ components:
         collection_key: { type: string }
         api_key_configured: { type: boolean }
         read_only: { type: boolean, const: true }
+    ZoteroCollection:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          collection_key,
+          name,
+          num_collections,
+          num_items,
+        ]
+      properties:
+        collection_key: { type: string }
+        name: { type: string }
+        parent_collection_key: { type: string, nullable: true }
+        num_collections: { type: integer }
+        num_items: { type: integer }
+    ZoteroCollectionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        {
+          items:
+            {
+              type: array,
+              items: { $ref: "#/components/schemas/ZoteroCollection" },
+            },
+        }
     ZoteroItem:
       type: object
       additionalProperties: false

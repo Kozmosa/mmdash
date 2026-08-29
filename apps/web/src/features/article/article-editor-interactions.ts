@@ -47,6 +47,16 @@ export function dropTargetPosition(
   return before ? blockPosition : blockPosition + blockNodeSize;
 }
 
+export function wheelScrollDelta(
+  deltaY: number,
+  deltaMode: number,
+  viewportHeight: number,
+): number {
+  if (deltaMode === 1) return deltaY * 16;
+  if (deltaMode === 2) return deltaY * Math.max(1, viewportHeight);
+  return deltaY;
+}
+
 export function moveArrayItem<T>(
   items: readonly T[],
   sourceIndex: number,

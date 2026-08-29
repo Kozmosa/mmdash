@@ -282,6 +282,16 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
+	if len(tail) == 2 && tail[0] == "zotero" && tail[1] == "collections" && r.Method == http.MethodGet {
+		value, err := module.Service.ListZoteroCollections(r.Context(), caller, projectID)
+		writeResult(w, r, http.StatusOK, Page[ZoteroCollection]{Items: value}, err)
+		return
+	}
+	if len(tail) == 2 && tail[0] == "zotero" && tail[1] == "items" && r.Method == http.MethodGet {
+		value, err := module.Service.ListZoteroItems(r.Context(), caller, projectID, r.URL.Query().Get("collection"), r.URL.Query().Get("q"))
+		writeResult(w, r, http.StatusOK, Page[ZoteroItem]{Items: value}, err)
+		return
+	}
 	if len(tail) == 2 && tail[0] == "zotero" && tail[1] == "search" && r.Method == http.MethodGet {
 		value, err := module.Service.SearchZotero(r.Context(), caller, projectID, r.URL.Query().Get("q"))
 		writeResult(w, r, http.StatusOK, Page[ZoteroItem]{Items: value}, err)
