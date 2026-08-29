@@ -97,8 +97,10 @@ Evaluation assembly hashes the Project problem, constraints, bounded Data Hub
 objects/activity, confirmed context, Milestones, Tasks, tracking settings, and
 active human override into semantic evidence and Progress state revisions.
 The Agent Run receives only those revisions, a bounded object-type catalog,
-the Project ID, reasoning effort, and previous normalized output. It does not
-receive the underlying Project content in one large prompt. Volatile
+the Project ID, and reasoning effort. It obtains both current state and the
+previous successful evaluation through `progress.get`; neither the previous
+report nor the underlying Project content is copied into the initial prompt.
+Volatile
 timestamps, Progress source Run IDs, and the evaluation/risk projections
 produced by Stage 6 itself are excluded from semantic versions.
 
@@ -139,6 +141,17 @@ the Progress UI can attach a read-only live Session view before the evaluation
 finishes. Runtime configuration rejections are returned as non-retryable
 `PROGRESS_EVALUATOR_CONFIGURATION_INVALID`; transient runtime failures remain
 `PROGRESS_EVALUATOR_UNAVAILABLE` and may be retried by the Job Queue.
+The deterministic ID includes the evaluator prompt version. Because Hermes
+does not patch a Session system prompt after creation, bumping that version
+creates one new Progress Session and prevents an active Session from silently
+retaining stale evaluation instructions.
+
+The read-only Progress Session dialog translates MCP Tool names into Project
+evidence steps and reconnects a recoverable Run event stream with bounded
+backoff. When a terminal Run is observed it re-fetches messages and Tool Calls.
+If the remote message history remains unavailable, the dialog clearly marks
+that limitation and renders the normalized Progress evaluation already stored
+by Core, so a transient stream failure cannot hide the final conclusion.
 
 The evaluator prompts use one shared evidence rubric. Current explicit
 Milestone/Task state and confirmed Context outrank authoritative domain reads,
@@ -167,6 +180,10 @@ one actionable pending question. Work-state changes apply only to existing
 unfinished Tasks whose state actually changed; creates, updates, scheduling,
 and completion remain reviewable Proposals with stable semantic keys and
 contract-supported fields.
+The report is a Project decision brief rather than an audit log: it translates
+domain internals into the Project's language and aggregates repeated revisions,
+builds, files, timestamps, errors, and Tool activity unless one technical fact
+materially changes the decision.
 A `task.create` requires an evidence-sourced `start_at` or `due_at`; missing
 optional values are omitted instead of emitted as empty placeholders. Verified
 deliverables may appear as completed report items without implying that a
@@ -179,13 +196,14 @@ mode; scheduled `core_agent` evaluation remains disabled unless a real active
 Agent is selected.
 
 The Worker validates an exact bounded output shape: stage, summary, changes,
-completed/in-progress/blocked report items, risks, automatic `work_state_updates`,
-reviewable suggestions, and pending questions.
-Invalid JSON, unknown fields, invalid suggestion/reference types, oversized
-output, provider failures, and exhausted retries become safe evaluation failure
-codes/history. A human may retry only a terminal failed evaluation. Job lease,
-retry, timeout, idempotency, and result completion remain owned by the existing
-Core Job Queue.
+completed/in-progress/blocked report items, risks, automatic
+`work_state_updates`, reviewable suggestions, and pending questions. A runtime
+may persist short progress notes before the final answer, so the Worker also
+accepts one complete trailing JSON object; commentary after that object,
+unknown fields, invalid suggestion/reference types, oversized output, provider
+failures, and exhausted retries become safe evaluation failure codes/history.
+A human may retry only a terminal failed evaluation. Job lease, retry, timeout,
+idempotency, and result completion remain owned by the existing Core Job Queue.
 
 ## Mutation policy
 
@@ -259,16 +277,16 @@ processor logs never include Reminder note content.
 
 ## Reminder processor configuration
 
-| Variable                          | Default      | Meaning                                                       |
-| --------------------------------- | ------------ | ------------------------------------------------------------- |
-| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`         | Idle scan interval                                            |
-| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`         | Maximum rows claimed per scan                                 |
-| `PROGRESS_REMINDER_LEASE`         | `30s`        | Recoverable processing lease                                  |
-| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`         | Delay after an event-write failure                            |
+| Variable                          | Default      | Meaning                                                        |
+| --------------------------------- | ------------ | -------------------------------------------------------------- |
+| `PROGRESS_REMINDER_POLL_INTERVAL` | `1s`         | Idle scan interval                                             |
+| `PROGRESS_REMINDER_BATCH_SIZE`    | `20`         | Maximum rows claimed per scan                                  |
+| `PROGRESS_REMINDER_LEASE`         | `30s`        | Recoverable processing lease                                   |
+| `PROGRESS_REMINDER_RETRY_DELAY`   | `2s`         | Delay after an event-write failure                             |
 | `PROGRESS_TRACKING_POLL_INTERVAL` | `1s`         | Idle request/local Cron due scan interval                      |
-| `PROGRESS_TRACKING_LEASE`         | `2m`         | Recoverable assembly/Cron claim lease                         |
+| `PROGRESS_TRACKING_LEASE`         | `2m`         | Recoverable assembly/Cron claim lease                          |
 | `PROGRESS_TRACKING_RETRY_DELAY`   | `30s`        | Retry after input assembly, queue, or local scheduling failure |
-| `MMDASH_PROGRESS_EVALUATOR_MODE`  | `core_agent` | `core_agent` or deterministic `mock` evaluator                |
+| `MMDASH_PROGRESS_EVALUATOR_MODE`  | `core_agent` | `core_agent` or deterministic `mock` evaluator                 |
 
 ## HTTP and views
 
