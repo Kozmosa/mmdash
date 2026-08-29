@@ -1,7 +1,15 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, LogOut, Moon, Server, Sun, Trash2, UserRound } from "lucide-react";
+import {
+  ChevronDown,
+  LogOut,
+  Moon,
+  Server,
+  Sun,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -150,7 +158,8 @@ export function UserMenu({
             <button
               className="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent"
               onClick={() => {
-                const nextDark = !document.documentElement.classList.contains("dark");
+                const nextDark =
+                  !document.documentElement.classList.contains("dark");
                 if (nextDark) {
                   document.documentElement.classList.add("dark");
                   localStorage.setItem("theme", "dark");

@@ -164,11 +164,7 @@ export function reorderArticleImageInGroup(
     Fragment.fromArray(reordered),
   );
   editor.view.dispatch(
-    editor.state.tr.replaceWith(
-      groupPos,
-      groupPos + group.nodeSize,
-      nextGroup,
-    ),
+    editor.state.tr.replaceWith(groupPos, groupPos + group.nodeSize, nextGroup),
   );
   editor.view.focus();
   return true;
@@ -333,11 +329,7 @@ export function insertArticleImageIntoGroup(
     Fragment.fromArray(children),
   );
   editor.view.dispatch(
-    editor.state.tr.replaceWith(
-      groupPos,
-      groupPos + group.nodeSize,
-      nextGroup,
-    ),
+    editor.state.tr.replaceWith(groupPos, groupPos + group.nodeSize, nextGroup),
   );
   editor.view.focus();
   return true;

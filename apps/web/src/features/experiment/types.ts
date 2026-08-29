@@ -116,12 +116,22 @@ export type Box = {
   box_id: string;
   owner_user_id: string;
   name: string;
-  status: "online" | "offline" | "draining" | "revoked" | "legacy_reauthorization_required";
+  status:
+    | "online"
+    | "offline"
+    | "draining"
+    | "revoked"
+    | "legacy_reauthorization_required";
   version: string;
   capabilities: { name: string; version: string; features?: string[] }[];
   runtimes: { name: string; version: string; image?: string }[];
   limits: ResourceLimits;
-  load: { running_tasks: number; capacity: number; cpu_millis: number; memory_bytes: number };
+  load: {
+    running_tasks: number;
+    capacity: number;
+    cpu_millis: number;
+    memory_bytes: number;
+  };
   project_assignments: ProjectBoxBinding[];
   last_heartbeat_at?: string;
   offline_since?: string;

@@ -218,12 +218,7 @@ describe("Article block commands", () => {
     const firstSize = afterSecond.state.doc.child(0).nodeSize;
     const secondSize = afterSecond.state.doc.child(1).nodeSize;
     expect(
-      moveArticleBlockRange(
-        afterSecond,
-        0,
-        firstSize,
-        firstSize + secondSize,
-      ),
+      moveArticleBlockRange(afterSecond, 0, firstSize, firstSize + secondSize),
     ).toBe(true);
     expect(afterSecond.getText()).toBe("2\n\n1\n\n3");
     afterSecond.destroy();

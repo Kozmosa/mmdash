@@ -55,7 +55,9 @@ export function ArticleArtifactNodeView({
   const width = normalizeImageWidth(node.attrs.width);
   const isImage = mimeType.startsWith("image/");
   const [isDragging, setIsDragging] = useState(false);
-  const [dropIndicatorSide, setDropIndicatorSide] = useState<"left" | "right">();
+  const [dropIndicatorSide, setDropIndicatorSide] = useState<
+    "left" | "right"
+  >();
 
   const canEdit = editor?.isEditable ?? true;
 
@@ -196,8 +198,8 @@ export function ArticleArtifactNodeView({
     }
 
     // 2. Local image file drop
-    const localImage = Array.from(event.dataTransfer?.files ?? []).find((item) =>
-      item.type.startsWith("image/"),
+    const localImage = Array.from(event.dataTransfer?.files ?? []).find(
+      (item) => item.type.startsWith("image/"),
     );
     if (localImage) {
       const rect = event.currentTarget.getBoundingClientRect();
@@ -284,12 +286,7 @@ export function ArticleArtifactNodeView({
     }
 
     if (targetIndex !== fromIndex) {
-      reorderArticleImageInGroup(
-        editor,
-        info.groupPos,
-        fromIndex,
-        targetIndex,
-      );
+      reorderArticleImageInGroup(editor, info.groupPos, fromIndex, targetIndex);
     }
   };
 

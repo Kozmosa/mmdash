@@ -567,12 +567,15 @@ export function ArticleEditor({
     pos: number;
     top: number;
   }>();
-  const inlineDropIndicatorRef = useRef<{
-    height: number;
-    left: number;
-    pos: number;
-    top: number;
-  } | undefined>(undefined);
+  const inlineDropIndicatorRef = useRef<
+    | {
+        height: number;
+        left: number;
+        pos: number;
+        top: number;
+      }
+    | undefined
+  >(undefined);
   const [tableEdgeHandle, setTableEdgeHandle] =
     useState<ArticleTableEdgeHandle>();
   const [tableEdgeMenuOpen, setTableEdgeMenuOpen] = useState(false);
@@ -690,8 +693,9 @@ export function ArticleEditor({
 
           // 1. Check for artifact in clipboard (from Model Reference or Artifact copy)
           const jsonText =
-            event.clipboardData?.getData("application/vnd.mmdash.artifact+json") ||
-            event.clipboardData?.getData("application/json");
+            event.clipboardData?.getData(
+              "application/vnd.mmdash.artifact+json",
+            ) || event.clipboardData?.getData("application/json");
           const htmlText = event.clipboardData?.getData("text/html");
           const text = event.clipboardData?.getData("text/plain");
 

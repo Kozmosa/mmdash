@@ -8,10 +8,7 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { workspaceHref, workspaceRoutes } from "@/lib/navigation";
 import { cn } from "@/lib/cn";
-import {
-  restoreWorkspaceSidebar,
-  useWorkspaceStore,
-} from "@/stores/workspace";
+import { restoreWorkspaceSidebar, useWorkspaceStore } from "@/stores/workspace";
 
 export function WorkspaceSidebar({
   projectId,

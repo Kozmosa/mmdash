@@ -41,10 +41,10 @@ Local Compose creates the configurable bootstrap account declared by
 The generic `auth.tokens.create` operation issues two revocable opaque token
 kinds:
 
-| Kind    | Intended caller                  | Project scope                        |
-| ------- | -------------------------------- | ------------------------------------ |
-| `api`   | Human automation and API clients | Optional                             |
-| `box`   | Registered Box capability nodes  | Required by callers for project work |
+| Kind  | Intended caller                  | Project scope                        |
+| ----- | -------------------------------- | ------------------------------------ |
+| `api` | Human automation and API clients | Optional                             |
+| `box` | Registered Box capability nodes  | Required by callers for project work |
 
 Only a SHA-256 token hash is stored. The secret is returned once by
 `auth.tokens.create`; list operations expose metadata only.

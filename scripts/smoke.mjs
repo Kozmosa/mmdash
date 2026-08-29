@@ -96,7 +96,10 @@ const issued = await jsonChecked(`${coreUrl}/v1/auth/tokens`, {
 });
 const workerToken = issued.body.token;
 const workerTokenId = issued.body.credential?.id;
-assert(workerToken && workerTokenId, "Core did not issue the Worker API token.");
+assert(
+  workerToken && workerTokenId,
+  "Core did not issue the Worker API token.",
+);
 
 const jobResult = await jsonChecked(`${coreUrl}/v1/jobs`, {
   body: {

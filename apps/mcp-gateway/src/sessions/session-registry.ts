@@ -87,10 +87,7 @@ export class SessionRegistry {
     return this.sessions.delete(sessionId);
   }
 
-  private requireOwned(
-    sessionId: string,
-    principalId: string,
-  ): GatewaySession {
+  private requireOwned(sessionId: string, principalId: string): GatewaySession {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new GatewayError(

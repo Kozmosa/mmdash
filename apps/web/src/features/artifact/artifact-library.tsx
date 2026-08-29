@@ -140,12 +140,7 @@ export function ArtifactLibrary() {
     }: {
       folderId: string;
       parentFolderId: string | null;
-    }) =>
-      artifactApi.moveFolder(
-        project.id,
-        folderId,
-        parentFolderId,
-      ),
+    }) => artifactApi.moveFolder(project.id, folderId, parentFolderId),
     onError: (error) => toast.error(error.message),
     onSuccess: async () => {
       await refreshFoldersAndArtifacts();
@@ -210,8 +205,7 @@ export function ArtifactLibrary() {
     [artifacts.data],
   );
   const items = useMemo(
-    () =>
-      allItems.filter((item) => item.artifact.folder_id === folder),
+    () => allItems.filter((item) => item.artifact.folder_id === folder),
     [allItems, folder],
   );
   const canUpload = ["owner", "maintainer", "editor"].includes(
@@ -302,9 +296,7 @@ export function ArtifactLibrary() {
                   moveFolder.mutate({
                     folderId: selectedFolder.folder_id,
                     parentFolderId:
-                      event.target.value === "root"
-                        ? null
-                        : event.target.value,
+                      event.target.value === "root" ? null : event.target.value,
                   })
                 }
               >
@@ -642,7 +634,9 @@ function ArtifactFilters({
   trashView: boolean;
 }>) {
   const hasActiveFilters = Boolean(
-    filters.tag || filters.kind || (!trashView && (filters.source || filters.status))
+    filters.tag ||
+    filters.kind ||
+    (!trashView && (filters.source || filters.status)),
   );
 
   return (

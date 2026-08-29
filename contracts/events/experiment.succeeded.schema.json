@@ -4,13 +4,23 @@
   "title": "experiment.succeeded payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["experiment_id", "experiment_type", "execution_status", "result_commit_sha", "result_directory", "result_manifest_sha256"],
+  "required": [
+    "experiment_id",
+    "experiment_type",
+    "execution_status",
+    "result_commit_sha",
+    "result_directory",
+    "result_manifest_sha256"
+  ],
   "properties": {
     "experiment_id": { "type": "string", "format": "uuid" },
     "experiment_type": { "type": "string", "enum": ["box", "box-re", "self"] },
     "task_id": { "type": "string", "format": "uuid" },
     "execution_status": { "type": "string", "const": "succeeded" },
-    "result_commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "result_commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
     "result_directory": { "type": "string", "maxLength": 4096 },
     "result_manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "execution_bundle_artifact_id": { "type": "string", "format": "uuid" },

@@ -9,10 +9,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const generatedFile = path.join(root, "packages/api-types/src/generated.ts");
 
 function checkGeneratedContracts() {
-  return spawnSync(process.execPath, ["scripts/generate-contracts.mjs", "--check"], {
-    cwd: root,
-    encoding: "utf8",
-  });
+  return spawnSync(
+    process.execPath,
+    ["scripts/generate-contracts.mjs", "--check"],
+    {
+      cwd: root,
+      encoding: "utf8",
+    },
+  );
 }
 
 describe("generated contract freshness", () => {

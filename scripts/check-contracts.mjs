@@ -69,7 +69,14 @@ function validateOpenAPIRoot(id, document) {
 }
 
 async function validateJSONSchemas() {
-  const [common, envelope, articleTemplate, articleTemplateExample, errorExample, eventExample] = await Promise.all([
+  const [
+    common,
+    envelope,
+    articleTemplate,
+    articleTemplateExample,
+    errorExample,
+    eventExample,
+  ] = await Promise.all([
     readJSON("contracts/json-schema/common/dtos.schema.json"),
     readJSON("contracts/events/event-envelope.schema.json"),
     readJSON("contracts/json-schema/article-template.schema.json"),
@@ -82,7 +89,9 @@ async function validateJSONSchemas() {
   ajv.addSchema(common);
   const validateArticleTemplate = ajv.compile(articleTemplate);
   if (!validateArticleTemplate(articleTemplateExample)) {
-    fail(`article template example: ${ajv.errorsText(validateArticleTemplate.errors)}`);
+    fail(
+      `article template example: ${ajv.errorsText(validateArticleTemplate.errors)}`,
+    );
   }
   const eventFiles = (
     await readdir(path.join(root, "contracts/events"))

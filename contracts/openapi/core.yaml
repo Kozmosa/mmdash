@@ -5205,7 +5205,9 @@ paths:
           content:
             {
               application/json:
-                { schema: { $ref: "#/components/schemas/ZoteroCollectionList" } },
+                {
+                  schema: { $ref: "#/components/schemas/ZoteroCollectionList" },
+                },
             }
   /v1/projects/{projectId}/article/zotero/items:
     parameters:
@@ -6384,13 +6386,7 @@ components:
     ZoteroCollection:
       type: object
       additionalProperties: false
-      required:
-        [
-          collection_key,
-          name,
-          num_collections,
-          num_items,
-        ]
+      required: [collection_key, name, num_collections, num_items]
       properties:
         collection_key: { type: string }
         name: { type: string }

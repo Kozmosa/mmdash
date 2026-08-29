@@ -11,13 +11,11 @@ afterEach(async () => {
 
 describe("stream proxies", () => {
   it("streams SSE with the project and user context", async () => {
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response("id: 1\ndata: ready\n\n", {
-          headers: { "content-type": "text/event-stream" },
-        }),
-      );
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("id: 1\ndata: ready\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    );
     const app = buildApp({
       config: testConfig,
       fetchImplementation,
@@ -46,17 +44,15 @@ describe("stream proxies", () => {
   });
 
   it("streams file downloads and preserves safe headers", async () => {
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response("file contents", {
-          headers: {
-            "content-disposition": 'attachment; filename="result.txt"',
-            "content-type": "text/plain",
-            etag: '"hash"',
-          },
-        }),
-      );
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("file contents", {
+        headers: {
+          "content-disposition": 'attachment; filename="result.txt"',
+          "content-type": "text/plain",
+          etag: '"hash"',
+        },
+      }),
+    );
     const app = buildApp({
       config: testConfig,
       fetchImplementation,

@@ -8,7 +8,10 @@
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "progress_evaluation" },
-    "trigger_kind": { "type": "string", "enum": ["event", "manual", "cron", "retry"] },
+    "trigger_kind": {
+      "type": "string",
+      "enum": ["event", "manual", "cron", "retry"]
+    },
     "scheduled_for": { "type": "string", "format": "date-time" }
   }
 }
