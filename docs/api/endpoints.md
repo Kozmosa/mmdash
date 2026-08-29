@@ -17,6 +17,7 @@ Stage 9 Article operations:
   `article.publications.create`, `article.publications.retry`,
   `article.templates.list`, `article.templates.create`, `article.zotero.get`,
   `article.zotero.update`, `article.zotero.delete`, `article.zotero.search`,
+  `article.zotero.collections`, `article.zotero.items`,
   `article.artifacts.describe`, `article.artifact_semantic_jobs.execute`,
   `article.build_jobs.input.get`, `article.build_jobs.progress.update`, and
   `article.build_jobs.outputs.upload`.
@@ -37,7 +38,8 @@ Stage 9 Article operations:
   `bff.article.releases.create`, `bff.article.releases.get`,
   `bff.article.templates.list`, `bff.article.templates.create`,
   `bff.article.zotero.get`, `bff.article.zotero.update`,
-  `bff.article.zotero.delete`, `bff.article.zotero.search`, and
+  `bff.article.zotero.delete`, `bff.article.zotero.search`,
+  `bff.article.zotero.collections`, `bff.article.zotero.items`, and
   `bff.article.artifacts.describe`.
 
 The collaboration operation upgrades a signed browser Session to Hocuspocus
