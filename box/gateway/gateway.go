@@ -430,31 +430,40 @@ func (gateway *Gateway) execute(ctx context.Context, taskID string) error {
 		gateway.failTask(taskID, "preparing", "RUNTIME_UNAVAILABLE", err.Error(), false, nil)
 		return nil
 	}
-		if preparer, ok := runtime.(sandbox.EnvironmentPreparer); ok {
-			if err := preparer.PrepareEnvironment(ctx, sandbox.EnvironmentRequest{
-				ID: taskID, Spec: spec, Workspace: workspace,
-				System: io.MultiWriter(gateway.logWriter(taskID, "system"), stdoutFile),
-				SystemFields: func(message string, fields map[string]interface{}) error {
-					_, err := gateway.logWriter(taskID, "system").WriteFields([]byte(message), fields)
-					return err
-				},
-			}); err != nil {
-				if releaser, releaseOK := runtime.(sandbox.EnvironmentReleaser); releaseOK {
-					_ = releaser.ReleaseEnvironment(context.Background(), taskID)
-				}
-				code := "ENVIRONMENT_UNAVAILABLE"
-				var coded interface{ EnvironmentCode() string }
-				if errors.As(err, &coded) && coded.EnvironmentCode() != "" {
-					code = coded.EnvironmentCode()
-				}
-				var stable interface{ ErrorCode() string }
-				if errors.As(err, &stable) && stable.ErrorCode() != "" {
-					code = stable.ErrorCode()
-				}
-				gateway.failTask(taskID, "preparing", code, err.Error(), true, nil)
-				return nil
+	if preparer, ok := runtime.(sandbox.EnvironmentPreparer); ok {
+		if err := preparer.PrepareEnvironment(ctx, sandbox.EnvironmentRequest{
+			ID: taskID, Spec: spec, Workspace: workspace,
+			System: io.MultiWriter(gateway.logWriter(taskID, "system"), stdoutFile),
+			SystemFields: func(message string, fields map[string]interface{}) error {
+				_, err := gateway.logWriter(taskID, "system").WriteFields([]byte(message), fields)
+				return err
+			},
+		}); err != nil {
+			if releaser, releaseOK := runtime.(sandbox.EnvironmentReleaser); releaseOK {
+				_ = releaser.ReleaseEnvironment(context.Background(), taskID)
 			}
+			code := "ENVIRONMENT_UNAVAILABLE"
+			var coded interface{ EnvironmentCode() string }
+			if errors.As(err, &coded) && coded.EnvironmentCode() != "" {
+				code = coded.EnvironmentCode()
+			}
+			var stable interface{ ErrorCode() string }
+			if errors.As(err, &stable) && stable.ErrorCode() != "" {
+				code = stable.ErrorCode()
+			}
+			// Deterministic policy/discovery failures reproduce
+			// identically on a rerun; only infrastructure failures are
+			// retryable.
+			retryable := true
+			switch code {
+			case "ENVIRONMENT_INVALID", "ENVIRONMENT_MANIFEST_UNSUPPORTED",
+				"ENVIRONMENT_MANIFEST_AMBIGUOUS", "LIMITS_NOT_ENFORCEABLE":
+				retryable = false
+			}
+			gateway.failTask(taskID, "preparing", code, err.Error(), retryable, nil)
+			return nil
 		}
+	}
 	if gateway.attachRuntime(taskID, runtime) {
 		cancelCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		_ = runtime.Cancel(cancelCtx, taskID)
