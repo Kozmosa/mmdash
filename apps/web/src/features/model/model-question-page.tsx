@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Clock3, ExternalLink, FileArchive, GitCompareArrows, ListTree, Save, Tag } from "lucide-react";
+import { ArrowLeft, Check, Clock3, Copy, ExternalLink, FileArchive, GitCompareArrows, ListTree, Save, Tag } from "lucide-react";
 import katex from "katex";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/cn";
 import { apiClient } from "@/lib/api-client";
 import { artifactApi } from "@/features/artifact/artifact-api";
 
@@ -104,8 +105,8 @@ function SnapshotInfo({ base, onSaved, snapshot }: { base: string; onSaved: () =
 
 function InfoRow({ icon: Icon, label, value }: { icon: typeof Clock3; label: string; value: string }) { return <div className="flex items-start gap-2 text-sm"><Icon className="mt-0.5 size-4 text-muted-foreground" /><div><p className="text-xs text-muted-foreground">{label}</p><p className="break-all font-medium">{value}</p></div></div>; }
 
-function DocumentOutline({ outline }: { outline: ModelSnapshot["outline"] }) {
-  const items = outline.filter((item) => item.level >= 1 && item.level <= 3 && item.title.trim());
+function DocumentOutline({ outline }: { outline?: ModelSnapshot["outline"] }) {
+  const items = (outline ?? []).filter((item) => item.level >= 1 && item.level <= 3 && item.title.trim());
   return <Card className="flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ListTree className="size-4" />文档目录</CardTitle></CardHeader><CardContent className="min-h-0 overflow-y-auto">{items.length ? <nav aria-label="文档目录"><ol className="space-y-1">{items.map((item) => <li key={item.block_id}><a className="block truncate rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href={`#${headingAnchor(item.block_id)}`} style={{ paddingLeft: `${0.5 + (item.level - 1) * 0.75}rem` }}>{item.title}</a></li>)}</ol></nav> : <p className="text-sm text-muted-foreground">当前版本没有一至三级标题。</p>}</CardContent></Card>;
 }
 
@@ -122,6 +123,215 @@ export function ModelDocument({ assets, blocks, onArtifactOpen, projectId }: { a
 }
 
 function ModelBlocks({ assetsByBlock, blocks, onArtifactOpen, projectId }: { assetsByBlock: Map<string, ModelAsset>; blocks: ModelBlock[]; onArtifactOpen: (artifactId: string) => void; projectId: string }) { return <div className="space-y-1">{blocks.map((block) => <ModelBlockView assetsByBlock={assetsByBlock} block={block} key={block.block_id} onArtifactOpen={onArtifactOpen} projectId={projectId} />)}</div>; }
+
+export function extractModelBlockText(block: ModelBlock): string {
+  if (block.type === "equation") {
+    return `$$${block.expression ?? block.text ?? ""}$$`;
+  }
+  if (block.type === "code") {
+    return block.text ?? "";
+  }
+  if (block.type === "table") {
+    if (block.children && block.children.length > 0) {
+      const rows = block.children.map((child) => {
+        if (child.cells) {
+          return child.cells
+            .map((cell) => cell.map((p) => p.text).join(""))
+            .join("\t");
+        }
+        if (child.rows?.[0]) {
+          return child.rows[0].join("\t");
+        }
+        return child.text;
+      });
+      return rows.join("\n");
+    }
+    return block.text ?? "";
+  }
+  if (["bookmark", "link_preview"].includes(block.type)) {
+    return block.url || block.text || block.caption || "";
+  }
+  if (["file", "pdf", "image"].includes(block.type)) {
+    return block.caption || block.text || "";
+  }
+  if (block.rich_text && block.rich_text.length > 0) {
+    return block.rich_text
+      .map((part) => (part.expression ? `$${part.expression}$` : part.text))
+      .join("");
+  }
+  return block.text ?? "";
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function extractRichTextHtml(parts: ModelRichText[] = []): string {
+  return parts
+    .map((part) => {
+      if (part.expression) {
+        return `<span data-type="inlineMath" data-latex="${escapeHtml(part.expression)}">$${escapeHtml(part.expression)}$</span>`;
+      }
+      let content = escapeHtml(part.text);
+      if (part.code) content = `<code>${content}</code>`;
+      if (part.bold) content = `<strong>${content}</strong>`;
+      if (part.italic) content = `<em>${content}</em>`;
+      if (part.underline) content = `<u>${content}</u>`;
+      if (part.strikethrough) content = `<s>${content}</s>`;
+      if (part.href) content = `<a href="${escapeHtml(part.href)}">${content}</a>`;
+      return content;
+    })
+    .join("");
+}
+
+export function modelBlockToClipboardData(
+  block: ModelBlock,
+  asset?: ModelAsset,
+  displayName?: string,
+): {
+  artifact?: {
+    artifactId: string;
+    versionId: string;
+    filename: string;
+    mimeType: string;
+    title: string;
+  };
+  html: string;
+  text: string;
+} {
+  const artifactId = block.artifact_id ?? asset?.artifact_id;
+  const versionId = block.artifact_version_id ?? asset?.artifact_version_id;
+
+  if (block.type === "image" && artifactId && versionId) {
+    const title = displayName || block.caption || asset?.filename || "模型图片";
+    const filename = asset?.filename || "image.png";
+    const mimeType = asset?.mime_type || "image/png";
+    const artifact = {
+      artifactId,
+      filename,
+      mimeType,
+      title,
+      versionId,
+    };
+    return {
+      artifact,
+      html: `<figure data-artifact-reference="${escapeHtml(artifactId)}" data-article-artifact-image="true" data-artifact-id="${escapeHtml(artifactId)}" data-version-id="${escapeHtml(versionId)}" data-mime-type="${escapeHtml(mimeType)}" data-title="${escapeHtml(title)}" data-filename="${escapeHtml(filename)}" class="article-reference my-3"><aside data-artifact-reference="${escapeHtml(artifactId)}" class="rounded-lg border border-dashed bg-muted/20 p-3 text-sm">${escapeHtml(title)} · 图片预览</aside></figure>`,
+      text: `![${title}](artifact://${artifactId}?version=${versionId})`,
+    };
+  }
+
+  if (block.type === "equation") {
+    const latex = block.expression ?? block.text ?? "";
+    return {
+      html: `<div data-type="blockMath" data-latex="${escapeHtml(latex)}">$$${escapeHtml(latex)}$$</div>`,
+      text: `$$${latex}$$`,
+    };
+  }
+  if (block.type === "code") {
+    const code = block.text ?? "";
+    return {
+      html: `<pre><code>${escapeHtml(code)}</code></pre>`,
+      text: code,
+    };
+  }
+  if (block.type === "quote") {
+    const text = extractModelBlockText(block);
+    const innerHtml = extractRichTextHtml(block.rich_text) || escapeHtml(text);
+    return {
+      html: `<blockquote><p>${innerHtml}</p></blockquote>`,
+      text,
+    };
+  }
+  if (block.type.startsWith("heading_")) {
+    const level = block.level ?? 1;
+    const tag = level === 1 ? "h1" : level === 2 ? "h2" : "h3";
+    const text = extractModelBlockText(block);
+    const innerHtml = extractRichTextHtml(block.rich_text) || escapeHtml(text);
+    return {
+      html: `<${tag}>${innerHtml}</${tag}>`,
+      text,
+    };
+  }
+  const text = extractModelBlockText(block);
+  const innerHtml = extractRichTextHtml(block.rich_text) || escapeHtml(text);
+  return {
+    html: `<p>${innerHtml}</p>`,
+    text,
+  };
+}
+
+export function ModelBlockCopyButton({
+  asset,
+  block,
+  displayName,
+}: {
+  asset?: ModelAsset;
+  block: ModelBlock;
+  displayName?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    const { artifact, html, text } = modelBlockToClipboardData(
+      block,
+      asset,
+      displayName,
+    );
+    if (!text && !html && !artifact) return;
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        const itemData: Record<string, Blob> = {
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        };
+        if (artifact) {
+          itemData["application/json"] = new Blob([JSON.stringify(artifact)], {
+            type: "application/json",
+          });
+        }
+        const item = new ClipboardItem(itemData);
+        await navigator.clipboard.write([item]);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      setCopied(true);
+      toast.success("已复制内容");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        toast.success("已复制内容");
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        toast.error("复制失败");
+      }
+    }
+  };
+
+  return (
+    <button
+      aria-label="复制块内容"
+      className={cn(
+        "absolute right-1 top-1 z-10 flex size-6 items-center justify-center rounded border border-border/70 bg-background/90 text-muted-foreground shadow-2xs transition-opacity duration-[1ms] hover:bg-muted hover:text-foreground focus-visible:opacity-100",
+        copied
+          ? "opacity-100 text-green-600"
+          : "opacity-0 group-hover:opacity-100",
+      )}
+      onClick={copy}
+      title={copied ? "已复制" : "复制"}
+      type="button"
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
+  );
+}
 
 function ModelBlockView({ assetsByBlock, block, onArtifactOpen, projectId }: { assetsByBlock: Map<string, ModelAsset>; block: ModelBlock; onArtifactOpen: (artifactId: string) => void; projectId: string }) {
   const content = <>{block.rich_text.length ? block.rich_text.map((part, index) => <RichTextView key={`${block.block_id}-${index}`} part={part} />) : block.text}</>;
@@ -154,7 +364,20 @@ function ModelBlockView({ assetsByBlock, block, onArtifactOpen, projectId }: { a
   else if (["file", "pdf"].includes(block.type)) node = <button className="my-3 flex w-full items-center gap-3 rounded-lg border border-border p-4 text-left hover:bg-muted/50" disabled={!artifactId} onClick={() => artifactId && onArtifactOpen(artifactId)} type="button"><FileArchive className="size-5 shrink-0" /><span className="min-w-0"><span className="block truncate font-medium">{documentTitle}</span>{block.caption && asset?.filename && block.caption !== asset.filename ? <span className="block truncate text-xs text-muted-foreground">{asset.filename}</span> : null}</span></button>;
   else if (block.type === "divider") node = <hr className="my-5 border-border" />;
   else node = <p className="min-h-6 whitespace-pre-wrap py-1 leading-7">{content}</p>;
-  return <div data-block-id={block.block_id}>{node}{block.type !== "table" && block.children.length ? <div className={block.type === "synced_block" ? "" : "ml-6 border-l border-border pl-4"}><ModelBlocks assetsByBlock={assetsByBlock} blocks={block.children} onArtifactOpen={onArtifactOpen} projectId={projectId} /></div> : null}</div>;
+
+  const canCopy = block.type !== "divider" && !(block.type === "synced_block" && !block.children.length);
+
+  return (
+    <div className="group relative" data-block-id={block.block_id}>
+      <div className="min-w-0 flex-1 pr-6">{node}</div>
+      {canCopy ? <ModelBlockCopyButton asset={asset} block={block} displayName={displayName} /> : null}
+      {block.type !== "table" && block.children.length ? (
+        <div className={block.type === "synced_block" ? "" : "ml-6 border-l border-border pl-4"}>
+          <ModelBlocks assetsByBlock={assetsByBlock} blocks={block.children} onArtifactOpen={onArtifactOpen} projectId={projectId} />
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function bookmarkTitle(rawUrl: string) {

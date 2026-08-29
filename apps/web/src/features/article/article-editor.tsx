@@ -12,7 +12,12 @@ import {
   NodeRangeSelection,
 } from "@tiptap/extension-node-range";
 import { TableKit } from "@tiptap/extension-table";
-import { Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import {
+  Fragment,
+  Slice,
+  type Node as ProseMirrorNode,
+  type Schema,
+} from "@tiptap/pm/model";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import UniqueID from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -322,6 +327,176 @@ export function parseArticleZoteroDrop(raw: string): ArticleZoteroDrop {
   };
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function transformMathInHtml(html: string): string {
+  let result = html.replace(
+    /\$\$\$\$([\s\S]+?)\$\$\$\$/g,
+    (_, latex) =>
+      `<div data-type="blockMath" data-latex="${escapeHtml(latex.trim())}">$$${escapeHtml(latex.trim())}$$</div>`,
+  );
+  result = result.replace(
+    /(?<!\$)\$\$([\s\S]+?)\$\$(?!\$)/g,
+    (_, latex) =>
+      `<div data-type="blockMath" data-latex="${escapeHtml(latex.trim())}">$$${escapeHtml(latex.trim())}$$</div>`,
+  );
+  result = result.replace(
+    /\\\[([\s\S]+?)\\\]/g,
+    (_, latex) =>
+      `<div data-type="blockMath" data-latex="${escapeHtml(latex.trim())}">$$${escapeHtml(latex.trim())}$$</div>`,
+  );
+  result = result.replace(
+    /(?<![$\w\\])\$(?!\$)([^$\n\r]+?)(?<!\\)\$(?![$\w])/g,
+    (_, latex) =>
+      `<span data-type="inlineMath" data-latex="${escapeHtml(latex.trim())}">$${escapeHtml(latex.trim())}$</span>`,
+  );
+  result = result.replace(
+    /\\\(([\s\S]+?)\\\)/g,
+    (_, latex) =>
+      `<span data-type="inlineMath" data-latex="${escapeHtml(latex.trim())}">$${escapeHtml(latex.trim())}$</span>`,
+  );
+  return result;
+}
+
+export function parseTextWithMath(
+  text: string,
+  schema: Schema,
+): ProseMirrorNode[] {
+  const blockMathType = schema.nodes.blockMath;
+  const inlineMathType = schema.nodes.inlineMath;
+  const paragraphType = schema.nodes.paragraph;
+
+  if (!blockMathType && !inlineMathType) return [];
+
+  const normalized = text.replace(/\r\n/g, "\n");
+  const trimmed = normalized.trim();
+
+  // If the entire text is a single block equation:
+  if (
+    (trimmed.startsWith("$$$$") &&
+      trimmed.endsWith("$$$$") &&
+      trimmed.length >= 8) ||
+    (trimmed.startsWith("$$") &&
+      trimmed.endsWith("$$") &&
+      trimmed.length >= 4 &&
+      !trimmed.slice(2, -2).includes("$$")) ||
+    (trimmed.startsWith("\\[") &&
+      trimmed.endsWith("\\]") &&
+      trimmed.length >= 4)
+  ) {
+    let latex = "";
+    if (trimmed.startsWith("$$$$")) latex = trimmed.slice(4, -4).trim();
+    else if (trimmed.startsWith("$$")) latex = trimmed.slice(2, -2).trim();
+    else if (trimmed.startsWith("\\[")) latex = trimmed.slice(2, -2).trim();
+    if (blockMathType) {
+      return [blockMathType.create({ latex })];
+    }
+  }
+
+  // If the entire text is a single inline equation:
+  if (
+    (trimmed.startsWith("$") &&
+      trimmed.endsWith("$") &&
+      trimmed.length >= 2 &&
+      !trimmed.slice(1, -1).includes("$") &&
+      !trimmed.includes("\n")) ||
+    (trimmed.startsWith("\\(") &&
+      trimmed.endsWith("\\)") &&
+      trimmed.length >= 4)
+  ) {
+    let latex = "";
+    if (trimmed.startsWith("$")) latex = trimmed.slice(1, -1).trim();
+    else if (trimmed.startsWith("\\(")) latex = trimmed.slice(2, -2).trim();
+    if (inlineMathType) {
+      return [inlineMathType.create({ latex })];
+    }
+  }
+
+  // Regex to match block equations across multi-line text:
+  const blockMathRegex =
+    /(?:\$\$\$\$([\s\S]+?)\$\$\$\$|\\\[([\s\S]+?)\\\]|(?:\n|^)\s*(?<!\$)\$\$(?!\$)([\s\S]+?)(?<!\$)\$\$(?!\$)\s*(?:\n|$))/g;
+
+  const nodes: ProseMirrorNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  const parseInlineInParagraph = (
+    paragraphText: string,
+  ): ProseMirrorNode | null => {
+    if (!paragraphText.trim()) return null;
+    const inlineNodes: ProseMirrorNode[] = [];
+    const inlineRegex =
+      /(?:(?<!\$)\$\$(?!\$)([^$\n]+?)(?<!\$)\$\$(?!\$)|(?<!\$)\$(?!\$)([^$\n]+?)(?<!\\)\$(?!\$)|\\\(([\s\S]+?)\\\))/g;
+    let inlineLastIndex = 0;
+    let inlineMatch: RegExpExecArray | null;
+
+    while ((inlineMatch = inlineRegex.exec(paragraphText)) !== null) {
+      const before = paragraphText.slice(inlineLastIndex, inlineMatch.index);
+      if (before) {
+        inlineNodes.push(schema.text(before));
+      }
+      const latex = (
+        inlineMatch[1] ??
+        inlineMatch[2] ??
+        inlineMatch[3] ??
+        ""
+      ).trim();
+      if (latex && inlineMathType) {
+        inlineNodes.push(inlineMathType.create({ latex }));
+      } else if (inlineMatch[0]) {
+        inlineNodes.push(schema.text(inlineMatch[0]));
+      }
+      inlineLastIndex = inlineMatch.index + inlineMatch[0].length;
+    }
+
+    const remaining = paragraphText.slice(inlineLastIndex);
+    if (remaining) {
+      inlineNodes.push(schema.text(remaining));
+    }
+
+    if (inlineNodes.length === 0) return null;
+    return paragraphType ? paragraphType.create(null, inlineNodes) : null;
+  };
+
+  const processTextSegment = (segment: string) => {
+    const paragraphs = segment.split(/\n\n+/);
+    for (const pText of paragraphs) {
+      const lines = pText.split("\n");
+      const combined = lines.join(" ");
+      const pNode = parseInlineInParagraph(combined);
+      if (pNode) {
+        nodes.push(pNode);
+      }
+    }
+  };
+
+  while ((match = blockMathRegex.exec(normalized)) !== null) {
+    const segmentBefore = normalized.slice(lastIndex, match.index);
+    if (segmentBefore) {
+      processTextSegment(segmentBefore);
+    }
+    const latex = (match[1] ?? match[2] ?? match[3] ?? "").trim();
+    if (latex && blockMathType) {
+      nodes.push(blockMathType.create({ latex }));
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  const segmentAfter = normalized.slice(lastIndex);
+  if (segmentAfter) {
+    processTextSegment(segmentAfter);
+  }
+
+  return nodes;
+}
+
 type Collaborator = { color: string; name: string };
 
 export function ArticleEditor({
@@ -386,6 +561,18 @@ export function ArticleEditor({
   }>();
   const [blockDraggingPos, setBlockDraggingPos] = useState<number>();
   const [dropIndicator, setDropIndicator] = useState<ArticleDropIndicator>();
+  const [inlineDropIndicator, setInlineDropIndicator] = useState<{
+    height: number;
+    left: number;
+    pos: number;
+    top: number;
+  }>();
+  const inlineDropIndicatorRef = useRef<{
+    height: number;
+    left: number;
+    pos: number;
+    top: number;
+  } | undefined>(undefined);
   const [tableEdgeHandle, setTableEdgeHandle] =
     useState<ArticleTableEdgeHandle>();
   const [tableEdgeMenuOpen, setTableEdgeMenuOpen] = useState(false);
@@ -497,6 +684,154 @@ export function ArticleEditor({
         CollaborationCaret.configure({ provider, user: collaborator }),
       ],
       editorProps: {
+        transformPastedHTML: (html) => transformMathInHtml(html),
+        handlePaste: (view, event) => {
+          if (!view.editable) return false;
+
+          // 1. Check for artifact in clipboard (from Model Reference or Artifact copy)
+          const jsonText =
+            event.clipboardData?.getData("application/vnd.mmdash.artifact+json") ||
+            event.clipboardData?.getData("application/json");
+          const htmlText = event.clipboardData?.getData("text/html");
+          const text = event.clipboardData?.getData("text/plain");
+
+          let artifactPayload: ArticleArtifactDrop | undefined;
+
+          if (jsonText) {
+            try {
+              const parsed = JSON.parse(jsonText);
+              if (
+                parsed &&
+                typeof parsed.artifactId === "string" &&
+                typeof parsed.versionId === "string"
+              ) {
+                artifactPayload = {
+                  artifactId: parsed.artifactId,
+                  filename: String(parsed.filename || "image.png"),
+                  mimeType: String(parsed.mimeType || "image/png"),
+                  title: String(parsed.title || "模型图片"),
+                  versionId: parsed.versionId,
+                };
+              }
+            } catch {
+              // ignore json parse error
+            }
+          }
+
+          if (!artifactPayload && htmlText) {
+            const match = htmlText.match(
+              /data-artifact-id="([^"]+)"[\s\S]*?data-version-id="([^"]+)"/i,
+            );
+            if (match) {
+              const artifactId = match[1];
+              const versionId = match[2];
+              const titleMatch = htmlText.match(/data-title="([^"]+)"/i);
+              const mimeMatch = htmlText.match(/data-mime-type="([^"]+)"/i);
+              const filenameMatch = htmlText.match(/data-filename="([^"]+)"/i);
+              artifactPayload = {
+                artifactId,
+                filename: filenameMatch ? filenameMatch[1] : "image.png",
+                mimeType: mimeMatch ? mimeMatch[1] : "image/png",
+                title: titleMatch ? titleMatch[1] : "模型图片",
+                versionId,
+              };
+            }
+          }
+
+          if (!artifactPayload && text) {
+            const match = text
+              .trim()
+              .match(
+                /^!\[(.*?)\]\(artifact:\/\/([0-9a-fA-F-]+)\?version=([0-9a-fA-F-]+)\)$/,
+              );
+            if (match) {
+              artifactPayload = {
+                artifactId: match[2],
+                filename: "image.png",
+                mimeType: "image/png",
+                title: match[1] || "模型图片",
+                versionId: match[3],
+              };
+            }
+          }
+
+          if (artifactPayload) {
+            event.preventDefault();
+            void (async () => {
+              try {
+                const reference = await onInsertArtifact(artifactPayload!);
+                const node = view.state.schema.nodes.artifactReference.create({
+                  alt: artifactPayload!.title,
+                  align: "center",
+                  artifactId: artifactPayload!.artifactId,
+                  mimeType: artifactPayload!.mimeType,
+                  objectId: artifactPayload!.artifactId,
+                  referenceId: reference.reference_id,
+                  title: artifactPayload!.title,
+                  versionId: artifactPayload!.versionId,
+                  width: 100,
+                });
+                const { $from } = view.state.selection;
+                if (
+                  $from.parent.isTextblock &&
+                  $from.parent.content.size === 0
+                ) {
+                  view.dispatch(
+                    view.state.tr
+                      .replaceWith($from.before(), $from.after(), node)
+                      .scrollIntoView(),
+                  );
+                } else {
+                  view.dispatch(
+                    view.state.tr.replaceSelectionWith(node).scrollIntoView(),
+                  );
+                }
+              } catch (err) {
+                console.error("Failed to paste artifact reference", err);
+              }
+            })();
+            return true;
+          }
+
+          // 2. Math formula pasting
+          if (!text) return false;
+          const hasMath =
+            text.includes("$") || text.includes("\\[") || text.includes("\\(");
+          if (!hasMath) return false;
+
+          const nodes = parseTextWithMath(text, view.state.schema);
+          if (nodes.length === 0) return false;
+
+          event.preventDefault();
+
+          if (nodes.length === 1 && nodes[0].type.name === "inlineMath") {
+            view.dispatch(
+              view.state.tr.replaceSelectionWith(nodes[0]).scrollIntoView(),
+            );
+            return true;
+          }
+
+          if (nodes.length === 1 && nodes[0].type.name === "blockMath") {
+            const { $from } = view.state.selection;
+            if ($from.parent.isTextblock && $from.parent.content.size === 0) {
+              view.dispatch(
+                view.state.tr
+                  .replaceWith($from.before(), $from.after(), nodes[0])
+                  .scrollIntoView(),
+              );
+              return true;
+            }
+            view.dispatch(
+              view.state.tr.replaceSelectionWith(nodes[0]).scrollIntoView(),
+            );
+            return true;
+          }
+
+          const fragment = Fragment.fromArray(nodes);
+          const slice = new Slice(fragment, 0, 0);
+          view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+          return true;
+        },
         handleKeyDown: (view, event) => {
           if (
             event.key === "Escape" &&
@@ -540,7 +875,7 @@ export function ArticleEditor({
       },
       immediatelyRender: false,
     },
-    [openMathEditor, projectId, provider],
+    [onInsertArtifact, openMathEditor, projectId, provider],
   );
 
   function blockAt(position: number) {
@@ -553,6 +888,8 @@ export function ArticleEditor({
   function clearDropIndicator() {
     dropIndicatorRef.current = undefined;
     setDropIndicator(undefined);
+    inlineDropIndicatorRef.current = undefined;
+    setInlineDropIndicator(undefined);
   }
 
   const stopAutoScroll = useCallback(() => {
@@ -2737,15 +3074,61 @@ export function ArticleEditor({
     if (
       !canEdit ||
       (!event.dataTransfer.types.includes(articleArtifactMime) &&
-        !event.dataTransfer.types.includes(articleZoteroMime) &&
         !event.dataTransfer.types.includes("Files"))
     ) {
       return false;
+    }
+    if (inlineDropIndicatorRef.current !== undefined) {
+      inlineDropIndicatorRef.current = undefined;
+      setInlineDropIndicator(undefined);
     }
     return updateDropIndicator(event, {
       autoScroll: true,
       dropEffect: "copy",
     });
+  };
+
+  const updateZoteroDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !event.dataTransfer.types.includes(articleZoteroMime)) {
+      return false;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+
+    if (dropIndicatorRef.current !== undefined) {
+      dropIndicatorRef.current = undefined;
+      setDropIndicator(undefined);
+    }
+
+    const surface = editorSurfaceRef.current;
+    if (!surface) return true;
+
+    const target = editor.view.posAtCoords({
+      left: event.clientX,
+      top: event.clientY,
+    });
+    if (!target) {
+      inlineDropIndicatorRef.current = undefined;
+      setInlineDropIndicator(undefined);
+      return true;
+    }
+
+    const coords = editor.view.coordsAtPos(target.pos);
+    const surfaceRect = surface.getBoundingClientRect();
+    const left = coords.left - surfaceRect.left + surface.scrollLeft;
+    const top = coords.top - surfaceRect.top + surface.scrollTop;
+    const height = Math.max(16, coords.bottom - coords.top);
+
+    const indicator = {
+      height,
+      left,
+      pos: target.pos,
+      top,
+    };
+    inlineDropIndicatorRef.current = indicator;
+    setInlineDropIndicator(indicator);
+
+    return true;
   };
 
   const mathEditorNode = mathEditorTarget
@@ -2809,9 +3192,8 @@ export function ArticleEditor({
           return;
         }
         if (updateInternalDragOver(event)) return;
+        if (updateZoteroDragOver(event)) return;
         if (updateExternalArtifactDragOver(event)) return;
-        if (canEdit && event.dataTransfer.types.includes(articleZoteroMime))
-          event.preventDefault();
       }}
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node)) {
@@ -2842,6 +3224,7 @@ export function ArticleEditor({
           return;
         }
         const insertionPosition = dropIndicatorRef.current?.position;
+        const inlinePosition = inlineDropIndicatorRef.current?.pos;
         clearDropIndicator();
         const localImage = Array.from(event.dataTransfer?.files ?? []).find(
           (item) => item.type.startsWith("image/"),
@@ -2851,7 +3234,7 @@ export function ArticleEditor({
           void uploadImage(localImage, undefined, insertionPosition);
           return;
         }
-        void dropArtifact(event, insertionPosition);
+        void dropArtifact(event, inlinePosition ?? insertionPosition);
       }}
     >
       <div className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center gap-1 border-b bg-background/95 p-2 backdrop-blur">
@@ -3037,6 +3420,18 @@ export function ArticleEditor({
                 {dropIndicator.label}
               </span>
             </div>
+          ) : null}
+          {inlineDropIndicator ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute z-30 w-0.5 rounded-full bg-primary shadow-xs animate-pulse"
+              data-article-inline-drop-indicator
+              style={{
+                height: `${inlineDropIndicator.height}px`,
+                left: `${inlineDropIndicator.left}px`,
+                top: `${inlineDropIndicator.top}px`,
+              }}
+            />
           ) : null}
           {canEdit ? (
             <DragHandle
