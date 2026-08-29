@@ -6987,7 +6987,8 @@ components:
         attempt: { type: integer, minimum: 1 }
         cancel_requested: { type: boolean }
         run_spec: { type: object, additionalProperties: true }
-        actual_runtime: { type: string, enum: [local-docker, e2b, local-process] }
+        actual_runtime:
+          { type: string, enum: [local-docker, e2b, local-process] }
         runtime_version: { type: string, maxLength: 100 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -7262,7 +7263,8 @@ components:
         inputs: { type: object, additionalProperties: true }
         requested_runtime_policy: { $ref: "#/components/schemas/RuntimePolicy" }
         requested_box_id: { type: string, format: uuid }
-        actual_runtime: { type: string, enum: [local-docker, e2b, local-process] }
+        actual_runtime:
+          { type: string, enum: [local-docker, e2b, local-process] }
         runtime_version: { type: string }
         limits: { $ref: "#/components/schemas/BoxResourceLimits" }
         box_id: { type: string, format: uuid }

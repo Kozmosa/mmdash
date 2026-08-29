@@ -169,7 +169,7 @@ Adapters are compiled into Box but advertised only after availability probes.
 - Local Process is a trusted-host bare-metal Runtime for hosts without
   Docker. It is disabled by default, never selected by `auto`, and must be
   enabled explicitly (`mbox setup --enable-local-process --local-process-python
-  <path>` or `mbox config set local-process.enabled true`). See the next
+<path>` or `mbox config set local-process.enabled true`). See the next
   section for its supervision and isolation characteristics.
 
 The Local Docker Adapter retains read-only source, dropped capabilities,

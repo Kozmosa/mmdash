@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +15,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/components/providers/project-provider", () => ({
-  useCurrentProject: () => ({ id: mocks.projectId, name: "Project", role: mocks.role }),
+  useCurrentProject: () => ({
+    id: mocks.projectId,
+    name: "Project",
+    role: mocks.role,
+  }),
 }));
 
 vi.mock("@/features/experiment/api", () => ({
@@ -63,7 +73,9 @@ describe("local-process runtime options", () => {
     fireEvent.click(await screen.findByRole("button", { name: "新建实验" }));
     const select = await screen.findByLabelText("Runtime 策略");
     expect(select).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "仅 Local Process（裸机）" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "仅 Local Process（裸机）" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("combobox", { name: "Runtime 策略" }), {
@@ -77,7 +89,9 @@ describe("local-process runtime options", () => {
 
   it("offers local-process as the project default and warns when selected", async () => {
     render(withProviders(<ExperimentSettingsPanel />));
-    const option = await screen.findByRole("option", { name: "仅 Local Process（裸机）" });
+    const option = await screen.findByRole("option", {
+      name: "仅 Local Process（裸机）",
+    });
     expect(option).toBeInTheDocument();
 
     fireEvent.change(await screen.findByLabelText("默认 Runtime"), {
