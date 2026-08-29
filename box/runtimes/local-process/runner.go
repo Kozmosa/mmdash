@@ -59,7 +59,7 @@ func RunTaskRunner(args []string, stdout, stderr io.Writer) error {
 	}
 	taskDir := filepath.Join(*stateDir, *taskID)
 	recordPath := filepath.Join(taskDir, "state.json")
-	record, exists, err := loadTaskRecord(recordPath)
+	record, exists, err := loadTaskRecordRetry(recordPath, 5, 20*time.Millisecond)
 	if err != nil {
 		return err
 	}
