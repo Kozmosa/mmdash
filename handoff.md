@@ -177,13 +177,32 @@
   install Docker Desktop (`local-docker`) or run the Box inside WSL. The
   delivered Windows Job Object path stays as a best-effort implementation for
   development/testing and is not a support commitment.
+- Merged and follow-up (2026-08-29): the `local-process` vertical is merged
+  into `main` via PR #54 (with the repo-wide prettier 3.9 reformat in PR #55
+  and a follow-up purge of accidentally committed local screenshots from
+  history via `git filter-repo` + force-push; collaborators who pulled main
+  between the two must `git fetch && git reset --hard origin/main`). Issue
+  #47 is closed and ADR 0005 records the Linux-only support scope.
+- Handoff to a Linux server (2026-08-29): the live-stack acceptance moves to
+  a Linux host, matching the ADR 0005 support target. This Windows
+  workstation cannot complete it: `next dev` (Turbopack) aborts with exit
+  code `0xC0000409` whenever the machine's commit limit runs out (23.7GB RAM
+  - 13.3GB pagefile, ~32 of ~37GB committed by resident apps); PostgreSQL
+    fork failures with error 1455 and Git Bash fork failures during the same
+    windows share the cause. `scripts/testenv.mjs` now accepts
+    `MMDASH_TESTENV_WEB_WEBPACK=1` (documented in
+    `docs/development/native-environment.md`) to start the web dev server with
+    webpack; with it the full stack came up healthy until an unrelated system
+    OOM killed most services. Server-side acceptance plan: `testenv` (or
+    compose) up, `testenv smoke`, then one `local-docker` and one
+    `local-process` experiment end to end to prove the Core manifest
+    environment-evidence chain fixed in `fix(experiment): accept
+provider-neutral manifest environment evidence`.
 - Remaining: `config.LocalProcess.User` is accepted but not yet applied when
   spawning the runner (low-privilege account execution is still TODO; per ADR
-  0005 only the Linux `setuid/setgid` path needs to be designed); full
-  `pnpm check` was blocked by three pre-existing worker files failing
-  `ruff format --check`, now fixed in `style(worker): apply ruff format to
-three legacy files`; the branch still trails `main` and may need a rebase;
-  end-to-end Box acceptance against a live stack is still pending.
+  0005 only the Linux `setuid/setgid` path needs to be designed); end-to-end
+  Box acceptance against a live stack is still pending (see the Linux-server
+  plan above).
 
 # mmdash v0.1 Stage 9 Article repair candidate
 
