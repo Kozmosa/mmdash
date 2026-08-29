@@ -19,11 +19,11 @@ const maximumManifestBytes = int64(4 << 20)
 
 // Environment families supported by the first bare-metal delivery.
 const (
-	familyPipLock        = "pip-lock"        // requirements.lock (hash-pinned)
+	familyPipLock        = "pip-lock"         // requirements.lock (hash-pinned)
 	familyPipRequirement = "pip-requirements" // requirements.txt (best effort unless pinned)
-	familyUv             = "uv"              // pyproject.toml + uv.lock
-	familyPoetry         = "poetry"          // pyproject.toml + poetry.lock
-	familyPipenv         = "pipenv"          // Pipfile + Pipfile.lock
+	familyUv             = "uv"               // pyproject.toml + uv.lock
+	familyPoetry         = "poetry"           // pyproject.toml + poetry.lock
+	familyPipenv         = "pipenv"           // Pipfile + Pipfile.lock
 )
 
 type manifestFile struct {
@@ -44,18 +44,18 @@ type manifestError struct {
 	err  error
 }
 
-func (err manifestError) Error() string            { return err.err.Error() }
-func (err manifestError) Unwrap() error            { return err.err }
-func (err manifestError) EnvironmentCode() string  { return err.code }
+func (err manifestError) Error() string           { return err.err.Error() }
+func (err manifestError) Unwrap() error           { return err.err }
+func (err manifestError) EnvironmentCode() string { return err.code }
 
 // Stable environment error codes shared with the Local Docker environment
 // pipeline and extended for the bare-metal discovery rules.
 const (
-	EnvCodeInvalid      = "ENVIRONMENT_INVALID"
-	EnvCodeUnsupported  = "ENVIRONMENT_MANIFEST_UNSUPPORTED"
-	EnvCodeAmbiguous    = "ENVIRONMENT_MANIFEST_AMBIGUOUS"
-	EnvCodeBuildFailed  = "ENVIRONMENT_BUILD_FAILED"
-	EnvCodeUnavailable  = "ENVIRONMENT_UNAVAILABLE"
+	EnvCodeInvalid     = "ENVIRONMENT_INVALID"
+	EnvCodeUnsupported = "ENVIRONMENT_MANIFEST_UNSUPPORTED"
+	EnvCodeAmbiguous   = "ENVIRONMENT_MANIFEST_AMBIGUOUS"
+	EnvCodeBuildFailed = "ENVIRONMENT_BUILD_FAILED"
+	EnvCodeUnavailable = "ENVIRONMENT_UNAVAILABLE"
 )
 
 func codedEnvironmentError(code string, err error) error {

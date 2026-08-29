@@ -19,12 +19,12 @@ func writeWorkspaceFile(t *testing.T, workspace, name, content string) {
 
 func TestDetectManifestFamilies(t *testing.T) {
 	cases := []struct {
-		name     string
-		files    map[string]string
-		family   string
-		primary  string
-		missing  bool // no manifest at all
-		bestEff  bool
+		name    string
+		files   map[string]string
+		family  string
+		primary string
+		missing bool // no manifest at all
+		bestEff bool
 	}{
 		{name: "pip lock", files: map[string]string{"requirements.lock": "numpy==1.0.0 --hash=sha256:aaa\n"}, family: familyPipLock, primary: "requirements.lock"},
 		{name: "pip requirements", files: map[string]string{"requirements.txt": "numpy\n"}, family: familyPipRequirement, primary: "requirements.txt", bestEff: true},
