@@ -125,6 +125,42 @@
   `docs/development/box.md` and `experiment.md` describe the Runtime.
   Verified with web-bff 71/71, mcp-gateway 39/39, worker pytest, CLI go
   tests, web vitest 215/215, and a real-binary runner smoke on Windows.
+- Review fixes (2026-08-29, systematic branch review): Core's
+  `verifyResultBundle` now accepts the provider-neutral environment evidence
+  (`provider`, `resolved_dependencies`) the Gateway stamps into every
+  local-docker/local-process result Manifest — the strict
+  `DisallowUnknownFields` decode previously rejected the new fields and would
+  have failed every environment-preparing Bundle at finalization; Core now
+  also requires environment evidence for `local-process` and validates the
+  provider enum and dependency bounds exactly like the Worker and
+  `manifest.schema.json` (regression tests included). `Runtime.environmentFor`
+  reads the prepared-environment map under the Gateway mutex, closing a
+  concurrent map read/write panic with `MaxConcurrent > 1` (covered by a new
+  `-race` concurrency test). `follow`/`reattach` now detect a supervisor that
+  died without a terminal record: reattach terminates the surviving tree and
+  reports `RUNNER_LOST` immediately, `follow` fails with `RUNNER_LOST` after a
+  grace period (`RunnerLossGrace`, default 2s), the Windows Job Object sets
+  `KILL_ON_JOB_CLOSE` so a dead runner's task tree is kernel-terminated, and
+  the Unix `processAlive` reaps zombie supervisors (detached runners are
+  never waited for directly). `environmentKey` now includes the interpreter
+  path (a venv embeds absolute base-interpreter paths; same version at a new
+  path must rebuild), a publish/addRef race with capacity GC falls back to one
+  rebuild instead of failing the task, and the Windows rename-publish
+  fallback detects a concurrent winner by reloading the entry instead of
+  relying on `os.IsExist`. Gateway-side stable policy/discovery failures
+  (`LIMITS_NOT_ENFORCEABLE`, `ENVIRONMENT_MANIFEST_*`, `ENVIRONMENT_INVALID`)
+  are no longer flagged retryable. poetry installs use `--without dev` to
+  match the uv path. Web warnings for `local-process` mention the
+  `network: enabled` requirement. `docs/development/box.md` now states the
+  Linux cgroup pre-enforcement start window honestly. Two further defects
+  surfaced by the new supervision tests under `-race` are also fixed: the
+  Gateway no longer rewrites the task record unconditionally after
+  `runner.Start()` (a stale `starting` record could clobber the terminal
+  record of a very fast task and previously hung `follow` forever — it fills
+  in the supervisor PID only while the runner has not persisted its own
+  record), and all branch Go files are gofmt-clean so the repository
+  `check-go-format` gate passes (several local-process/config/gateway files
+  were committed unformatted).
 - Remaining: `config.LocalProcess.User` is accepted but not yet applied when
   spawning the runner (low-privilege account execution is still TODO); full
   `pnpm check` is blocked by three pre-existing worker files from the branch
