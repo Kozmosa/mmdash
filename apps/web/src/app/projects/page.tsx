@@ -1,13 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderKanban, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, FolderKanban, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/states/empty-state";
 import { GlobalPageShell } from "@/components/layout/global-page-shell";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -171,31 +173,48 @@ export default function ProjectsPage() {
       ) : null}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {items.map((project) => (
-          <Card key={project.id}>
-            <CardHeader>
-              <CardTitle>{project.name}</CardTitle>
-              <CardDescription>
-                {project.problem_title || "尚未填写题目"} · {project.role}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="line-clamp-3 text-sm text-muted-foreground">
-                {project.problem_summary || "尚未填写题目摘要。"}
-              </p>
-            </CardContent>
-            <CardFooter className="justify-between">
-              <Button
-                onClick={() =>
-                  router.push(`/projects/${encodeURIComponent(project.id)}`)
-                }
+          <div
+            key={project.id}
+            className="group relative flex flex-col justify-between h-full rounded-xl border border-border bg-card shadow-card hover:shadow-md hover:border-primary/30 transition-all duration-200"
+          >
+            <Link
+              href={`/projects/${encodeURIComponent(project.id)}`}
+              className="flex-1 p-5 flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1 min-w-0">
+                    <h3 className="font-semibold text-base text-foreground truncate group-hover:text-primary transition-colors">
+                      {project.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground font-medium truncate">
+                      {project.problem_title || "尚未填写题目名称"}
+                    </p>
+                  </div>
+                  <Badge className="shrink-0 text-[10px] bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 capitalize font-semibold shadow-none">
+                    {project.role}
+                  </Badge>
+                </div>
+                <p className="mt-4 line-clamp-3 text-xs text-muted-foreground leading-relaxed">
+                  {project.problem_summary || "尚未填写题目摘要。"}
+                </p>
+              </div>
+            </Link>
+            <div className="px-5 pb-5 pt-3 border-t border-border/50 flex items-center justify-between">
+              <Link
+                href={`/projects/${encodeURIComponent(project.id)}`}
+                className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
               >
                 进入工作区
-              </Button>
+                <ArrowRight className="ml-1.5 size-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
               {project.role === "owner" ? (
                 <Button
                   aria-label={`将 ${project.name} 移入回收站`}
                   disabled={trashProject.isPending}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (
                       window.confirm(
                         `确定将“${project.name}”移入回收站吗？30 天内可以恢复。`,
@@ -206,12 +225,13 @@ export default function ProjectsPage() {
                   }}
                   size="icon"
                   variant="ghost"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors rounded-md"
                 >
-                  <Trash2 aria-hidden="true" className="size-4" />
+                  <Trash2 aria-hidden="true" className="size-3.5" />
                 </Button>
               ) : null}
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
         ))}
       </div>
     </GlobalPageShell>

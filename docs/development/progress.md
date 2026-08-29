@@ -93,14 +93,25 @@ minimum interval, and is re-claimable after an assembly lease expires. A
 unique active input-version index merges queued, running, or successful
 evaluations with identical semantic input.
 
-Evaluation facts contain the Project problem, constraints, Data Hub objects
-and activity, confirmed context, Milestones, Tasks, tracking settings, active
-human override, and previous normalized output. Volatile timestamps, Progress
-source Run IDs, and the evaluation/risk projections produced by Stage 6 itself
-are excluded from the semantic version. Automatic Task updates are semantic
-no-ops when protected/current fields already match; `task.create` suggestion
-keys identify one logical Task, and identical pending Proposals are reused.
-These rules let a real change converge instead of creating an evaluation loop.
+Evaluation assembly hashes the Project problem, constraints, bounded Data Hub
+objects/activity, confirmed context, Milestones, Tasks, tracking settings, and
+active human override into semantic evidence and Progress state revisions.
+The Agent Run receives only those revisions, a bounded object-type catalog,
+the Project ID, reasoning effort, and previous normalized output. It does not
+receive the underlying Project content in one large prompt. Volatile
+timestamps, Progress source Run IDs, and the evaluation/risk projections
+produced by Stage 6 itself are excluded from semantic versions.
+
+The evaluator must obtain current evidence through audited MCP reads in a fixed
+sequence: `project.get`, `progress.get`, then bounded `data.list` discovery and
+selected `data.read` calls for code, model, experiment, and article evidence.
+Catalog counts and list summaries are navigation hints rather than proof; a
+material domain claim requires authoritative content from the owning reader.
+This keeps prompts small while retaining input-version deduplication when
+Project evidence changes. Automatic Task updates are semantic no-ops when
+protected/current fields already match; `task.create` suggestion keys identify
+one logical Task, and identical pending Proposals are reused. These rules let a
+real change converge instead of creating an evaluation loop.
 
 Automatic trigger patterns include Repo commits, Model snapshots, archived
 Experiments, completed Article builds, available Artifacts, confirmed Context,
@@ -128,6 +139,38 @@ the Progress UI can attach a read-only live Session view before the evaluation
 finishes. Runtime configuration rejections are returned as non-retryable
 `PROGRESS_EVALUATOR_CONFIGURATION_INVALID`; transient runtime failures remain
 `PROGRESS_EVALUATOR_UNAVAILABLE` and may be retried by the Job Queue.
+
+The evaluator prompts use one shared evidence rubric. Current explicit
+Milestone/Task state and confirmed Context outrank authoritative domain reads,
+object metadata, and finally the previous evaluation, which is only a
+comparison baseline. A single Commit, Artifact, build, Snapshot, or archived
+Experiment does not by itself prove that a related Task or Milestone is
+complete. Completion is reported or proposed only with directly matching,
+non-contradictory evidence. The detected stage is judged from the whole Project
+instead of the latest event; an active human override remains the effective UI
+stage without being copied into the detected stage unsupported. Evaluation and
+risk lifecycle records are evaluator provenance rather than Project progress;
+they are excluded from stage, change, work, blocker, and Project-risk judgments.
+The same exclusion applies to evaluator retries, scheduling gaps, MCP/Core
+availability, and failed reads. If a large `progress.get` response is
+truncated, the evaluator recovers current Milestones and Tasks through bounded
+`data.list`/`data.read` calls instead of asking the user to repeat tool-owned
+state.
+
+Human-facing output follows the Project's primary language and stays bounded:
+the summary is one or two short sentences with at most 180 Unicode characters,
+each report section contains at most five material non-duplicated items, and
+each list item, risk detail, or question stays within 180 characters. Blockers
+are present impediments, and risks are possible future impacts with calibrated
+severity. Ambiguous evidence preserves current authoritative state and becomes
+one actionable pending question. Work-state changes apply only to existing
+unfinished Tasks whose state actually changed; creates, updates, scheduling,
+and completion remain reviewable Proposals with stable semantic keys and
+contract-supported fields.
+A `task.create` requires an evidence-sourced `start_at` or `due_at`; missing
+optional values are omitted instead of emitted as empty placeholders. Verified
+deliverables may appear as completed report items without implying that a
+related Task or Milestone is authoritatively complete.
 
 `mock` is an explicit deterministic local/acceptance mode. It derives planning,
 execution, or review from current Tasks and emits blocked-task risks without a

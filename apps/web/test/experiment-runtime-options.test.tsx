@@ -59,6 +59,8 @@ afterEach(() => {
 describe("local-process runtime options", () => {
   it("offers local-process in the workbench and warns about missing isolation", async () => {
     render(withProviders(<ExperimentWorkbench />));
+    // The create form lives inside a modal since the cards-layout rework.
+    fireEvent.click(await screen.findByRole("button", { name: "新建实验" }));
     const select = await screen.findByLabelText("Runtime 策略");
     expect(select).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "仅 Local Process（裸机）" })).toBeInTheDocument();
