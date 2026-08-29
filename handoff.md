@@ -161,13 +161,20 @@
   record), and all branch Go files are gofmt-clean so the repository
   `check-go-format` gate passes (several local-process/config/gateway files
   were committed unformatted).
+- Platform scope decision (2026-08-29, recorded as ADR 0005 in
+  `docs/adr/0005-local-process-linux-support-scope.md` and on issue #47):
+  the product support target for `local-process` is **Linux** (VMs/containers
+  without nested virtualization). Windows is not a support target — users
+  install Docker Desktop (`local-docker`) or run the Box inside WSL. The
+  delivered Windows Job Object path stays as a best-effort implementation for
+  development/testing and is not a support commitment.
 - Remaining: `config.LocalProcess.User` is accepted but not yet applied when
-  spawning the runner (low-privilege account execution is still TODO); full
-  `pnpm check` is blocked by three pre-existing worker files from the branch
-  base failing `ruff format --check` (`article/handler.py`,
-  `jobs/handlers.py`, `progress_tracking/handler.py`) and by the branch
-  being 16 commits behind current `main`; end-to-end Box acceptance against
-  a live stack is still pending.
+  spawning the runner (low-privilege account execution is still TODO; per ADR
+  0005 only the Linux `setuid/setgid` path needs to be designed); full
+  `pnpm check` was blocked by three pre-existing worker files failing
+  `ruff format --check`, now fixed in `style(worker): apply ruff format to
+  three legacy files`; the branch still trails `main` and may need a rebase;
+  end-to-end Box acceptance against a live stack is still pending.
 
 # mmdash v0.1 Stage 9 Article repair candidate
 
