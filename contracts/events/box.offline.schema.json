@@ -8,6 +8,10 @@
   "properties": {
     "box_id": { "type": "string", "format": "uuid" },
     "offline_since": { "type": "string", "format": "date-time" },
-    "active_experiment_ids": { "type": "array", "maxItems": 10000, "items": { "type": "string", "format": "uuid" } }
+    "active_experiment_ids": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "type": "string", "format": "uuid" }
+    }
   }
 }

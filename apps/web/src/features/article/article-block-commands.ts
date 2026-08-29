@@ -268,12 +268,7 @@ export function moveArticleBlockRange(
     tr = tr.delete(rangeFrom + rangeSize, rangeTo + rangeSize);
     // Select the moved blocks at target
     tr = tr.setSelection(
-      NodeRangeSelection.create(
-        tr.doc,
-        targetPos,
-        targetPos + rangeSize,
-        0,
-      ),
+      NodeRangeSelection.create(tr.doc, targetPos, targetPos + rangeSize, 0),
     );
   } else {
     // Moving down: delete first, then insert at adjusted position

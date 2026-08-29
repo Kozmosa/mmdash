@@ -124,7 +124,9 @@ describe("article image groups", () => {
     const editor = makeEditor(3);
     expect(mergeArticleImageWithNeighbor(editor, 0, "after")).toBe(true);
     const thirdPos = editor.state.doc.child(0).nodeSize;
-    expect(mergeArticleImageWithNeighbor(editor, thirdPos, "before")).toBe(true);
+    expect(mergeArticleImageWithNeighbor(editor, thirdPos, "before")).toBe(
+      true,
+    );
 
     // Initial order: [1, 2, 3]
     let group = editor.state.doc.child(0);
@@ -142,7 +144,9 @@ describe("article image groups", () => {
     // Now move the middle item (index 1: "子题注 3") earlier -> [3, 2, 1]
     // The position of the second child in the group is 1 + child(0).nodeSize = 1 + 1 = 2 (or child pos inside group)
     const secondChildPos = 1 + group.child(0).nodeSize;
-    expect(moveArticleImageInGroupDirection(editor, secondChildPos, "earlier")).toBe(true);
+    expect(
+      moveArticleImageInGroupDirection(editor, secondChildPos, "earlier"),
+    ).toBe(true);
     group = editor.state.doc.child(0);
     expect(group.child(0).attrs.caption).toBe("子题注 3");
     expect(group.child(1).attrs.caption).toBe("子题注 2");

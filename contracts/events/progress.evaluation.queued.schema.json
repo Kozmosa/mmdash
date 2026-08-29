@@ -4,12 +4,21 @@
   "title": "progress.evaluation.queued payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resource_id", "resource_type", "job_id", "input_version", "trigger_kind"],
+  "required": [
+    "resource_id",
+    "resource_type",
+    "job_id",
+    "input_version",
+    "trigger_kind"
+  ],
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "progress_evaluation" },
     "job_id": { "type": "string", "format": "uuid" },
     "input_version": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "trigger_kind": { "type": "string", "enum": ["event", "manual", "cron", "retry"] }
+    "trigger_kind": {
+      "type": "string",
+      "enum": ["event", "manual", "cron", "retry"]
+    }
   }
 }

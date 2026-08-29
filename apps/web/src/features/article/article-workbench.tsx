@@ -1275,11 +1275,7 @@ function WritingZoteroPanel({
 
       <div className="space-y-2">
         {items.map((item) => (
-          <ZoteroItemCard
-            canEdit={canEdit}
-            item={item}
-            key={item.item_key}
-          />
+          <ZoteroItemCard canEdit={canEdit} item={item} key={item.item_key} />
         ))}
       </div>
 

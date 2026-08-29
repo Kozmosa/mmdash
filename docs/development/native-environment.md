@@ -78,15 +78,15 @@ Worker invocation when it validates job processing.
 
 ## Ports
 
-| Service | Default port |
-| --- | ---: |
-| Web | `13000` |
-| Web BFF | `13001` |
-| MCP Gateway | `13002` |
-| Core | `18080` |
-| PostgreSQL | `15432` |
-| MinIO API | `19000` |
-| MinIO Console | `19001` |
+| Service       | Default port |
+| ------------- | -----------: |
+| Web           |      `13000` |
+| Web BFF       |      `13001` |
+| MCP Gateway   |      `13002` |
+| Core          |      `18080` |
+| PostgreSQL    |      `15432` |
+| MinIO API     |      `19000` |
+| MinIO Console |      `19001` |
 
 These defaults intentionally do not overlap with Docker Compose. To override
 a port, set the corresponding `MMDASH_TESTENV_*_PORT` variable before calling

@@ -34,13 +34,13 @@ the Notion document body.
 
 `model.notion` is Project-scoped and defines:
 
-| Field                         | Meaning                                      |
-| ----------------------------- | -------------------------------------------- |
-| `access_token`                | OAuth secret; encrypted and never returned   |
-| `refresh_token`               | Rotating OAuth secret; encrypted and never returned |
-| `root_page_url`               | The one shared Project root page             |
-| `auto_sync_enabled`           | Enables or disables automatic synchronization |
-| `auto_sync_interval_seconds`  | `60`–`86400`; defaults to `300` seconds      |
+| Field                        | Meaning                                             |
+| ---------------------------- | --------------------------------------------------- |
+| `access_token`               | OAuth secret; encrypted and never returned          |
+| `refresh_token`              | Rotating OAuth secret; encrypted and never returned |
+| `root_page_url`              | The one shared Project root page                    |
+| `auto_sync_enabled`          | Enables or disables automatic synchronization       |
+| `auto_sync_interval_seconds` | `60`–`86400`; defaults to `300` seconds             |
 
 The tokens are encrypted and redacted by Settings. Core resolves and consumes
 them inside the Notion adapter. A rejected access token triggers one serialized

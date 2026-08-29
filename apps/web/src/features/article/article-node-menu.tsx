@@ -314,7 +314,9 @@ function ImageGroupMenu({
         保存组合大题注
       </ActionButton>
       <div className="grid gap-1">
-        <span className="text-muted-foreground">每行最多数量（宽度自适应）</span>
+        <span className="text-muted-foreground">
+          每行最多数量（宽度自适应）
+        </span>
         <div className="grid grid-cols-4 gap-1">
           {[1, 2, 3, 4].map((value) => (
             <button

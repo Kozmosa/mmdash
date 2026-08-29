@@ -4,7 +4,15 @@
   "title": "experiment.started payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["experiment_id", "task_id", "box_id", "execution_epoch", "runtime", "runtime_version", "execution_status"],
+  "required": [
+    "experiment_id",
+    "task_id",
+    "box_id",
+    "execution_epoch",
+    "runtime",
+    "runtime_version",
+    "execution_status"
+  ],
   "properties": {
     "experiment_id": { "type": "string", "format": "uuid" },
     "task_id": { "type": "string", "format": "uuid" },

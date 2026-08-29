@@ -4,7 +4,10 @@ import StarterKit from "@tiptap/starter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ArticleMathShortcuts } from "@/features/article/article-math-shortcuts";
-import { parseTextWithMath, transformMathInHtml } from "@/features/article/article-editor";
+import {
+  parseTextWithMath,
+  transformMathInHtml,
+} from "@/features/article/article-editor";
 
 const editors: Editor[] = [];
 

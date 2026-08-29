@@ -1,16 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WritingWorkspace } from "@/features/article/article-workbench";
 import { apiClient } from "@/lib/api-client";
-import type { ArticleAggregate, ZoteroCollection, ZoteroItem } from "@/features/article/types";
+import type {
+  ArticleAggregate,
+  ZoteroCollection,
+  ZoteroItem,
+} from "@/features/article/types";
 
 afterEach(() => {
   cleanup();
@@ -122,7 +121,9 @@ describe("Article Writing Workspace Zotero panel", () => {
     // Verify collections and items are rendered
     expect(await screen.findByText("Machine Learning")).toBeInTheDocument();
     expect(screen.getByText("Math Modeling")).toBeInTheDocument();
-    expect(screen.getByText("Foundations of Deep Learning")).toBeInTheDocument();
+    expect(
+      screen.getByText("Foundations of Deep Learning"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Discrete Math Models")).toBeInTheDocument();
 
     // Verify there is NO "固定引用" or "固定并置入" button
@@ -131,7 +132,9 @@ describe("Article Writing Workspace Zotero panel", () => {
     expect(screen.queryByRole("button", { name: "已固定此版本" })).toBeNull();
 
     // Verify dragging item card sets application/vnd.mmdash.zotero+json
-    const itemCard = screen.getByText("Foundations of Deep Learning").closest("[draggable='true']");
+    const itemCard = screen
+      .getByText("Foundations of Deep Learning")
+      .closest("[draggable='true']");
     expect(itemCard).toBeInTheDocument();
 
     const setData = vi.fn();
@@ -156,7 +159,9 @@ describe("Article Writing Workspace Zotero panel", () => {
     fireEvent.click(screen.getByText("Deep Learning"));
 
     // Should load items in "Deep Learning"
-    expect(await screen.findByText("Transformer Architectures")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Transformer Architectures"),
+    ).toBeInTheDocument();
 
     // Click breadcrumb "全部条目" to return to root
     fireEvent.click(screen.getByRole("button", { name: /全部条目/ }));

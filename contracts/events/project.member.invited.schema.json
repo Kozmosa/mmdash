@@ -1,8 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mmdash.dev/contracts/events/project.member.invited.schema.json",
-  "type": "object", "additionalProperties": false,
-  "required": ["project_id", "invitation_id", "normalized_email", "role", "invited_by_user_id", "expires_at"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project_id",
+    "invitation_id",
+    "normalized_email",
+    "role",
+    "invited_by_user_id",
+    "expires_at"
+  ],
   "properties": {
     "project_id": { "type": "string", "format": "uuid" },
     "invitation_id": { "type": "string", "format": "uuid" },

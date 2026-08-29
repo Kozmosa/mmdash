@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { assignOverlapLanes, snapDate } from "@/features/progress/calendar-time";
+import {
+  assignOverlapLanes,
+  snapDate,
+} from "@/features/progress/calendar-time";
 
 describe("Progress calendar time rules", () => {
   it("snaps task interactions to 15-minute boundaries", () => {

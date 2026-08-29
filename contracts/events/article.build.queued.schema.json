@@ -4,7 +4,13 @@
   "title": "article.build.queued payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["build_id", "build_kind", "job_id", "template_version_id", "status"],
+  "required": [
+    "build_id",
+    "build_kind",
+    "job_id",
+    "template_version_id",
+    "status"
+  ],
   "properties": {
     "build_id": { "type": "string", "format": "uuid" },
     "build_kind": { "enum": ["preview", "formal", "template_test"] },

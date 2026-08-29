@@ -77,11 +77,7 @@ function mapError(error: unknown): {
       status: 400,
     };
   }
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "validation" in error
-  ) {
+  if (typeof error === "object" && error !== null && "validation" in error) {
     return {
       code: "VALIDATION_ERROR",
       message: "Request validation failed",

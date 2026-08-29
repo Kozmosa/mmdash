@@ -10,7 +10,10 @@
   "properties": {
     "project_id": { "type": "string", "format": "uuid" },
     "experiment_id": { "type": "string", "format": "uuid" },
-    "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
     "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 }
   }
 }

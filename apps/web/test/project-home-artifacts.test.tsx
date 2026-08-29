@@ -123,7 +123,9 @@ describe("Project home Artifact aggregate", () => {
       "/projects/00000000-0000-4000-8000-000000000001/models/00000000-0000-4000-8000-000000000003",
     );
     expect(screen.getByText("2 个版本 · succeeded")).toBeInTheDocument();
-    expect(screen.queryByText("模型、实验与论文尚未接入")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("模型、实验与论文尚未接入"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the real Hermes connection state instead of an Agent placeholder", async () => {

@@ -4,7 +4,17 @@
   "title": "progress.evaluation.completed payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resource_id", "resource_type", "title", "status", "stage", "effective_stage", "summary", "risk_count", "suggestion_count"],
+  "required": [
+    "resource_id",
+    "resource_type",
+    "title",
+    "status",
+    "stage",
+    "effective_stage",
+    "summary",
+    "risk_count",
+    "suggestion_count"
+  ],
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "progress_evaluation" },

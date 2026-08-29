@@ -170,7 +170,10 @@ export function AgentSettingsPanel() {
       agentApi.rotateToken(project.id, selected!.agent_instance_id),
     onError: showError("Agent Token 轮换失败；旧 Token 保持有效"),
     onSuccess: async (result) => {
-      if (selected?.management_mode === "manual" && result.one_time_credential) {
+      if (
+        selected?.management_mode === "manual" &&
+        result.one_time_credential
+      ) {
         setOneTimeToken(result.one_time_credential);
       }
       await refreshInstances();
@@ -215,8 +218,8 @@ export function AgentSettingsPanel() {
             Hermes Agent
           </h2>
           <p className="text-sm text-muted-foreground">
-            Hermes API Key 用于 mmdash 调用运行时；Agent Token 用于 Hermes 直连 MCP
-            Gateway。两者方向和权限不同。
+            Hermes API Key 用于 mmdash 调用运行时；Agent Token 用于 Hermes 直连
+            MCP Gateway。两者方向和权限不同。
           </p>
         </div>
         {canManage ? (
@@ -269,7 +272,10 @@ export function AgentSettingsPanel() {
       {!instances.isLoading && !instances.data?.items.length && !creating ? (
         <Card className="border-dashed">
           <CardContent className="py-8 text-center">
-            <Bot aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
+            <Bot
+              aria-hidden="true"
+              className="mx-auto size-8 text-muted-foreground"
+            />
             <p className="mt-3 font-medium">尚未配置 Hermes 连接</p>
             <p className="mt-1 text-sm text-muted-foreground">
               先保存运行时连接，再按 manual 或 auto 模式完成 MCP 绑定。
@@ -447,7 +453,9 @@ function AgentConnectionForm({
                       type="radio"
                     />
                     <span>
-                      <strong>{mode === "manual" ? "手动管理" : "自动管理"}</strong>
+                      <strong>
+                        {mode === "manual" ? "手动管理" : "自动管理"}
+                      </strong>
                       <span className="mt-1 block text-xs text-muted-foreground">
                         {mode === "manual"
                           ? "Token 只显示一次，由用户写入 Hermes。"
@@ -532,7 +540,8 @@ function AgentConnectionForm({
           <fieldset className="space-y-2 md:col-span-2">
             <legend className="text-sm font-medium">允许的 MCP Tools</legend>
             <p className="text-xs text-muted-foreground">
-              授权绑定当前 Agent 与 Project，不接受通配符。修改范围会安全轮换 Token。
+              授权绑定当前 Agent 与 Project，不接受通配符。修改范围会安全轮换
+              Token。
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {reviewedAgentTools.map((tool) => (
@@ -558,7 +567,11 @@ function AgentConnectionForm({
           {canManage ? (
             <div className="md:col-span-2">
               <Button disabled={saving} type="submit">
-                {saving ? "正在保存…" : instance ? "保存 Agent 设置" : "创建 Agent 实例"}
+                {saving
+                  ? "正在保存…"
+                  : instance
+                    ? "保存 Agent 设置"
+                    : "创建 Agent 实例"}
               </Button>
             </div>
           ) : null}
@@ -617,7 +630,7 @@ function AgentConnectionStatus({
           连接状态 <Badge>{instance.status}</Badge>
         </CardTitle>
         <CardDescription>
-          {instance.management_mode} · {instance.management_path} · MCP {" "}
+          {instance.management_mode} · {instance.management_path} · MCP{" "}
           {instance.grant.project_access_status ?? "pending"}
         </CardDescription>
       </CardHeader>
@@ -641,7 +654,8 @@ function AgentConnectionStatus({
               label={`自动管理（${instance.management_path}）`}
             />
             <p className="rounded-md bg-muted p-3 text-xs text-muted-foreground">
-              管理地址由服务端按 SSRF、DNS、redirect、超时与私网策略探测；浏览器不直接测试该地址。
+              管理地址由服务端按
+              SSRF、DNS、redirect、超时与私网策略探测；浏览器不直接测试该地址。
             </p>
           </>
         ) : instance.management_url ? (
@@ -734,7 +748,11 @@ function CredentialRow({
 }) {
   const verify = useMutation({
     mutationFn: () =>
-      agentApi.verifyToken(projectId, instance.agent_instance_id, credential.id),
+      agentApi.verifyToken(
+        projectId,
+        instance.agent_instance_id,
+        credential.id,
+      ),
     onError: showError("新 Token 验证失败；旧 Token 保持有效"),
     onSuccess: async () => {
       await refreshInstances();
@@ -752,7 +770,11 @@ function CredentialRow({
   });
   const revoke = useMutation({
     mutationFn: () =>
-      agentApi.revokeToken(projectId, instance.agent_instance_id, credential.id),
+      agentApi.revokeToken(
+        projectId,
+        instance.agent_instance_id,
+        credential.id,
+      ),
     onError: showError("Token 撤销失败"),
     onSuccess: async () => {
       await refreshInstances();
@@ -794,7 +816,9 @@ function CredentialRow({
           className="mt-2 text-destructive"
           disabled={revoke.isPending}
           onClick={() => {
-            if (window.confirm("立即撤销此 Agent Token？Hermes 访问会被阻断。")) {
+            if (
+              window.confirm("立即撤销此 Agent Token？Hermes 访问会被阻断。")
+            ) {
               revoke.mutate();
             }
           }}
@@ -835,12 +859,21 @@ function OneTimeTokenDialog({
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <CardTitle id="one-time-token-title">一次性 Hermes MCP 凭据</CardTitle>
+              <CardTitle id="one-time-token-title">
+                一次性 Hermes MCP 凭据
+              </CardTitle>
               <CardDescription className="mt-2">
-                Agent Token 和带单次验证 challenge 的 MCP 地址只显示一次。关闭或刷新后无法再次读取；请把两者写入 Hermes，而不是 CLI。
+                Agent Token 和带单次验证 challenge 的 MCP
+                地址只显示一次。关闭或刷新后无法再次读取；请把两者写入
+                Hermes，而不是 CLI。
               </CardDescription>
             </div>
-            <Button aria-label="关闭一次性 Token" onClick={onClose} size="icon" variant="ghost">
+            <Button
+              aria-label="关闭一次性 Token"
+              onClick={onClose}
+              size="icon"
+              variant="ghost"
+            >
               <X aria-hidden="true" className="size-4" />
             </Button>
           </div>
@@ -854,7 +887,9 @@ function OneTimeTokenDialog({
           />
           <OneTimeValue
             label="Server 名称"
-            onCopy={() => copy(credential.server_name ?? "mmdash", "Server 名称")}
+            onCopy={() =>
+              copy(credential.server_name ?? "mmdash", "Server 名称")
+            }
             value={credential.server_name ?? "mmdash"}
           />
           <OneTimeValue
@@ -864,7 +899,8 @@ function OneTimeTokenDialog({
             value={credential.token}
           />
           <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-            完成 Hermes 配置后返回并点击“验证 MCP”。轮换期间，在验证新 Token 前旧 Token 会保持有效。
+            完成 Hermes 配置后返回并点击“验证 MCP”。轮换期间，在验证新 Token
+            前旧 Token 会保持有效。
           </p>
           <Button onClick={onClose}>我已安全保存</Button>
         </CardContent>
@@ -894,7 +930,12 @@ function OneTimeValue({
         >
           {value}
         </code>
-        <Button aria-label={`复制${label}`} onClick={onCopy} size="icon" variant="outline">
+        <Button
+          aria-label={`复制${label}`}
+          onClick={onCopy}
+          size="icon"
+          variant="outline"
+        >
           <Copy aria-hidden="true" className="size-4" />
         </Button>
       </div>
@@ -919,13 +960,22 @@ function Field({
   );
 }
 
-function StatusLine({ configured, label }: { configured: boolean; label: string }) {
+function StatusLine({
+  configured,
+  label,
+}: {
+  configured: boolean;
+  label: string;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <span>{label}</span>
       <span className="flex items-center gap-1 text-muted-foreground">
         {configured ? (
-          <CheckCircle2 aria-hidden="true" className="size-4 text-emerald-600" />
+          <CheckCircle2
+            aria-hidden="true"
+            className="size-4 text-emerald-600"
+          />
         ) : (
           <X aria-hidden="true" className="size-4 text-amber-600" />
         )}

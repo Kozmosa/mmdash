@@ -10,6 +10,11 @@
   "properties": {
     "project_id": { "type": "string", "format": "uuid" },
     "experiment_id": { "type": "string", "format": "uuid" },
-    "log_tail": { "type": "integer", "minimum": 0, "maximum": 500, "default": 100 }
+    "log_tail": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 500,
+      "default": 100
+    }
   }
 }

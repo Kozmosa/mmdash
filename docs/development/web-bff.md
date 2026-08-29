@@ -16,12 +16,12 @@ pnpm --filter @mmdash/web-bff build
 The default listen address is `0.0.0.0:3001`; use `http://127.0.0.1:3001`
 locally. Configure it with:
 
-| Variable | Purpose |
-| --- | --- |
-| `BFF_HOST` | Listen address |
-| `BFF_PORT` | Listen port |
+| Variable            | Purpose                                                  |
+| ------------------- | -------------------------------------------------------- |
+| `BFF_HOST`          | Listen address                                           |
+| `BFF_PORT`          | Listen port                                              |
 | `BFF_COOKIE_SECRET` | At least 32 characters; signs browser session assertions |
-| `CORE_BASE_URL` | Core HTTP origin |
+| `CORE_BASE_URL`     | Core HTTP origin                                         |
 
 Production startup rejects the documented development cookie secret.
 
