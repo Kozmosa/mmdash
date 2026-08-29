@@ -35,7 +35,10 @@
     },
     "started_at": { "type": "string", "format": "date-time" },
     "finished_at": { "type": "string", "format": "date-time" },
-    "runtime": { "type": "string", "enum": ["local-docker", "e2b"] },
+    "runtime": {
+      "type": "string",
+      "enum": ["local-docker", "e2b", "local-process"]
+    },
     "runtime_version": { "type": "string", "minLength": 1, "maxLength": 100 },
     "logs_truncated": { "type": "boolean" },
     "summary": { "type": "string", "maxLength": 20000 },
@@ -53,6 +56,10 @@
         "cache_hit"
       ],
       "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["local-docker", "local-process"]
+        },
         "environment_key": {
           "type": "string",
           "minLength": 1,
@@ -63,6 +70,11 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512
+        },
+        "resolved_dependencies": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "type": "string", "maxLength": 500 }
         },
         "manifest_paths": {
           "type": "array",

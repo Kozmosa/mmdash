@@ -46,7 +46,7 @@ func (createCommand) Name() string    { return "experiment create" }
 func (createCommand) Summary() string { return "Create a frozen Box-managed or self-run experiment" }
 func (createCommand) Run(ctx context.Context, runtime *app.Runtime, arguments []string) error {
 	if len(arguments) < 4 || len(arguments) > 5 {
-		return apperror.Usage("Usage: mmdash experiment create <box|self> <name> <full_commit_sha> <entrypoint> [auto|e2b|local-docker]")
+		return apperror.Usage("Usage: mmdash experiment create <box|self> <name> <full_commit_sha> <entrypoint> [auto|e2b|local-docker|local-process]")
 	}
 	experimentType := arguments[0]
 	if experimentType != "box" && experimentType != "self" {
@@ -58,8 +58,8 @@ func (createCommand) Run(ctx context.Context, runtime *app.Runtime, arguments []
 		if len(arguments) == 5 {
 			runtimePolicy = arguments[4]
 		}
-		if runtimePolicy != "auto" && runtimePolicy != "e2b" && runtimePolicy != "local-docker" {
-			return apperror.Usage("runtime policy must be auto, e2b, or local-docker")
+		if runtimePolicy != "auto" && runtimePolicy != "e2b" && runtimePolicy != "local-docker" && runtimePolicy != "local-process" {
+			return apperror.Usage("runtime policy must be auto, e2b, local-docker, or local-process")
 		}
 	} else if len(arguments) == 5 {
 		return apperror.Usage("self-run experiments do not select a runtime")

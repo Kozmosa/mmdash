@@ -101,6 +101,7 @@ PANDOC_CSL_COMPATIBILITY = r"""% mmdash Pandoc 2.17.1.1 citeproc compatibility
 \providecommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
 """
 
+
 class ArticleClient(Protocol):
     def get_article_build_input(self, job_id: str) -> dict[str, Any]: ...
     def update_article_build_progress(

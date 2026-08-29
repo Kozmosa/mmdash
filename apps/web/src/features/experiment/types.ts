@@ -7,7 +7,7 @@ export type ResourceLimits = {
   network: "disabled" | "restricted" | "enabled";
 };
 
-export type RuntimePolicy = "auto" | "e2b" | "local-docker";
+export type RuntimePolicy = "auto" | "e2b" | "local-docker" | "local-process";
 export type ExperimentType = "box" | "box-re" | "self";
 export type ExperimentStatus =
   | "created"
@@ -30,7 +30,7 @@ export type ExperimentFailure = {
   message: string;
   failed_at: string;
   box_id?: string;
-  runtime?: "local-docker" | "e2b";
+  runtime?: "local-docker" | "e2b" | "local-process";
   attempt: number;
   retryable: boolean;
   cleanup_result: Record<string, unknown>;
@@ -79,7 +79,7 @@ export type Experiment = {
   inputs: Record<string, unknown>;
   requested_runtime_policy: RuntimePolicy;
   requested_box_id?: string;
-  actual_runtime?: "local-docker" | "e2b";
+  actual_runtime?: "local-docker" | "e2b" | "local-process";
   runtime_version?: string;
   limits: ResourceLimits;
   box_id?: string;

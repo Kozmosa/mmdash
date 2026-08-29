@@ -21,11 +21,22 @@ import (
 	"github.com/mmdash/mmdash/box/mbox"
 	e2bruntime "github.com/mmdash/mmdash/box/runtimes/e2b"
 	localdocker "github.com/mmdash/mmdash/box/runtimes/local-docker"
+	localprocess "github.com/mmdash/mmdash/box/runtimes/local-process"
 )
 
 func main() {
 	if handled, err := runAsServiceIfNeeded(os.Args[1:]); handled {
 		if err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	// The per-task supervisor runs as a re-executed subcommand so a Gateway
+	// restart never orphans a bare-metal execution.
+	if len(os.Args) > 1 && os.Args[1] == localprocess.RunnerSubcommand {
+		if err := localprocess.RunTaskRunner(os.Args[2:], os.Stdout, os.Stderr); err != nil &&
+			!errors.Is(err, context.Canceled) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -119,7 +130,7 @@ func runWithRootOutput(ctx context.Context, rootOverride string, stdout, stderr 
 		controlURL = "http://localhost:8080"
 	}
 	client := gateway.HTTPClient{BaseURL: controlURL}
-	runtimes, runtimeFactory, probeErrors, err := configuredRuntimesWithSettingsAt(ctx, limits, probeRuntimeAdapter, settings, filepath.Join(root, "environments"))
+	runtimes, runtimeFactory, probeErrors, err := configuredRuntimesWithSettingsAt(ctx, limits, probeRuntimeAdapter, settings, root, filepath.Join(root, "environments"))
 	for _, probeErr := range probeErrors {
 		fmt.Fprintf(stderr, "[box] Runtime unavailable: %s\n", probeErr)
 	}
@@ -172,17 +183,29 @@ func configuredRuntimes(ctx context.Context, limits contracts.ResourceLimits, pr
 }
 
 func configuredRuntimesWithSettings(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe, settings config.Config) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
-	return configuredRuntimesWithSettingsAt(ctx, limits, probe, settings, getenv("MMDASH_BOX_ENV_ROOT", ""))
+	return configuredRuntimesWithSettingsAt(ctx, limits, probe, settings, "", getenv("MMDASH_BOX_ENV_ROOT", ""))
 }
 
-func configuredRuntimesWithSettingsAt(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe, settings config.Config, environmentRoot string) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
+func configuredRuntimesWithSettingsAt(ctx context.Context, limits contracts.ResourceLimits, probe runtimeProbe, settings config.Config, root, environmentRoot string) ([]contracts.Runtime, gateway.RuntimeFactory, []error, error) {
 	localImage := getenv("MMDASH_BOX_LOCAL_IMAGE", settings.LocalDocker.Image)
 	localUser := localDockerUser()
-	candidates := make([]runtimeCandidate, 0, 2)
+	candidates := make([]runtimeCandidate, 0, 3)
 	if settings.LocalDocker.Enabled && !boolEnv("MMDASH_BOX_LOCAL_DOCKER_DISABLED", false) {
 		candidates = append(candidates, runtimeCandidate{
 			descriptor: contracts.Runtime{Name: "local-docker", Version: "2", Image: localImage},
 			runtime:    &localdocker.Runtime{Image: localImage, User: localUser, Environment: localdocker.NewEnvironmentManager(environmentRoot, localImage)},
+		})
+	}
+	if settings.LocalProcess.Enabled && !boolEnv("MMDASH_BOX_LOCAL_PROCESS_DISABLED", false) {
+		python := getenv("MMDASH_BOX_LOCAL_PROCESS_PYTHON", settings.LocalProcess.Python)
+		manager := localprocess.NewEnvironmentManager(
+			filepath.Join(environmentRoot, "local-process", "python"), python)
+		if cacheLimit := int64EnvAllowZero("MMDASH_BOX_LOCAL_PROCESS_CACHE_MAX_BYTES", 0); cacheLimit > 0 {
+			manager.MaxCacheBytes = cacheLimit
+		}
+		candidates = append(candidates, runtimeCandidate{
+			descriptor: contracts.Runtime{Name: "local-process", Version: "1"},
+			runtime:    localprocess.NewRuntime(filepath.Join(root, "runner"), python, manager),
 		})
 	}
 	if apiKey := getenv("E2B_API_KEY", settings.E2B.APIKey); strings.TrimSpace(apiKey) != "" {
@@ -216,6 +239,11 @@ func configuredRuntimesWithSettingsAt(ctx context.Context, limits contracts.Reso
 		if err := probe(ctx, candidate.runtime); err != nil {
 			probeErrors = append(probeErrors, fmt.Errorf("%s: %w", candidate.descriptor.Name, err))
 			continue
+		}
+		// The probed enforcement report is part of the advertised descriptor
+		// so Core and operators see what this host actually guarantees.
+		if reporter, ok := candidate.runtime.(interface{ Features() []string }); ok {
+			candidate.descriptor.Features = reporter.Features()
 		}
 		reported = append(reported, candidate.descriptor)
 		available[candidate.descriptor.Name] = candidate.runtime
@@ -282,6 +310,16 @@ func getenv(name, fallback string) string {
 func int64Env(name string, fallback int64) int64 {
 	value, err := strconv.ParseInt(os.Getenv(name), 10, 64)
 	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+// int64EnvAllowZero distinguishes "unset" from "invalid" so an optional byte
+// budget can stay disabled without falling back to a default.
+func int64EnvAllowZero(name string, fallback int64) int64 {
+	value, err := strconv.ParseInt(os.Getenv(name), 10, 64)
+	if err != nil || value < 0 {
 		return fallback
 	}
 	return value

@@ -60,9 +60,17 @@
       "additionalProperties": false,
       "required": ["name", "version"],
       "properties": {
-        "name": { "type": "string", "enum": ["local-docker", "e2b"] },
+        "name": {
+          "type": "string",
+          "enum": ["local-docker", "e2b", "local-process"]
+        },
         "version": { "type": "string", "maxLength": 100 },
-        "image": { "type": "string", "maxLength": 255 }
+        "image": { "type": "string", "maxLength": 255 },
+        "features": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "type": "string", "maxLength": 100 }
+        }
       }
     },
     "log_entry": {

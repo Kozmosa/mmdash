@@ -189,7 +189,19 @@ export function ExperimentWorkbench() {
                 <option value="auto">自动（E2B 优先）</option>
                 <option value="e2b">仅 E2B</option>
                 <option value="local-docker">仅 Local Docker</option>
+                <option value="local-process">仅 Local Process（裸机）</option>
               </LabeledSelect>
+              {experimentType === "box" && runtimePolicy === "local-process" ? (
+                <p
+                  className="rounded-md bg-amber-500/10 p-3 text-xs text-amber-700"
+                  role="note"
+                >
+                  Local Process 直接在 Box
+                  宿主机上以裸机进程运行任务：没有容器隔离，任务可访问宿主机文件与网络，仅适合完全信任的
+                  Box 与代码（trusted-host）。该 Runtime
+                  只接受网络策略为「允许」的实验，其他网络策略会在准备阶段被拒绝（LIMITS_NOT_ENFORCEABLE）。
+                </p>
+              ) : null}
               <LabeledSelect
                 disabled={experimentType === "self"}
                 label="指定 Box（可选）"

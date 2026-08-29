@@ -104,14 +104,25 @@ Minimum new codes are `NO_ELIGIBLE_BOX`, `BOX_OFFLINE_TIMEOUT`,
 Project Settings registers an Experiment definition with:
 
 - IANA timezone;
-- default Runtime policy: `auto | e2b | local-docker`;
+- default Runtime policy: `auto | e2b | local-docker | local-process`;
 - CPU, memory, timeout, disk, PID, and network defaults;
 - Git large-file threshold bounded by the provider limit.
 
 An Experiment may override defaults within Box capability. `auto` tries an
 E2B-capable Box first and falls back to Local Docker only before scheduling is
-frozen. Explicit `e2b` or `local-docker` never falls back. Among eligible bound
+frozen; `auto` never selects a `local-process` Box. Explicit `e2b`,
+`local-docker`, or `local-process` never falls back. Among eligible bound
 Boxes the scheduler chooses the lowest load unless the caller pins one Box.
+
+`local-process` is a trusted-host bare-metal Runtime: the task runs as a
+supervised process directly on the Box host with no container isolation, it
+only serves tasks that request `network: enabled`, and Boxes advertise it
+explicitly (disabled by default). It enforces timeout, cancellation, and
+CPU/memory/PID limits over the whole process tree through cgroup v2 (Linux)
+or Job Objects (Windows), and records a durable per-task state so a Gateway
+restart reattaches while a host reboot yields the stable `HOST_RESTARTED`
+failure. Because the host is shared, only trusted Boxes and code should opt
+in; the Web UI shows a corresponding warning when this Runtime is selected.
 
 ## Environment preparation contract
 
@@ -231,7 +242,7 @@ experiment_type: box | self
 source_commit: full immutable SHA
 entrypoint: fixed typed argv contract
 parameters / environment / inputs
-runtime_policy: auto | e2b | local-docker        # box only
+runtime_policy: auto | e2b | local-docker | local-process  # box only
 requested_box_id?: uuid                          # box only
 limits_override?: cpu/memory/timeout/disk/pids/network
 idempotency_key

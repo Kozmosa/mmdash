@@ -93,6 +93,13 @@ func setup(args []string, stdout io.Writer) error {
 			cfg.E2B.SandboxURL = prompt(reader, stdout, "E2B Sandbox URL（可空）", cfg.E2B.SandboxURL)
 			cfg.E2B.Template = prompt(reader, stdout, "E2B Template", cfg.E2B.Template)
 		}
+		if !cfg.LocalDocker.Enabled {
+			cfg.LocalProcess.Enabled = promptYesNo(reader, stdout,
+				"启用裸机进程 Runtime（trusted-host，无容器隔离，默认关闭）", cfg.LocalProcess.Enabled)
+			if cfg.LocalProcess.Enabled {
+				cfg.LocalProcess.Python = prompt(reader, stdout, "Python 解释器路径", cfg.LocalProcess.Python)
+			}
+		}
 	}
 	applyConfigValues(&cfg, values)
 	if flags["no-local-docker"] {
@@ -103,6 +110,9 @@ func setup(args []string, stdout io.Writer) error {
 	}
 	if key := strings.TrimSpace(values["e2b-api-key"]); key != "" {
 		cfg.E2B.APIKey = key
+	}
+	if flags["enable-local-process"] {
+		cfg.LocalProcess.Enabled = true
 	}
 	if err := config.Validate(cfg); err != nil {
 		return err
@@ -503,6 +513,9 @@ func applyConfigValues(cfg *config.Config, values map[string]string) {
 	if value := values["e2b-template"]; value != "" {
 		cfg.E2B.Template = value
 	}
+	if value := values["local-process-python"]; value != "" {
+		cfg.LocalProcess.Python = value
+	}
 }
 
 func setConfigValue(cfg *config.Config, key, value string) error {
@@ -527,6 +540,10 @@ func setConfigValue(cfg *config.Config, key, value string) error {
 		cfg.E2B.SandboxURL = value
 	case "e2b.template":
 		cfg.E2B.Template = value
+	case "local-process.enabled":
+		cfg.LocalProcess.Enabled = value == "true" || value == "1" || value == "yes"
+	case "local-process.python":
+		cfg.LocalProcess.Python = value
 	default:
 		return fmt.Errorf("unknown config key %q", key)
 	}
@@ -534,12 +551,17 @@ func setConfigValue(cfg *config.Config, key, value string) error {
 }
 
 func cfgToRuntimes(cfg config.Config) []contracts.Runtime {
-	runtimes := make([]contracts.Runtime, 0, 2)
+	runtimes := make([]contracts.Runtime, 0, 3)
 	if cfg.LocalDocker.Enabled {
 		runtimes = append(runtimes, contracts.Runtime{Name: "local-docker", Version: "1", Image: cfg.LocalDocker.Image})
 	}
 	if cfg.E2B.Enabled {
 		runtimes = append(runtimes, contracts.Runtime{Name: "e2b", Version: "1", Image: cfg.E2B.Template})
+	}
+	if cfg.LocalProcess.Enabled {
+		// Registration-time descriptor without probe-derived features; the
+		// Gateway heartbeat replaces it with the probed enforcement report.
+		runtimes = append(runtimes, contracts.Runtime{Name: "local-process", Version: "1"})
 	}
 	return runtimes
 }

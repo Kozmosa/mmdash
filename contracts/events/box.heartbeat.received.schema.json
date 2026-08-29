@@ -20,7 +20,10 @@
     "running_tasks": { "type": "integer", "minimum": 0 },
     "runtimes": {
       "type": "array",
-      "items": { "type": "string", "enum": ["e2b", "local-docker"] },
+      "items": {
+        "type": "string",
+        "enum": ["e2b", "local-docker", "local-process"]
+      },
       "uniqueItems": true
     }
   }

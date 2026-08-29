@@ -126,7 +126,9 @@ def _extract_bundle(
                 raise HandlerError("RESULT_BUNDLE_INVALID", "Result Bundle contains an unsafe path")
             expanded += entry.file_size
             if expanded > MAX_BUNDLE_BYTES:
-                raise HandlerError("RESULT_BUNDLE_INVALID", "Result Bundle expands beyond its limit")
+                raise HandlerError(
+                    "RESULT_BUNDLE_INVALID", "Result Bundle expands beyond its limit"
+                )
             by_name[entry.filename] = entry
         if manifest_entry is None:
             raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest is missing")
@@ -135,13 +137,26 @@ def _extract_bundle(
         try:
             manifest = json.loads(manifest_bytes)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
-            raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest is invalid JSON") from error
+            raise HandlerError(
+                "RESULT_MANIFEST_INVALID", "Result Manifest is invalid JSON"
+            ) from error
         if not isinstance(manifest, dict):
             raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest must be an object")
         allowed = {
-            "schema_version", "experiment_id", "source_commit", "result_directory",
-            "status", "started_at", "finished_at", "runtime", "runtime_version",
-            "logs_truncated", "summary", "exit_code", "environment", "files",
+            "schema_version",
+            "experiment_id",
+            "source_commit",
+            "result_directory",
+            "status",
+            "started_at",
+            "finished_at",
+            "runtime",
+            "runtime_version",
+            "logs_truncated",
+            "summary",
+            "exit_code",
+            "environment",
+            "files",
         }
         required = allowed - {"summary", "exit_code", "environment"}
         if (
@@ -155,10 +170,8 @@ def _extract_bundle(
             raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest identity is invalid")
         environment = manifest.get("environment")
         if (
-            manifest.get("runtime") == "local-docker" and environment is None
-        ) or (
-            environment is not None and not _valid_environment_evidence(environment)
-        ):
+            manifest.get("runtime") in ("local-docker", "local-process") and environment is None
+        ) or (environment is not None and not _valid_environment_evidence(environment)):
             raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest environment is invalid")
         raw_files = manifest.get("files")
         if not isinstance(raw_files, list) or len(raw_files) != len(by_name):
@@ -188,10 +201,14 @@ def _extract_bundle(
                 raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest file is invalid")
             entry = by_name.get(name)
             if entry is None or entry.file_size != size:
-                raise HandlerError("RESULT_MANIFEST_INVALID", "Result Manifest does not match Bundle")
+                raise HandlerError(
+                    "RESULT_MANIFEST_INVALID", "Result Manifest does not match Bundle"
+                )
             destination = output_root.joinpath(*PurePosixPath(name).parts)
             if output_root.resolve() not in destination.resolve().parents:
-                raise HandlerError("RESULT_BUNDLE_INVALID", "Result Bundle path escaped extraction root")
+                raise HandlerError(
+                    "RESULT_BUNDLE_INVALID", "Result Bundle path escaped extraction root"
+                )
             destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             hasher = hashlib.sha256()
             copied = 0
@@ -199,7 +216,9 @@ def _extract_bundle(
                 while chunk := source.read(64 * 1024):
                     copied += len(chunk)
                     if copied > size:
-                        raise HandlerError("RESULT_BUNDLE_INVALID", "Result file expanded unexpectedly")
+                        raise HandlerError(
+                            "RESULT_BUNDLE_INVALID", "Result file expanded unexpectedly"
+                        )
                     hasher.update(chunk)
                     target.write(chunk)
             if copied != size or hasher.hexdigest() != digest:
@@ -221,17 +240,50 @@ def _extract_bundle(
 
 
 def _valid_environment_evidence(value: Any) -> bool:
-    if not isinstance(value, Mapping) or set(value) != {
-        "environment_key", "base_image_id", "environment_image_id",
-        "manifest_paths", "manifest_hashes", "builder_version", "cache_hit",
-    }:
+    if not isinstance(value, Mapping):
+        return False
+    extra = set(value) - {"provider", "resolved_dependencies"}
+    if not extra <= {
+        "environment_key",
+        "base_image_id",
+        "environment_image_id",
+        "manifest_paths",
+        "manifest_hashes",
+        "builder_version",
+        "cache_hit",
+    } or not {
+        "environment_key",
+        "base_image_id",
+        "environment_image_id",
+        "manifest_paths",
+        "manifest_hashes",
+        "builder_version",
+        "cache_hit",
+    } <= set(value):
+        return False
+    if "provider" in value and value["provider"] not in ("local-docker", "local-process"):
+        return False
+    dependencies = value.get("resolved_dependencies")
+    if dependencies is not None and (
+        not isinstance(dependencies, list)
+        or len(dependencies) > 2000
+        or not all(
+            isinstance(item, str) and item.strip() and len(item) <= 500 for item in dependencies
+        )
+    ):
         return False
     paths = value.get("manifest_paths")
     hashes = value.get("manifest_hashes")
     if (
-        not all(isinstance(value.get(name), str) and value[name].strip() for name in (
-            "environment_key", "base_image_id", "environment_image_id", "builder_version",
-        ))
+        not all(
+            isinstance(value.get(name), str) and value[name].strip()
+            for name in (
+                "environment_key",
+                "base_image_id",
+                "environment_image_id",
+                "builder_version",
+            )
+        )
         or not isinstance(value.get("cache_hit"), bool)
         or not isinstance(paths, list)
         or not isinstance(hashes, Mapping)
@@ -259,7 +311,11 @@ def _safe_result_path(value: str) -> bool:
     if not value or len(value) > 4096 or "\\" in value or ":" in value or "\x00" in value:
         return False
     path = PurePosixPath(value)
-    return not path.is_absolute() and str(path) == value and all(part not in {"", ".", ".."} for part in path.parts)
+    return (
+        not path.is_absolute()
+        and str(path) == value
+        and all(part not in {"", ".", ".."} for part in path.parts)
+    )
 
 
 def _file_sha256(filename: Path) -> str:
@@ -303,10 +359,14 @@ def summarize_result(context: HandlerContext, payload: Mapping[str, Any]) -> Map
     kinds: dict[str, int] = {}
     for item in files:
         if not isinstance(item, Mapping):
-            raise HandlerError("RESULT_MANIFEST_INVALID", "Result manifest contains an invalid file")
+            raise HandlerError(
+                "RESULT_MANIFEST_INVALID", "Result manifest contains an invalid file"
+            )
         size = item.get("size_bytes", 0)
         if not isinstance(size, int) or size < 0:
-            raise HandlerError("RESULT_MANIFEST_INVALID", "Result manifest contains an invalid size")
+            raise HandlerError(
+                "RESULT_MANIFEST_INVALID", "Result manifest contains an invalid size"
+            )
         total_bytes += size
         kind = str(item.get("kind", "other"))
         kinds[kind] = kinds.get(kind, 0) + 1
@@ -326,7 +386,9 @@ def compare_results(context: HandlerContext, payload: Mapping[str, Any]) -> Mapp
     """Compare bounded numeric metrics supplied by Core job payload."""
     items = payload.get("items")
     if not isinstance(items, list) or not 2 <= len(items) <= 20:
-        raise HandlerError("COMPARISON_INPUT_INVALID", "Comparison requires between 2 and 20 results")
+        raise HandlerError(
+            "COMPARISON_INPUT_INVALID", "Comparison requires between 2 and 20 results"
+        )
     metrics: dict[str, list[dict[str, Any]]] = {}
     for item in items:
         if not isinstance(item, Mapping):
@@ -337,5 +399,7 @@ def compare_results(context: HandlerContext, payload: Mapping[str, Any]) -> Mapp
             raise HandlerError("COMPARISON_INPUT_INVALID", "Comparison item has no metrics")
         for key, value in values.items():
             if isinstance(value, (int, float)) and not isinstance(value, bool):
-                metrics.setdefault(str(key), []).append({"experiment_id": experiment_id, "value": value})
+                metrics.setdefault(str(key), []).append(
+                    {"experiment_id": experiment_id, "value": value}
+                )
     return {"items": items, "metrics": metrics, "handled_by": context.worker_id}

@@ -6649,7 +6649,7 @@ components:
       enum: [box, box-re, self]
     RuntimePolicy:
       type: string
-      enum: [auto, e2b, local-docker]
+      enum: [auto, e2b, local-docker, local-process]
     BoxStatus:
       type: string
       enum: [registering, online, offline, draining, revoked]
@@ -6683,9 +6683,13 @@ components:
       additionalProperties: false
       required: [name, version]
       properties:
-        name: { type: string, enum: [local-docker, e2b] }
+        name: { type: string, enum: [local-docker, e2b, local-process] }
         version: { type: string, maxLength: 100 }
         image: { type: string, maxLength: 255 }
+        features:
+          type: array
+          maxItems: 100
+          items: { type: string, maxLength: 100 }
     BoxResourceLimits:
       type: object
       additionalProperties: false
@@ -6985,7 +6989,7 @@ components:
         message: { type: string, minLength: 1, maxLength: 2000 }
         failed_at: { type: string, format: date-time }
         box_id: { type: string, format: uuid }
-        runtime: { type: string, enum: [local-docker, e2b] }
+        runtime: { type: string, enum: [local-docker, e2b, local-process] }
         attempt: { type: integer, minimum: 0 }
         retryable: { type: boolean }
         cleanup_result: { type: object, additionalProperties: true }
@@ -7048,7 +7052,8 @@ components:
         attempt: { type: integer, minimum: 1 }
         cancel_requested: { type: boolean }
         run_spec: { type: object, additionalProperties: true }
-        actual_runtime: { type: string, enum: [local-docker, e2b] }
+        actual_runtime:
+          { type: string, enum: [local-docker, e2b, local-process] }
         runtime_version: { type: string, maxLength: 100 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -7323,7 +7328,8 @@ components:
         inputs: { type: object, additionalProperties: true }
         requested_runtime_policy: { $ref: "#/components/schemas/RuntimePolicy" }
         requested_box_id: { type: string, format: uuid }
-        actual_runtime: { type: string, enum: [local-docker, e2b] }
+        actual_runtime:
+          { type: string, enum: [local-docker, e2b, local-process] }
         runtime_version: { type: string }
         limits: { $ref: "#/components/schemas/BoxResourceLimits" }
         box_id: { type: string, format: uuid }

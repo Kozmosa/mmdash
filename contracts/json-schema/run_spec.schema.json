@@ -54,8 +54,22 @@
       "maxProperties": 100
     },
     "inputs": { "type": "object", "additionalProperties": true },
-    "runtime": { "type": "string", "enum": ["local-docker", "e2b"] },
+    "runtime": {
+      "type": "string",
+      "enum": ["local-docker", "e2b", "local-process"]
+    },
     "runtime_version": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "environment_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "python_manifest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
     "limits": {
       "$ref": "https://mmdash.moe/contracts/box.schema.json#/$defs/resource_limits"
     },

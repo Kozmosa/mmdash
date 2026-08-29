@@ -1038,38 +1038,53 @@ func (store PostgresStore) ClaimTask(
 				JOIN LATERAL (
 					SELECT candidate.box_id,
 						CASE
-							WHEN EXISTS (
-								SELECT 1 FROM jsonb_array_elements(candidate.runtimes) runtime
-								WHERE runtime->>'name'='e2b'
-							) AND COALESCE(
+							WHEN COALESCE(
 								task.run_spec->>'runtime_policy',
 								task.run_spec->>'runtime','auto'
-							) IN ('auto','e2b') THEN 'e2b'
-							ELSE 'local-docker'
+							) = 'auto' THEN
+								CASE
+									WHEN EXISTS (
+										SELECT 1 FROM jsonb_array_elements(candidate.runtimes) runtime
+										WHERE runtime->>'name'='e2b'
+									) THEN 'e2b'
+									ELSE 'local-docker'
+								END
+							ELSE COALESCE(
+								task.run_spec->>'runtime_policy',
+								task.run_spec->>'runtime'
+							)
 						END AS actual_runtime,
 						COALESCE((
 							SELECT runtime->>'version'
 							FROM jsonb_array_elements(candidate.runtimes) runtime
-							WHERE runtime->>'name'=CASE
-								WHEN EXISTS (
-									SELECT 1 FROM jsonb_array_elements(candidate.runtimes) preferred
-									WHERE preferred->>'name'='e2b'
-								) AND COALESCE(
+							WHERE runtime->>'name' = CASE
+								WHEN COALESCE(
 									task.run_spec->>'runtime_policy',
 									task.run_spec->>'runtime','auto'
-								) IN ('auto','e2b') THEN 'e2b'
-								ELSE 'local-docker'
+								) = 'auto' THEN
+									CASE
+										WHEN EXISTS (
+											SELECT 1 FROM jsonb_array_elements(candidate.runtimes) preferred
+											WHERE preferred->>'name'='e2b'
+										) THEN 'e2b'
+										ELSE 'local-docker'
+									END
+								ELSE COALESCE(
+									task.run_spec->>'runtime_policy',
+									task.run_spec->>'runtime'
+								)
 							END
 							LIMIT 1
 						),'') AS runtime_version,
 						CASE
-							WHEN EXISTS (
-								SELECT 1 FROM jsonb_array_elements(candidate.runtimes) runtime
-								WHERE runtime->>'name'='e2b'
-							) AND COALESCE(
+							WHEN COALESCE(
 								task.run_spec->>'runtime_policy',
 								task.run_spec->>'runtime','auto'
-							) IN ('auto','e2b') THEN 0
+							) = 'auto'
+							AND EXISTS (
+								SELECT 1 FROM jsonb_array_elements(candidate.runtimes) runtime
+								WHERE runtime->>'name'='e2b'
+							) THEN 0
 							ELSE 1
 						END AS runtime_rank,
 						(

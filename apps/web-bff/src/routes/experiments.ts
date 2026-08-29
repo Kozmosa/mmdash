@@ -24,7 +24,9 @@ const createExperiment = z.object({
   parameters: z.record(z.string(), z.unknown()),
   environment: z.record(z.string(), z.string()),
   inputs: z.record(z.string(), z.unknown()),
-  runtime_policy: z.enum(["auto", "e2b", "local-docker"]).optional(),
+  runtime_policy: z
+    .enum(["auto", "e2b", "local-docker", "local-process"])
+    .optional(),
   requested_box_id: z.string().uuid().optional(),
   limits_override: z
     .object({
@@ -43,7 +45,12 @@ const runExperiment = z.object({
 });
 const experimentSettings = z.object({
   timezone: z.string().trim().min(1).max(100),
-  default_runtime_policy: z.enum(["auto", "e2b", "local-docker"]),
+  default_runtime_policy: z.enum([
+    "auto",
+    "e2b",
+    "local-docker",
+    "local-process",
+  ]),
   default_limits: z.object({
     cpu_millis: z.number().int().positive(),
     memory_bytes: z.number().int().positive(),

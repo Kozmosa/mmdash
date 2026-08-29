@@ -111,13 +111,15 @@ type resultManifest struct {
 }
 
 type resultManifestEnvironment struct {
-	EnvironmentKey     string            `json:"environment_key"`
-	BaseImageID        string            `json:"base_image_id"`
-	EnvironmentImageID string            `json:"environment_image_id"`
-	ManifestPaths      []string          `json:"manifest_paths"`
-	ManifestHashes     map[string]string `json:"manifest_hashes"`
-	BuilderVersion     string            `json:"builder_version"`
-	CacheHit           bool              `json:"cache_hit"`
+	Provider             string            `json:"provider,omitempty"`
+	EnvironmentKey       string            `json:"environment_key"`
+	BaseImageID          string            `json:"base_image_id"`
+	EnvironmentImageID   string            `json:"environment_image_id"`
+	ManifestPaths        []string          `json:"manifest_paths"`
+	ManifestHashes       map[string]string `json:"manifest_hashes"`
+	ResolvedDependencies []string          `json:"resolved_dependencies,omitempty"`
+	BuilderVersion       string            `json:"builder_version"`
+	CacheHit             bool              `json:"cache_hit"`
 }
 
 type verifiedBundle struct {
@@ -496,12 +498,26 @@ func verifyResultBundle(filename string, item Experiment, expectedManifestSHA st
 
 func validResultEnvironment(runtimeName string, environment *resultManifestEnvironment) bool {
 	if environment == nil {
-		return runtimeName != "local-docker"
+		// Both environment-preparing container and bare-metal Runtimes must
+		// ship immutable environment evidence in the result Manifest.
+		return runtimeName != "local-docker" && runtimeName != "local-process"
 	}
 	if environment.EnvironmentKey == "" || environment.BaseImageID == "" ||
 		environment.EnvironmentImageID == "" || environment.BuilderVersion == "" ||
 		len(environment.ManifestPaths) > 32 || len(environment.ManifestPaths) != len(environment.ManifestHashes) {
 		return false
+	}
+	if environment.Provider != "" &&
+		environment.Provider != "local-docker" && environment.Provider != "local-process" {
+		return false
+	}
+	if len(environment.ResolvedDependencies) > 2000 {
+		return false
+	}
+	for _, dependency := range environment.ResolvedDependencies {
+		if dependency == "" || strings.TrimSpace(dependency) == "" || len(dependency) > 500 {
+			return false
+		}
 	}
 	seen := map[string]struct{}{}
 	for _, manifestPath := range environment.ManifestPaths {

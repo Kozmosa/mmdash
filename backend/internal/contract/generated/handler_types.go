@@ -2545,7 +2545,7 @@ func (request UpdateExperimentSettingsRequest) Validate() error {
 		}
 	}
 	if request.DefaultRuntimePolicy != nil {
-		if *request.DefaultRuntimePolicy != "auto" && *request.DefaultRuntimePolicy != "e2b" && *request.DefaultRuntimePolicy != "local-docker" {
+		if *request.DefaultRuntimePolicy != "auto" && *request.DefaultRuntimePolicy != "e2b" && *request.DefaultRuntimePolicy != "local-docker" && *request.DefaultRuntimePolicy != "local-process" {
 			return fmt.Errorf("default_runtime_policy has an unsupported value")
 		}
 	}
@@ -2620,7 +2620,7 @@ func (request CreateExperimentRequest) Validate() error {
 		return fmt.Errorf("inputs is required")
 	}
 	if request.RuntimePolicy != nil {
-		if *request.RuntimePolicy != "auto" && *request.RuntimePolicy != "e2b" && *request.RuntimePolicy != "local-docker" {
+		if *request.RuntimePolicy != "auto" && *request.RuntimePolicy != "e2b" && *request.RuntimePolicy != "local-docker" && *request.RuntimePolicy != "local-process" {
 			return fmt.Errorf("runtime_policy has an unsupported value")
 		}
 	}
@@ -2696,7 +2696,7 @@ func (request RerunExperimentRequest) Validate() error {
 		}
 	}
 	if request.RuntimePolicy != nil {
-		if *request.RuntimePolicy != "auto" && *request.RuntimePolicy != "e2b" && *request.RuntimePolicy != "local-docker" {
+		if *request.RuntimePolicy != "auto" && *request.RuntimePolicy != "e2b" && *request.RuntimePolicy != "local-docker" && *request.RuntimePolicy != "local-process" {
 			return fmt.Errorf("runtime_policy has an unsupported value")
 		}
 	}

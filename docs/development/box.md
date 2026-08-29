@@ -166,6 +166,11 @@ Adapters are compiled into Box but advertised only after availability probes.
 - Local Docker is a development, lightweight self-hosted, and explicitly
   configured fallback. It needs a local Docker daemon; ordinary Box
   installation does not require Docker.
+- Local Process is a trusted-host bare-metal Runtime for hosts without
+  Docker. It is disabled by default, never selected by `auto`, and must be
+  enabled explicitly (`mbox setup --enable-local-process --local-process-python
+<path>` or `mbox config set local-process.enabled true`). See the next
+  section for its supervision and isolation characteristics.
 
 The Local Docker Adapter retains read-only source, dropped capabilities,
 `no-new-privileges`, CPU/memory/PID/time/network/disk bounds, a bounded output
@@ -173,6 +178,56 @@ mount, and fixed ENTRYPOINT replacement. On Windows Docker Desktop the disk
 bound is skipped because `--storage-opt` requires XFS project quotas; the
 output and log budgets guard disk usage there. Docker socket access remains an
 explicit high-privilege deployment choice.
+
+## Local Process supervision
+
+Local Process executes a task as a supervised process directly on the Box
+host. Because the host kernel and filesystem are shared, it provides **no
+container-equivalent isolation** and serves only experiments that explicitly
+select `runtime_policy: local-process` with `network: enabled` — the Runtime
+rejects every other network policy instead of degrading silently.
+
+The product support target is **Linux** (VMs/containers without nested
+virtualization); Windows is not a support target — use Docker Desktop
+(`local-docker`) or run the Box inside WSL. The Windows Job Object path below
+is a best-effort implementation for development/testing only (see ADR 0005 in
+`docs/adr/0005-local-process-linux-support-scope.md`).
+
+One detached runner process (`mmdash-box task-runner --state-dir ... --task-id
+...`) exists per task. It starts the frozen entrypoint from an argument array
+without a shell, applies the frozen hard limits to the complete process tree
+(CREATE_SUSPENDED plus Job Object CPU/memory/PID limits before the first task
+instruction on Windows; a fresh cgroup v2 subtree whose limits are written
+before the process is moved into it on Linux, which leaves a brief
+pre-enforcement start window), and enforces timeout and the cancel sentinel
+over the whole tree. Task stdout/stderr are captured into runner-owned
+`task-stdout.log` / `task-stderr.log` files.
+
+Supervision state is durable under `<state-root>/runner/<task>/state.json`
+(boot ID, runner/task PID, state, exit code, and the launch failure reason for
+`RUNNER_FAILED`). A restarted Gateway reattaches to a live runner; a different
+boot ID terminates the recorded task with `HOST_RESTARTED`; a dead supervisor
+on the same boot yields `RUNNER_LOST` — reattach terminates the surviving
+tree immediately, and a Gateway following a live task fails with `RUNNER_LOST`
+after a short grace period once the supervisor disappears, because a dead
+supervisor enforces neither timeout nor cancellation (on Windows the Job
+Object additionally kills the whole tree when the supervisor dies). Output
+replays from persisted spool byte offsets, so gap output survives Gateway
+restarts.
+
+Python environments use a content-addressed cache keyed by builder strategy,
+platform, interpreter and installer identities, and manifest paths + content
+hashes. Manifest discovery is allowlist-only at the workspace root
+(`requirements.lock`, hash-pinned `requirements.txt`, `uv.lock`,
+`poetry.lock`, `Pipfile.lock`; conda returns
+`ENVIRONMENT_MANIFEST_UNSUPPORTED`, multiple families
+`ENVIRONMENT_MANIFEST_AMBIGUOUS`). Builds run in a temp directory with atomic
+publish; failed builds are never cached. The result Manifest reports
+`provider: local-process`, interpreter identity as the base identity, the
+prepared environment identity, and the resolved dependency list.
+
+`config.LocalProcess.User` is accepted in configuration but not yet applied
+when spawning the runner; low-privilege execution is still TODO.
 
 ## Environment preparation and Local Docker cache
 

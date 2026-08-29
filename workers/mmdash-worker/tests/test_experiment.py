@@ -12,7 +12,13 @@ from mmdash_worker.jobs.handlers import HandlerContext, HandlerError
 
 
 def test_summarize_result_is_bounded_and_deterministic() -> None:
-    result = summarize_result(HandlerContext("job", "worker"), {"experiment_id": "exp", "manifest": {"files": [{"path": "a.csv", "size_bytes": 3, "kind": "table"}]}})
+    result = summarize_result(
+        HandlerContext("job", "worker"),
+        {
+            "experiment_id": "exp",
+            "manifest": {"files": [{"path": "a.csv", "size_bytes": 3, "kind": "table"}]},
+        },
+    )
     assert result["summary"] == "1 files, 3 bytes"
     assert len(result["summary_hash"]) == 64
 
@@ -65,7 +71,12 @@ class ResultClient:
         return {"experiment_id": "experiment-1", "result_commit_sha": "a" * 40}
 
 
-def _bundle(tmp_path: Path, *, result_name: str = "summary.txt") -> tuple[Path, str]:
+def _bundle(
+    tmp_path: Path,
+    *,
+    result_name: str = "summary.txt",
+    manifest_updates: dict[str, Any] | None = None,
+) -> tuple[Path, str]:
     contents = b"result"
     manifest = {
         "schema_version": "2",
@@ -98,6 +109,8 @@ def _bundle(tmp_path: Path, *, result_name: str = "summary.txt") -> tuple[Path, 
             }
         ],
     }
+    if manifest_updates:
+        manifest.update(manifest_updates)
     manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
     filename = tmp_path / "execution-bundle.zip"
     with zipfile.ZipFile(filename, "w") as archive:
@@ -126,3 +139,62 @@ def test_result_handler_rejects_zip_slip(tmp_path: Path) -> None:
         ExperimentResultHandler(client)(HandlerContext("job-1", "worker-1"), {})
 
     assert caught.value.code == "RESULT_BUNDLE_INVALID"
+
+
+_LOCAL_PROCESS_ENVIRONMENT = {
+    "provider": "local-process",
+    "environment_key": "e" * 64,
+    "base_image_id": "cpython-3.12.7",
+    "environment_image_id": "local-process:venv-a" * 4,
+    "manifest_paths": ["requirements.lock"],
+    "manifest_hashes": {"requirements.lock": "d" * 64},
+    "builder_version": "1",
+    "cache_hit": False,
+    "resolved_dependencies": ["numpy==2.0.0", "pandas==3.0.0"],
+}
+
+
+def test_result_handler_accepts_local_process_environment_evidence(tmp_path: Path) -> None:
+    bundle, manifest_hash = _bundle(
+        tmp_path,
+        manifest_updates={
+            "runtime": "local-process",
+            "environment": _LOCAL_PROCESS_ENVIRONMENT,
+        },
+    )
+    client = ResultClient(bundle, manifest_hash)
+
+    result = ExperimentResultHandler(client)(HandlerContext("job-1", "worker-1"), {})
+
+    assert result["result_commit_sha"] == "a" * 40
+
+
+def test_result_handler_rejects_local_process_without_environment(tmp_path: Path) -> None:
+    bundle, manifest_hash = _bundle(
+        tmp_path,
+        manifest_updates={"runtime": "local-process", "environment": None},
+    )
+    client = ResultClient(bundle, manifest_hash)
+
+    with pytest.raises(HandlerError, match="environment is invalid") as caught:
+        ExperimentResultHandler(client)(HandlerContext("job-1", "worker-1"), {})
+
+    assert caught.value.code == "RESULT_MANIFEST_INVALID"
+
+
+def test_result_handler_rejects_invalid_local_process_evidence(tmp_path: Path) -> None:
+    invalid_environment = dict(_LOCAL_PROCESS_ENVIRONMENT)
+    invalid_environment["provider"] = "dockerhub"
+    bundle, manifest_hash = _bundle(
+        tmp_path,
+        manifest_updates={
+            "runtime": "local-process",
+            "environment": invalid_environment,
+        },
+    )
+    client = ResultClient(bundle, manifest_hash)
+
+    with pytest.raises(HandlerError, match="environment is invalid") as caught:
+        ExperimentResultHandler(client)(HandlerContext("job-1", "worker-1"), {})
+
+    assert caught.value.code == "RESULT_MANIFEST_INVALID"

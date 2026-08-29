@@ -39,7 +39,7 @@
     "inputs": { "type": "object", "additionalProperties": true },
     "runtime_policy": {
       "type": "string",
-      "enum": ["auto", "e2b", "local-docker"],
+      "enum": ["auto", "e2b", "local-docker", "local-process"],
       "default": "auto"
     },
     "requested_box_id": { "type": "string", "format": "uuid" },

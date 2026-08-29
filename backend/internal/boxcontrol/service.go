@@ -585,7 +585,10 @@ func validateRegistration(box *Box) error {
 		return err
 	}
 	for _, runtime := range box.Runtimes {
-		if runtime.Name != "local-docker" && runtime.Name != "e2b" {
+		// local-process is a trusted-host Runtime that a Box owner must enable
+		// explicitly in Box configuration; Core accepts it as reported here and
+		// never lets `auto` select it (see the ClaimTask Runtime matching).
+		if runtime.Name != "local-docker" && runtime.Name != "e2b" && runtime.Name != "local-process" {
 			return ErrInvalid
 		}
 	}

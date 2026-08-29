@@ -1,13 +1,189 @@
-# mmdash v0.1 Article editing UX, Zotero hierarchy & Progress evaluation improvements
+# mmdash v0.1 Stage 8 `local-process` bare-metal Runtime (issue #47, WIP)
 
 - Updated: 2026-08-29
-- Branch: `main`
-- PR: [#56](https://github.com/Kozmosa/mmdash/pull/56) (`feat(article,progress): improve article editing UX, zotero workflow, and progress evaluation`)
-- Delivery:
-  - Article Editor UX & Model Reference: Added block-level copy buttons with fast hover transitions on model documents; automatic scanning of pasted text for `$$...$$` / `$$$$...$$$$` block formulas and `$...$` inline formulas; copying and pasting image blocks directly as immutable `artifactReference` nodes; fixed Tag Rail expand button sizing and review `Check` icons; added mouse wheel scrolling during block dragging.
-  - Zotero Citation Workflow: Implemented category/collection hierarchy tree with folder navigation in the writing workspace; supported dragging Zotero items directly into text with an inline drop cursor indicator (vertical caret) inserting `@citationKey` inline citations aligned with build/LaTeX pipelines.
-  - Progress Evaluation: Improved evaluation status clarity, failure recovery, and evidence workflow.
-- Verification: Full repository gate `pnpm check` passed (all TypeScript, Go, and Python tests/linters, contracts, and API catalog check).
+- Branch: `feat/box-local-process-runtime` (worktree
+  `.worktrees/local-process-runtime`, base `90d657f` = `main`)
+- Scope: implement Kozmosa/mmdash#47 — a stable `local-process` (裸机进程)
+  trusted-host Sandbox Runtime for Boxes without Docker, reusing the existing
+  Core → Gateway → Runtime → log/result chain. The Box/Core/contracts
+  vertical and the Web/BFF/MCP/CLI/Worker surface are implemented with
+  tests; remaining work is listed at the end of this section.
+- Runtime ID `local-process`, descriptor features report probed enforcement
+  (`enforce:timeout:hard`, `enforce:process-tree:process-group|job-object`,
+  `enforce:cpu|memory|pids:cgroup-v2|job-object`, `enforce:disk:output-collection`,
+  `network:unsupported`). The feature array rides on the existing
+  `contracts.Runtime` descriptor (`features` added to the Box runtime schemas).
+- Contracts edited and regenerated: `run_spec.schema.json` (runtime
+  enum + optional `environment_selection.python_manifest`), `box.schema.json`
+  (runtime enum + `features`), `manifest.schema.json` (runtime enum +
+  `provider` + optional `resolved_dependencies`), `box.heartbeat.received` /
+  `experiment.started` events, `mcp-tools/experiment.create.json`,
+  `core.yaml` (`RuntimePolicy`, `BoxRuntime`, `ExperimentFailure.runtime`,
+  `BoxTask.actual_runtime`, Experiment `actual_runtime`). `contracts:check`,
+  the compatibility baseline, and `api:check` pass with the regenerated
+  core client and handler types.
+- Migration `000049_local_process_runtime` (up/down) widens the append-only
+  CHECK value sets on `box_tasks.actual_runtime`,
+  `experiments.actual_runtime`, `experiments.requested_runtime_policy` and
+  `experiment_project_settings.default_runtime_policy` to include
+  `local-process`. No data rewrite; down migration restores the old sets.
+- Core: `boxcontrol.validateRegistration` accepts the new Runtime;
+  `ClaimTask` SQL now resolves the actual runtime explicitly — `auto` keeps
+  matching only E2B/Local Docker Boxes (never `local-process`), while an
+  explicit `runtime_policy` selects exactly that reported runtime;
+  `experiment` create/settings validation accepts the new policy value.
+- Box config/CLI: `LocalProcess` section (`enabled` default false, `python`
+  interpreter, optional low-privilege `user`) with validation; mbox `setup`
+  gains `--enable-local-process` / `--local-process-python` plus an
+  interactive prompt that only offers bare-metal when Local Docker is off;
+  `mbox config set local-process.enabled|local-process.python` supported.
+- New package `box/runtimes/local-process`:
+  - `mmdash-task-runner` supervisor implemented as a re-executed subcommand of
+    the Box binary (dispatch added in `cmd/mmdash-box/main.go` before mbox).
+    One runner per task; starts the frozen entrypoint from an argument array,
+    no shell; Linux process group + cgroup v2 (memory/swap-off, cpu.max,
+    pids.max), Windows Job Object (CPU rate hard limit mapped through core
+    count, JobMemoryLimit, ActiveProcessLimit, CREATE_SUSPENDED assignment
+    then main-thread resume); timeout and cancel sentinel both terminate the
+    full tree; durable per-task record (boot ID, runner/task PID, state, exit
+    code) under `<root>/runner/<task>/`.
+  - Reconnect semantics: a restarted Gateway reattaches by task record; a
+    different boot ID terminates the task with stable `HOST_RESTARTED` (no
+    replay); a dead supervisor on the same boot yields `RUNNER_LOST`. Gap
+    output replay after restart uses runner-owned `task-stdout.log` /
+    `task-stderr.log` plus persisted spool byte offsets, so stdout/stderr
+    resume from the last acknowledged bytes.
+  - Stable failure codes `HOST_RESTARTED`, `LIMITS_NOT_ENFORCEABLE`,
+    `RUNNER_LOST`, `RUNNER_FAILED` flow through a new `ErrorCode()` interface
+    mapped in `gateway.execute`/`PrepareEnvironment` failure paths.
+  - Unenforceable policy is rejected, never degraded: the bare-metal runtime
+    only serves tasks whose frozen limits request `network=enabled` (it has no
+    netns/firewall capability) and refuses cpu/memory/pids when the platform
+    probe cannot guarantee kernel enforcement; `Probe` then does not advertise
+    the runtime at all.
+  - Task environment is a documented whitelist (PATH, platform system vars,
+    LANG/TZ, per-task `HOME`/temp dirs, `MMDASH_WORKSPACE`,
+    `MMDASH_OUTPUT_DIR`, `MMDASH_EXPERIMENT_ID`, `MMDASH_PARAMETERS_FILE`,
+    `PYTHONDONTWRITEBYTECODE`, `PYTHONUNBUFFERED`, optional `VIRTUAL_ENV`) plus
+    the frozen task environment; no Gateway/Box-token/Git/SSH/cloud variables
+    can leak, and the frozen task env may not override the allowlist or PATH.
+  - Python manifest discovery is allowlist-only at workspace root:
+    `requirements.lock`, `requirements.txt` (best-effort unless fully
+    hash-pinned, detected by parsing `--hash` on every requirement line),
+    `pyproject.toml`+`uv.lock` (`uv sync --frozen --no-install-project`),
+    `pyproject.toml`+`poetry.lock` (`poetry install --no-root` with lock-hash
+    verification), `Pipfile`+`Pipfile.lock` (`pipenv requirements` export +
+    `pip --require-hashes`). Conda `environment.yml/yaml` returns
+    `ENVIRONMENT_MANIFEST_UNSUPPORTED`; multiple families return
+    `ENVIRONMENT_MANIFEST_AMBIGUOUS` unless the frozen RunSpec carries an
+    explicit `environment_selection.python_manifest` (contract exists; Core
+    experiment settings plumbing for the selection is deferred, per the issue
+    the stable ambiguity error is the first-delivery behavior). Builds stage
+    the verified manifest bytes into a temp build dir, never the workspace.
+  - Content-addressed environment cache
+    `<env-root>/local-process/python/<environment-key>`: key covers builder
+    strategy + package-index version, OS/arch, interpreter identity (path +
+    detected version), installer tool identity (pip/uv/poetry/pipenv version),
+    and manifest paths + content hashes. Singleflight per key; build in a temp
+    directory, atomic rename publish, failed builds never cached; per-entry
+    `entry.json` records family, identities, manifest paths/hashes, resolved
+    dependency set (`pip freeze` / `uv pip freeze`), size, `last_used_at` and
+    active task references. GC removes entries idle >96h with zero refs and
+    supports a total-capacity budget (`MMDASH_BOX_LOCAL_PROCESS_CACHE_MAX_BYTES`)
+    with LRU eviction of unreferenced entries.
+- Gateway: `manifestEnvironment` is now provider-neutral (local-docker keeps
+  image IDs; local-process reports interpreter identity as base identity,
+  venv identity as environment identity, plus `provider` and the resolved
+  dependency list into the result Manifest).
+- Tests status: box module `go build`/`go vet` clean on Windows and
+  cross-compiles for linux/darwin (CGO_ENABLED=0); all pre-existing box
+  packages still pass. New passing suites: manifest discovery (family
+  detection, ambiguity, conda unsupported, hash-pin detection), environment
+  cache (miss/hit, key sensitivity to manifest content, failed-build
+  exclusion, 96h TTL GC with reference protection, capacity LRU,
+  bare-interpreter path).
+- **Resolved on this workstation (2026-08-29)**: the Windows process-level
+  failures are fixed and all local-process tests pass. Root causes were
+  (1) a reversed `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION` field order in
+  `process_windows.go` (ControlFlags must precede CpuRate), which failed
+  every launch with a swallowed error — the always-0 exit codes came from
+  this, not from the job-spec path; (2) the suspected dropped stdout/stderr
+  capture — `launchTask` now opens `task-stdout.log`/`task-stderr.log` and
+  wires them into `startTaskProcess` on both platforms; (3) the 1MB test
+  memory limit is a hard Job Object limit on Windows (stack overflow under
+  enforcement) and was raised to 256MB in `testSpec`. The real launch error
+  is now persisted in the task record (`last_error`) and surfaces as stable
+  `RUNNER_FAILED` instead of a fabricated zero exit. See
+  `docs/bitter-lessons.md` BL-001..004.
+- Completed surface (2026-08-29): contracts regenerated
+  (`pnpm contracts:generate`, `contracts:check`, `api:check` pass); Web BFF
+  and MCP Gateway zod enums accept `local-process`; Worker validates
+  local-process result manifests (environment evidence with optional
+  `provider`/`resolved_dependencies` required like Local Docker); CLI
+  `experiment create` accepts the new policy; Web types/settings/create
+  options expose `local-process` with a trusted-host risk warning;
+  `docs/development/box.md` and `experiment.md` describe the Runtime.
+  Verified with web-bff 71/71, mcp-gateway 39/39, worker pytest, CLI go
+  tests, web vitest 215/215, and a real-binary runner smoke on Windows.
+- Review fixes (2026-08-29, systematic branch review): Core's
+  `verifyResultBundle` now accepts the provider-neutral environment evidence
+  (`provider`, `resolved_dependencies`) the Gateway stamps into every
+  local-docker/local-process result Manifest — the strict
+  `DisallowUnknownFields` decode previously rejected the new fields and would
+  have failed every environment-preparing Bundle at finalization; Core now
+  also requires environment evidence for `local-process` and validates the
+  provider enum and dependency bounds exactly like the Worker and
+  `manifest.schema.json` (regression tests included). `Runtime.environmentFor`
+  reads the prepared-environment map under the Gateway mutex, closing a
+  concurrent map read/write panic with `MaxConcurrent > 1` (covered by a new
+  `-race` concurrency test). `follow`/`reattach` now detect a supervisor that
+  died without a terminal record: reattach terminates the surviving tree and
+  reports `RUNNER_LOST` immediately, `follow` fails with `RUNNER_LOST` after a
+  grace period (`RunnerLossGrace`, default 2s), the Windows Job Object sets
+  `KILL_ON_JOB_CLOSE` so a dead runner's task tree is kernel-terminated, and
+  the Unix `processAlive` reaps zombie supervisors (detached runners are
+  never waited for directly). `environmentKey` now includes the interpreter
+  path (a venv embeds absolute base-interpreter paths; same version at a new
+  path must rebuild), a publish/addRef race with capacity GC falls back to one
+  rebuild instead of failing the task, and the Windows rename-publish
+  fallback detects a concurrent winner by reloading the entry instead of
+  relying on `os.IsExist`. Gateway-side stable policy/discovery failures
+  (`LIMITS_NOT_ENFORCEABLE`, `ENVIRONMENT_MANIFEST_*`, `ENVIRONMENT_INVALID`)
+  are no longer flagged retryable. poetry installs use `--without dev` to
+  match the uv path. Web warnings for `local-process` mention the
+  `network: enabled` requirement. `docs/development/box.md` now states the
+  Linux cgroup pre-enforcement start window honestly. Two further defects
+  surfaced by the new supervision tests under `-race` are also fixed: the
+  Gateway no longer rewrites the task record unconditionally after
+  `runner.Start()` (a stale `starting` record could clobber the terminal
+  record of a very fast task and previously hung `follow` forever — it fills
+  in the supervisor PID only while the runner has not persisted its own
+  record), and all branch Go files are gofmt-clean so the repository
+  `check-go-format` gate passes (several local-process/config/gateway files
+  were committed unformatted). Post-merge hardening (2026-08-29): the
+  cross-process task-record file is now read and written with short retries
+  on both sides, because the Gateway's poll and the runner's atomic
+  rename-publish collide as transient Windows sharing violations — a failed
+  terminal write lost the task to `RUNNER_LOST` (suite now stable at
+  `-count=5`), and `Destroy` refuses to remove state it cannot read. The
+  branch merges `main` (the cards-layout modal) with the `local-process`
+  option and trusted-host warning ported into the new create dialog, and the
+  seven branch files that introduced new prettier violations are formatted;
+  the repo-wide prettier 3.9 debt on `main` is fixed separately in PR #55.
+- Platform scope decision (2026-08-29, recorded as ADR 0005 in
+  `docs/adr/0005-local-process-linux-support-scope.md` and on issue #47):
+  the product support target for `local-process` is **Linux** (VMs/containers
+  without nested virtualization). Windows is not a support target — users
+  install Docker Desktop (`local-docker`) or run the Box inside WSL. The
+  delivered Windows Job Object path stays as a best-effort implementation for
+  development/testing and is not a support commitment.
+- Remaining: `config.LocalProcess.User` is accepted but not yet applied when
+  spawning the runner (low-privilege account execution is still TODO; per ADR
+  0005 only the Linux `setuid/setgid` path needs to be designed); full
+  `pnpm check` was blocked by three pre-existing worker files failing
+  `ruff format --check`, now fixed in `style(worker): apply ruff format to
+three legacy files`; the branch still trails `main` and may need a rebase;
+  end-to-end Box acceptance against a live stack is still pending.
 
 # mmdash v0.1 Stage 9 Article repair candidate
 
@@ -1259,3 +1435,39 @@ Stage 7 browser acceptance.
   or logs.
 - PostgreSQL and MinIO volumes were preserved.
 - The next product stage is Stage 8 Experiment, Box, and Sandbox.
+
+## 2026-08-18 Manual acceptance snapshot (issue #45)
+
+- Acceptance was performed through the in-app browser against the Pixi local
+  stack; product source was not modified during the run. PostgreSQL and MinIO
+  state were preserved.
+- Stage 1 Repo was re-tested after the fixture repository was pushed and its
+  shallow clone was converted with `git fetch --unshallow`. The three mapped
+  workspaces (`mmdash-test`, `article`, `result`) reached `ready`; the external
+  acceptance commit is `e38a7dd3bd27c29fb045d84dd39eb033f4c47bd8`.
+- Stage 2 remains blocked only because the IAB can trigger but cannot operate
+  the Windows native file chooser. The chooser did open; no file was selected
+  and no file-chooser workaround was used.
+- Stage 5 was skipped because Hermes credentials were not configured. Stage 7
+  was skipped because Notion Client ID/Secret were not configured. Stage 6
+  manual mock evaluation and read-only Session checks passed; the second-click
+  and missing Proposal cases remain recorded as their documented expected
+  limitations.
+- Stage 8: the acceptance Box was visible as online with `local-docker`, but
+  Project assignment returned the GUI Toast `Project not found`. A frozen
+  experiment (`3066979f-b7b9-421b-9b19-6ee219a2e871`) was nevertheless created
+  from the fixed SHA and `python:experiments/q1_smoke.py`; after confirmation
+  it remained `queued` at `10% · 尚未开始` with no Terminal logs and no result
+  commit. This is consistent with no eligible online/registered/assigned Box
+  claiming the Core task. CLI T3.1 still fails because the device-authorization
+  request omits required `client_kind`; T8.4 and T8.5 therefore remain blocked.
+- Stage 9: the Article workbench opened with visible connection state and one
+  collaborator. A real editor write followed by `Ctrl+S` returned to `已同步`
+  and advanced the draft from `r1` to `r3`. Template registration is empty,
+  there is no Article commit, and Preview/Build/Release controls are disabled
+  until a tested template is registered. Zotero is also visibly unconfigured;
+  T9.3/T9.4 are blocked/expected-fail under #41, while T9.1/T9.2 passed.
+- Stage 8, Stage 9, and the external-dependency skip results were posted to
+  issue #45. The remaining acceptance work is product defect follow-up, not a
+  request to change the acceptance evidence or merge the fixture branch into
+  `main`.
