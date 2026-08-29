@@ -6,6 +6,7 @@ import {
   moveArrayItem,
   rectangleFromPoints,
   rectanglesIntersect,
+  wheelScrollDelta,
 } from "@/features/article/article-editor-interactions";
 
 describe("article editor interactions", () => {
@@ -40,6 +41,12 @@ describe("article editor interactions", () => {
   it("uses the indicated block boundary as the insertion position", () => {
     expect(dropTargetPosition(12, 8, true)).toBe(12);
     expect(dropTargetPosition(12, 8, false)).toBe(20);
+  });
+
+  it("normalizes wheel line and page deltas while dragging", () => {
+    expect(wheelScrollDelta(24, 0, 600)).toBe(24);
+    expect(wheelScrollDelta(3, 1, 600)).toBe(48);
+    expect(wheelScrollDelta(-1, 2, 600)).toBe(-600);
   });
 
   it("moves table rows and columns without mutating the source", () => {

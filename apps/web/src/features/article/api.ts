@@ -14,6 +14,7 @@ import type {
   ArticleTemplate,
   ArticleTemplateManifest,
   ZoteroBinding,
+  ZoteroCollection,
   ZoteroItem,
 } from "./types";
 
@@ -178,6 +179,20 @@ export const articleApi = {
       body: input,
       method: "PUT",
     });
+  },
+  listZoteroCollections(projectId: string) {
+    return apiClient.request<{ items: ZoteroCollection[] }>(
+      `${base(projectId)}/zotero/collections`,
+    );
+  },
+  listZoteroItems(
+    projectId: string,
+    params?: { collection?: string; q?: string },
+  ) {
+    return apiClient.request<{ items: ZoteroItem[] }>(
+      `${base(projectId)}/zotero/items`,
+      { query: params },
+    );
   },
   searchZotero(projectId: string, query: string) {
     return apiClient.request<{ items: ZoteroItem[] }>(

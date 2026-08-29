@@ -174,7 +174,7 @@ export default function ProjectHomePage() {
                 href={`/projects/${encodeURIComponent(project.id)}/artifacts?artifact=${encodeURIComponent(detail.artifact.artifact_id)}`}
                 key={detail.artifact.artifact_id}
               >
-                <Card className="h-full transition hover:border-primary/40 hover:shadow-md">
+                <Card className="h-full transition hover:border-primary/40 hover:shadow-card-hover">
                   <CardHeader>
                     <CardTitle className="truncate text-base">
                       {detail.artifact.name}
