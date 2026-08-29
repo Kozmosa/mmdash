@@ -49,7 +49,7 @@ function ExperimentSettingsForm({ canManage, initial, projectId }: Readonly<{ ca
       </div>
       {runtime === "local-process" ? (
         <p className="rounded-md bg-amber-500/10 p-3 text-xs text-amber-700" role="note">
-          默认 Runtime 设为 Local Process 后，新建实验将直接在 Box 宿主机上以裸机进程运行：没有容器隔离，仅适合完全信任的 Box 与代码（trusted-host）。
+          默认 Runtime 设为 Local Process 后，新建实验将直接在 Box 宿主机上以裸机进程运行：没有容器隔离，仅适合完全信任的 Box 与代码（trusted-host）。该 Runtime 只接受网络策略为「允许」的实验，其他网络策略会在准备阶段被拒绝（LIMITS_NOT_ENFORCEABLE）。
         </p>
       ) : null}
       <div><p className="mb-3 text-sm font-medium">默认资源限制</p><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"><LimitField disabled={!canManage} field="cpu_millis" label="CPU（millicores）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="memory_bytes" label="内存（bytes）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="timeout_seconds" label="超时（秒）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="disk_bytes" label="磁盘（bytes）" limits={limits} setLimits={setLimits} /><LimitField disabled={!canManage} field="pids" label="进程数" limits={limits} setLimits={setLimits} /><Field label="网络策略"><select className={selectClass} disabled={!canManage} onChange={(event) => setLimits((value) => ({ ...value, network: event.target.value as ResourceLimits["network"] }))} value={limits.network}><option value="disabled">禁用</option><option value="restricted">受限</option><option value="enabled">允许</option></select></Field></div></div>
