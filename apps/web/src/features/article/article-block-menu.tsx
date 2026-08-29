@@ -3,6 +3,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   Clipboard,
   Copy,
   FileCode2,
@@ -168,7 +169,12 @@ export function ArticleBlockMenu({
       </div>
       <div className="mt-2 grid gap-1 border-t pt-2">
         {canReview ? (
-          <MenuButton onClick={onReview}>审阅通过</MenuButton>
+          <MenuButton
+            icon={<Check className="size-3.5 text-green-600" />}
+            onClick={onReview}
+          >
+            审阅通过
+          </MenuButton>
         ) : null}
         <button
           className="flex min-h-8 items-center gap-2 rounded px-2 py-1 text-left text-destructive hover:bg-destructive/10"

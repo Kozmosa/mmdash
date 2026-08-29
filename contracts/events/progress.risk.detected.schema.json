@@ -4,7 +4,15 @@
   "title": "progress.risk.detected payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resource_id", "resource_type", "title", "status", "evaluation_id", "risk_key", "severity"],
+  "required": [
+    "resource_id",
+    "resource_type",
+    "title",
+    "status",
+    "evaluation_id",
+    "risk_key",
+    "severity"
+  ],
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "progress_risk" },
@@ -12,6 +20,9 @@
     "status": { "const": "open" },
     "evaluation_id": { "type": "string", "format": "uuid" },
     "risk_key": { "type": "string", "minLength": 1 },
-    "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    }
   }
 }

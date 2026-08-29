@@ -29,11 +29,7 @@
         },
         "reason": {
           "type": "string",
-          "enum": [
-            "deduplicated",
-            "restored",
-            "uploaded"
-          ]
+          "enum": ["deduplicated", "restored", "uploaded"]
         },
         "sha256": {
           "type": "string",
@@ -103,13 +99,7 @@
         },
         "source": {
           "type": "string",
-          "enum": [
-            "article",
-            "experiment",
-            "model",
-            "system",
-            "user_upload"
-          ]
+          "enum": ["article", "experiment", "model", "system", "user_upload"]
         },
         "status": {
           "type": "string"
@@ -123,12 +113,7 @@
     "contracts/events/artifact.deleted.schema.json": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "artifact_id",
-        "current_version_id",
-        "reason",
-        "trashed_at"
-      ],
+      "required": ["artifact_id", "current_version_id", "reason", "trashed_at"],
       "properties": {
         "artifact_id": {
           "type": "string",
@@ -174,16 +159,10 @@
           ]
         },
         "causation_id": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "correlation_id": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "event_id": {
           "type": "string",
@@ -206,10 +185,7 @@
           "maxLength": 100
         },
         "project_id": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "schema_version": {
           "type": "integer",
@@ -246,10 +222,7 @@
               "type": "boolean"
             },
             "previous_commit_sha": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
             },
             "repository_id": {
@@ -261,11 +234,7 @@
             },
             "workspace": {
               "type": "string",
-              "enum": [
-                "article",
-                "code",
-                "result"
-              ]
+              "enum": ["article", "code", "result"]
             }
           }
         }
@@ -300,10 +269,7 @@
               "type": "boolean"
             },
             "previous_commit_sha": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
             },
             "repository_id": {
@@ -312,19 +278,11 @@
             },
             "source": {
               "type": "string",
-              "enum": [
-                "manual",
-                "poll",
-                "webhook"
-              ]
+              "enum": ["manual", "poll", "webhook"]
             },
             "workspace": {
               "type": "string",
-              "enum": [
-                "article",
-                "code",
-                "result"
-              ]
+              "enum": ["article", "code", "result"]
             }
           }
         }
@@ -333,18 +291,11 @@
     "contracts/events/repo.connected.schema.json": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "provider",
-        "repository_id",
-        "workspaces"
-      ],
+      "required": ["provider", "repository_id", "workspaces"],
       "properties": {
         "provider": {
           "type": "string",
-          "enum": [
-            "github",
-            "local"
-          ]
+          "enum": ["github", "local"]
         },
         "repository_id": {
           "type": "string",
@@ -357,11 +308,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "branch",
-              "commit_sha",
-              "workspace"
-            ],
+            "required": ["branch", "commit_sha", "workspace"],
             "properties": {
               "branch": {
                 "type": "string",
@@ -374,11 +321,7 @@
               },
               "workspace": {
                 "type": "string",
-                "enum": [
-                  "article",
-                  "code",
-                  "result"
-                ]
+                "enum": ["article", "code", "result"]
               }
             }
           }
@@ -396,28 +339,20 @@
         "CursorPage": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "has_more"
-          ],
+          "required": ["has_more"],
           "properties": {
             "has_more": {
               "type": "boolean"
             },
             "next_cursor": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         },
         "Error": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "properties": {
             "code": {
               "type": "string",
@@ -453,9 +388,7 @@
         "input": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "project_id"
-          ],
+          "required": ["project_id"],
           "properties": {
             "cursor": {
               "type": "string",
@@ -478,10 +411,7 @@
         },
         "output": {
           "type": "object",
-          "required": [
-            "has_more",
-            "items"
-          ],
+          "required": ["has_more", "items"],
           "properties": {
             "has_more": {
               "type": "boolean"
@@ -504,10 +434,7 @@
         "input": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "object_id",
-            "project_id"
-          ],
+          "required": ["object_id", "project_id"],
           "properties": {
             "object_id": {
               "type": "string",
@@ -521,10 +448,7 @@
         },
         "output": {
           "type": "object",
-          "required": [
-            "content",
-            "object"
-          ],
+          "required": ["content", "object"],
           "properties": {
             "content": {},
             "object": {
@@ -539,10 +463,7 @@
         "input": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "message",
-            "project_id"
-          ],
+          "required": ["message", "project_id"],
           "properties": {
             "message": {
               "type": "string",
@@ -571,10 +492,7 @@
             },
             "principal_kind": {
               "type": "string",
-              "enum": [
-                "agent",
-                "cli"
-              ]
+              "enum": ["agent", "cli"]
             },
             "project_id": {
               "type": "string"
@@ -599,160 +517,119 @@
           "parameters": [],
           "path": "/health/live",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "health.ready": {
           "method": "GET",
           "parameters": [],
           "path": "/health/ready",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "503"
-          ]
+          "responses": ["200", "503"]
         },
         "system.openapi.get": {
           "method": "GET",
           "parameters": [],
           "path": "/openapi.yaml",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "observability.metrics.get": {
           "method": "GET",
           "parameters": [],
           "path": "/metrics",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "example.check": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/example",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "503"
-          ]
+          "responses": ["200", "503"]
         },
         "auth.login": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/login",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "401"
-          ]
+          "responses": ["200", "401"]
         },
         "auth.register": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/register",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409"
-          ]
+          "responses": ["201", "409"]
         },
         "auth.logout": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/logout",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "401"
-          ]
+          "responses": ["204", "401"]
         },
         "auth.me": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/auth/me",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "401"
-          ]
+          "responses": ["200", "401"]
         },
         "auth.me.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/auth/me",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "auth.me.password.update": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/me/password",
           "requestRequired": true,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "auth.invitations.preview": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/invitations/preview",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "auth.invitations.accept": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/invitations/accept",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "auth.invitations.reject": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/invitations/reject",
           "requestRequired": true,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "auth.tokens.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/auth/tokens",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "auth.tokens.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/auth/tokens",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "auth.tokens.revoke": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/auth/tokens/{tokenId}",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "404"
-          ]
+          "responses": ["204", "404"]
         },
         "projects.list": {
           "method": "GET",
@@ -765,114 +642,84 @@
           ],
           "path": "/v1/projects",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "projects.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "projects.trash.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/trash",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/projects/{projectId}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "projects.trash": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "403",
-            "404"
-          ]
+          "responses": ["204", "403", "404"]
         },
         "projects.restore": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/restore",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "projects.members.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/members",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "projects.members.upsert": {
           "method": "PUT",
           "parameters": [],
           "path": "/v1/projects/{projectId}/members/{userId}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "projects.members.remove": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}/members/{userId}",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "409"
-          ]
+          "responses": ["204", "409"]
         },
         "projects.invitations.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/invitations",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "projects.invitations.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/invitations",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409"
-          ]
+          "responses": ["201", "409"]
         },
         "projects.invitations.revoke": {
           "method": "DELETE",
@@ -885,381 +732,273 @@
           ],
           "path": "/v1/projects/{projectId}/invitations/{invitationId}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "projects.permissions.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/permissions",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "artifact.uploads.initialize": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/uploads",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409",
-            "413"
-          ]
+          "responses": ["201", "409", "413"]
         },
         "artifact.uploads.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/uploads/{uploadId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "artifact.uploads.abort": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/uploads/{uploadId}",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "409"
-          ]
+          "responses": ["204", "409"]
         },
         "artifact.uploads.parts.sign": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/uploads/{uploadId}/parts/sign",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "409"
-          ]
+          "responses": ["200", "409"]
         },
         "artifact.uploads.confirm": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/uploads/{uploadId}/confirm",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "201",
-            "409"
-          ]
+          "responses": ["200", "201", "409"]
         },
         "artifact.transfers.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/artifact-transfers/{signedToken}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404",
-            "410"
-          ]
+          "responses": ["200", "404", "410"]
         },
         "artifact.transfers.put": {
           "method": "PUT",
           "parameters": [],
           "path": "/v1/artifact-transfers/{signedToken}",
           "requestRequired": true,
-          "responses": [
-            "204",
-            "400",
-            "410"
-          ]
+          "responses": ["204", "400", "410"]
         },
         "artifact.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "artifact.trash.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/trash",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "artifact.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "artifact.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "409"
-          ]
+          "responses": ["200", "409"]
         },
         "artifact.trash": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "404"
-          ]
+          "responses": ["204", "404"]
         },
         "artifact.versions.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/versions",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "artifact.versions.uploads.initialize": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/versions/uploads",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409",
-            "413"
-          ]
+          "responses": ["201", "409", "413"]
         },
         "artifact.versions.restore": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/restore",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409"
-          ]
+          "responses": ["201", "409"]
         },
         "artifact.download": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/download",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "409"
-          ]
+          "responses": ["200", "409"]
         },
         "artifact.versions.download": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/download",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "409"
-          ]
+          "responses": ["200", "409"]
         },
         "artifact.previews.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "artifact.restore": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/restore",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "409"
-          ]
+          "responses": ["200", "409"]
         },
         "artifact.purge": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}/artifacts/{artifactId}/purge",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "409"
-          ]
+          "responses": ["204", "409"]
         },
         "artifact.preview-jobs.transfers.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/internal/artifact-preview-jobs/{jobId}/transfers",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "403"
-          ]
+          "responses": ["201", "403"]
         },
         "repo.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "repo.connect": {
           "method": "PUT",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository",
           "requestRequired": true,
-          "responses": [
-            "202",
-            "409"
-          ]
+          "responses": ["202", "409"]
         },
         "repo.disconnect": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "404"
-          ]
+          "responses": ["204", "404"]
         },
         "repo.connection.test": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/test",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "repo.sync.request": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/sync",
           "requestRequired": false,
-          "responses": [
-            "202"
-          ]
+          "responses": ["202"]
         },
         "repo.webhook-secret.rotate": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/webhook-secret",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "400"
-          ]
+          "responses": ["200", "400"]
         },
         "repo.workspaces.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/workspaces",
           "requestRequired": true,
-          "responses": [
-            "202"
-          ]
+          "responses": ["202"]
         },
         "repo.branches.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/branches",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "repo.commits.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/commits",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "repo.commits.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/commits",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409"
-          ]
+          "responses": ["201", "409"]
         },
         "repo.commits.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/commits/{commitSha}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "repo.tree.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/tree",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "repo.content.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/content",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "repo.checkouts.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/checkouts",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "repo.checkouts.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/checkouts/{checkoutId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "repo.checkouts.release": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/projects/{projectId}/repository/checkouts/{checkoutId}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "repo.webhooks.github": {
           "method": "POST",
@@ -1282,10 +1021,7 @@
           ],
           "path": "/v1/repo/webhooks/github/{hookId}",
           "requestRequired": true,
-          "responses": [
-            "202",
-            "401"
-          ]
+          "responses": ["202", "401"]
         },
         "settings.types.list": {
           "method": "GET",
@@ -1303,216 +1039,161 @@
           ],
           "path": "/v1/settings/types",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "403"
-          ]
+          "responses": ["200", "403"]
         },
         "settings.system.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "settings.system.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "settings.system.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "settings.system.test": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/settings/system/{typeKey}/test",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "settings.projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "settings.projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "settings.projects.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "settings.projects.test": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/settings/projects/{projectId}/{typeKey}/test",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "jobs.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "201"
-          ]
+          "responses": ["200", "201"]
         },
         "jobs.claim": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs/claim",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "jobs.workers.heartbeat": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs/workers/heartbeat",
           "requestRequired": true,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "jobs.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/jobs/{jobId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "jobs.cancel": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs/{jobId}/cancel",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "jobs.lease.renew": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs/{jobId}/heartbeat",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "409"
-          ]
+          "responses": ["200", "409"]
         },
         "jobs.logs.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/jobs/{jobId}/logs",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "jobs.logs.append": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs/{jobId}/logs",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "jobs.complete": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs/{jobId}/complete",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "jobs.fail": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/jobs/{jobId}/fail",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "events.test.emit": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/events/test",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "403"
-          ]
+          "responses": ["201", "403"]
         },
         "events.consumers.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/events/consumers",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "events.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/events/{eventId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "events.replay": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/events/{eventId}/replay",
           "requestRequired": true,
-          "responses": [
-            "202",
-            "404"
-          ]
+          "responses": ["202", "404"]
         },
         "data.list": {
           "method": "GET",
@@ -1535,10 +1216,7 @@
           ],
           "path": "/v1/data/projects/{projectId}/objects",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "403"
-          ]
+          "responses": ["200", "403"]
         },
         "data.read": {
           "method": "GET",
@@ -1551,10 +1229,7 @@
           ],
           "path": "/v1/data/projects/{projectId}/objects/{objectId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "data.activity.list": {
           "method": "GET",
@@ -1572,36 +1247,28 @@
           ],
           "path": "/v1/data/projects/{projectId}/activity",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "data.context.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/data/projects/{projectId}/context",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "data.context.proposals.list": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/data/projects/{projectId}/context/proposals",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "data.context.proposals.create": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/data/projects/{projectId}/context/proposals",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "data.context.proposals.review": {
           "method": "POST",
@@ -1614,20 +1281,14 @@
           ],
           "path": "/v1/data/projects/{projectId}/context/proposals/{proposalId}/review",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "403",
-            "409"
-          ]
+          "responses": ["200", "403", "409"]
         },
         "data.home.get": {
           "method": "GET",
           "parameters": [],
           "path": "/v1/data/projects/{projectId}/home",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "audit.events.list": {
           "method": "GET",
@@ -1680,33 +1341,21 @@
           ],
           "path": "/v1/audit/events",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "403"
-          ]
+          "responses": ["200", "403"]
         },
         "audit.events.record": {
           "method": "POST",
           "parameters": [],
           "path": "/v1/audit/events",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "403"
-          ]
+          "responses": ["201", "403"]
         }
       },
       "schemas": {
         "AccessToken": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "created_at",
-            "id",
-            "kind",
-            "name",
-            "user_id"
-          ],
+          "required": ["created_at", "id", "kind", "name", "user_id"],
           "properties": {
             "created_at": {
               "type": "string",
@@ -1722,11 +1371,7 @@
             },
             "kind": {
               "type": "string",
-              "enum": [
-                "agent",
-                "api",
-                "box"
-              ]
+              "enum": ["agent", "api", "box"]
             },
             "name": {
               "type": "string"
@@ -1748,11 +1393,7 @@
         "AppendJobLogRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "level",
-            "message",
-            "worker_id"
-          ],
+          "required": ["level", "message", "worker_id"],
           "properties": {
             "fields": {
               "type": "object",
@@ -1760,12 +1401,7 @@
             },
             "level": {
               "type": "string",
-              "enum": [
-                "debug",
-                "error",
-                "info",
-                "warning"
-              ]
+              "enum": ["debug", "error", "info", "warning"]
             },
             "message": {
               "type": "string",
@@ -1812,17 +1448,11 @@
               "format": "uuid"
             },
             "current_version_id": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "format": "uuid"
             },
             "description": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "kind": {
               "$ref": "#/components/schemas/ArtifactKind"
@@ -1844,10 +1474,7 @@
               "$ref": "#/components/schemas/ArtifactSource"
             },
             "source_object_id": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "status": {
               "$ref": "#/components/schemas/ArtifactStatus"
@@ -1859,10 +1486,7 @@
               }
             },
             "trashed_at": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "format": "date-time"
             },
             "updated_at": {
@@ -1874,10 +1498,7 @@
         "ArtifactConfirmPart": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "etag",
-            "part_number"
-          ],
+          "required": ["etag", "part_number"],
           "properties": {
             "etag": {
               "type": "string",
@@ -1894,9 +1515,7 @@
         "ArtifactConfirmUploadRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "parts"
-          ],
+          "required": ["parts"],
           "properties": {
             "parts": {
               "type": "array",
@@ -1911,10 +1530,7 @@
         "ArtifactDetail": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "artifact",
-            "current_version"
-          ],
+          "required": ["artifact", "current_version"],
           "properties": {
             "artifact": {
               "$ref": "#/components/schemas/Artifact"
@@ -1993,12 +1609,7 @@
         "ArtifactGitReference": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "commit_sha",
-            "path",
-            "repository_id",
-            "workspace"
-          ],
+          "required": ["commit_sha", "path", "repository_id", "workspace"],
           "properties": {
             "commit_sha": {
               "type": "string",
@@ -2078,12 +1689,7 @@
         "ArtifactInitializeVersionUploadRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "filename",
-            "idempotency_key",
-            "sha256",
-            "size_bytes"
-          ],
+          "required": ["filename", "idempotency_key", "sha256", "size_bytes"],
           "properties": {
             "filename": {
               "type": "string",
@@ -2124,11 +1730,7 @@
         "ArtifactPage": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "has_more",
-            "items",
-            "next_cursor"
-          ],
+          "required": ["has_more", "items", "next_cursor"],
           "properties": {
             "has_more": {
               "type": "boolean"
@@ -2140,21 +1742,14 @@
               }
             },
             "next_cursor": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           }
         },
         "ArtifactPartGrant": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "part_number",
-            "size_bytes",
-            "transfer"
-          ],
+          "required": ["part_number", "size_bytes", "transfer"],
           "properties": {
             "part_number": {
               "type": "integer",
@@ -2173,9 +1768,7 @@
         "ArtifactPartGrantList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -2206,10 +1799,7 @@
               "format": "date-time"
             },
             "error_code": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "preview_id": {
               "type": "string",
@@ -2222,10 +1812,7 @@
               "$ref": "#/components/schemas/ArtifactPreviewStatus"
             },
             "structural_summary": {
-              "type": [
-                "object",
-                "null"
-              ],
+              "type": ["object", "null"],
               "additionalProperties": true
             },
             "transfer": {
@@ -2251,17 +1838,11 @@
         "ArtifactPreviewJobTransferRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "direction",
-            "version_id"
-          ],
+          "required": ["direction", "version_id"],
           "properties": {
             "direction": {
               "type": "string",
-              "enum": [
-                "input",
-                "output"
-              ]
+              "enum": ["input", "output"]
             },
             "filename": {
               "type": "string",
@@ -2293,9 +1874,7 @@
         "ArtifactPreviewList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -2307,39 +1886,20 @@
         },
         "ArtifactPreviewStatus": {
           "type": "string",
-          "enum": [
-            "available",
-            "failed",
-            "processing",
-            "queued",
-            "unsupported"
-          ]
+          "enum": ["available", "failed", "processing", "queued", "unsupported"]
         },
         "ArtifactPreviewType": {
           "type": "string",
-          "enum": [
-            "csv",
-            "image",
-            "json",
-            "pdf",
-            "text",
-            "thumbnail"
-          ]
+          "enum": ["csv", "image", "json", "pdf", "text", "thumbnail"]
         },
         "ArtifactPublicKind": {
           "type": "string",
-          "enum": [
-            "attachment",
-            "other",
-            "problem"
-          ]
+          "enum": ["attachment", "other", "problem"]
         },
         "ArtifactRestoreVersionRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "idempotency_key"
-          ],
+          "required": ["idempotency_key"],
           "properties": {
             "idempotency_key": {
               "type": "string",
@@ -2351,9 +1911,7 @@
         "ArtifactSignPartsRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "part_numbers"
-          ],
+          "required": ["part_numbers"],
           "properties": {
             "part_numbers": {
               "type": "array",
@@ -2369,13 +1927,7 @@
         },
         "ArtifactSource": {
           "type": "string",
-          "enum": [
-            "article",
-            "experiment",
-            "model",
-            "system",
-            "user_upload"
-          ]
+          "enum": ["article", "experiment", "model", "system", "user_upload"]
         },
         "ArtifactStatus": {
           "type": "string",
@@ -2389,20 +1941,12 @@
         },
         "ArtifactStorageClass": {
           "type": "string",
-          "enum": [
-            "git",
-            "object"
-          ]
+          "enum": ["git", "object"]
         },
         "ArtifactTransferGrant": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "expires_at",
-            "headers",
-            "method",
-            "url"
-          ],
+          "required": ["expires_at", "headers", "method", "url"],
           "properties": {
             "expires_at": {
               "type": "string",
@@ -2416,10 +1960,7 @@
             },
             "method": {
               "type": "string",
-              "enum": [
-                "GET",
-                "PUT"
-              ]
+              "enum": ["GET", "PUT"]
             },
             "url": {
               "type": "string",
@@ -2432,10 +1973,7 @@
           "additionalProperties": false,
           "properties": {
             "description": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "maxLength": 4000
             },
             "kind": {
@@ -2460,12 +1998,7 @@
         "ArtifactUploadPart": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "completed_at",
-            "etag",
-            "part_number",
-            "size_bytes"
-          ],
+          "required": ["completed_at", "etag", "part_number", "size_bytes"],
           "properties": {
             "completed_at": {
               "type": "string",
@@ -2545,11 +2078,7 @@
             },
             "transfer_mode": {
               "type": "string",
-              "enum": [
-                "direct",
-                "local_proxy",
-                "none"
-              ]
+              "enum": ["direct", "local_proxy", "none"]
             },
             "updated_at": {
               "type": "string",
@@ -2561,10 +2090,7 @@
             },
             "upload_mode": {
               "type": "string",
-              "enum": [
-                "deduplicated",
-                "multipart"
-              ]
+              "enum": ["deduplicated", "multipart"]
             },
             "version_id": {
               "type": "string",
@@ -2609,10 +2135,7 @@
               "format": "uuid"
             },
             "available_at": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "format": "date-time"
             },
             "created_at": {
@@ -2666,9 +2189,7 @@
         "ArtifactVersionList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -2680,12 +2201,7 @@
         },
         "ArtifactVersionStatus": {
           "type": "string",
-          "enum": [
-            "available",
-            "failed",
-            "pending_upload",
-            "verifying"
-          ]
+          "enum": ["available", "failed", "pending_upload", "verifying"]
         },
         "AuditEvent": {
           "type": "object",
@@ -2740,11 +2256,7 @@
             },
             "outcome": {
               "type": "string",
-              "enum": [
-                "denied",
-                "error",
-                "success"
-              ]
+              "enum": ["denied", "error", "success"]
             },
             "project_id": {
               "type": "string",
@@ -2771,10 +2283,7 @@
         "AuditEventPage": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "has_more",
-            "items"
-          ],
+          "required": ["has_more", "items"],
           "properties": {
             "has_more": {
               "type": "boolean"
@@ -2793,10 +2302,7 @@
         "ChangePasswordRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "current_password",
-            "new_password"
-          ],
+          "required": ["current_password", "new_password"],
           "properties": {
             "current_password": {
               "type": "string"
@@ -2810,10 +2316,7 @@
         "ClaimJobRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "job_types",
-            "worker_id"
-          ],
+          "required": ["job_types", "worker_id"],
           "properties": {
             "job_types": {
               "type": "array",
@@ -2839,10 +2342,7 @@
         "CompleteJobRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "result",
-            "worker_id"
-          ],
+          "required": ["result", "worker_id"],
           "properties": {
             "result": {
               "type": "object",
@@ -2858,10 +2358,7 @@
         "ConnectionCheck": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name",
-            "status"
-          ],
+          "required": ["name", "status"],
           "properties": {
             "message": {
               "type": "string"
@@ -2871,21 +2368,14 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "failed",
-                "passed"
-              ]
+              "enum": ["failed", "passed"]
             }
           }
         },
         "ConnectionTestResult": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "checked_at",
-            "checks",
-            "status"
-          ],
+          "required": ["checked_at", "checks", "status"],
           "properties": {
             "checked_at": {
               "type": "string",
@@ -2899,11 +2389,7 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "failed",
-                "passed",
-                "unsupported"
-              ]
+              "enum": ["failed", "passed", "unsupported"]
             }
           }
         },
@@ -2974,11 +2460,7 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "accepted",
-                "pending",
-                "rejected"
-              ]
+              "enum": ["accepted", "pending", "rejected"]
             },
             "title": {
               "type": "string"
@@ -2992,9 +2474,7 @@
         "ContextProposalList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -3007,11 +2487,7 @@
         "CreateContextProposalRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "content",
-            "context_type",
-            "title"
-          ],
+          "required": ["content", "context_type", "title"],
           "properties": {
             "content": {
               "type": "string",
@@ -3045,10 +2521,7 @@
         "CreateInvitationRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "email",
-            "role"
-          ],
+          "required": ["email", "role"],
           "properties": {
             "email": {
               "type": "string",
@@ -3062,11 +2535,7 @@
         "CreateJobRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "job_type",
-            "payload",
-            "project_id"
-          ],
+          "required": ["job_type", "payload", "project_id"],
           "properties": {
             "available_at": {
               "type": "string",
@@ -3107,9 +2576,7 @@
         "CreateProjectRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name"
-          ],
+          "required": ["name"],
           "properties": {
             "name": {
               "type": "string",
@@ -3138,10 +2605,7 @@
         "CreateTokenRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "name"
-          ],
+          "required": ["kind", "name"],
           "properties": {
             "expires_at": {
               "type": "string",
@@ -3149,11 +2613,7 @@
             },
             "kind": {
               "type": "string",
-              "enum": [
-                "agent",
-                "api",
-                "box"
-              ]
+              "enum": ["agent", "api", "box"]
             },
             "name": {
               "type": "string",
@@ -3224,10 +2684,7 @@
         "DataActivityPage": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "has_more",
-            "items"
-          ],
+          "required": ["has_more", "items"],
           "properties": {
             "has_more": {
               "type": "boolean"
@@ -3313,10 +2770,7 @@
         "DataObjectPage": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "has_more",
-            "items"
-          ],
+          "required": ["has_more", "items"],
           "properties": {
             "has_more": {
               "type": "boolean"
@@ -3335,10 +2789,7 @@
         "DataObjectRead": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "content",
-            "object"
-          ],
+          "required": ["content", "object"],
           "properties": {
             "content": {},
             "object": {
@@ -3349,9 +2800,7 @@
         "EmitTestEventRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "message"
-          ],
+          "required": ["message"],
           "properties": {
             "message": {
               "type": "string",
@@ -3367,10 +2816,7 @@
         "Error": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message"
-          ],
+          "required": ["code", "message"],
           "properties": {
             "code": {
               "type": "string"
@@ -3387,10 +2833,7 @@
         "EventConsumer": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name",
-            "patterns"
-          ],
+          "required": ["name", "patterns"],
           "properties": {
             "name": {
               "type": "string"
@@ -3406,9 +2849,7 @@
         "EventConsumerList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -3473,12 +2914,7 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "failed",
-                "pending",
-                "processing",
-                "succeeded"
-              ]
+              "enum": ["failed", "pending", "processing", "succeeded"]
             },
             "updated_at": {
               "type": "string",
@@ -3489,10 +2925,7 @@
         "EventEnqueued": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "event_id",
-            "status"
-          ],
+          "required": ["event_id", "status"],
           "properties": {
             "event_id": {
               "type": "string",
@@ -3533,16 +2966,10 @@
               ]
             },
             "causation_id": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "correlation_id": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "event_id": {
               "type": "string",
@@ -3564,10 +2991,7 @@
               "type": "string"
             },
             "project_id": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "schema_version": {
               "type": "integer",
@@ -3658,11 +3082,7 @@
         "ExampleCheck": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "checked_at",
-            "status",
-            "storage"
-          ],
+          "required": ["checked_at", "status", "storage"],
           "properties": {
             "checked_at": {
               "type": "string",
@@ -3679,12 +3099,7 @@
         "FailJobRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "retryable",
-            "worker_id"
-          ],
+          "required": ["code", "message", "retryable", "worker_id"],
           "properties": {
             "code": {
               "type": "string",
@@ -3758,11 +3173,7 @@
         "HomeSection": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "available",
-            "items",
-            "total"
-          ],
+          "required": ["available", "items", "total"],
           "properties": {
             "available": {
               "type": "boolean"
@@ -3780,19 +3191,11 @@
         "Identity": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "user"
-          ],
+          "required": ["kind", "user"],
           "properties": {
             "kind": {
               "type": "string",
-              "enum": [
-                "agent",
-                "api",
-                "box",
-                "session"
-              ]
+              "enum": ["agent", "api", "box", "session"]
             },
             "project_id": {
               "type": "string",
@@ -3814,9 +3217,7 @@
         "InvitationList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -3828,20 +3229,12 @@
         },
         "InvitationStatus": {
           "type": "string",
-          "enum": [
-            "accepted",
-            "declined",
-            "expired",
-            "pending",
-            "revoked"
-          ]
+          "enum": ["accepted", "declined", "expired", "pending", "revoked"]
         },
         "InvitationTokenRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "token"
-          ],
+          "required": ["token"],
           "properties": {
             "token": {
               "type": "string"
@@ -3851,9 +3244,7 @@
         "IssuedInvitation": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "invitation"
-          ],
+          "required": ["invitation"],
           "properties": {
             "invitation": {
               "$ref": "#/components/schemas/ProjectInvitation"
@@ -3866,10 +3257,7 @@
         "IssuedToken": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "credential",
-            "token"
-          ],
+          "required": ["credential", "token"],
           "properties": {
             "credential": {
               "$ref": "#/components/schemas/AccessToken"
@@ -3989,9 +3377,7 @@
         "JobClaim": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "job"
-          ],
+          "required": ["job"],
           "properties": {
             "job": {
               "oneOf": [
@@ -4036,12 +3422,7 @@
             },
             "level": {
               "type": "string",
-              "enum": [
-                "debug",
-                "error",
-                "info",
-                "warning"
-              ]
+              "enum": ["debug", "error", "info", "warning"]
             },
             "message": {
               "type": "string"
@@ -4054,9 +3435,7 @@
         "JobLogList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -4080,11 +3459,7 @@
         "Liveness": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "service",
-            "status",
-            "version"
-          ],
+          "required": ["service", "status", "version"],
           "properties": {
             "service": {
               "type": "string"
@@ -4100,10 +3475,7 @@
         "LoginRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "email",
-            "password"
-          ],
+          "required": ["email", "password"],
           "properties": {
             "email": {
               "type": "string",
@@ -4118,12 +3490,7 @@
         "LoginResult": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "access_token",
-            "expires_at",
-            "session_id",
-            "user"
-          ],
+          "required": ["access_token", "expires_at", "session_id", "user"],
           "properties": {
             "access_token": {
               "type": "string"
@@ -4144,9 +3511,7 @@
         "MemberList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -4159,12 +3524,7 @@
         "OutboxEventState": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "deliveries",
-            "failures",
-            "record",
-            "replays"
-          ],
+          "required": ["deliveries", "failures", "record", "replays"],
           "properties": {
             "deliveries": {
               "type": "array",
@@ -4233,12 +3593,7 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "failed",
-                "pending",
-                "published",
-                "publishing"
-              ]
+              "enum": ["failed", "pending", "published", "publishing"]
             }
           }
         },
@@ -4378,9 +3733,7 @@
         "ProjectContextList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -4443,9 +3796,7 @@
         "ProjectList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -4458,13 +3809,7 @@
         "ProjectMember": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "display_name",
-            "email",
-            "joined_at",
-            "role",
-            "user_id"
-          ],
+          "required": ["display_name", "email", "joined_at", "role", "user_id"],
           "properties": {
             "display_name": {
               "type": "string"
@@ -4489,10 +3834,7 @@
         "ProjectPermissions": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "permissions",
-            "role"
-          ],
+          "required": ["permissions", "role"],
           "properties": {
             "permissions": {
               "type": "array",
@@ -4507,55 +3849,31 @@
         },
         "ProjectRole": {
           "type": "string",
-          "enum": [
-            "agent",
-            "box",
-            "editor",
-            "maintainer",
-            "owner",
-            "viewer"
-          ]
+          "enum": ["agent", "box", "editor", "maintainer", "owner", "viewer"]
         },
         "Readiness": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "dependencies",
-            "status"
-          ],
+          "required": ["dependencies", "status"],
           "properties": {
             "dependencies": {
               "type": "object",
               "additionalProperties": {
                 "type": "string",
-                "enum": [
-                  "ready",
-                  "unavailable"
-                ]
+                "enum": ["ready", "unavailable"]
               },
-              "required": [
-                "object_storage",
-                "postgres"
-              ]
+              "required": ["object_storage", "postgres"]
             },
             "status": {
               "type": "string",
-              "enum": [
-                "not_ready",
-                "ready"
-              ]
+              "enum": ["not_ready", "ready"]
             }
           }
         },
         "RecordAuditEventRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "action",
-            "category",
-            "outcome",
-            "source"
-          ],
+          "required": ["action", "category", "outcome", "source"],
           "properties": {
             "action": {
               "type": "string",
@@ -4585,11 +3903,7 @@
             },
             "outcome": {
               "type": "string",
-              "enum": [
-                "denied",
-                "error",
-                "success"
-              ]
+              "enum": ["denied", "error", "success"]
             },
             "project_id": {
               "type": "string",
@@ -4613,11 +3927,7 @@
         "RegisterRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "display_name",
-            "email",
-            "password"
-          ],
+          "required": ["display_name", "email", "password"],
           "properties": {
             "display_name": {
               "type": "string",
@@ -4640,10 +3950,7 @@
         "RenewJobLeaseRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "lease_seconds",
-            "worker_id"
-          ],
+          "required": ["lease_seconds", "worker_id"],
           "properties": {
             "lease_seconds": {
               "type": "integer",
@@ -4660,9 +3967,7 @@
         "ReplayEventRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "reason"
-          ],
+          "required": ["reason"],
           "properties": {
             "consumer_name": {
               "type": "string",
@@ -4679,12 +3984,7 @@
         "RepoBranch": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "commit_sha",
-            "default",
-            "name",
-            "workspace"
-          ],
+          "required": ["commit_sha", "default", "name", "workspace"],
           "properties": {
             "commit_sha": {
               "type": "string",
@@ -4711,9 +4011,7 @@
         "RepoBranchList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -4726,10 +4024,7 @@
         "RepoChangedPath": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "path",
-            "status"
-          ],
+          "required": ["path", "status"],
           "properties": {
             "path": {
               "type": "string"
@@ -4786,10 +4081,7 @@
               "type": "string"
             },
             "released_at": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "format": "date-time"
             },
             "repository_id": {
@@ -4798,12 +4090,7 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "active",
-                "error",
-                "expired",
-                "released"
-              ]
+              "enum": ["active", "error", "expired", "released"]
             }
           }
         },
@@ -4859,13 +4146,7 @@
             },
             "source": {
               "type": "string",
-              "enum": [
-                "connect",
-                "mmdash",
-                "reference",
-                "sync",
-                "webhook"
-              ]
+              "enum": ["connect", "mmdash", "reference", "sync", "webhook"]
             },
             "tree_sha": {
               "type": "string",
@@ -4898,10 +4179,7 @@
               }
             },
             "next_cursor": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "resolved_revision": {
               "type": "string",
@@ -4975,19 +4253,14 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "failed",
-                "passed"
-              ]
+              "enum": ["failed", "passed"]
             }
           }
         },
         "RepoConnectRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "settings_version"
-          ],
+          "required": ["settings_version"],
           "properties": {
             "settings_version": {
               "type": "integer",
@@ -4998,10 +4271,7 @@
         "RepoCreateCheckoutRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "commit_sha",
-            "purpose"
-          ],
+          "required": ["commit_sha", "purpose"],
           "properties": {
             "commit_sha": {
               "type": "string",
@@ -5037,20 +4307,14 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "operation",
-                  "path"
-                ],
+                "required": ["operation", "path"],
                 "properties": {
                   "content_base64": {
                     "type": "string"
                   },
                   "operation": {
                     "type": "string",
-                    "enum": [
-                      "delete",
-                      "put"
-                    ]
+                    "enum": ["delete", "put"]
                   },
                   "path": {
                     "type": "string",
@@ -5100,28 +4364,15 @@
               "type": "string"
             },
             "content": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "encoding": {
-              "type": [
-                "string",
-                "null"
-              ],
-              "enum": [
-                null,
-                "utf-8"
-              ]
+              "type": ["string", "null"],
+              "enum": [null, "utf-8"]
             },
             "kind": {
               "type": "string",
-              "enum": [
-                "file",
-                "submodule",
-                "symlink"
-              ]
+              "enum": ["file", "submodule", "symlink"]
             },
             "mode": {
               "type": "string"
@@ -5160,11 +4411,7 @@
         "RepoGitIdentity": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "email",
-            "name",
-            "time"
-          ],
+          "required": ["email", "name", "time"],
           "properties": {
             "email": {
               "type": "string"
@@ -5180,10 +4427,7 @@
         },
         "RepoProvider": {
           "type": "string",
-          "enum": [
-            "github",
-            "local"
-          ]
+          "enum": ["github", "local"]
         },
         "Repository": {
           "type": "object",
@@ -5217,22 +4461,13 @@
               "type": "string"
             },
             "last_error_code": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "last_error_message": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "last_synced_at": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "format": "date-time"
             },
             "project_id": {
@@ -5243,10 +4478,7 @@
               "$ref": "#/components/schemas/RepoProvider"
             },
             "remote_url": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "repository_id": {
               "type": "string",
@@ -5291,23 +4523,11 @@
         "RepoTreeEntry": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "mode",
-            "name",
-            "object_id",
-            "path",
-            "size"
-          ],
+          "required": ["kind", "mode", "name", "object_id", "path", "size"],
           "properties": {
             "kind": {
               "type": "string",
-              "enum": [
-                "directory",
-                "file",
-                "submodule",
-                "symlink"
-              ]
+              "enum": ["directory", "file", "submodule", "symlink"]
             },
             "mode": {
               "type": "string"
@@ -5323,10 +4543,7 @@
               "type": "string"
             },
             "size": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": ["integer", "null"],
               "minimum": 0
             }
           }
@@ -5357,10 +4574,7 @@
               }
             },
             "next_cursor": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "path": {
               "type": "string"
@@ -5377,11 +4591,7 @@
         "RepoUpdateWorkspacesRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "article_branch",
-            "code_branch",
-            "result_branch"
-          ],
+          "required": ["article_branch", "code_branch", "result_branch"],
           "properties": {
             "article_branch": {
               "type": "string",
@@ -5403,11 +4613,7 @@
         "RepoWebhook": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "hook_id",
-            "public_url",
-            "secret_configured"
-          ],
+          "required": ["hook_id", "public_url", "secret_configured"],
           "properties": {
             "hook_id": {
               "type": "string",
@@ -5427,11 +4633,7 @@
         "RepoWebhookAcceptance": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "accepted",
-            "duplicate",
-            "event"
-          ],
+          "required": ["accepted", "duplicate", "event"],
           "properties": {
             "accepted": {
               "type": "boolean"
@@ -5458,19 +4660,12 @@
           ],
           "properties": {
             "head_commit_sha": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
             },
             "local_branch": {
               "type": "string",
-              "enum": [
-                "mmdash/article",
-                "mmdash/code",
-                "mmdash/result"
-              ]
+              "enum": ["mmdash/article", "mmdash/code", "mmdash/result"]
             },
             "remote_branch": {
               "type": "string",
@@ -5481,10 +4676,7 @@
               "$ref": "#/components/schemas/RepoWorkspaceStatus"
             },
             "tree_sha": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": ["string", "null"],
               "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
             },
             "updated_at": {
@@ -5498,35 +4690,20 @@
         },
         "RepoWorkspaceKind": {
           "type": "string",
-          "enum": [
-            "article",
-            "code",
-            "result"
-          ]
+          "enum": ["article", "code", "result"]
         },
         "RepoWorkspaceStatus": {
           "type": "string",
-          "enum": [
-            "dirty",
-            "error",
-            "missing",
-            "pending",
-            "ready"
-          ]
+          "enum": ["dirty", "error", "missing", "pending", "ready"]
         },
         "ReviewContextProposalRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "decision"
-          ],
+          "required": ["decision"],
           "properties": {
             "decision": {
               "type": "string",
-              "enum": [
-                "accepted",
-                "rejected"
-              ]
+              "enum": ["accepted", "rejected"]
             },
             "review_note": {
               "type": "string",
@@ -5576,12 +4753,7 @@
         "SettingFieldDefinition": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "key",
-            "kind",
-            "label",
-            "required"
-          ],
+          "required": ["key", "kind", "label", "required"],
           "properties": {
             "description": {
               "type": "string"
@@ -5608,21 +4780,11 @@
         },
         "SettingFieldKind": {
           "type": "string",
-          "enum": [
-            "boolean",
-            "number",
-            "secret",
-            "select",
-            "string",
-            "url"
-          ]
+          "enum": ["boolean", "number", "secret", "select", "string", "url"]
         },
         "SettingScope": {
           "type": "string",
-          "enum": [
-            "project",
-            "system"
-          ]
+          "enum": ["project", "system"]
         },
         "SettingType": {
           "type": "object",
@@ -5673,9 +4835,7 @@
         "SettingTypeList": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "items"
-          ],
+          "required": ["items"],
           "properties": {
             "items": {
               "type": "array",
@@ -5710,9 +4870,7 @@
         "UpdateProjectMemberRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "role"
-          ],
+          "required": ["role"],
           "properties": {
             "role": {
               "$ref": "#/components/schemas/ProjectRole"
@@ -5753,9 +4911,7 @@
         "UpdateSettingRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "values"
-          ],
+          "required": ["values"],
           "properties": {
             "values": {
               "$ref": "#/components/schemas/SettingValues"
@@ -5791,28 +4947,18 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "active",
-                "disabled"
-              ]
+              "enum": ["active", "disabled"]
             },
             "system_role": {
               "type": "string",
-              "enum": [
-                "admin",
-                "member"
-              ]
+              "enum": ["admin", "member"]
             }
           }
         },
         "WorkerHeartbeatRequest": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "capabilities",
-            "version",
-            "worker_id"
-          ],
+          "required": ["capabilities", "version", "worker_id"],
           "properties": {
             "capabilities": {
               "type": "array",
@@ -5846,112 +4992,84 @@
           "parameters": [],
           "path": "/health/live",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.health.ready": {
           "method": "GET",
           "parameters": [],
           "path": "/health/ready",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "503"
-          ]
+          "responses": ["200", "503"]
         },
         "bff.example.check": {
           "method": "GET",
           "parameters": [],
           "path": "/api/example",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "502"
-          ]
+          "responses": ["200", "502"]
         },
         "bff.auth.login": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/login",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "401"
-          ]
+          "responses": ["200", "401"]
         },
         "bff.auth.register": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/register",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "bff.auth.me": {
           "method": "GET",
           "parameters": [],
           "path": "/api/auth/me",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "401"
-          ]
+          "responses": ["200", "401"]
         },
         "bff.auth.me.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/auth/me",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.auth.me.password.update": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/me/password",
           "requestRequired": true,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.auth.invitations.preview": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/invitations/preview",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.auth.invitations.accept": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/invitations/accept",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.auth.invitations.reject": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/invitations/reject",
           "requestRequired": true,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.auth.logout": {
           "method": "POST",
           "parameters": [],
           "path": "/api/auth/logout",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.projects.list": {
           "method": "GET",
@@ -5964,72 +5082,56 @@
           ],
           "path": "/api/projects",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.create": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "bff.projects.trash.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/trash",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/projects/{projectId}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.trash": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/projects/{projectId}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.projects.restore": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/restore",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.members.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/members",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.members.upsert": {
           "method": "PUT",
@@ -6042,9 +5144,7 @@
           ],
           "path": "/api/projects/{projectId}/members/{userId}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.members.remove": {
           "method": "DELETE",
@@ -6057,28 +5157,21 @@
           ],
           "path": "/api/projects/{projectId}/members/{userId}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.projects.invitations.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/invitations",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.projects.invitations.create": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/invitations",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409"
-          ]
+          "responses": ["201", "409"]
         },
         "bff.projects.invitations.revoke": {
           "method": "DELETE",
@@ -6091,18 +5184,14 @@
           ],
           "path": "/api/projects/{projectId}/invitations/{invitationId}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.projects.permissions.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/permissions",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.system.types.list": {
           "method": "GET",
@@ -6115,161 +5204,119 @@
           ],
           "path": "/api/settings/types",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.system.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.system.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.system.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.settings.system.test": {
           "method": "POST",
           "parameters": [],
           "path": "/api/settings/system/{typeKey}/test",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.projects.types.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/types",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.projects.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.projects.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.settings.projects.delete": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.settings.projects.test": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/settings/{typeKey}/test",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.uploads.initialize": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/uploads",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409",
-            "413"
-          ]
+          "responses": ["201", "409", "413"]
         },
         "bff.artifact.uploads.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/uploads/{uploadId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "bff.artifact.uploads.abort": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/uploads/{uploadId}",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "409"
-          ]
+          "responses": ["204", "409"]
         },
         "bff.artifact.uploads.parts.sign": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/uploads/{uploadId}/parts/sign",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.uploads.confirm": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/uploads/{uploadId}/confirm",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "201",
-            "409"
-          ]
+          "responses": ["200", "201", "409"]
         },
         "bff.artifact.transfers.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/artifact-transfers/{signedToken}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "410"
-          ]
+          "responses": ["200", "410"]
         },
         "bff.artifact.transfers.put": {
           "method": "PUT",
           "parameters": [],
           "path": "/api/artifact-transfers/{signedToken}",
           "requestRequired": true,
-          "responses": [
-            "204",
-            "410"
-          ]
+          "responses": ["204", "410"]
         },
         "bff.artifact.list": {
           "method": "GET",
@@ -6307,9 +5354,7 @@
           ],
           "path": "/api/projects/{projectId}/artifacts",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.trash.list": {
           "method": "GET",
@@ -6337,185 +5382,140 @@
           ],
           "path": "/api/projects/{projectId}/artifacts/trash",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "bff.artifact.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}",
           "requestRequired": true,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.trash": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.artifact.versions.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/versions",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.versions.uploads.initialize": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/versions/uploads",
           "requestRequired": true,
-          "responses": [
-            "201",
-            "409",
-            "413"
-          ]
+          "responses": ["201", "409", "413"]
         },
         "bff.artifact.versions.restore": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/restore",
           "requestRequired": true,
-          "responses": [
-            "201"
-          ]
+          "responses": ["201"]
         },
         "bff.artifact.download": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/download",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.versions.download": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/download",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.previews.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/versions/{versionId}/previews",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.restore": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/restore",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.artifact.purge": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/projects/{projectId}/artifacts/{artifactId}/purge",
           "requestRequired": false,
-          "responses": [
-            "204",
-            "409"
-          ]
+          "responses": ["204", "409"]
         },
         "bff.repo.get": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "404"
-          ]
+          "responses": ["200", "404"]
         },
         "bff.repo.connect": {
           "method": "PUT",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository",
           "requestRequired": true,
-          "responses": [
-            "202"
-          ]
+          "responses": ["202"]
         },
         "bff.repo.disconnect": {
           "method": "DELETE",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository",
           "requestRequired": false,
-          "responses": [
-            "204"
-          ]
+          "responses": ["204"]
         },
         "bff.repo.connection.test": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository/test",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.repo.sync.request": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository/sync",
           "requestRequired": false,
-          "responses": [
-            "202"
-          ]
+          "responses": ["202"]
         },
         "bff.repo.webhook-secret.rotate": {
           "method": "POST",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository/webhook-secret",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.repo.workspaces.update": {
           "method": "PATCH",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository/workspaces",
           "requestRequired": true,
-          "responses": [
-            "202"
-          ]
+          "responses": ["202"]
         },
         "bff.repo.branches.list": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/repository/branches",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.repo.commits.list": {
           "method": "GET",
@@ -6538,9 +5538,7 @@
           ],
           "path": "/api/projects/{projectId}/repository/commits",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.repo.commits.get": {
           "method": "GET",
@@ -6553,9 +5551,7 @@
           ],
           "path": "/api/projects/{projectId}/repository/commits/{commitSha}",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.repo.tree.list": {
           "method": "GET",
@@ -6588,9 +5584,7 @@
           ],
           "path": "/api/projects/{projectId}/repository/tree",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.repo.content.get": {
           "method": "GET",
@@ -6613,9 +5607,7 @@
           ],
           "path": "/api/projects/{projectId}/repository/content",
           "requestRequired": false,
-          "responses": [
-            "200"
-          ]
+          "responses": ["200"]
         },
         "bff.repo.webhooks.github": {
           "method": "POST",
@@ -6643,10 +5635,7 @@
           ],
           "path": "/api/webhooks/github/{hookId}",
           "requestRequired": true,
-          "responses": [
-            "202",
-            "401"
-          ]
+          "responses": ["202", "401"]
         },
         "bff.page.get": {
           "method": "GET",
@@ -6659,12 +5648,7 @@
           ],
           "path": "/api/projects/{projectId}/pages/{pageId}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "400",
-            "401",
-            "404"
-          ]
+          "responses": ["200", "400", "401", "404"]
         },
         "bff.events.stream": {
           "method": "GET",
@@ -6677,20 +5661,14 @@
           ],
           "path": "/api/projects/{projectId}/events",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "401"
-          ]
+          "responses": ["200", "401"]
         },
         "bff.socket.connect": {
           "method": "GET",
           "parameters": [],
           "path": "/api/projects/{projectId}/socket",
           "requestRequired": false,
-          "responses": [
-            "101",
-            "401"
-          ]
+          "responses": ["101", "401"]
         },
         "bff.file.download": {
           "method": "GET",
@@ -6708,11 +5686,7 @@
           ],
           "path": "/api/projects/{projectId}/files/{filePath}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "206",
-            "401"
-          ]
+          "responses": ["200", "206", "401"]
         },
         "bff.file.upload": {
           "method": "PUT",
@@ -6725,11 +5699,7 @@
           ],
           "path": "/api/projects/{projectId}/files/{filePath}",
           "requestRequired": true,
-          "responses": [
-            "200",
-            "201",
-            "401"
-          ]
+          "responses": ["200", "201", "401"]
         },
         "bff.file.head": {
           "method": "HEAD",
@@ -6742,21 +5712,14 @@
           ],
           "path": "/api/projects/{projectId}/files/{filePath}",
           "requestRequired": false,
-          "responses": [
-            "200",
-            "401"
-          ]
+          "responses": ["200", "401"]
         }
       },
       "schemas": {
         "Error": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "code",
-            "message",
-            "request_id"
-          ],
+          "required": ["code", "message", "request_id"],
           "properties": {
             "code": {
               "type": "string"
@@ -6779,11 +5742,7 @@
         "Liveness": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "service",
-            "status",
-            "version"
-          ],
+          "required": ["service", "status", "version"],
           "properties": {
             "service": {
               "type": "string"
@@ -6799,12 +5758,7 @@
         "PageAggregation": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "fragments",
-            "page_id",
-            "project_id",
-            "request_id"
-          ],
+          "required": ["fragments", "page_id", "project_id", "request_id"],
           "properties": {
             "fragments": {
               "type": "object",
@@ -6823,32 +5777,21 @@
         },
         "Readiness": {
           "type": "object",
-          "required": [
-            "dependencies",
-            "status"
-          ],
+          "required": ["dependencies", "status"],
           "properties": {
             "dependencies": {
               "type": "object",
-              "required": [
-                "core"
-              ],
+              "required": ["core"],
               "properties": {
                 "core": {
                   "type": "string",
-                  "enum": [
-                    "ready",
-                    "unavailable"
-                  ]
+                  "enum": ["ready", "unavailable"]
                 }
               }
             },
             "status": {
               "type": "string",
-              "enum": [
-                "not_ready",
-                "ready"
-              ]
+              "enum": ["not_ready", "ready"]
             }
           }
         }

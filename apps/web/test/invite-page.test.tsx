@@ -132,9 +132,8 @@ describe("invitation page actions", () => {
     mocks.search = "token=invitation-token&autoAccept=1";
     render(<InvitePage />, { wrapper: Providers });
 
-    const mismatch = await screen.findByText(
-      /请使用受邀邮箱对应的账号登录后再接受邀请/,
-    );
+    const mismatch =
+      await screen.findByText(/请使用受邀邮箱对应的账号登录后再接受邀请/);
     expect(mismatch).toHaveTextContent("different@example.com");
     expect(mismatch).toHaveTextContent("member@example.com");
     expect(

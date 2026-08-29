@@ -216,3 +216,11 @@ export type ZoteroItem = {
   doi?: string;
   raw: Record<string, unknown>;
 };
+
+export type ZoteroCollection = {
+  collection_key: string;
+  name: string;
+  num_collections: number;
+  num_items: number;
+  parent_collection_key?: string | null;
+};

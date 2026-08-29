@@ -219,10 +219,7 @@ function readExactTools(value: unknown): readonly string[] | undefined {
   if (
     tools.length === 0 ||
     tools.some(
-      (tool) =>
-        !tool ||
-        tool.includes("*") ||
-        !exactToolNamePattern.test(tool),
+      (tool) => !tool || tool.includes("*") || !exactToolNamePattern.test(tool),
     )
   ) {
     return undefined;

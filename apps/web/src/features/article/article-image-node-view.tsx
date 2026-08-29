@@ -39,7 +39,9 @@ export function ArticleImageNodeView({
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [dropIndicatorSide, setDropIndicatorSide] = useState<"left" | "right">();
+  const [dropIndicatorSide, setDropIndicatorSide] = useState<
+    "left" | "right"
+  >();
 
   const canEdit = editor?.isEditable ?? true;
 
@@ -180,8 +182,8 @@ export function ArticleImageNodeView({
     }
 
     // 2. Local image file drop
-    const localImage = Array.from(event.dataTransfer?.files ?? []).find((item) =>
-      item.type.startsWith("image/"),
+    const localImage = Array.from(event.dataTransfer?.files ?? []).find(
+      (item) => item.type.startsWith("image/"),
     );
     if (localImage) {
       const rect = event.currentTarget.getBoundingClientRect();
@@ -268,12 +270,7 @@ export function ArticleImageNodeView({
     }
 
     if (targetIndex !== fromIndex) {
-      reorderArticleImageInGroup(
-        editor,
-        info.groupPos,
-        fromIndex,
-        targetIndex,
-      );
+      reorderArticleImageInGroup(editor, info.groupPos, fromIndex, targetIndex);
     }
   };
 

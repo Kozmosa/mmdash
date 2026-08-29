@@ -14,7 +14,11 @@ afterEach(async () => {
 describe("Experiment and Box BFF routes", () => {
   it("requires a signed browser session before reaching Core", async () => {
     const fetchImplementation = vi.fn<typeof fetch>();
-    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
     apps.push(app);
 
     const response = await app.inject({
@@ -28,9 +32,20 @@ describe("Experiment and Box BFF routes", () => {
 
   it("validates and forwards a frozen experiment create request", async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json({ experiment_id: experimentId, project_id: projectId, status: "created" }, { status: 201 }),
+      Response.json(
+        {
+          experiment_id: experimentId,
+          project_id: projectId,
+          status: "created",
+        },
+        { status: 201 },
+      ),
     );
-    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
     apps.push(app);
     const cookie = await signedSessionCookie(app);
     const request = {
@@ -72,10 +87,23 @@ describe("Experiment and Box BFF routes", () => {
   });
 
   it("forwards a local-process runtime policy create request and settings update", async () => {
-    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(async () =>
-      Response.json({ experiment_id: experimentId, project_id: projectId, status: "created" }, { status: 201 }),
-    );
-    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json(
+          {
+            experiment_id: experimentId,
+            project_id: projectId,
+            status: "created",
+          },
+          { status: 201 },
+        ),
+      );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
     apps.push(app);
     const cookie = await signedSessionCookie(app);
 
@@ -96,9 +124,10 @@ describe("Experiment and Box BFF routes", () => {
       url: `/api/projects/${projectId}/experiments`,
     });
     expect(createResponse.statusCode).toBe(201);
-    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body)).runtime_policy).toBe(
-      "local-process",
-    );
+    expect(
+      JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))
+        .runtime_policy,
+    ).toBe("local-process");
 
     const settingsResponse = await app.inject({
       headers: { cookie },
@@ -120,7 +149,8 @@ describe("Experiment and Box BFF routes", () => {
     });
     expect(settingsResponse.statusCode).toBe(200);
     expect(
-      JSON.parse(String(fetchImplementation.mock.calls[1]?.[1]?.body)).default_runtime_policy,
+      JSON.parse(String(fetchImplementation.mock.calls[1]?.[1]?.body))
+        .default_runtime_policy,
     ).toBe("local-process");
   });
 
@@ -128,9 +158,15 @@ describe("Experiment and Box BFF routes", () => {
     const fetchImplementation = vi.fn<typeof fetch>();
     fetchImplementation
       .mockResolvedValueOnce(Response.json({ items: [] }))
-      .mockResolvedValueOnce(Response.json({ box_id: "00000000-0000-4000-8000-000000000003" }))
+      .mockResolvedValueOnce(
+        Response.json({ box_id: "00000000-0000-4000-8000-000000000003" }),
+      )
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
     apps.push(app);
     const cookie = await signedSessionCookie(app);
 
@@ -167,58 +203,112 @@ describe("Experiment and Box BFF routes", () => {
 
   it("forwards personal Box management without a project context", async () => {
     const boxId = "00000000-0000-4000-8000-000000000003";
-    const fetchImplementation = vi.fn<typeof fetch>()
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ items: [] }))
-      .mockResolvedValueOnce(Response.json({ box_id: boxId, name: "compute-1" }))
-      .mockResolvedValueOnce(Response.json({ box: { box_id: boxId }, active_tasks: 0 }, { status: 202 }));
-    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+      .mockResolvedValueOnce(
+        Response.json({ box_id: boxId, name: "compute-1" }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { box: { box_id: boxId }, active_tasks: 0 },
+          { status: 202 },
+        ),
+      );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
     apps.push(app);
     const cookie = await signedSessionCookie(app);
 
-    expect((await app.inject({ headers: { cookie }, method: "GET", url: "/api/users/me/boxes" })).statusCode).toBe(200);
-    expect((await app.inject({ headers: { cookie }, method: "PATCH", payload: { name: "compute-1" }, url: `/api/users/me/boxes/${boxId}` })).statusCode).toBe(200);
-    expect((await app.inject({ headers: { cookie }, method: "POST", payload: { mode: "drain" }, url: `/api/users/me/boxes/${boxId}/revoke` })).statusCode).toBe(202);
+    expect(
+      (
+        await app.inject({
+          headers: { cookie },
+          method: "GET",
+          url: "/api/users/me/boxes",
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          headers: { cookie },
+          method: "PATCH",
+          payload: { name: "compute-1" },
+          url: `/api/users/me/boxes/${boxId}`,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          headers: { cookie },
+          method: "POST",
+          payload: { mode: "drain" },
+          url: `/api/users/me/boxes/${boxId}/revoke`,
+        })
+      ).statusCode,
+    ).toBe(202);
     expect(fetchImplementation.mock.calls.map((call) => call[0])).toEqual([
       "http://core.test/v1/users/me/boxes",
       `http://core.test/v1/users/me/boxes/${boxId}`,
       `http://core.test/v1/users/me/boxes/${boxId}/revoke`,
     ]);
     for (const [, options] of fetchImplementation.mock.calls) {
-      expect(new Headers(options?.headers).get("x-mmdash-project-id")).toBeNull();
+      expect(
+        new Headers(options?.headers).get("x-mmdash-project-id"),
+      ).toBeNull();
     }
   });
 
   it("rewrites system Box installer transfers to the browser BFF path", async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
-        items: [{
-          platform: "windows",
-          version: "0.1.0",
-          artifact_id: "00000000-0000-4000-8000-000000000010",
-          version_id: "00000000-0000-4000-8000-000000000011",
-          filename: "mmdash-box-windows-amd64.exe",
-          sha256: "a".repeat(64),
-          size_bytes: 10,
-          download: {
-            method: "GET",
-            url: "http://core.test/v1/artifact-transfers/token.signature",
-            headers: {},
-            expires_at: "2026-08-16T00:00:00Z",
+        items: [
+          {
+            platform: "windows",
+            version: "0.1.0",
+            artifact_id: "00000000-0000-4000-8000-000000000010",
+            version_id: "00000000-0000-4000-8000-000000000011",
+            filename: "mmdash-box-windows-amd64.exe",
+            sha256: "a".repeat(64),
+            size_bytes: 10,
+            download: {
+              method: "GET",
+              url: "http://core.test/v1/artifact-transfers/token.signature",
+              headers: {},
+              expires_at: "2026-08-16T00:00:00Z",
+            },
+            install_command: ".\\mmdash-box-windows-amd64.exe",
+            instructions: "Install",
           },
-          install_command: ".\\mmdash-box-windows-amd64.exe",
-          instructions: "Install",
-        }],
+        ],
       }),
     );
-    const app = buildApp({ config: testConfig, fetchImplementation, logger: false });
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
     apps.push(app);
     const cookie = await signedSessionCookie(app);
 
-    const response = await app.inject({ headers: { cookie }, method: "GET", url: "/api/box/releases" });
+    const response = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/box/releases",
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["cache-control"]).toBe("no-store");
-    expect(response.json().items[0].download.url).toBe("/api/artifact-transfers/token.signature");
-    expect(fetchImplementation.mock.calls[0]?.[0]).toBe("http://core.test/v1/box/releases");
+    expect(response.json().items[0].download.url).toBe(
+      "/api/artifact-transfers/token.signature",
+    );
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
+      "http://core.test/v1/box/releases",
+    );
   });
 });

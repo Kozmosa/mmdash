@@ -249,10 +249,9 @@ export function moveArticleBlockRange(
 
   // Collect the nodes in the range
   const nodes: import("@tiptap/pm/model").Node[] = [];
-  doc.nodesBetween(rangeFrom, rangeTo, (node, pos) => {
-    if (doc.resolve(pos).depth === 0) {
+  doc.forEach((node, offset) => {
+    if (offset >= rangeFrom && offset < rangeTo) {
       nodes.push(node);
-      return false; // don't descend
     }
   });
   if (nodes.length === 0) return false;
@@ -269,12 +268,7 @@ export function moveArticleBlockRange(
     tr = tr.delete(rangeFrom + rangeSize, rangeTo + rangeSize);
     // Select the moved blocks at target
     tr = tr.setSelection(
-      NodeRangeSelection.create(
-        tr.doc,
-        targetPos,
-        targetPos + rangeSize,
-        0,
-      ),
+      NodeRangeSelection.create(tr.doc, targetPos, targetPos + rangeSize, 0),
     );
   } else {
     // Moving down: delete first, then insert at adjusted position

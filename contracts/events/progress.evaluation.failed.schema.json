@@ -4,7 +4,14 @@
   "title": "progress.evaluation.failed payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["resource_id", "resource_type", "title", "status", "error_code", "attempts"],
+  "required": [
+    "resource_id",
+    "resource_type",
+    "title",
+    "status",
+    "error_code",
+    "attempts"
+  ],
   "properties": {
     "resource_id": { "type": "string", "format": "uuid" },
     "resource_type": { "const": "progress_evaluation" },

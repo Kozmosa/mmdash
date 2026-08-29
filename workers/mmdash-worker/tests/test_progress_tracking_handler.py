@@ -88,6 +88,29 @@ def test_core_agent_output_preserves_agent_provenance() -> None:
     assert result["agent_run_id"] == "run-1"
 
 
+def test_core_agent_accepts_one_trailing_json_object_after_progress_notes() -> None:
+    client = FakeClient()
+    client.execution["output"] = (
+        "已完成项目与进度核验。下面给出最终结果。\n\n" + client.execution["output"]
+    )
+    result = asyncio.run(
+        ProgressEvaluationHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+    )
+    assert result["output"]["summary"] == "One blocker"
+
+
+def test_core_agent_rejects_commentary_after_the_json_object() -> None:
+    client = FakeClient()
+    client.execution["output"] += "\n评估结束。"
+    with pytest.raises(HandlerError) as caught:
+        asyncio.run(
+            ProgressEvaluationHandler(client)(
+                HandlerContext(job_id="job-1", worker_id="worker-1"), {}
+            )
+        )
+    assert caught.value.code == "PROGRESS_INVALID_OUTPUT"
+
+
 def test_invalid_agent_json_is_safe_non_retryable_failure() -> None:
     client = FakeClient()
     client.execution["output"] = "not json"

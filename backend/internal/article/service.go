@@ -1008,7 +1008,59 @@ func (service *Service) DeleteZotero(ctx context.Context, caller auth.Identity, 
 	}
 	return service.Store.DeleteZoteroBinding(ctx, projectID)
 }
-func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, projectID, query string) ([]ZoteroItem, error) {
+func (service *Service) ListZoteroCollections(ctx context.Context, caller auth.Identity, projectID string) ([]ZoteroCollection, error) {
+	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleRead); err != nil {
+		return nil, err
+	}
+	binding, apiKey, err := service.resolveZotero(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey == "" {
+		return nil, ErrNotReady
+	}
+	base := "https://api.zotero.org/" + binding.LibraryType + "s/" + url.PathEscape(binding.LibraryID) + "/collections"
+	values := url.Values{"format": []string{"json"}, "limit": []string{"100"}}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+values.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Zotero-API-Key", apiKey)
+	response, err := service.httpClient().Do(request)
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, ErrUnavailable
+	}
+	var raw []map[string]interface{}
+	if json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&raw) != nil {
+		return nil, ErrUnavailable
+	}
+	collections := make([]ZoteroCollection, 0, len(raw))
+	for _, entry := range raw {
+		data := object(entry["data"])
+		meta := object(entry["meta"])
+		col := ZoteroCollection{
+			CollectionKey:  stringValue(entry["key"]),
+			Name:           stringValue(data["name"]),
+			NumCollections: int(int64Value(meta["numCollections"])),
+			NumItems:       int(int64Value(meta["numItems"])),
+		}
+		if col.CollectionKey == "" {
+			col.CollectionKey = stringValue(data["key"])
+		}
+		if parent, ok := data["parentCollection"].(string); ok && strings.TrimSpace(parent) != "" && parent != "false" {
+			p := strings.TrimSpace(parent)
+			col.ParentCollectionKey = &p
+		}
+		collections = append(collections, col)
+	}
+	return collections, nil
+}
+
+func (service *Service) ListZoteroItems(ctx context.Context, caller auth.Identity, projectID, collectionKey, query string) ([]ZoteroItem, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleRead); err != nil {
 		return nil, err
 	}
@@ -1020,9 +1072,16 @@ func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, 
 		return nil, ErrNotReady
 	}
 	base := "https://api.zotero.org/" + binding.LibraryType + "s/" + url.PathEscape(binding.LibraryID) + "/items"
-	values := url.Values{"q": []string{query}, "format": []string{"json"}, "limit": []string{"50"}}
-	if binding.CollectionKey != "" {
-		base = "https://api.zotero.org/" + binding.LibraryType + "s/" + url.PathEscape(binding.LibraryID) + "/collections/" + url.PathEscape(binding.CollectionKey) + "/items"
+	values := url.Values{"format": []string{"json"}, "limit": []string{"100"}}
+	if strings.TrimSpace(query) != "" {
+		values.Set("q", strings.TrimSpace(query))
+	}
+	targetCollection := strings.TrimSpace(collectionKey)
+	if targetCollection == "" && binding.CollectionKey != "" {
+		targetCollection = binding.CollectionKey
+	}
+	if targetCollection != "" {
+		base = "https://api.zotero.org/" + binding.LibraryType + "s/" + url.PathEscape(binding.LibraryID) + "/collections/" + url.PathEscape(targetCollection) + "/items"
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+values.Encode(), nil)
 	if err != nil {
@@ -1044,7 +1103,19 @@ func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, 
 	items := make([]ZoteroItem, 0, len(raw))
 	for _, entry := range raw {
 		data := object(entry["data"])
-		item := ZoteroItem{ItemKey: stringValue(entry["key"]), Version: int64Value(entry["version"]), CitationKey: stringValue(data["citationKey"]), Title: stringValue(data["title"]), ItemType: stringValue(data["itemType"]), DOI: stringValue(data["DOI"]), Raw: entry, Authors: []string{}}
+		item := ZoteroItem{
+			ItemKey:     stringValue(entry["key"]),
+			Version:     int64Value(entry["version"]),
+			CitationKey: stringValue(data["citationKey"]),
+			Title:       stringValue(data["title"]),
+			ItemType:    stringValue(data["itemType"]),
+			DOI:         stringValue(data["DOI"]),
+			Raw:         entry,
+			Authors:     []string{},
+		}
+		if item.ItemKey == "" {
+			item.ItemKey = stringValue(data["key"])
+		}
 		if date := stringValue(data["date"]); len(date) >= 4 {
 			item.Year = date[:4]
 		}
@@ -1066,6 +1137,10 @@ func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, 
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, projectID, query string) ([]ZoteroItem, error) {
+	return service.ListZoteroItems(ctx, caller, projectID, "", query)
 }
 
 func (service *Service) resolveZotero(ctx context.Context, projectID string) (ZoteroBinding, string, error) {

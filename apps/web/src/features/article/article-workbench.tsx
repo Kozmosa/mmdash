@@ -24,11 +24,13 @@ import {
   FilePenLine,
   FileUp,
   FileText,
+  Folder,
+  FolderOpen,
   FolderPlus,
+  Library,
   ListTree,
   LoaderCircle,
   RefreshCw,
-  Search,
   Users,
 } from "lucide-react";
 import Image from "next/image";
@@ -86,6 +88,7 @@ import {
   articleOutlineActiveEvent,
   articleOutlineNavigateEvent,
   articleArtifactMime,
+  articleZoteroMime,
   type ArticleArtifactDrop,
   type ArticleOutlineItem,
   type ArticleZoteroDrop,
@@ -103,6 +106,7 @@ import type {
   ArticleBuildOutput,
   ArticleRelease,
   ArticleTemplateManifest,
+  ZoteroCollection,
   ZoteroItem,
 } from "./types";
 import {
@@ -1099,8 +1103,6 @@ function ArticleArtifactCard({
 
 function WritingZoteroPanel({
   canEdit,
-  data,
-  onRefresh,
   projectId,
 }: Readonly<{
   canEdit: boolean;
@@ -1108,26 +1110,60 @@ function WritingZoteroPanel({
   onRefresh: () => Promise<void>;
   projectId: string;
 }>) {
+  const [selectedCollectionKey, setSelectedCollectionKey] = useState<
+    string | null
+  >(null);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ZoteroItem[]>([]);
-  const search = useMutation({
-    mutationFn: () => articleApi.searchZotero(projectId, query.trim()),
-    onSuccess: (value) => setResults(value.items),
+
+  const collectionsQuery = useQuery({
+    queryKey: ["article-zotero-collections", projectId],
+    queryFn: () => articleApi.listZoteroCollections(projectId),
   });
-  const freeze = useMutation({
-    mutationFn: (item: ZoteroItem) =>
-      articleApi.addReference(projectId, {
-        citation_key: item.citation_key,
-        metadata: item.raw,
-        reference_type: "zotero",
-        source_object_id: item.item_key,
-        source_version_id: String(item.version),
-        title: item.title,
+
+  const itemsQuery = useQuery({
+    queryKey: [
+      "article-zotero-items",
+      projectId,
+      selectedCollectionKey,
+      query.trim(),
+    ],
+    queryFn: () =>
+      articleApi.listZoteroItems(projectId, {
+        collection: selectedCollectionKey ?? undefined,
+        q: query.trim() || undefined,
       }),
-    onSuccess: onRefresh,
   });
+
+  const collections = collectionsQuery.data?.items ?? [];
+  const items = itemsQuery.data?.items ?? [];
+
+  const currentCollection = collections.find(
+    (c) => c.collection_key === selectedCollectionKey,
+  );
+
+  const childCollections = collections.filter((c) =>
+    selectedCollectionKey === null
+      ? !c.parent_collection_key
+      : c.parent_collection_key === selectedCollectionKey,
+  );
+
+  const breadcrumbPath = useMemo(() => {
+    const path: ZoteroCollection[] = [];
+    let curr = currentCollection;
+    while (curr) {
+      path.unshift(curr);
+      curr = collections.find(
+        (c) => c.collection_key === curr?.parent_collection_key,
+      );
+    }
+    return path;
+  }, [collections, currentCollection]);
+
   return (
     <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        拖拽条目到编辑器任意位置即可插入 Zotero 引用并自动固定版本。
+      </p>
       <div className="flex gap-2">
         <Input
           aria-label="左栏搜索 Zotero"
@@ -1135,57 +1171,175 @@ function WritingZoteroPanel({
           placeholder="作者、标题、关键词"
           value={query}
         />
-        <Button
-          disabled={!query.trim() || search.isPending}
-          onClick={() => search.mutate()}
-          size="sm"
-        >
-          <Search className="size-4" />
-        </Button>
-      </div>
-      {results.map((item) => {
-        const pinned = data.references.some(
-          (reference) =>
-            reference.reference_type === "zotero" &&
-            reference.source_object_id === item.item_key &&
-            reference.source_version_id === String(item.version),
-        );
-        return (
-          <div
-            className="cursor-grab rounded-md border p-3 active:cursor-grabbing"
-            draggable={canEdit}
-            key={item.item_key}
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "copy";
-              event.dataTransfer.setData(
-                "application/vnd.mmdash.zotero+json",
-                JSON.stringify({
-                  citationKey: item.citation_key,
-                  itemKey: item.item_key,
-                  title: item.title,
-                  version: item.version,
-                  raw: item.raw,
-                }),
-              );
-            }}
+        {query ? (
+          <Button
+            onClick={() => setQuery("")}
+            size="sm"
+            title="清空搜索"
+            variant="ghost"
           >
-            <p className="text-sm font-medium">{item.title}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {item.authors.join(", ")} · @{item.citation_key}
-            </p>
-            <Button
-              className="mt-2"
-              disabled={!canEdit || pinned || freeze.isPending}
-              onClick={() => freeze.mutate(item)}
-              size="sm"
-              variant="outline"
+            清空
+          </Button>
+        ) : null}
+      </div>
+
+      {collections.length > 0 ? (
+        <section
+          aria-label="Zotero 分类浏览器"
+          className="space-y-1.5 rounded-lg border bg-muted/15 p-2"
+        >
+          <nav
+            aria-label="Zotero 分类路径"
+            className="flex min-h-8 flex-wrap items-center gap-0.5 rounded-md bg-background px-1.5 text-xs shadow-sm"
+          >
+            <button
+              aria-current={
+                selectedCollectionKey === null ? "location" : undefined
+              }
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs font-medium transition-colors hover:bg-muted",
+                selectedCollectionKey === null
+                  ? "bg-primary/10 font-semibold text-primary"
+                  : "text-muted-foreground",
+              )}
+              onClick={() => setSelectedCollectionKey(null)}
+              type="button"
             >
-              {pinned ? "已固定此版本" : "固定引用"}
-            </Button>
-          </div>
-        );
-      })}
-      {!results.length ? <Empty label="搜索只读 Zotero Library" /> : null}
+              <Library className="size-3.5" />
+              <span>全部条目</span>
+            </button>
+            {breadcrumbPath.map((col) => (
+              <span className="contents" key={col.collection_key}>
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-3 text-muted-foreground"
+                />
+                <button
+                  aria-current={
+                    col.collection_key === selectedCollectionKey
+                      ? "location"
+                      : undefined
+                  }
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs font-medium transition-colors hover:bg-muted",
+                    col.collection_key === selectedCollectionKey
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground",
+                  )}
+                  onClick={() => setSelectedCollectionKey(col.collection_key)}
+                  type="button"
+                >
+                  <FolderOpen className="size-3.5 text-amber-500" />
+                  <span className="max-w-[120px] truncate">{col.name}</span>
+                </button>
+              </span>
+            ))}
+          </nav>
+
+          {childCollections.length > 0 ? (
+            <div className="grid gap-1 pt-1">
+              {childCollections.map((col) => (
+                <button
+                  className="flex items-center justify-between gap-2 rounded-md border border-border/40 bg-background/80 px-2 py-1.5 text-left text-xs shadow-2xs transition-colors hover:bg-background hover:text-foreground"
+                  key={col.collection_key}
+                  onClick={() => setSelectedCollectionKey(col.collection_key)}
+                  type="button"
+                >
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Folder className="size-3.5 shrink-0 text-amber-500" />
+                    <span className="truncate font-medium">{col.name}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                    {col.num_collections > 0 ? (
+                      <span>{col.num_collections} 子分类 · </span>
+                    ) : null}
+                    <span>{col.num_items} 条目</span>
+                    <ChevronRight className="size-3 text-muted-foreground/60" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {collectionsQuery.isPending || itemsQuery.isPending ? (
+        <LoadingState label="正在读取 Zotero Library…" />
+      ) : null}
+
+      {collectionsQuery.error || itemsQuery.error ? (
+        <p className="text-xs text-destructive">
+          {(collectionsQuery.error ?? itemsQuery.error)?.message}
+        </p>
+      ) : null}
+
+      <div className="space-y-2">
+        {items.map((item) => (
+          <ZoteroItemCard canEdit={canEdit} item={item} key={item.item_key} />
+        ))}
+      </div>
+
+      {!itemsQuery.isPending && !items.length && !itemsQuery.error ? (
+        <Empty label={query ? "未找到匹配条目" : "当前分类暂无条目"} />
+      ) : null}
+    </div>
+  );
+}
+
+function ZoteroItemCard({
+  canEdit,
+  item,
+}: Readonly<{
+  canEdit: boolean;
+  item: ZoteroItem;
+}>) {
+  const drag = (event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit) return;
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(
+      articleZoteroMime,
+      JSON.stringify({
+        citationKey: item.citation_key,
+        itemKey: item.item_key,
+        title: item.title,
+        version: item.version,
+        raw: item.raw,
+      }),
+    );
+  };
+
+  return (
+    <div
+      className={cn(
+        "group cursor-grab rounded-md border bg-card p-2.5 text-card-foreground shadow-2xs transition-shadow active:cursor-grabbing hover:border-primary/50 hover:shadow-xs",
+        !canEdit && "cursor-default opacity-80",
+      )}
+      draggable={canEdit}
+      onDragStart={drag}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="line-clamp-2 text-xs font-semibold leading-snug">
+          {item.title}
+        </p>
+        <span className="shrink-0 rounded bg-muted/60 px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
+          @{item.citation_key}
+        </span>
+      </div>
+      <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+        {item.authors.length ? item.authors.join(", ") : "无作者信息"}
+        {item.year ? ` · ${item.year}` : ""}
+        {item.item_type ? ` · ${item.item_type}` : ""}
+      </p>
+      <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground/80">
+        <span className="flex items-center gap-1 text-primary/80 group-hover:text-primary">
+          拖到编辑器插入引用
+        </span>
+        {item.doi ? (
+          <span className="max-w-[120px] truncate" title={item.doi}>
+            DOI: {item.doi}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -89,9 +89,9 @@ export function ArticleTagRail({
     >
       <Button
         aria-label={expanded ? "收起只显示颜色" : "横向展开章节与块 tags"}
-        className="pointer-events-auto absolute right-0 top-0 z-10 size-7 bg-background shadow-sm"
+        className="pointer-events-auto absolute right-0 top-0 z-10 size-7 p-0 bg-background shadow-sm"
         onClick={() => setExpanded((value) => !value)}
-        size="sm"
+        size="icon"
         title={expanded ? "收起只显示颜色" : "展开 tags 与审阅操作"}
         variant="outline"
       >

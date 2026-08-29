@@ -6,7 +6,10 @@ const workspaceSidebarStorageKey = "mmdash.workspace.sidebar-open";
 
 function persistSidebarOpen(sidebarOpen: boolean) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(workspaceSidebarStorageKey, String(sidebarOpen));
+    window.localStorage.setItem(
+      workspaceSidebarStorageKey,
+      String(sidebarOpen),
+    );
   }
 }
 

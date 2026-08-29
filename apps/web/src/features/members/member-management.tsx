@@ -94,8 +94,7 @@ export function MemberManagement() {
     }
     if (
       members.data?.items.some(
-        (member) =>
-          member.email.trim().toLowerCase() === email.toLowerCase(),
+        (member) => member.email.trim().toLowerCase() === email.toLowerCase(),
       )
     ) {
       toast.error("该用户已是项目成员");

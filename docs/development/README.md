@@ -91,19 +91,19 @@ DATABASE_URL=postgres://mmdash:mmdash@localhost:5432/mmdash?sslmode=disable pnpm
 
 ## Quality commands
 
-| Command                                       | Purpose                                            |
-| --------------------------------------------- | -------------------------------------------------- |
-| `pnpm lint`                                   | TypeScript, Go formatting, and Python lint         |
-| `pnpm test`                                   | TypeScript, Go, and Python tests                   |
-| `pnpm test:core`                              | Go Core/backend tests only                         |
+| Command                                       | Purpose                                                        |
+| --------------------------------------------- | -------------------------------------------------------------- |
+| `pnpm lint`                                   | TypeScript, Go formatting, and Python lint                     |
+| `pnpm test`                                   | TypeScript, Go, and Python tests                               |
+| `pnpm test:core`                              | Go Core/backend tests only                                     |
 | `pnpm test:python`                            | Python Worker tests (30-second test, 120-second suite timeout) |
-| `pnpm build`                                  | All three language builds                          |
-| `pnpm format`                                 | Format supported source files                      |
-| `pnpm api:check`                              | Check OpenAPI operations against the API catalog   |
-| `pnpm contracts:generate`                     | Regenerate TypeScript and Go contract outputs      |
-| `pnpm contracts:check`                        | Validate schemas, mocks, generation, compatibility |
-| `pnpm caddy:check`                            | Validate ingress invariants and Caddyfile syntax   |
-| `pnpm commit:check -- "feat(scope): summary"` | Validate a commit subject                          |
+| `pnpm build`                                  | All three language builds                                      |
+| `pnpm format`                                 | Format supported source files                                  |
+| `pnpm api:check`                              | Check OpenAPI operations against the API catalog               |
+| `pnpm contracts:generate`                     | Regenerate TypeScript and Go contract outputs                  |
+| `pnpm contracts:check`                        | Validate schemas, mocks, generation, compatibility             |
+| `pnpm caddy:check`                            | Validate ingress invariants and Caddyfile syntax               |
+| `pnpm commit:check -- "feat(scope): summary"` | Validate a commit subject                                      |
 
 `pnpm test:core` runs only `go test ./backend/...`; it does not start the
 TypeScript, Box/CLI Go, or Python test runners. `pnpm test:python` runs the
@@ -142,6 +142,5 @@ layer only when their module documentation explains why.
 - [Stage 8 Experiment](experiment.md)
 - [Stage 8 Box Gateway and Sandbox](box.md)
 - [Stage 9 Article](article.md)
-
 
 - [Stage 5 Agent sessions](agent.md)

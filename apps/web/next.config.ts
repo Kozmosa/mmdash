@@ -18,8 +18,7 @@ const nextConfig: NextConfig = {
     }
     const coreBaseUrl =
       process.env.CORE_INTERNAL_URL ?? "http://localhost:8080";
-    const mcpBaseUrl =
-      process.env.MCP_INTERNAL_URL ?? "http://localhost:3002";
+    const mcpBaseUrl = process.env.MCP_INTERNAL_URL ?? "http://localhost:3002";
     return [
       ...routes,
       {

@@ -109,7 +109,9 @@ function readBody(request) {
     request.on("data", (chunk) => chunks.push(chunk));
     request.on("end", () => {
       try {
-        resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {});
+        resolve(
+          chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {},
+        );
       } catch (error) {
         reject(error);
       }
@@ -227,13 +229,52 @@ function streamRunSequence(response, runId, sessionId) {
   });
   response.write(": keepalive\n\n");
   const frames = [
-    ["run.started", { run_id: runId, session_id: sessionId, seq: 1, ts: Date.now() / 1000 }],
-    ["message.started", { run_id: runId, session_id: sessionId, message: { id: "message-1", role: "assistant" } }],
-    ["assistant.delta", { run_id: runId, message_id: "message-1", delta: "hel" }],
-    ["tool.started", { run_id: runId, message_id: "message-1", tool_name: "data.read", args: { path: "data" }, preview: "reading" }],
-    ["tool.completed", { run_id: runId, tool_name: "data.read", preview: "rows=1" }],
-    ["assistant.completed", { run_id: runId, message_id: "message-1", content: "hello from mock hermes" }],
-    ["run.completed", { run_id: runId, messages: [{ tool_result: "ok" }], usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5 } }],
+    [
+      "run.started",
+      { run_id: runId, session_id: sessionId, seq: 1, ts: Date.now() / 1000 },
+    ],
+    [
+      "message.started",
+      {
+        run_id: runId,
+        session_id: sessionId,
+        message: { id: "message-1", role: "assistant" },
+      },
+    ],
+    [
+      "assistant.delta",
+      { run_id: runId, message_id: "message-1", delta: "hel" },
+    ],
+    [
+      "tool.started",
+      {
+        run_id: runId,
+        message_id: "message-1",
+        tool_name: "data.read",
+        args: { path: "data" },
+        preview: "reading",
+      },
+    ],
+    [
+      "tool.completed",
+      { run_id: runId, tool_name: "data.read", preview: "rows=1" },
+    ],
+    [
+      "assistant.completed",
+      {
+        run_id: runId,
+        message_id: "message-1",
+        content: "hello from mock hermes",
+      },
+    ],
+    [
+      "run.completed",
+      {
+        run_id: runId,
+        messages: [{ tool_result: "ok" }],
+        usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5 },
+      },
+    ],
     ["done", {}],
   ];
   for (const [event, payload] of frames) {
@@ -250,7 +291,12 @@ function streamRunEvents(response, runId) {
   });
   const frames = [
     { event: "reasoning.available", run_id: runId, text: "hidden" },
-    { event: "approval.request", run_id: runId, command: "data.read", choices: ["once", "session", "always", "deny"] },
+    {
+      event: "approval.request",
+      run_id: runId,
+      command: "data.read",
+      choices: ["once", "session", "always", "deny"],
+    },
     { event: "message.delta", run_id: runId, delta: "mock stream reply" },
     { event: "run.completed", run_id: runId },
   ];
@@ -266,7 +312,11 @@ const server = createServer(async (request, response) => {
 
   // Dashboard management endpoints.
   if (path === "/api/health") {
-    writeJSON(response, 200, { ok: true, version: "2026.8.3", auth_required: false });
+    writeJSON(response, 200, {
+      ok: true,
+      version: "2026.8.3",
+      auth_required: false,
+    });
     return;
   }
   if (
@@ -325,7 +375,11 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (path === "/health") {
-    writeJSON(response, 200, { status: "ok", platform: "hermes-agent", version: "2026.8.3" });
+    writeJSON(response, 200, {
+      status: "ok",
+      platform: "hermes-agent",
+      version: "2026.8.3",
+    });
     return;
   }
   if (path === "/health/detailed") {
@@ -337,12 +391,20 @@ const server = createServer(async (request, response) => {
     return;
   }
   if (path === "/api/sessions" && request.method === "GET") {
-    writeJSON(response, 200, { data: [...sessions.values()], limit: 50, offset: 0, has_more: false });
+    writeJSON(response, 200, {
+      data: [...sessions.values()],
+      limit: 50,
+      offset: 0,
+      has_more: false,
+    });
     return;
   }
   if (path === "/api/sessions" && request.method === "POST") {
     const body = await readBody(request);
-    const session = sessionFixture(body.id ?? `session-${Date.now()}`, body.title ?? "Main");
+    const session = sessionFixture(
+      body.id ?? `session-${Date.now()}`,
+      body.title ?? "Main",
+    );
     sessions.set(session.id, session);
     writeJSON(response, 201, { object: "hermes.session", session });
     return;
@@ -353,7 +415,11 @@ const server = createServer(async (request, response) => {
     const rest = sessionMatch[2] ?? "";
     const session = sessions.get(sessionId);
     if (rest === "" && request.method === "GET") {
-      writeJSON(response, session ? 200 : 404, session ?? { detail: "not found" });
+      writeJSON(
+        response,
+        session ? 200 : 404,
+        session ?? { detail: "not found" },
+      );
       return;
     }
     if (rest === "" && request.method === "PATCH") {
@@ -362,17 +428,26 @@ const server = createServer(async (request, response) => {
         if (body.title) session.title = body.title;
         if (body.end_reason) session.end_reason = body.end_reason;
       }
-      writeJSON(response, 200, { session: session ?? sessionFixture(sessionId) });
+      writeJSON(response, 200, {
+        session: session ?? sessionFixture(sessionId),
+      });
       return;
     }
     if (rest === "" && request.method === "DELETE") {
       sessions.delete(sessionId);
-      writeJSON(response, 200, { object: "hermes.session.deleted", id: sessionId, deleted: true });
+      writeJSON(response, 200, {
+        object: "hermes.session.deleted",
+        id: sessionId,
+        deleted: true,
+      });
       return;
     }
     if (rest === "/fork" && request.method === "POST") {
       const body = await readBody(request);
-      const fork = sessionFixture(body.id ?? `${sessionId}-fork`, body.title ?? "Fork");
+      const fork = sessionFixture(
+        body.id ?? `${sessionId}-fork`,
+        body.title ?? "Fork",
+      );
       sessions.set(fork.id, fork);
       writeJSON(response, 201, { session: fork });
       return;
@@ -392,7 +467,12 @@ const server = createServer(async (request, response) => {
             session_id: sessionId,
             role: "assistant",
             content: "safe answer",
-            tool_calls: [{ id: "call-1", function: { name: "data.read", arguments: "{}" } }],
+            tool_calls: [
+              {
+                id: "call-1",
+                function: { name: "data.read", arguments: "{}" },
+              },
+            ],
             timestamp: Date.now() / 1000 + 1,
           },
         ],
@@ -404,9 +484,18 @@ const server = createServer(async (request, response) => {
       writeJSON(response, 200, {
         object: "hermes.session.chat.completion",
         session_id: sessionId,
-        message: { role: "assistant", content: `reply to: ${body.message ?? ""}` },
+        message: {
+          role: "assistant",
+          content: `reply to: ${body.message ?? ""}`,
+        },
         usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
-        runtime: { provider: "nous", model: "hermes-4", route_source: "profile", model_lock: "confirmed", api_key: "never-copy" },
+        runtime: {
+          provider: "nous",
+          model: "hermes-4",
+          route_source: "profile",
+          model_lock: "confirmed",
+          api_key: "never-copy",
+        },
       });
       return;
     }
@@ -422,7 +511,10 @@ const server = createServer(async (request, response) => {
   if (path === "/v1/runs" && request.method === "POST") {
     const body = await readBody(request);
     const runId = `run-${Date.now()}`;
-    runs.set(runId, runFixture(runId, body.session_id ?? "session-main", "started"));
+    runs.set(
+      runId,
+      runFixture(runId, body.session_id ?? "session-main", "started"),
+    );
     writeJSON(response, 202, { run_id: runId, status: "started" });
     return;
   }
@@ -440,7 +532,12 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (rest === "/approval" && request.method === "POST") {
-      writeJSON(response, 200, { object: "hermes.run.approval_response", run_id: runId, choice: "session", resolved: 2 });
+      writeJSON(response, 200, {
+        object: "hermes.run.approval_response",
+        run_id: runId,
+        choice: "session",
+        resolved: 2,
+      });
       return;
     }
     if (rest === "/events" && request.method === "GET") {
