@@ -66,7 +66,12 @@ func newTaskJob(limits contractLimits) (*jobObject, error) {
 	extended := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{
 			ActiveProcessLimit: uint32(limits.PIDs),
-			LimitFlags:         windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS | windows.JOB_OBJECT_LIMIT_JOB_MEMORY,
+			LimitFlags: windows.JOB_OBJECT_LIMIT_ACTIVE_PROCESS |
+				windows.JOB_OBJECT_LIMIT_JOB_MEMORY |
+				// If the supervisor dies, the kernel terminates the complete
+				// task tree instead of leaving it running without timeout
+				// enforcement.
+				windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 		},
 		JobMemoryLimit: uintptr(limits.MemoryBytes),
 	}
@@ -197,6 +202,10 @@ func processAlive(pid int) bool {
 	_ = windows.CloseHandle(handle)
 	return true
 }
+
+// reapProcess is a no-op on Windows: there are no zombies and the kernel
+// reclaims the process once its handles are closed.
+func reapProcess(pid int) {}
 
 func venvPython(python, venv string) string {
 	return filepath.Join(venv, "Scripts", "python.exe")

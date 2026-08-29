@@ -50,6 +50,11 @@ type Runtime struct {
 	// CgroupRoot overrides the cgroup v2 root on Linux.
 	Now          func() time.Time
 	PollInterval time.Duration
+	// RunnerLossGrace is how long follow keeps draining output after the
+	// supervisor died without a terminal record before failing with
+	// RUNNER_LOST. It covers a runner that is exiting normally right after
+	// persisting the terminal state.
+	RunnerLossGrace time.Duration
 
 	mu           sync.Mutex
 	environments map[string]EnvironmentResult
@@ -69,6 +74,13 @@ func (runtime *Runtime) pollInterval() time.Duration {
 		return runtime.PollInterval
 	}
 	return 50 * time.Millisecond
+}
+
+func (runtime *Runtime) runnerLossGrace() time.Duration {
+	if runtime.RunnerLossGrace > 0 {
+		return runtime.RunnerLossGrace
+	}
+	return 2 * time.Second
 }
 
 func (runtime *Runtime) now() time.Time {
@@ -103,6 +115,15 @@ func (runtime *Runtime) PrepareEnvironment(ctx context.Context, request sandbox.
 	runtime.environments[request.ID] = result
 	runtime.mu.Unlock()
 	return nil
+}
+
+// environmentFor returns the prepared environment evidence of a task under
+// the same mutex that PrepareEnvironment writes with: the Gateway runs tasks
+// concurrently, so an unlocked map read would race another task's write.
+func (runtime *Runtime) environmentFor(taskID string) EnvironmentResult {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return runtime.environments[taskID]
 }
 
 // ReleaseEnvironment implements sandbox.EnvironmentReleaser.
@@ -185,6 +206,14 @@ func (runtime *Runtime) reattach(ctx context.Context, request sandbox.RunRequest
 		return sandbox.RunResult{}, codedError(ErrCodeRunnerLost,
 			"the local-process supervisor exited without a terminal record for task "+record.TaskID)
 	}
+	if record.RunnerPID > 0 && record.RunnerPID != record.TaskPID && !processAlive(record.RunnerPID) {
+		// The task process is still alive but its supervisor is gone: nobody
+		// enforces the frozen timeout or a later cancel anymore, so the
+		// execution is not recoverable and the surviving tree is terminated.
+		_ = killTree(record.TaskPID)
+		return sandbox.RunResult{}, codedError(ErrCodeRunnerLost,
+			"the local-process supervisor exited while task "+record.TaskID+" was still running")
+	}
 	result, err := runtime.follow(ctx, request, &record)
 	if err != nil {
 		return sandbox.RunResult{}, err
@@ -219,7 +248,7 @@ func (runtime *Runtime) start(ctx context.Context, request sandbox.RunRequest) (
 	if err := os.WriteFile(parametersFile, parameters, 0o600); err != nil {
 		return sandbox.RunResult{}, err
 	}
-	environment := runtime.environments[request.ID]
+	environment := runtime.environmentFor(request.ID)
 	venvDir := environment.VenvDir
 	env, err := taskEnvironment(request.Spec.Environment, request.Workspace, request.OutputDir,
 		request.Spec.ExperimentID, parametersFile, homeDir, tmpDir, venvDir)
@@ -273,25 +302,38 @@ func (runtime *Runtime) start(ctx context.Context, request sandbox.RunRequest) (
 	if err := runner.Start(); err != nil {
 		return sandbox.RunResult{}, fmt.Errorf("start local-process runner: %w", err)
 	}
-	runtime.mu.Lock()
 	record := taskRecord{
 		SchemaVersion: taskStateSchemaVersion, TaskID: request.ID,
 		ExecutionEpoch: request.Spec.ExecutionEpoch, BootID: bootID(),
 		RunnerPID: runner.Process.Pid, State: taskStateStarting,
 		StartedAt: runtime.now().UTC(),
 	}
-	runtime.mu.Unlock()
-	_ = saveTaskRecord(runtime.recordPath(request.ID), record)
+	// Record the supervisor PID only while the runner has not persisted its
+	// own record yet: an unconditional rewrite here could clobber the record
+	// of a task that finished before this process resumed scheduling.
+	if current, exists, loadErr := loadTaskRecord(runtime.recordPath(request.ID)); loadErr == nil && exists {
+		if current.RunnerPID == 0 {
+			current.RunnerPID = runner.Process.Pid
+			_ = saveTaskRecord(runtime.recordPath(request.ID), current)
+		}
+		record = current
+	} else {
+		_ = saveTaskRecord(runtime.recordPath(request.ID), record)
+	}
 	return runtime.follow(ctx, request, &record)
 }
 
 // follow streams the runner-owned task output into the Gateway spool until
-// the durable record reaches a terminal state.
+// the durable record reaches a terminal state. A supervisor that dies without
+// a terminal record fails with RUNNER_LOST after a grace period instead of
+// being followed forever: a dead supervisor enforces neither timeout nor
+// cancellation.
 func (runtime *Runtime) follow(ctx context.Context, request sandbox.RunRequest, record *taskRecord) (sandbox.RunResult, error) {
 	taskDir := runtime.stateDir(request.ID)
 	spoolPath := filepath.Join(taskDir, "spool.json")
 	offsets := loadSpoolOffsets(spoolPath)
 	canceled := false
+	supervisorDeadSince := time.Time{}
 	for {
 		if ctx.Err() != nil && !canceled {
 			// The Gateway is stopping or Core requested a stop: cancel the
@@ -320,7 +362,21 @@ func (runtime *Runtime) follow(ctx context.Context, request sandbox.RunRequest, 
 			if progress {
 				_ = saveSpoolOffsets(spoolPath, offsets)
 			}
+			// The runner exits right after persisting its terminal record;
+			// reap it so the detached supervisor never lingers as a zombie.
+			reapProcess(current.RunnerPID)
 			break
+		}
+		if current.RunnerPID > 0 && !processAlive(current.RunnerPID) {
+			if supervisorDeadSince.IsZero() {
+				supervisorDeadSince = runtime.now()
+			} else if runtime.now().Sub(supervisorDeadSince) >= runtime.runnerLossGrace() {
+				_ = killTree(current.TaskPID)
+				return sandbox.RunResult{}, codedError(ErrCodeRunnerLost,
+					"the local-process supervisor exited while task "+current.TaskID+" was still running")
+			}
+		} else {
+			supervisorDeadSince = time.Time{}
 		}
 		sleepMilli(int(runtime.pollInterval() / time.Millisecond))
 	}
@@ -397,7 +453,7 @@ func (runtime *Runtime) resultFromRecord(record taskRecord, request sandbox.RunR
 }
 
 func (runtime *Runtime) resourceUsage(request sandbox.RunRequest, record taskRecord) map[string]interface{} {
-	environment := runtime.environments[request.ID]
+	environment := runtime.environmentFor(request.ID)
 	fields := map[string]interface{}{
 		"provider":                    "local-process",
 		"environment_key":             environment.EnvironmentKey,
@@ -422,7 +478,7 @@ func (runtime *Runtime) taskCommand(request sandbox.RunRequest) ([]string, error
 		return nil, err
 	}
 	script := filepath.Join(request.Workspace, filepath.FromSlash(file))
-	environment := runtime.environments[request.ID]
+	environment := runtime.environmentFor(request.ID)
 	interpreter := runtime.Python
 	if environment.VenvDir != "" {
 		interpreter = venvPython(runtime.Python, environment.VenvDir)
@@ -504,9 +560,9 @@ func (runtime *Runtime) Probe(ctx context.Context) error {
 	}
 	job := jobSpec{
 		SchemaVersion: 1, TaskID: probeID,
-		Command:   []string{runtime.Python, "-c", "pass"},
-		Workspace: runtime.stateDir(probeID),
-		Environment: []string{"PATH=" + os.Getenv("PATH")},
+		Command:       []string{runtime.Python, "-c", "pass"},
+		Workspace:     runtime.stateDir(probeID),
+		Environment:   []string{"PATH=" + os.Getenv("PATH")},
 		TimeoutSecond: 30, CPUMillis: limits.CPUMillis,
 		MemoryBytes: limits.MemoryBytes, PIDs: limits.PIDs,
 	}
