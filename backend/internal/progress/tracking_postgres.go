@@ -486,10 +486,6 @@ func (store PostgresStore) EvaluationContext(ctx context.Context, projectID stri
 	if err != nil {
 		return nil, err
 	}
-	last, err := store.GetLatestEvaluation(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
 	override, err := store.GetActiveOverride(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -540,10 +536,6 @@ func (store PostgresStore) EvaluationContext(ctx context.Context, projectID stri
 			"stage": override.Stage, "summary": override.Summary, "note": override.Note,
 		}
 	}
-	var previousOutput interface{}
-	if last != nil && last.Output != nil {
-		previousOutput = last.Output
-	}
 	stateRevision, err := canonicalInputVersion(map[string]interface{}{
 		"milestones": stableMilestones, "tasks": stableTasks,
 		"tracker_state": stableState, "settings": stableSettings,
@@ -558,7 +550,6 @@ func (store PostgresStore) EvaluationContext(ctx context.Context, projectID stri
 			"settings": map[string]interface{}{
 				"reasoning_effort": settings.ReasoningEffort,
 			},
-			"previous_evaluation_output": previousOutput,
 		},
 	}, nil
 }

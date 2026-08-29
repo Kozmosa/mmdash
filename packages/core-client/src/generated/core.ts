@@ -4212,6 +4212,47 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/article/zotero/collections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List collections in the configured Zotero library */
+    get: operations["article.zotero.collections"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/zotero/items": {
+    parameters: {
+      query?: {
+        collection?: string;
+        q?: string;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List or search items in the configured Zotero library */
+    get: operations["article.zotero.items"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/article/zotero/search": {
     parameters: {
       query: {
@@ -4817,6 +4858,16 @@ export interface components {
       api_key_configured: boolean;
       /** @constant */
       read_only: true;
+    };
+    ZoteroCollection: {
+      collection_key: string;
+      name: string;
+      parent_collection_key?: string | null;
+      num_collections: number;
+      num_items: number;
+    };
+    ZoteroCollectionList: {
+      items: components["schemas"]["ZoteroCollection"][];
     };
     ZoteroItem: {
       item_key: string;
@@ -15208,6 +15259,53 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+    };
+  };
+  "article.zotero.collections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Zotero collections list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroCollectionList"];
+        };
+      };
+    };
+  };
+  "article.zotero.items": {
+    parameters: {
+      query?: {
+        collection?: string;
+        q?: string;
+      };
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Zotero items list. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ZoteroItemList"];
+        };
       };
     };
   };
