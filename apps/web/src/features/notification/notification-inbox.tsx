@@ -17,7 +17,6 @@ import { LoadingState } from "@/components/states/loading-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { apiClient } from "@/lib/api-client";
 
 import {
@@ -179,60 +178,66 @@ export function NotificationInbox() {
 
       <section
         aria-label="收件箱筛选"
-        className="grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-2 xl:grid-cols-5"
+        className="flex flex-wrap items-center gap-2"
       >
-        <label className="grid gap-1.5 text-sm font-medium">
-          项目
-          <select
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setProjectId(event.target.value)}
-            value={projectId}
-          >
-            <option value="">全部项目</option>
-            {projects.data?.items.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium">
-          消息类型
-          <select
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            onChange={(event) => setTypeKey(event.target.value)}
-            value={typeKey}
-          >
-            <option value="">全部类型</option>
-            {notificationTypes.map((type) => (
-              <option key={type.key} value={type.key}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium">
-          开始时间
-          <Input
+        <select
+          aria-label="项目"
+          className="h-9 min-w-[130px] rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          onChange={(event) => setProjectId(event.target.value)}
+          value={projectId}
+        >
+          <option value="">全部项目</option>
+          {projects.data?.items.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          aria-label="消息类型"
+          className="h-9 min-w-[130px] rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+          onChange={(event) => setTypeKey(event.target.value)}
+          value={typeKey}
+        >
+          <option value="">全部类型</option>
+          {notificationTypes.map((type) => (
+            <option key={type.key} value={type.key}>
+              {type.label}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-xs text-muted-foreground h-9">
+          <span>从</span>
+          <input
+            aria-label="开始时间"
+            className="bg-transparent border-0 outline-none focus:ring-0 text-xs w-[125px]"
             onChange={(event) => setOccurredFrom(event.target.value)}
             type="datetime-local"
             value={occurredFrom}
           />
-        </label>
-        <label className="grid gap-1.5 text-sm font-medium">
-          结束时间
-          <Input
+          <span>至</span>
+          <input
+            aria-label="结束时间"
+            className="bg-transparent border-0 outline-none focus:ring-0 text-xs w-[125px]"
             onChange={(event) => setOccurredTo(event.target.value)}
             type="datetime-local"
             value={occurredTo}
           />
-        </label>
-        <div className="flex items-end">
-          <Button className="w-full" onClick={clearFilters} variant="ghost">
-            <FilterX aria-hidden="true" className="size-4" />
+        </div>
+
+        {(projectId || typeKey || occurredFrom || occurredTo) && (
+          <Button
+            onClick={clearFilters}
+            variant="ghost"
+            size="sm"
+            className="h-9 px-3 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <FilterX aria-hidden="true" className="mr-1.5 size-3.5" />
             清除筛选
           </Button>
-        </div>
+        )}
       </section>
 
       {inbox.isPending ? <LoadingState label="正在读取收件箱…" /> : null}

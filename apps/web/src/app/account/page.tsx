@@ -1,21 +1,13 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FlaskConical, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, FlaskConical, Lock, Mail, Moon, Sun, User } from "lucide-react";
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useCurrentUser } from "@/components/providers/user-provider";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/user-avatar";
 import { apiClient } from "@/lib/api-client";
@@ -25,6 +17,39 @@ export default function AccountPage() {
   const client = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState<string>("system");
+
+  useEffect(() => {
+    setCurrentTheme(localStorage.getItem("theme") ?? "system");
+    
+    function handleThemeChange() {
+      setCurrentTheme(localStorage.getItem("theme") ?? "system");
+    }
+    window.addEventListener("theme-change", handleThemeChange);
+    return () => {
+      window.removeEventListener("theme-change", handleThemeChange);
+    };
+  }, []);
+
+  function handleThemeChange(val: string) {
+    setCurrentTheme(val);
+    localStorage.setItem("theme", val);
+    
+    if (val === "dark") {
+      document.documentElement.classList.add("dark");
+    } else if (val === "light") {
+      document.documentElement.classList.remove("dark");
+    } else {
+      // system theme
+      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (systemDark) {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+    }
+    window.dispatchEvent(new Event("theme-change"));
+  }
 
   async function profile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,7 +94,7 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/20">
+    <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-background">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6 lg:px-10">
           <Link
@@ -92,119 +117,200 @@ export default function AccountPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl space-y-6 p-6 lg:p-10">
-        <section className="flex flex-col gap-5 rounded-2xl border border-border bg-card p-6 shadow-sm sm:flex-row sm:items-center">
-          <UserAvatar
-            className="size-24 rounded-2xl text-3xl"
-            displayName={user?.displayName}
-            email={user?.email}
-          />
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-muted-foreground">
-              个人中心
-            </p>
-            <h1 className="mt-1 truncate text-3xl font-semibold tracking-tight">
-              {user?.displayName ?? "正在加载…"}
-            </h1>
-            <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-              <Mail aria-hidden="true" className="size-4" />
-              {user?.email ?? "正在读取账户信息"}
-            </p>
-            <p className="mt-3 text-xs text-muted-foreground">
-              头像由 Gravatar 根据邮箱生成，加载失败时显示姓名首字母。
-            </p>
+      <main className="mx-auto w-full max-w-5xl p-6 lg:p-10">
+        <div className="flex flex-col-reverse gap-10 md:flex-row md:items-start">
+          <div className="flex-1 space-y-10">
+            <section className="space-y-6">
+              <div className="border-b border-border pb-2">
+                <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                  公共资料 (Public profile)
+                </h2>
+              </div>
+              <form
+                key={`${user?.id ?? "loading"}:${user?.displayName ?? ""}:${user?.email ?? ""}`}
+                onSubmit={profile}
+                className="space-y-4 max-w-lg"
+              >
+                <div className="space-y-1.5">
+                  <label htmlFor="display_name" className="text-sm font-medium text-foreground">
+                    显示名称 (Name)
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-2.5 size-4 text-muted-foreground/75" />
+                    <Input
+                      id="display_name"
+                      autoComplete="name"
+                      defaultValue={user?.displayName}
+                      maxLength={120}
+                      name="display_name"
+                      required
+                      className="pl-9"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    您的名字会显示在项目提交记录、报告作者和协同会话中。
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="email" className="text-sm font-medium text-foreground">
+                    电子邮箱 (Email)
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-2.5 size-4 text-muted-foreground/75" />
+                    <Input
+                      id="email"
+                      autoComplete="email"
+                      defaultValue={user?.email}
+                      name="email"
+                      required
+                      type="email"
+                      className="pl-9"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    主要邮箱用于接收项目邀请通知、任务队列异常告警。
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="current_password" className="text-sm font-medium text-foreground">
+                    确认当前密码 (Current password)
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground/75" />
+                    <Input
+                      id="current_password"
+                      autoComplete="current-password"
+                      name="current_password"
+                      type="password"
+                      placeholder="修改邮箱或敏感操作时必填"
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <Button
+                    disabled={saving}
+                    type="submit"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 font-medium"
+                  >
+                    {saving ? "保存中…" : "更新资料 (Update profile)"}
+                  </Button>
+                </div>
+              </form>
+            </section>
+
+            <section className="space-y-6 pt-4">
+              <div className="border-b border-border pb-2">
+                <h2 className="text-xl font-semibold tracking-tight text-foreground">
+                  修改密码 (Change password)
+                </h2>
+              </div>
+              <form onSubmit={password} className="space-y-4 max-w-lg">
+                <div className="space-y-1.5">
+                  <label htmlFor="sec_current_password" className="text-sm font-medium text-foreground">
+                    当前密码 (Old password)
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground/75" />
+                    <Input
+                      id="sec_current_password"
+                      autoComplete="current-password"
+                      name="current_password"
+                      required
+                      type="password"
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="new_password" className="text-sm font-medium text-foreground">
+                    新密码 (New password)
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 size-4 text-muted-foreground/75" />
+                    <Input
+                      id="new_password"
+                      autoComplete="new-password"
+                      minLength={8}
+                      name="new_password"
+                      required
+                      type="password"
+                      placeholder="最少 8 位"
+                      className="pl-9"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    修改密码成功后，除当前设备外的其他所有活动会话都将被强制登出。
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <Button
+                    disabled={changingPassword}
+                    type="submit"
+                    variant="outline"
+                    className="font-medium border-border"
+                  >
+                    {changingPassword ? "更新中…" : "确认修改密码"}
+                  </Button>
+                </div>
+              </form>
+            </section>
+
+            {/* Appearance / Theme Settings Section */}
+            <section className="space-y-6 pt-4">
+              <div className="border-b border-border pb-2">
+                <h2 className="text-xl font-semibold tracking-tight text-foreground flex items-center gap-2">
+                  <Moon className="size-5 text-slate-500 hidden dark:block" />
+                  <Sun className="size-5 text-amber-500 dark:hidden" />
+                  外观设置 (Theme settings)
+                </h2>
+              </div>
+              <div className="space-y-4 max-w-lg">
+                <div className="space-y-1.5">
+                  <label htmlFor="theme-select" className="text-sm font-medium text-foreground">
+                    主题模式
+                  </label>
+                  <select
+                    id="theme-select"
+                    className="h-9 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    value={currentTheme}
+                    onChange={(e) => handleThemeChange(e.target.value)}
+                  >
+                    <option value="light">日间模式 (Light)</option>
+                    <option value="dark">黑夜模式 (Dark)</option>
+                    <option value="system">跟随系统 (System)</option>
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    定制您的工作空间外观，您可以在日间模式、黑夜模式或系统默认设置之间进行切换。
+                  </p>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
 
-        <div className="grid items-start gap-6 lg:grid-cols-5">
-          <Card className="lg:col-span-3">
-            <CardHeader>
-              <CardTitle>个人资料</CardTitle>
-              <CardDescription>
-                更新你的显示名称和用于登录、生成头像的邮箱。
-              </CardDescription>
-            </CardHeader>
-            <form
-              key={`${user?.id ?? "loading"}:${user?.displayName ?? ""}:${user?.email ?? ""}`}
-              onSubmit={profile}
-            >
-              <CardContent className="space-y-4">
-                <label className="grid gap-2 text-sm font-medium">
-                  显示名称
-                  <Input
-                    autoComplete="name"
-                    defaultValue={user?.displayName}
-                    maxLength={120}
-                    name="display_name"
-                    required
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  邮箱
-                  <Input
-                    autoComplete="email"
-                    defaultValue={user?.email}
-                    name="email"
-                    required
-                    type="email"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  当前密码（修改邮箱时必填）
-                  <Input
-                    autoComplete="current-password"
-                    name="current_password"
-                    type="password"
-                  />
-                </label>
-              </CardContent>
-              <CardFooter>
-                <Button disabled={saving} type="submit">
-                  {saving ? "保存中…" : "保存资料"}
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
-
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <span className="mb-2 flex size-10 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
-                <ShieldCheck aria-hidden="true" className="size-5" />
-              </span>
-              <CardTitle>账号安全</CardTitle>
-              <CardDescription>
-                修改密码后，除当前浏览器外的其他会话将退出。
-              </CardDescription>
-            </CardHeader>
-            <form onSubmit={password}>
-              <CardContent className="space-y-4">
-                <label className="grid gap-2 text-sm font-medium">
-                  当前密码
-                  <Input
-                    autoComplete="current-password"
-                    name="current_password"
-                    required
-                    type="password"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  新密码
-                  <Input
-                    autoComplete="new-password"
-                    minLength={8}
-                    name="new_password"
-                    required
-                    type="password"
-                  />
-                </label>
-              </CardContent>
-              <CardFooter>
-                <Button disabled={changingPassword} type="submit">
-                  {changingPassword ? "更新中…" : "修改密码"}
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
+          <div className="w-full md:w-56 shrink-0 flex flex-col items-center md:items-start text-center md:text-left space-y-4">
+            <UserAvatar
+              className="size-48 rounded-full border border-border shadow-sm text-5xl shrink-0"
+              displayName={user?.displayName}
+              email={user?.email}
+            />
+            <div className="min-w-0 w-full">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground truncate">
+                {user?.displayName ?? "正在加载…"}
+              </h1>
+              <p className="text-sm text-muted-foreground truncate mt-0.5">
+                {user?.email}
+              </p>
+              <p className="text-xs text-muted-foreground mt-4 leading-relaxed border-t border-border/50 pt-4">
+                头像由 Gravatar 服务基于邮箱自动托管。您可前往 Gravatar 更改全球通用头像。
+              </p>
+            </div>
+          </div>
         </div>
       </main>
     </div>

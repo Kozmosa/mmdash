@@ -14,7 +14,7 @@ import {
   File,
   FileArchive,
   FileText,
-  Filter,
+  FilterX,
   FolderPlus,
   FolderOpen,
   Plus,
@@ -519,7 +519,7 @@ export function ArtifactSelector({
         return (
           <Card
             className={cn(
-              "group cursor-pointer transition hover:border-primary/40 hover:shadow-md",
+              "group cursor-pointer transition hover:border-primary/40 hover:shadow-card-hover",
               checked ? "border-primary ring-1 ring-primary/30" : null,
             )}
             key={item.artifact.artifact_id}
@@ -641,24 +641,28 @@ function ArtifactFilters({
   onChange: (filters: ArtifactListFilters) => void;
   trashView: boolean;
 }>) {
+  const hasActiveFilters = Boolean(
+    filters.tag || filters.kind || (!trashView && (filters.source || filters.status))
+  );
+
   return (
-    <Card>
-      <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-5">
-        <label className="relative xl:col-span-2">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground"
-          />
-          <Input
-            aria-label="按标签筛选"
-            className="pl-9"
-            onChange={(event) =>
-              onChange({ ...filters, tag: event.target.value || undefined })
-            }
-            placeholder="精确标签筛选"
-            value={filters.tag ?? ""}
-          />
-        </label>
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-[200px] flex-1 max-w-sm">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground"
+        />
+        <Input
+          aria-label="按标签筛选"
+          className="h-9 pl-9 bg-background border-border/80"
+          onChange={(event) =>
+            onChange({ ...filters, tag: event.target.value || undefined })
+          }
+          placeholder="精确标签筛选"
+          value={filters.tag ?? ""}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         <FilterSelect
           label="类型"
           onChange={(value) =>
@@ -714,16 +718,19 @@ function ArtifactFilters({
             value={filters.status ?? ""}
           />
         ) : null}
-        <Button
-          className={cn(!trashView ? null : "xl:col-start-5")}
-          onClick={() => onChange({ limit: 50 })}
-          variant="ghost"
-        >
-          <Filter aria-hidden="true" className="size-4" />
-          清除筛选
-        </Button>
-      </CardContent>
-    </Card>
+        {hasActiveFilters && (
+          <Button
+            onClick={() => onChange({ limit: 50 })}
+            variant="ghost"
+            size="sm"
+            className="h-9 px-3 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <FilterX aria-hidden="true" className="mr-1.5 size-3.5" />
+            清除筛选
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -739,22 +746,19 @@ function FilterSelect({
   value: string;
 }>) {
   return (
-    <label>
-      <span className="sr-only">{label}</span>
-      <select
-        aria-label={label}
-        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
-      >
-        <option value="">全部{label}</option>
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
-            {optionLabel}
-          </option>
-        ))}
-      </select>
-    </label>
+    <select
+      aria-label={label}
+      className="h-9 min-w-[110px] rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+      onChange={(event) => onChange(event.target.value)}
+      value={value}
+    >
+      <option value="">全部{label}</option>
+      {options.map(([optionValue, optionLabel]) => (
+        <option key={optionValue} value={optionValue}>
+          {optionLabel}
+        </option>
+      ))}
+    </select>
   );
 }
 

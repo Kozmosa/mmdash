@@ -115,6 +115,32 @@ describe("MCP Gateway", () => {
       "result.get",
       "system.echo",
     ]);
+    const toolsByName = Object.fromEntries(
+      listed.tools.map((tool) => [tool.name, tool]),
+    );
+    expect(toolsByName["project.get"]?.description).toContain(
+      "First evidence step",
+    );
+    expect(toolsByName["progress.get"]?.description).toContain(
+      "comparison provenance, not proof",
+    );
+    expect(toolsByName["data.list"]?.description).toContain(
+      "navigation hints, not proof",
+    );
+    expect(toolsByName["data.read"]?.description).toContain(
+      "selected through data.list",
+    );
+    expect(toolsByName["data.list"]?.inputSchema).toMatchObject({
+      properties: {
+        limit: { description: expect.stringContaining("small page") },
+        type: { description: expect.stringContaining("model_snapshot") },
+      },
+    });
+    expect(toolsByName["data.read"]?.inputSchema).toMatchObject({
+      properties: {
+        object_id: { description: expect.stringContaining("data.list") },
+      },
+    });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
       message: "hello",

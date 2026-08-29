@@ -333,6 +333,18 @@ func TestPostgresProgressTrackingContextHashExcludesVolatileProvenance(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	progressSeed, ok := before["progress"].(map[string]interface{})
+	if !ok || len(progressSeed) != 3 {
+		t.Fatalf("evaluation context is not a minimal Progress seed: %#v", before)
+	}
+	if revision, _ := progressSeed["state_revision"].(string); len(revision) != 64 {
+		t.Fatalf("evaluation context lost its semantic state revision: %#v", progressSeed)
+	}
+	for _, forbidden := range []string{"milestones", "tasks", "tracker_state", "active_stage_override"} {
+		if _, exists := progressSeed[forbidden]; exists {
+			t.Fatalf("evaluation context leaked %s into the Agent seed: %#v", forbidden, progressSeed)
+		}
+	}
 	beforeVersion, err := canonicalInputVersion(before)
 	if err != nil {
 		t.Fatal(err)

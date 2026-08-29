@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mmdash.moe/schemas/mcp-tools/data.read.json",
   "title": "data.read MCP tool",
-  "description": "Reads an authorized Data Hub object through its authoritative module adapter.",
+  "description": "Reads authoritative content for one decision-relevant Data Hub object selected through data.list.",
   "x-operation-id": "data.read",
   "$defs": {
     "input": {
@@ -12,11 +12,13 @@
       "properties": {
         "project_id": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$",
+          "description": "Exact Project ID used in the preceding data.list call."
         },
         "object_id": {
           "type": "string",
-          "format": "uuid"
+          "format": "uuid",
+          "description": "Object ID selected from data.list because its full content can answer a material question."
         }
       }
     },
