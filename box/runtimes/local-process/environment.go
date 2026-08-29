@@ -156,8 +156,8 @@ func (manager *EnvironmentManager) Prepare(ctx context.Context, taskID, workspac
 		// No dependency manifest: the task runs with the bare interpreter and
 		// no cache entry is needed.
 		result := EnvironmentResult{
-			EnvironmentKey: environmentKey(manager.builderVersion(), pythonVersion, "none", nil),
-			Provider:       "local-process",
+			EnvironmentKey:      environmentKey(manager.Python, manager.builderVersion(), pythonVersion, "none", nil),
+			Provider:            "local-process",
 			InterpreterIdentity: interpreterIdentity, EnvironmentIdentity: interpreterIdentity,
 			PythonVersion: pythonVersion, BuilderVersion: manager.builderVersion(),
 			CacheHit: true,
@@ -169,7 +169,7 @@ func (manager *EnvironmentManager) Prepare(ctx context.Context, taskID, workspac
 	if err != nil {
 		return EnvironmentResult{}, codedEnvironmentError(EnvCodeUnavailable, err)
 	}
-	key := environmentKey(manager.builderVersion(), pythonVersion, toolIdentity, info.Files)
+	key := environmentKey(manager.Python, manager.builderVersion(), pythonVersion, toolIdentity, info.Files)
 	for {
 		manager.mu.Lock()
 		if flight := manager.flights[key]; flight != nil {
@@ -185,6 +185,12 @@ func (manager *EnvironmentManager) Prepare(ctx context.Context, taskID, workspac
 		manager.flights[key] = flight
 		manager.mu.Unlock()
 		result, buildErr := manager.resolve(ctx, taskID, info, key, pythonVersion, toolIdentity, interpreterIdentity, system)
+		if buildErr != nil && errors.Is(buildErr, errEnvironmentEntryVanished) {
+			// The published entry disappeared before its task reference was
+			// recorded (for example capacity GC between publish and addRef):
+			// rebuild once instead of failing the task.
+			result, buildErr = manager.resolve(ctx, taskID, info, key, pythonVersion, toolIdentity, interpreterIdentity, system)
+		}
 		manager.mu.Lock()
 		delete(manager.flights, key)
 		close(flight.done)
@@ -239,15 +245,21 @@ func (manager *EnvironmentManager) resolve(ctx context.Context, taskID string, i
 	// Publish atomically: the entry exists only once the complete environment
 	// has been built and recorded inside the temporary directory.
 	if err := os.Rename(filepath.Join(buildRoot, "entry"), manager.entryDir(key)); err != nil {
-		if !os.IsExist(err) {
+		// The rename can only fail because the target already exists (on
+		// Windows directory renames surface as generic errors rather than
+		// IsExist): a concurrent builder won the race with an identical
+		// entry, because the key covers every build input. Anything else is a
+		// real publication failure.
+		_ = os.RemoveAll(filepath.Join(buildRoot, "entry"))
+		if _, ok := manager.loadEntry(key); !ok {
 			return EnvironmentResult{}, codedEnvironmentError(EnvCodeBuildFailed, err)
 		}
-		// A concurrent builder won the publication race; its entry is
-		// identical because the key covers every build input.
-		_ = os.RemoveAll(filepath.Join(buildRoot, "entry"))
 	}
 	entry, _ := manager.loadEntry(key)
 	if err := manager.addRef(key, taskID, &entry); err != nil {
+		if errors.Is(err, errEnvironmentEntryVanished) {
+			return EnvironmentResult{}, err
+		}
 		return EnvironmentResult{}, codedEnvironmentError(EnvCodeUnavailable, err)
 	}
 	result.CacheHit = false
@@ -284,7 +296,7 @@ func (manager *EnvironmentManager) build(ctx context.Context, buildRoot string, 
 		SchemaVersion: 1, EnvironmentKey: key, Family: info.Family,
 		PythonVersion: pythonVersion, BuilderVersion: manager.builderVersion(),
 		BuilderTools: toolIdentity, CreatedAt: now, LastUsedAt: now,
-		BestEffort: info.BestEffort,
+		BestEffort:    info.BestEffort,
 		ManifestPaths: paths, ManifestHashes: hashes,
 		ResolvedDependencies: resolved,
 	}
@@ -365,9 +377,10 @@ func (manager *EnvironmentManager) install(ctx context.Context, info *manifestIn
 			"POETRY_NO_INTERACTION=1",
 		)
 		// poetry verifies the lock file hash, so the installation is frozen;
-		// --no-root keeps the Project source out of the environment.
+		// --no-root keeps the Project source out of the environment and
+		// --without dev mirrors the uv path by installing dependencies only.
 		if err := manager.Runner.Run(ctx, staging, poetryEnv, io.Discard, io.Discard,
-			"poetry", "install", "--no-root"); err != nil {
+			"poetry", "install", "--no-root", "--without", "dev"); err != nil {
 			return nil, fmt.Errorf("poetry install failed: %w", err)
 		}
 		return manager.listInstalled(ctx, false, venv, buildEnvironment(buildRoot), buildRoot)
@@ -580,13 +593,18 @@ func (manager *EnvironmentManager) writeEntry(entry cacheEntry) error {
 	return os.Rename(temporary, manager.entryPath(entry.EnvironmentKey))
 }
 
+// errEnvironmentEntryVanished marks the race in which a published or loaded
+// cache entry disappears before the task reference is recorded; the caller
+// rebuilds once instead of failing the task.
+var errEnvironmentEntryVanished = errors.New("environment entry disappeared before the reference was recorded")
+
 // addRef records the task reference and refreshes last_used_at under the
 // entry lock so garbage collection never races an active task.
 func (manager *EnvironmentManager) addRef(key, taskID string, entry *cacheEntry) error {
 	if entry.EnvironmentKey == "" {
 		loaded, ok := manager.loadEntry(key)
 		if !ok {
-			return errors.New("environment entry disappeared before the reference was recorded")
+			return errEnvironmentEntryVanished
 		}
 		*entry = loaded
 	}
@@ -594,7 +612,7 @@ func (manager *EnvironmentManager) addRef(key, taskID string, entry *cacheEntry)
 	defer manager.entriesMu.Unlock()
 	current, ok := manager.loadEntry(key)
 	if !ok {
-		return errors.New("environment entry disappeared before the reference was recorded")
+		return errEnvironmentEntryVanished
 	}
 	*entry = current
 	entry.ActiveRefs = addRef(entry.ActiveRefs, taskID)
@@ -653,12 +671,15 @@ func firstField(output []byte, err error) string {
 }
 
 // environmentKey covers every input that can change the built environment:
-// builder strategy, package index trust, platform, interpreter identity,
-// installer tooling and the exact manifest bytes.
-func environmentKey(builderVersion, pythonVersion, toolIdentity string, files []manifestFile) string {
+// interpreter identity (path and detected version), builder strategy, package
+// index trust, platform, installer tooling and the exact manifest bytes. The
+// interpreter path participates because a virtual environment embeds absolute
+// paths to its base interpreter: the same version at a different path must
+// never reuse an existing entry.
+func environmentKey(interpreterPath, builderVersion, pythonVersion, toolIdentity string, files []manifestFile) string {
 	hash := sha256.New()
 	for _, part := range []string{
-		builderVersion, PackageIndexConfigVersion, "local-process",
+		interpreterPath, builderVersion, PackageIndexConfigVersion, "local-process",
 		runtime.GOOS, runtime.GOARCH, pythonVersion, toolIdentity,
 	} {
 		_, _ = io.WriteString(hash, part)
