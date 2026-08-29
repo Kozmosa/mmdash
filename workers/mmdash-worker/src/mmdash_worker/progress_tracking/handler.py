@@ -49,9 +49,7 @@ class ProgressEvaluationHandler:
             )
             output = _mock_output(evaluation)
             return {"output": output, "evaluator_mode": "mock"}
-        execution = await asyncio.to_thread(
-            self.client.execute_progress_evaluation, context.job_id
-        )
+        execution = await asyncio.to_thread(self.client.execute_progress_evaluation, context.job_id)
         output = _parse_agent_output(execution.get("output"))
         return {
             "output": output,
@@ -179,11 +177,7 @@ def _mock_output(evaluation: Mapping[str, Any]) -> dict[str, Any]:
     tasks = _mapping_sequence(progress.get("tasks"))
     milestones = _mapping_sequence(progress.get("milestones"))
     completed = [_label(item) for item in tasks if item.get("status") == "done"]
-    active = [
-        _label(item)
-        for item in tasks
-        if item.get("status") in {"todo", "in_progress"}
-    ]
+    active = [_label(item) for item in tasks if item.get("status") in {"todo", "in_progress"}]
     blockers = [_label(item) for item in tasks if item.get("status") == "blocked"]
     if not tasks and not milestones:
         stage = "planning"

@@ -43,12 +43,8 @@ class HandlerContext:
     lease_renewal_failed: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
     lease_renewed_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
-    cancellation_requested_event: asyncio.Event = field(
-        default_factory=asyncio.Event, repr=False
-    )
-    lease_renewal_failed_event: asyncio.Event = field(
-        default_factory=asyncio.Event, repr=False
-    )
+    cancellation_requested_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    lease_renewal_failed_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
 
 class HandlerRegistry:
