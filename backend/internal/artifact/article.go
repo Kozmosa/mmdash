@@ -37,8 +37,10 @@ func (service Service) ArticleTemplateGrant(ctx context.Context, projectID, arti
 }
 
 // ArticleResourceGrant returns an immutable, job-scoped input transfer for a
-// template, figure, table, or attachment pinned by Article. The signed grant
-// contains no reusable provider credential.
+// template, figure, table, or attachment pinned by Article. Worker inputs
+// always stream through Core's internal transfer origin, regardless of the
+// configured storage backend, so the Worker does not need public DNS or object
+// storage credentials.
 func (service Service) ArticleResourceGrant(ctx context.Context, projectID, artifactID, versionID string) (map[string]interface{}, error) {
 	detail, err := service.Store.GetDetail(ctx, projectID, artifactID, false)
 	if err != nil {
@@ -54,16 +56,11 @@ func (service Service) ArticleResourceGrant(ctx context.Context, projectID, arti
 	if version.Status != StatusAvailable || version.StorageClass != "object" {
 		return nil, ErrNotAvailable
 	}
-	var transfer TransferGrant
-	if service.Storage.Backend() == "local" {
-		signer := service.WorkerSigner
-		if signer == nil {
-			return nil, ErrNotAvailable
-		}
-		transfer, err = signer.Sign(TransferClaims{Kind: transferDownload, ProjectID: projectID, ArtifactID: artifactID, VersionID: versionID, SizeBytes: version.SizeBytes}, service.now(), service.transferTTL())
-	} else {
-		transfer, err = service.downloadTransfer(ctx, version)
+	signer := service.WorkerSigner
+	if signer == nil {
+		return nil, ErrNotAvailable
 	}
+	transfer, err := signer.Sign(TransferClaims{Kind: transferDownload, ProjectID: projectID, ArtifactID: artifactID, VersionID: versionID, SizeBytes: version.SizeBytes}, service.now(), service.transferTTL())
 	if err != nil {
 		return nil, err
 	}

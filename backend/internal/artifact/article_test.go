@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,6 +64,16 @@ func (store *articleTemplateStore) GetDetail(
 		return Detail{}, ErrNotFound
 	}
 	return detail, nil
+}
+
+func (store *articleTemplateStore) GetVersion(
+	_ context.Context, projectID, artifactID, versionID string,
+) (Version, error) {
+	detail, ok := store.details[artifactIDKey(projectID, artifactID)]
+	if !ok || detail.CurrentVersion == nil || detail.CurrentVersion.ID != versionID {
+		return Version{}, ErrNotFound
+	}
+	return *detail.CurrentVersion, nil
 }
 
 func (store *articleTemplateStore) FindBlob(
@@ -282,6 +293,110 @@ func TestArchiveArticleTemplatePreservesSizeAndSHAValidation(t *testing.T) {
 		strings.Repeat("0", 64), int64(len(contents)), bytes.NewReader(contents),
 	); !errors.Is(err, ErrHashMismatch) {
 		t.Fatalf("expected SHA rejection, got %v", err)
+	}
+}
+
+type articleGrantStorage struct {
+	BlobStore
+	presignCalls int
+}
+
+func (*articleGrantStorage) Backend() string { return "minio" }
+
+func (storage *articleGrantStorage) PresignGet(
+	context.Context,
+	string,
+	time.Duration,
+	GetObjectOptions,
+) (SignedRequest, error) {
+	storage.presignCalls++
+	return SignedRequest{
+		Method: "GET",
+		URL:    "https://prod.mmdash.moe/mmdash/template.zip?signed=provider",
+	}, nil
+}
+
+func TestArticleResourceGrantUsesInternalWorkerTransferForObjectStorage(t *testing.T) {
+	projectID := "project-template"
+	artifactID := "artifact-template"
+	versionID := "version-template"
+	store := newArticleTemplateStore()
+	store.details[artifactIDKey(projectID, artifactID)] = Detail{
+		Artifact: Artifact{ID: artifactID, ProjectID: projectID, Status: StatusAvailable},
+		CurrentVersion: &Version{
+			ID: versionID, ArtifactID: artifactID, ProjectID: projectID,
+			StorageClass: "object", Status: StatusAvailable, SizeBytes: 123,
+			Filename: "template.zip", MIMEType: articleTemplateMIME,
+		},
+	}
+	publicSigner, err := NewTransferSigner(strings.Repeat("s", 32), "https://prod.mmdash.moe")
+	if err != nil {
+		t.Fatalf("create public signer: %v", err)
+	}
+	workerSigner, err := NewTransferSigner(strings.Repeat("s", 32), "http://core:8080")
+	if err != nil {
+		t.Fatalf("create Worker signer: %v", err)
+	}
+	storage := &articleGrantStorage{}
+	service := Service{
+		Signer: publicSigner, Storage: storage, Store: store,
+		TransferTTL: time.Minute, WorkerSigner: workerSigner,
+	}
+
+	grant, err := service.ArticleResourceGrant(
+		context.Background(), projectID, artifactID, versionID,
+	)
+	if err != nil {
+		t.Fatalf("create Article resource grant: %v", err)
+	}
+	if storage.presignCalls != 0 {
+		t.Fatalf("Article Worker grant used provider presigning %d times", storage.presignCalls)
+	}
+	rawURL, ok := grant["url"].(string)
+	if !ok || !strings.HasPrefix(rawURL, "http://core:8080/v1/artifact-transfers/") {
+		t.Fatalf("unexpected Worker transfer URL: %#v", grant["url"])
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse Worker transfer URL: %v", err)
+	}
+	token, err := transferToken(strings.TrimPrefix(parsed.Path, "/v1/artifact-transfers/"))
+	if err != nil {
+		t.Fatalf("extract Worker transfer token: %v", err)
+	}
+	claims, err := workerSigner.Verify(token, time.Now())
+	if err != nil {
+		t.Fatalf("verify Worker transfer token: %v", err)
+	}
+	if claims.Kind != transferDownload || claims.ProjectID != projectID ||
+		claims.ArtifactID != artifactID || claims.VersionID != versionID ||
+		claims.SizeBytes != 123 {
+		t.Fatalf("unexpected Worker transfer claims: %#v", claims)
+	}
+}
+
+func TestArticleResourceGrantRejectsMissingInternalWorkerSigner(t *testing.T) {
+	projectID := "project-template"
+	artifactID := "artifact-template"
+	versionID := "version-template"
+	store := newArticleTemplateStore()
+	store.details[artifactIDKey(projectID, artifactID)] = Detail{
+		Artifact: Artifact{ID: artifactID, ProjectID: projectID, Status: StatusAvailable},
+		CurrentVersion: &Version{
+			ID: versionID, ArtifactID: artifactID, ProjectID: projectID,
+			StorageClass: "object", Status: StatusAvailable, SizeBytes: 123,
+		},
+	}
+	storage := &articleGrantStorage{}
+	service := Service{Storage: storage, Store: store}
+
+	if _, err := service.ArticleResourceGrant(
+		context.Background(), projectID, artifactID, versionID,
+	); !errors.Is(err, ErrNotAvailable) {
+		t.Fatalf("expected missing Worker signer rejection, got %v", err)
+	}
+	if storage.presignCalls != 0 {
+		t.Fatalf("missing Worker signer fell back to provider presigning")
 	}
 }
 
