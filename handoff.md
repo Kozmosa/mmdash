@@ -1,3 +1,59 @@
+# mmdash v0.1 Repo provider paths and production deployment (issue #60)
+
+- Updated: 2026-08-31
+- Branch: `main`
+- Scope: complete Kozmosa/mmdash#60 by separating Repo onboarding into the
+  `managed`, `github`, and `server_existing` product paths, and deploy the
+  completed vertical to `https://prod.mmdash.moe`.
+- Delivery commits:
+  - `4e824c0 feat(repo): add managed and server repository paths`
+  - `1234aa2 fix(box): terminate recovered tasks without process groups`
+  - `3ea909c feat(deploy): add production Cloudflare stack`
+- Repo behavior: `managed` is the default/recommended path and creates a
+  Core-owned bare repository under `REPO_STORAGE_ROOT`; initialization creates
+  an empty commit plus `main`, `article`, and `result` branches. `github`
+  retains the existing HTTPS/PAT/Webhook behavior. The old `local` provider is
+  migrated to `server_existing` and is available only when
+  `REPO_LOCAL_ALLOWED_ROOTS` is nonempty.
+- Security and availability: `remote_url` is a secret Settings field; legacy
+  public values remain available only through trusted Settings resolution.
+  Repository responses expose a URL only for GitHub and never return managed
+  storage keys, checkout paths, or server absolute paths. Core and Web BFF
+  capability endpoints drive the Web UI, so production reports managed access
+  enabled and server-existing access disabled with the safe deployment reason.
+- Migration: `backend/migrations/000050_repo_provider_paths.up.sql` renames
+  existing `local` values to `server_existing` and permits `managed`. Its down
+  migration refuses to proceed while managed repositories exist. Production
+  applied migration `000050`; there were no pre-existing Repo/settings rows to
+  migrate on this deployment.
+- Verification: targeted Core/settings/provider tests, Web BFF Repo tests
+  (4/4), Web Repo settings tests (5/5), contract generation/check, API catalog
+  coverage (535 operations), and the complete `pnpm check` gate pass. The full
+  gate exposed and verified the unrelated Linux recovery fix in `1234aa2`.
+- Production upgrade: source images for Core, Web, Web BFF, MCP Gateway, Caddy,
+  and Worker were built and applied with Compose without `down` or volume
+  deletion. Long-running services are healthy/running; `migrate` and
+  `minio-init` exited 0; public Web and MCP health requests return HTTP 200.
+- Pre-upgrade backup:
+  `/data/yile.chen/backups/mmdash/pre-issue-60-20260830T173244Z`. It contains
+  checksum-verified PostgreSQL custom dump, Repo volume archive, Artifact
+  volume archive, MinIO volume archive, and `SHA256SUMS`.
+- Production acceptance: two managed-Repo smoke runs initialized all three
+  branches, committed code/article/result content through Core, and read
+  immutable content through Web BFF. They also confirmed server-existing is
+  disabled and no storage path leaks. Temporary Repositories were precisely
+  disconnected and the test Projects moved to recoverable trash; Repo cleanup
+  uses the configured 24-hour grace period.
+- Environment note: the tracked Pixi environment is currently blocked because
+  its isolated Corepack installation is missing `corepack.js`, so
+  `testenv doctor/install` fail before repository checks start. Verification
+  used the available system Node 24, pnpm 11.9, Go 1.26.4, uv, and Python
+  toolchains instead.
+- Operations note: cloudflared continues to emit an older intermittent DNS
+  refresh timeout warning, but Tunnel connections remain established and
+  public requests succeed. New application/service logs contain no
+  panic/fatal/error output or credential leaks.
+
 # mmdash v0.1 Stage 8 `local-process` bare-metal Runtime (issue #47, WIP)
 
 - Updated: 2026-08-29

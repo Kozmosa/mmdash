@@ -287,6 +287,7 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
 export async function runManagedRepoSmoke({
   coreUrl,
   email,
+  expectServerExistingDisabled = false,
   password,
   runId,
   webUrl,
@@ -325,6 +326,17 @@ export async function runManagedRepoSmoke({
     ),
     "Managed Repo capability is not enabled.",
   );
+  if (expectServerExistingDisabled) {
+    const serverExisting = capabilities.body.providers?.find(
+      (item) => item.provider === "server_existing",
+    );
+    assert(
+      serverExisting?.enabled === false &&
+        serverExisting.disabled_reason ===
+          "Current deployment has not enabled server repository access",
+      "Server-existing Repo should be safely disabled for this deployment.",
+    );
+  }
   const setting = await jsonChecked(`${projectPath}/settings/repo.connection`, {
     body: {
       values: {

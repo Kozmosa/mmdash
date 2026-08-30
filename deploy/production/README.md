@@ -230,19 +230,20 @@ mkdir -p "$backup_root/repo"
 ```
 
 After an upgrade, run the managed repository acceptance path against the
-private application network. It creates a temporary Project, initializes all
-three branches, commits through Core, and reads the files through Web BFF.
-Load only the bootstrap login into shell variables; do not print them:
+private application network. It creates a temporary Project, verifies that
+server-existing access is disabled, initializes all three managed branches,
+commits through Core, and reads the files through Web BFF. Read only the
+bootstrap login from the running Core container; do not print it:
 
 ```bash
-set -a
-. deploy/production/.env.production
-set +a
+smoke_email=$("${prod_compose[@]}" exec -T core printenv AUTH_BOOTSTRAP_EMAIL)
+smoke_password=$("${prod_compose[@]}" exec -T core printenv AUTH_BOOTSTRAP_PASSWORD)
 "${prod_compose[@]}" run --rm --no-deps -T \
   -e MMDASH_SMOKE_URL=http://web-bff:3001 \
   -e MMDASH_SMOKE_CORE_URL=http://core:8080 \
-  -e MMDASH_SMOKE_EMAIL="$AUTH_BOOTSTRAP_EMAIL" \
-  -e MMDASH_SMOKE_PASSWORD="$AUTH_BOOTSTRAP_PASSWORD" \
+  -e MMDASH_SMOKE_EMAIL="$smoke_email" \
+  -e MMDASH_SMOKE_PASSWORD="$smoke_password" \
+  -e MMDASH_SMOKE_EXPECT_SERVER_REPO_DISABLED=1 \
   -v "$PWD/scripts:/workspace/scripts:ro" \
   -w /workspace web-bff node scripts/managed-repo-smoke.mjs
 ```

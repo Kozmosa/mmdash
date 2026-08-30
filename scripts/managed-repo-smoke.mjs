@@ -18,6 +18,8 @@ const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const result = await runManagedRepoSmoke({
   coreUrl,
   email,
+  expectServerExistingDisabled:
+    process.env.MMDASH_SMOKE_EXPECT_SERVER_REPO_DISABLED === "1",
   password,
   runId,
   webUrl,
