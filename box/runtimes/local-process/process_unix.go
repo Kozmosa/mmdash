@@ -51,14 +51,21 @@ func killTree(pid int) error {
 		return errors.New("task process ID is not recorded")
 	}
 	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
-			return nil
-		}
 		// The root may already be gone while descendants survive, so fall
-		// back to the individual process before reporting failure.
+		// back to the individual process before reporting failure. ESRCH for
+		// the group does not prove the root process is gone: a recovered task
+		// may predate process-group supervision or a test may start it directly.
 		if killErr := syscall.Kill(pid, syscall.SIGKILL); killErr != nil && !errors.Is(killErr, syscall.ESRCH) {
 			return fmt.Errorf("terminate task process group %d: %w", pid, err)
 		}
+	}
+	// SIGKILL delivery is asynchronous. Wait briefly until the root is gone or
+	// a zombie so callers never report RUNNER_LOST while the task can still run.
+	for attempt := 0; attempt < 50; attempt++ {
+		if processStopped(pid) {
+			break
+		}
+		sleepMilli(10)
 	}
 	return nil
 }
@@ -67,7 +74,7 @@ func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	if err := syscall.Kill(pid, 0); err != nil {
+	if processStopped(pid) {
 		return false
 	}
 	// The detached supervisor is never waited for directly, so an exited
@@ -80,6 +87,23 @@ func processAlive(pid int) bool {
 		return false
 	}
 	return true
+}
+
+func processStopped(pid int) bool {
+	if err := syscall.Kill(pid, 0); err != nil {
+		return true
+	}
+	// An orphaned task can remain as a zombie until the host's PID 1 reaps it.
+	// It no longer executes or owns a process tree, so treat it as terminated
+	// even though kill(pid, 0) still succeeds. /proc is Linux-specific; other
+	// Unix kernels simply fall through to the existing wait/liveness check.
+	if status, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		closingParen := strings.LastIndexByte(string(status), ')')
+		if closingParen >= 0 && len(status) > closingParen+2 && status[closingParen+2] == 'Z' {
+			return true
+		}
+	}
+	return false
 }
 
 // reapProcess best-effort reaps an exited child so detached runners never
