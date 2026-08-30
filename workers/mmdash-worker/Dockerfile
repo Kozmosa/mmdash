@@ -1,4 +1,6 @@
-FROM python:3.12.11-slim-bookworm
+ARG PYTHON_BASE_IMAGE=python:3.12.11-slim-bookworm
+
+FROM ${PYTHON_BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -10,10 +12,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TEXMFCONFIG=/tmp/texmf-config \
     TEXMFHOME=/tmp/texmf-home
 
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=http://deb.debian.org/debian-security
+
 # Article builds use an explicitly pinned Debian bookworm toolchain. Worker
 # startup/build validation rejects a binary version that drifts from the Core
 # job grant, and every successful Build records the complete version lines.
-RUN apt-get update \
+RUN sed -i \
+      -e "s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" \
+      -e "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" \
+      /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
       biber=2.18-1 \
       latexmk=1:4.79-1 \

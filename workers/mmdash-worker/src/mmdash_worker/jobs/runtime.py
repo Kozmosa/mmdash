@@ -68,6 +68,7 @@ class WorkerRuntime:
         *,
         worker_id: str,
         version: str,
+        job_types: Sequence[str] | None = None,
         lease_seconds: int = 60,
         poll_seconds: float = 2.0,
         renew_interval_seconds: float | None = None,
@@ -78,10 +79,21 @@ class WorkerRuntime:
             raise ValueError("poll_seconds cannot be negative")
         if renew_interval_seconds is not None and renew_interval_seconds < 0:
             raise ValueError("renew_interval_seconds cannot be negative")
+        registered_job_types = registry.names()
+        if job_types is None:
+            selected_job_types = registered_job_types
+        else:
+            selected_job_types = tuple(sorted(set(job_types)))
+            if not selected_job_types:
+                raise ValueError("job_types cannot be empty")
+            unsupported = sorted(set(selected_job_types) - set(registered_job_types))
+            if unsupported:
+                raise ValueError("Worker has no registered handler for: " + ", ".join(unsupported))
         self.client = client
         self.registry = registry
         self.worker_id = worker_id
         self.version = version
+        self.job_types = selected_job_types
         self.lease_seconds = lease_seconds
         self.poll_seconds = poll_seconds
         self.renew_interval_seconds = renew_interval_seconds
@@ -89,7 +101,7 @@ class WorkerRuntime:
     async def run_once(self) -> bool:
         """Heartbeat, claim, and process at most one job."""
 
-        capabilities = self.registry.names()
+        capabilities = self.job_types
         await asyncio.to_thread(
             self.client.heartbeat_worker,
             self.worker_id,

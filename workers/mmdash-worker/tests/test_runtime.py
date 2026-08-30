@@ -119,6 +119,45 @@ def test_run_once_heartbeats_claims_dispatches_and_completes() -> None:
     )
 
 
+def test_run_once_can_limit_advertised_and_claimed_job_types() -> None:
+    registry = baseline_registry()
+    registry.register("system.other", lambda _context, _payload: {"handler": "other"})
+    client = FakeClient({"id": "job-1", "job_type": "system.test", "payload": {}})
+    runtime = WorkerRuntime(
+        client,
+        registry,
+        worker_id="worker-1",
+        version="0.1.0",
+        job_types=["system.test", "system.test"],
+        lease_seconds=10,
+        poll_seconds=0,
+    )
+
+    assert asyncio.run(runtime.run_once()) is True
+    assert client.calls[0][:4] == (
+        "heartbeat",
+        "worker-1",
+        "0.1.0",
+        ("system.test",),
+    )
+    assert client.calls[1] == ("claim", "worker-1", ("system.test",), 10)
+
+
+def test_runtime_rejects_unregistered_job_type_filter() -> None:
+    try:
+        WorkerRuntime(
+            FakeClient(None),
+            baseline_registry(),
+            worker_id="worker-1",
+            version="0.1.0",
+            job_types=["article.build"],
+        )
+    except ValueError as error:
+        assert str(error) == "Worker has no registered handler for: article.build"
+    else:
+        raise AssertionError("unregistered Job type filters must be rejected")
+
+
 def test_run_forever_retries_a_transient_claim_transport_failure() -> None:
     class FlakyClaimClient(FakeClient):
         def __init__(self) -> None:

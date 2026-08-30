@@ -9,6 +9,7 @@ mmdash v0.1 是面向数学建模与研究型项目的协作工作台。
 工程、API 与架构入口：
 
 - [本地开发](docs/development/README.md)
+- [生产部署（Cloudflare Tunnel）](deploy/production/README.md)
 - [API 索引](docs/api/README.md)
 - [架构索引](docs/architecture/README.md)
 

@@ -20,6 +20,12 @@ def status() -> dict[str, str]:
 def main() -> None:
     """Run the HTTP-only Job Worker or print a machine-readable status."""
     parser = argparse.ArgumentParser(prog="mmdash-worker")
+    parser.add_argument(
+        "--job-type",
+        action="append",
+        dest="job_types",
+        help="claim only this registered Job type; repeat to allow several types",
+    )
     parser.add_argument("--once", action="store_true", help="poll and handle at most one job")
     parser.add_argument("--status", action="store_true", help="print process identity and exit")
     arguments = parser.parse_args()
@@ -53,14 +59,18 @@ def main() -> None:
         ),
         transfer_origin_override=os.environ.get("MMDASH_WORKER_TRANSFER_ORIGIN_OVERRIDE", ""),
     )
-    runtime = WorkerRuntime(
-        client,
-        worker_registry(client),
-        worker_id=worker_id,
-        version=__version__,
-        lease_seconds=lease_seconds,
-        poll_seconds=poll_seconds,
-    )
+    try:
+        runtime = WorkerRuntime(
+            client,
+            worker_registry(client),
+            worker_id=worker_id,
+            version=__version__,
+            job_types=arguments.job_types,
+            lease_seconds=lease_seconds,
+            poll_seconds=poll_seconds,
+        )
+    except ValueError as error:
+        parser.error(str(error))
     if arguments.once:
         asyncio.run(runtime.run_once())
     else:

@@ -1,4 +1,7 @@
-FROM golang:1.26-alpine AS build
+ARG GO_BASE_IMAGE=golang:1.26-alpine
+ARG ALPINE_BASE_IMAGE=alpine:3.20
+
+FROM ${GO_BASE_IMAGE} AS build
 ENV GOPROXY=https://goproxy.cn
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
@@ -9,7 +12,7 @@ RUN CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate
 RUN CGO_ENABLED=0 go build -o /out/artifact-storage-init ./cmd/artifact-storage-init
 RUN CGO_ENABLED=0 go build -o /out/mmdash-git-askpass ./cmd/mmdash-git-askpass
 
-FROM alpine:3.20
+FROM ${ALPINE_BASE_IMAGE}
 RUN apk add --no-cache ca-certificates git \
     && addgroup -S mmdash \
     && adduser -S mmdash -G mmdash \

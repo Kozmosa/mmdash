@@ -23,6 +23,27 @@ $env:MMDASH_CORE_URL = "http://localhost:8080"
 uv run --package mmdash-worker mmdash-worker --once
 ```
 
+Use repeatable `--job-type` filters for a dedicated Worker that must advertise
+and claim only selected registered handlers. The foundation smoke uses this to
+keep its one-shot Worker scoped to `system.test`, regardless of other Project
+Jobs already queued by product initialization:
+
+```powershell
+uv run --package mmdash-worker mmdash-worker --job-type system.test --once
+```
+
+Article's pinned Pandoc/TeX toolchain is installed only in the Worker image;
+it does not install packages into the host Python or operating-system
+environment. When Docker Hub is unavailable, pull the same base image through
+1ms and use optional signed Debian mirrors for the image build:
+
+```powershell
+docker pull docker.1ms.run/library/python:3.12.11-slim-bookworm
+docker tag docker.1ms.run/library/python:3.12.11-slim-bookworm python:3.12.11-slim-bookworm
+docker build -f workers/mmdash-worker/Dockerfile -t mmdash-worker --build-arg DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian --build-arg DEBIAN_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security .
+pnpm smoke:article-worker
+```
+
 Preview limits are system environment configuration (`MMDASH_PREVIEW_*` in
 `.env.example`). Stage 2 intentionally provides only the
 `SemanticDescriptionGenerator` interface: LLM/multimodal descriptions and

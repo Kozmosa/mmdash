@@ -1,0 +1,127 @@
+{
+	admin off
+	auto_https off
+
+	servers {
+		trusted_proxies static private_ranges
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
+:8080 {
+	log {
+		output stdout
+		format json
+	}
+
+	route {
+		@health {
+			path /_internal/health
+			remote_ip 127.0.0.1 ::1
+		}
+		respond @health "ok" 200
+
+		@production_host host {$MMDASH_PRODUCTION_HOST}
+		handle @production_host {
+			header {
+				-Server
+				Permissions-Policy "camera=(), geolocation=(), microphone=()"
+				Referrer-Policy "strict-origin-when-cross-origin"
+				Strict-Transport-Security "max-age=31536000; includeSubDomains"
+				X-Content-Type-Options "nosniff"
+				X-Frame-Options "DENY"
+			}
+
+			route {
+				@artifact_storage path /{$OBJECT_STORAGE_BUCKET} /{$OBJECT_STORAGE_BUCKET}/*
+				handle @artifact_storage {
+					log_skip
+					request_body {
+						max_size {$CADDY_ARTIFACT_MAX_REQUEST_BODY}
+					}
+					reverse_proxy minio:9000 {
+						header_up Host {http.request.host}
+						header_up X-Forwarded-Proto https
+						header_down Cache-Control "private, no-store"
+						flush_interval -1
+					}
+				}
+
+				@user_api path /v1/*
+				handle @user_api {
+					request_body {
+						max_size {$CADDY_API_MAX_REQUEST_BODY}
+					}
+					header Cache-Control "no-store"
+					reverse_proxy web-bff:3001 {
+						header_up X-Forwarded-Proto https
+						health_uri /health/live
+						health_interval 15s
+						health_timeout 3s
+						health_fails 3
+						health_passes 2
+						fail_duration 30s
+						lb_try_duration 5s
+						flush_interval -1
+						stream_close_delay 5m
+					}
+				}
+
+				@api path /api/*
+				handle @api {
+					request_body {
+						max_size {$CADDY_API_MAX_REQUEST_BODY}
+					}
+					header Cache-Control "no-store"
+					reverse_proxy web-bff:3001 {
+						header_up X-Forwarded-Proto https
+						health_uri /health/live
+						health_interval 15s
+						health_timeout 3s
+						health_fails 3
+						health_passes 2
+						fail_duration 30s
+						lb_try_duration 5s
+						flush_interval -1
+						stream_close_delay 5m
+					}
+				}
+
+				@mcp path /mcp /mcp/*
+				handle @mcp {
+					request_body {
+						max_size {$CADDY_MCP_MAX_REQUEST_BODY}
+					}
+					header Cache-Control "no-store"
+					reverse_proxy mcp-gateway:3002 {
+						header_up X-Forwarded-Proto https
+						health_uri /health/live
+						health_interval 15s
+						health_timeout 3s
+						health_fails 3
+						health_passes 2
+						fail_duration 30s
+						lb_try_duration 5s
+						flush_interval -1
+						stream_close_delay 5m
+					}
+				}
+
+				handle {
+					reverse_proxy web:3000 {
+						header_up X-Forwarded-Proto https
+						health_uri /
+						health_interval 15s
+						health_timeout 3s
+						health_fails 3
+						health_passes 2
+						fail_duration 30s
+						lb_try_duration 5s
+					}
+				}
+			}
+		}
+
+		respond 404
+	}
+}

@@ -1,0 +1,394 @@
+name: mmdash-prod
+
+x-core-image: &core-image
+  image: ${MMDASH_CORE_IMAGE:-mmdash/core:${MMDASH_VERSION:-0.1.0}}
+  build:
+    context: ../..
+    dockerfile: backend/Dockerfile
+    args:
+      ALPINE_BASE_IMAGE: ${ALPINE_BASE_IMAGE:-alpine:3.20}
+      GO_BASE_IMAGE: ${GO_BASE_IMAGE:-golang:1.26-alpine}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-file: ${MMDASH_LOG_MAX_FILES:-5}
+    max-size: ${MMDASH_LOG_MAX_SIZE:-10m}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mmdash}
+      POSTGRES_USER: ${POSTGRES_USER:-mmdash}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-mmdash} -d ${POSTGRES_DB:-mmdash}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 60s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - data
+
+  minio:
+    image: ${MINIO_IMAGE:?set MINIO_IMAGE to an approved version or digest}
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+      MINIO_SERVER_URL: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 60s
+    volumes:
+      - minio-data:/data
+    networks:
+      - data
+
+  minio-init:
+    <<: *core-image
+    command: artifact-storage-init
+    restart: "no"
+    logging: *default-logging
+    environment:
+      ARTIFACT_STORAGE_BACKEND: minio
+      ARTIFACT_WEB_ORIGIN: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-mmdash}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - data
+
+  migrate:
+    <<: *core-image
+    command: migrate
+    restart: "no"
+    logging: *default-logging
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - data
+
+  core:
+    <<: *core-image
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    environment:
+      CORE_ADDR: :8080
+      CORE_INTERNAL_URL: http://core:8080
+      CORE_OPENAPI_PATH: /app/contracts/openapi/core.yaml
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
+      MMDASH_PUBLIC_URL: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?set AUTH_JWT_SECRET}
+      AUTH_ACCESS_TOKEN_TTL: ${AUTH_ACCESS_TOKEN_TTL:-24h}
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-720h}
+      AUTH_DEVICE_AUTHORIZATION_TTL: ${AUTH_DEVICE_AUTHORIZATION_TTL:-10m}
+      AUTH_DEVICE_POLL_INTERVAL: ${AUTH_DEVICE_POLL_INTERVAL:-5s}
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:?set AUTH_BOOTSTRAP_EMAIL}
+      AUTH_BOOTSTRAP_DISPLAY_NAME: ${AUTH_BOOTSTRAP_DISPLAY_NAME:-mmdash Admin}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:?set AUTH_BOOTSTRAP_PASSWORD}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?set SETTINGS_ENCRYPTION_KEY}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-5}
+      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-20}
+      DATABASE_CONN_MAX_IDLE_TIME: ${DATABASE_CONN_MAX_IDLE_TIME:-5m}
+      DATABASE_CONN_MAX_LIFETIME: ${DATABASE_CONN_MAX_LIFETIME:-30m}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-mmdash}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      ARTIFACT_STORAGE_BACKEND: minio
+      ARTIFACT_LOCAL_STORAGE_ROOT: /var/lib/mmdash/artifacts
+      ARTIFACT_UPLOAD_MAX_BYTES: ${ARTIFACT_UPLOAD_MAX_BYTES:-10737418240}
+      ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES: ${ARTIFACT_PREVIEW_OUTPUT_MAX_BYTES:-4194304}
+      ARTIFACT_MULTIPART_PART_BYTES: ${ARTIFACT_MULTIPART_PART_BYTES:-16777216}
+      ARTIFACT_MULTIPART_URL_TTL: ${ARTIFACT_MULTIPART_URL_TTL:-15m}
+      ARTIFACT_MULTIPART_SESSION_TTL: ${ARTIFACT_MULTIPART_SESSION_TTL:-24h}
+      ARTIFACT_STAGING_TTL: ${ARTIFACT_STAGING_TTL:-24h}
+      ARTIFACT_STAGING_SWEEP_INTERVAL: ${ARTIFACT_STAGING_SWEEP_INTERVAL:-5m}
+      ARTIFACT_WEB_ORIGIN: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+      REPO_STORAGE_ROOT: /var/lib/mmdash/repos
+      REPO_LOCAL_ALLOWED_ROOTS: ${REPO_LOCAL_ALLOWED_ROOTS:-}
+      REPO_MAX_CONCURRENT_GIT: ${REPO_MAX_CONCURRENT_GIT:-4}
+      REPO_COMMAND_TIMEOUT: ${REPO_COMMAND_TIMEOUT:-2m}
+      REPO_CLONE_TIMEOUT: ${REPO_CLONE_TIMEOUT:-15m}
+      REPO_SYNC_POLL_INTERVAL: ${REPO_SYNC_POLL_INTERVAL:-2s}
+      REPO_SYNC_LEASE: ${REPO_SYNC_LEASE:-20m}
+      REPO_CHECKOUT_TTL: ${REPO_CHECKOUT_TTL:-1h}
+      REPO_MAX_TEXT_BYTES: ${REPO_MAX_TEXT_BYTES:-1048576}
+      REPO_DISCONNECT_GRACE: ${REPO_DISCONNECT_GRACE:-24h}
+      REPO_ASKPASS_PATH: /usr/local/bin/mmdash-git-askpass
+      MMDASH_BOX_RELEASE_PROJECT_ID: ${MMDASH_BOX_RELEASE_PROJECT_ID:-00000000-0000-4000-8000-000000000900}
+      AGENT_MCP_GATEWAY_URL: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}/mcp
+      AGENT_RUNTIME_ALLOW_LOOPBACK: "false"
+      AGENT_RUNTIME_ALLOW_PRIVATE: "false"
+      AGENT_MANAGEMENT_ALLOW_LOOPBACK: "false"
+      AGENT_MANAGEMENT_ALLOW_PRIVATE: "false"
+      NOTION_OAUTH_CLIENT_ID: ${NOTION_OAUTH_CLIENT_ID:-}
+      NOTION_OAUTH_CLIENT_SECRET: ${NOTION_OAUTH_CLIENT_SECRET:-}
+      NOTION_OAUTH_REDIRECT_URI: ${NOTION_OAUTH_REDIRECT_URI:-https://prod.mmdash.moe/api/integrations/notion/oauth/callback}
+      MMDASH_PROGRESS_EVALUATOR_MODE: core_agent
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 30s
+    volumes:
+      - artifact-data:/var/lib/mmdash/artifacts
+      - repo-data:/var/lib/mmdash/repos
+    networks:
+      - app
+      - data
+      - egress
+
+  web-bff:
+    image: ${MMDASH_WEB_BFF_IMAGE:-mmdash/web-bff:${MMDASH_VERSION:-0.1.0}}
+    build:
+      context: ../..
+      dockerfile: apps/web-bff/Dockerfile
+      args:
+        NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:24-alpine}
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      BFF_COOKIE_SECRET: ${BFF_COOKIE_SECRET:?set BFF_COOKIE_SECRET}
+      BFF_HOST: 0.0.0.0
+      BFF_PORT: 3001
+      CORE_BASE_URL: http://core:8080
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 30s
+    networks:
+      - app
+
+  web:
+    image: ${MMDASH_WEB_IMAGE:-mmdash/web:${MMDASH_VERSION:-0.1.0}}
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        BFF_INTERNAL_URL: http://web-bff:3001
+        NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:24-alpine}
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    depends_on:
+      web-bff:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 30s
+    networks:
+      - app
+
+  mcp-gateway:
+    image: ${MMDASH_MCP_GATEWAY_IMAGE:-mmdash/mcp-gateway:${MMDASH_VERSION:-0.1.0}}
+    build:
+      context: ../..
+      dockerfile: apps/mcp-gateway/Dockerfile
+      args:
+        NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:24-alpine}
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      CORE_BASE_URL: http://core:8080
+      MCP_ALLOWED_HOSTS: ${MMDASH_PRODUCTION_HOST:-prod.mmdash.moe}
+      MCP_ALLOWED_ORIGINS: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}
+      MCP_GATEWAY_HOST: 0.0.0.0
+      MCP_GATEWAY_PORT: 3002
+      MCP_SESSION_TTL_MS: ${MCP_SESSION_TTL_MS:-1800000}
+      MCP_CORE_AUDIT_TOKEN: ${MCP_CORE_AUDIT_TOKEN:-}
+      MMDASH_VERSION: ${MMDASH_VERSION:-0.1.0}
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3002/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 30s
+    networks:
+      - app
+
+  worker:
+    profiles: ["worker"]
+    image: ${MMDASH_WORKER_IMAGE:-mmdash/worker:${MMDASH_VERSION:-0.1.0}}
+    build:
+      context: ../..
+      dockerfile: workers/mmdash-worker/Dockerfile
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://deb.debian.org/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-http://deb.debian.org/debian-security}
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12.11-slim-bookworm}
+        PYPI_INDEX_URL: ${PYPI_INDEX_URL:-https://pypi.org/simple}
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    environment:
+      MMDASH_CORE_URL: http://core:8080
+      MMDASH_WORKER_API_TOKEN: ${MMDASH_WORKER_API_TOKEN:-}
+      MMDASH_WORKER_ID: ${MMDASH_WORKER_ID:-mmdash-prod-worker-1}
+      MMDASH_WORKER_LEASE_SECONDS: ${MMDASH_WORKER_LEASE_SECONDS:-60}
+      MMDASH_WORKER_POLL_SECONDS: ${MMDASH_WORKER_POLL_SECONDS:-2}
+      MMDASH_PROGRESS_EVALUATOR_MODE: core_agent
+      SOURCE_DATE_EPOCH: "0"
+      TZ: UTC
+      TEXMFVAR: /tmp/texmf-var
+      TEXMFCONFIG: /tmp/texmf-config
+      TEXMFHOME: /tmp/texmf-home
+      MMDASH_PREVIEW_MAX_INPUT_BYTES: ${MMDASH_PREVIEW_MAX_INPUT_BYTES:-134217728}
+      MMDASH_PREVIEW_MAX_IMAGE_PIXELS: ${MMDASH_PREVIEW_MAX_IMAGE_PIXELS:-40000000}
+      MMDASH_PREVIEW_MAX_PDF_PAGES: ${MMDASH_PREVIEW_MAX_PDF_PAGES:-1000}
+      MMDASH_PREVIEW_MAX_PDF_TEXT_PAGES: ${MMDASH_PREVIEW_MAX_PDF_TEXT_PAGES:-20}
+      MMDASH_PREVIEW_MAX_CSV_ROWS: ${MMDASH_PREVIEW_MAX_CSV_ROWS:-10000}
+      MMDASH_PREVIEW_MAX_CSV_COLUMNS: ${MMDASH_PREVIEW_MAX_CSV_COLUMNS:-256}
+      MMDASH_PREVIEW_MAX_SAMPLE_ROWS: ${MMDASH_PREVIEW_MAX_SAMPLE_ROWS:-20}
+      MMDASH_PREVIEW_MAX_JSON_BYTES: ${MMDASH_PREVIEW_MAX_JSON_BYTES:-8388608}
+      MMDASH_PREVIEW_MAX_TEXT_BYTES: ${MMDASH_PREVIEW_MAX_TEXT_BYTES:-2097152}
+      MMDASH_PREVIEW_MAX_TEXT_CHARS: ${MMDASH_PREVIEW_MAX_TEXT_CHARS:-32768}
+      MMDASH_PREVIEW_MAX_SUMMARY_BYTES: ${MMDASH_PREVIEW_MAX_SUMMARY_BYTES:-65536}
+      MMDASH_PREVIEW_MAX_THUMBNAIL_BYTES: ${MMDASH_PREVIEW_MAX_THUMBNAIL_BYTES:-4194304}
+      MMDASH_PREVIEW_THUMBNAIL_DIMENSION: ${MMDASH_PREVIEW_THUMBNAIL_DIMENSION:-512}
+      MMDASH_PREVIEW_TIMEOUT_SECONDS: ${MMDASH_PREVIEW_TIMEOUT_SECONDS:-60}
+    depends_on:
+      core:
+        condition: service_healthy
+    stop_grace_period: 90s
+    networks:
+      - data
+
+  caddy:
+    image: ${MMDASH_CADDY_IMAGE:-mmdash/caddy:${MMDASH_VERSION:-0.1.0}}
+    build:
+      context: ../..
+      dockerfile: deploy/production/caddy/Dockerfile
+      args:
+        CADDY_BASE_IMAGE: ${CADDY_BASE_IMAGE:-caddy:2.10-alpine}
+    restart: unless-stopped
+    logging: *default-logging
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      MMDASH_PRODUCTION_HOST: ${MMDASH_PRODUCTION_HOST:-prod.mmdash.moe}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-mmdash}
+      CADDY_ARTIFACT_MAX_REQUEST_BODY: ${CADDY_ARTIFACT_MAX_REQUEST_BODY:-64MB}
+      CADDY_API_MAX_REQUEST_BODY: ${CADDY_API_MAX_REQUEST_BODY:-64MB}
+      CADDY_MCP_MAX_REQUEST_BODY: ${CADDY_MCP_MAX_REQUEST_BODY:-16MB}
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    depends_on:
+      web:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/_internal/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - edge
+      - app
+      - data
+    stop_grace_period: 30s
+
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE:?set CLOUDFLARED_IMAGE to an approved version or digest}
+    command: ["tunnel", "--no-autoupdate", "run"]
+    restart: unless-stopped
+    logging: *default-logging
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      caddy:
+        condition: service_healthy
+    networks:
+      - edge
+      - tunnel-egress
+    stop_grace_period: 30s
+
+networks:
+  edge:
+    internal: true
+  app:
+    internal: true
+  data:
+    internal: true
+  egress:
+  tunnel-egress:
+
+volumes:
+  artifact-data:
+  minio-data:
+  postgres-data:
+  repo-data:

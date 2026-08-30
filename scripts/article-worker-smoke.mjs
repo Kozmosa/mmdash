@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const source = resolve("scripts/article-worker-smoke.py");
@@ -7,16 +8,19 @@ const result = spawnSync(
   [
     "run",
     "--rm",
+    "-i",
     "--network",
     "none",
-    "--mount",
-    `type=bind,source=${source},target=/smoke/article-worker-smoke.py,readonly`,
     "--entrypoint",
     "/app/.venv/bin/python",
     "mmdash-worker",
-    "/smoke/article-worker-smoke.py",
+    "-",
   ],
-  { encoding: "utf8", stdio: "inherit" },
+  {
+    encoding: "utf8",
+    input: readFileSync(source),
+    stdio: ["pipe", "inherit", "inherit"],
+  },
 );
 
 if (result.error) throw result.error;

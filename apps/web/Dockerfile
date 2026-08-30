@@ -1,4 +1,6 @@
-FROM node:24-alpine AS base
+ARG NODE_BASE_IMAGE=node:24-alpine
+
+FROM ${NODE_BASE_IMAGE} AS base
 ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
     pnpm_config_registry=https://registry.npmmirror.com
 RUN corepack enable
@@ -16,7 +18,7 @@ COPY tsconfig.base.json ./
 COPY apps/web apps/web
 RUN pnpm --filter @mmdash/web build
 
-FROM node:24-alpine AS runtime
+FROM ${NODE_BASE_IMAGE} AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /workspace/apps/web/.next/standalone ./

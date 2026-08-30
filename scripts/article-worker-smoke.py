@@ -37,6 +37,14 @@ class SmokeClient:
         self.template = template
         self.output = output
 
+    def update_article_build_progress(
+        self, _job_id: str, progress_percent: int, progress_stage: str
+    ) -> dict[str, Any]:
+        return {
+            "progress_percent": progress_percent,
+            "progress_stage": progress_stage,
+        }
+
     def get_article_build_input(self, _job_id: str) -> dict[str, Any]:
         resource_hash = hashlib.sha256(PNG).hexdigest()
         return {
@@ -103,7 +111,9 @@ class SmokeClient:
     def download_transfer(
         self, grant: Mapping[str, Any], destination: Path, *, max_bytes: int
     ) -> dict[str, Any]:
-        contents = PNG if grant.get("kind") == "resource" else self.template.read_bytes()
+        contents = (
+            PNG if grant.get("kind") == "resource" else self.template.read_bytes()
+        )
         if len(contents) > max_bytes:
             raise RuntimeError("smoke transfer exceeded its job-scoped grant")
         destination.write_bytes(contents)
@@ -122,7 +132,10 @@ class SmokeClient:
     ) -> dict[str, Any]:
         del mime_type
         contents = source.read_bytes()
-        if len(contents) != size_bytes or hashlib.sha256(contents).hexdigest() != sha256:
+        if (
+            len(contents) != size_bytes
+            or hashlib.sha256(contents).hexdigest() != sha256
+        ):
             raise RuntimeError(f"{role} output digest changed during upload")
         (self.output / filename).write_bytes(contents)
         return {
@@ -173,10 +186,14 @@ def verify(output: Path, result: Mapping[str, Any]) -> dict[str, Any]:
             "CHECKSUMS.sha256",
         }
         if not expected <= names:
-            raise RuntimeError(f"source ZIP is missing files: {sorted(expected - names)}")
+            raise RuntimeError(
+                f"source ZIP is missing files: {sorted(expected - names)}"
+            )
         if archive.read("figures/artifact-0001.png") != PNG:
             raise RuntimeError("source ZIP did not preserve the frozen Artifact image")
-        if not all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()):
+        if not all(
+            info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()
+        ):
             raise RuntimeError("source ZIP is not reproducibly timestamped")
     return {
         "status": "passed",
@@ -189,7 +206,9 @@ def verify(output: Path, result: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
-    with tempfile.TemporaryDirectory(prefix="mmdash-article-worker-smoke-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="mmdash-article-worker-smoke-"
+    ) as temporary:
         root = Path(temporary)
         output = root / "output"
         output.mkdir()
