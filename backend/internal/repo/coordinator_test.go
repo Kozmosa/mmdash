@@ -147,7 +147,7 @@ func TestCoordinatorRunsClaimsConcurrentlyAndRenewsLeases(t *testing.T) {
 		{Repository: Repository{ID: "repo-2", ProjectID: "project-2"}, Requested: now, Source: "manual"},
 	}}
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+	if err := providers.Register("server_existing", coordinatorProvider{}); err != nil {
 		t.Fatal(err)
 	}
 	runtime := &coordinatorRuntime{delay: 80 * time.Millisecond}
@@ -177,7 +177,7 @@ func TestCoordinatorPersistsSafeFailureWithExponentialBackoff(t *testing.T) {
 		Requested: now, Source: "manual",
 	}}}
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{
+	if err := providers.Register("server_existing", coordinatorProvider{
 		err: provider.ErrAuthentication,
 	}); err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func coordinatorResolvedSetting() settings.ResolvedSetting {
 	return settings.ResolvedSetting{
 		Scope: settings.ScopeProject, ScopeID: "project", TypeKey: SettingType,
 		Values: map[string]interface{}{
-			"provider": "local", "remote_url": "C:/repositories/source",
+			"provider": "server_existing", "remote_url": "C:/repositories/source",
 			"code_branch": "main", "article_branch": "article",
 			"result_branch": "result",
 		},

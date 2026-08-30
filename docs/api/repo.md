@@ -13,23 +13,38 @@ Canonical schemas and error responses live in
 
 ## Connection and workspace model
 
-One Project may bind one GitHub HTTPS repository or one administrator-allowlisted
-Local Git repository. The saved `repo.connection` setting contains:
+One Project may use one of three repository paths:
+
+- `managed`: Core creates and owns the authoritative bare repository under
+  `REPO_STORAGE_ROOT`; this is the recommended default;
+- `github`: Core connects an existing GitHub HTTPS repository with a
+  fine-grained PAT;
+- `server_existing`: Core connects an existing repository mounted into the
+  Core container and covered by `REPO_LOCAL_ALLOWED_ROOTS`.
+
+The saved `repo.connection` setting contains:
 
 - provider and remote URL/path;
 - optional fine-grained GitHub PAT;
 - three distinct existing branches mapped to logical `code`, `article`, and
   `result` workspaces.
 
-An existing `main` branch may map to `code`. Core never silently creates a
-remote branch. Secret fields are encrypted by Settings and every HTTP read
-returns `********`; a newly generated GitHub webhook secret is returned only
-once.
+For `managed`, Core creates one empty initial commit and initializes the
+configured `code`, `article`, and `result` branches (defaulting to `main`,
+`article`, and `result`). For GitHub and server-existing repositories the
+three branches must already exist; Core never silently creates an external
+branch. Repository locations and credentials are secret Settings fields and
+every Settings HTTP read returns `********`; trusted Repo resolution can still
+read legacy server paths promoted from the former public field. A newly
+generated GitHub webhook secret is returned only once.
 
-Core clones a bare repository under its generated storage key and maintains
+Core keeps a bare repository under its generated storage key and maintains
 three long-lived worktrees on the fixed local branches `mmdash/code`,
-`mmdash/article`, and `mmdash/result`. API responses never expose storage keys,
-absolute paths, PATs, AskPass state, or checkout paths.
+`mmdash/article`, and `mmdash/result`. A managed repository uses its bare
+repository as an internal self-origin so the same fetch/push and worktree
+invariants apply. Repository responses expose a canonical `remote_url` only
+for GitHub. API responses never expose managed storage locations,
+server-existing paths, storage keys, PATs, AskPass state, or checkout paths.
 
 ## Public operations
 
@@ -38,6 +53,7 @@ The browser-safe BFF surface is:
 | Method   | Path                                                       | Purpose                                      |
 | -------- | ---------------------------------------------------------- | -------------------------------------------- |
 | `GET`    | `/api/projects/{projectId}/repository`                     | Status and workspace heads                   |
+| `GET`    | `/api/projects/{projectId}/repository/capabilities`        | Browser-safe provider availability           |
 | `PUT`    | `/api/projects/{projectId}/repository`                     | Connect, recover, or replace tested settings |
 | `DELETE` | `/api/projects/{projectId}/repository`                     | Delayed managed disconnect                   |
 | `POST`   | `/api/projects/{projectId}/repository/test`                | Safe provider/branch checks                  |
@@ -95,19 +111,23 @@ Internal commits require:
 Prepared commits are persisted before push. A rejected push restores the
 managed worktree and leaves a safe retryable record. Disconnect marks the
 repository first. During `REPO_DISCONNECT_GRACE`, the same provider and
-canonical remote may restore that row in place, reusing its repository ID,
-storage key, Git objects, and metadata while allowing PAT and branch mapping
-updates. A different remote requires explicit user confirmation through
+canonical location may restore that row in place, reusing its repository ID,
+storage key, Git objects, and metadata while allowing GitHub PAT and branch
+mapping updates. Managed repository workspaces cannot be remapped after
+connection because Core owns their initialized branch topology. A different
+binding requires explicit user confirmation through
 `RepoConnectRequest.replace_disconnected=true`. Core tests the new connection
 before taking a replacement lease, removes exactly the old generated
 storage-key directory and metadata, and then creates the new pending binding.
-It never deletes or modifies the remote Git
-repository. If managed cleanup fails, Core releases the replacement lease and
-preserves the old disconnected binding. Without that flag, the mismatch remains
-a conflict. After the grace period, a cleanup lease wins atomically over
-reconnect; the worker validates and removes exactly the generated storage-key
-directory, then deletes metadata. Failure releases the lease and reschedules
-cleanup without creating or deleting another repository row.
+That cleanup deletes a disconnected managed repository because its generated
+storage is authoritative; it never deletes or modifies a GitHub or
+server-existing source repository. If cleanup fails, Core releases the
+replacement lease and preserves the old disconnected binding. Without that
+flag, the mismatch remains a conflict. After the grace period, a cleanup lease
+wins atomically over reconnect; the worker validates and removes exactly the
+generated storage-key directory, then deletes metadata. Failure releases the
+lease and reschedules cleanup without creating or deleting another repository
+row.
 
 ## Events, Data Hub, and MCP
 

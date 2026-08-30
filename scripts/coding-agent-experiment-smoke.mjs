@@ -148,7 +148,7 @@ try {
           values: {
             article_branch: "article",
             code_branch: "main",
-            provider: "local",
+            provider: "server_existing",
             remote_url: fixture.remote,
             result_branch: "result",
           },

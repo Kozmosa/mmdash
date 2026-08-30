@@ -2916,6 +2916,20 @@ paths:
       responses:
         "204":
           description: Repository disconnected.
+  /api/projects/{projectId}/repository/capabilities:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: Get browser-safe repository provider availability
+      operationId: bff.repo.capabilities.get
+      responses:
+        "200":
+          description: Deployment availability for managed, GitHub, and server-existing repositories.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/RepoCapabilities"
   /api/projects/{projectId}/repository/test:
     parameters:
       - $ref: "#/components/parameters/ProjectId"

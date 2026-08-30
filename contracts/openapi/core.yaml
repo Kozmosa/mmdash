@@ -1288,6 +1288,20 @@ paths:
           description: Repository disconnected and scheduled for managed cleanup.
         "404":
           $ref: "#/components/responses/Error"
+  /v1/projects/{projectId}/repository/capabilities:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Repo]
+      summary: List browser-safe repository provider availability for this deployment
+      operationId: repo.capabilities.get
+      responses:
+        "200":
+          description: Provider availability without storage roots, allowlists, or server paths.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepoCapabilities"
   /v1/projects/{projectId}/repository/test:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -8745,7 +8759,7 @@ components:
             $ref: "#/components/schemas/ArtifactPreview"
     RepoProvider:
       type: string
-      enum: [github, local]
+      enum: [managed, github, server_existing]
     RepoWorkspaceKind:
       type: string
       enum: [code, article, result]
@@ -8837,7 +8851,7 @@ components:
         display_name:
           type: string
         remote_url:
-          description: Canonical GitHub URL. Local provider paths are always returned as null.
+          description: Canonical GitHub URL. Managed and server-existing storage locations are always returned as null.
           type: [string, "null"]
         default_branch:
           type: string
@@ -8882,6 +8896,28 @@ components:
             provider or canonical remote differs, then bind the tested
             repository. This never deletes remote Git data.
           type: boolean
+    RepoProviderCapability:
+      type: object
+      additionalProperties: false
+      required: [provider, enabled, disabled_reason]
+      properties:
+        provider:
+          $ref: "#/components/schemas/RepoProvider"
+        enabled:
+          type: boolean
+        disabled_reason:
+          type: [string, "null"]
+    RepoCapabilities:
+      type: object
+      additionalProperties: false
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/RepoProviderCapability"
     RepoUpdateWorkspacesRequest:
       type: object
       additionalProperties: false

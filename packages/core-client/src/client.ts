@@ -364,6 +364,17 @@ export class CoreClient {
     );
   }
 
+  async getRepositoryCapabilities(
+    projectId: string,
+    context: CoreRequestContext,
+  ): Promise<components["schemas"]["RepoCapabilities"]> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/repository/capabilities`,
+      { method: "GET" },
+      context,
+    );
+  }
+
   async connectRepository(
     projectId: string,
     input: components["schemas"]["RepoConnectRequest"],

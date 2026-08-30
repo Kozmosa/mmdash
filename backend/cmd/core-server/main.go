@@ -445,13 +445,16 @@ func run(logger *logging.Logger) error {
 		return fmt.Errorf("initialize Git runtime: %w", err)
 	}
 	repoProviders := provider.NewRegistry()
+	if err := repoProviders.Register("managed", provider.Managed{}); err != nil {
+		return err
+	}
 	if err := repoProviders.Register("github", provider.GitHub{
 		Git: gitClient, RuntimeRoot: repoStorage.Root(),
 		UserAgent: "mmdash-core/" + processConfig.Version,
 	}); err != nil {
 		return err
 	}
-	if err := repoProviders.Register("local", provider.Local{
+	if err := repoProviders.Register("server_existing", provider.ServerExisting{
 		AllowedRoots: processConfig.Repo.LocalAllowedRoots,
 		Git:          gitClient,
 	}); err != nil {
@@ -459,6 +462,7 @@ func run(logger *logging.Logger) error {
 	}
 	if err := settingsRegistry.Register(repo.SettingDefinition(
 		repo.ConnectionTester{Providers: repoProviders},
+		len(processConfig.Repo.LocalAllowedRoots) > 0,
 	)); err != nil {
 		return err
 	}
@@ -576,11 +580,12 @@ func run(logger *logging.Logger) error {
 		Access: projectService, Audit: auditRecorder,
 		Checkouts: repoStore, CheckoutTTL: processConfig.Repo.CheckoutTTL,
 		Clock: systemClock, Commits: repoStore,
-		DisconnectGrace: processConfig.Repo.DisconnectGrace,
-		Generator:       idGenerator,
-		MaxWriteBytes:   processConfig.Repo.MaxTextBytes,
-		Providers:       repoProviders,
-		PublicURL:       processConfig.PublicURL,
+		DisconnectGrace:       processConfig.Repo.DisconnectGrace,
+		Generator:             idGenerator,
+		MaxWriteBytes:         processConfig.Repo.MaxTextBytes,
+		Providers:             repoProviders,
+		PublicURL:             processConfig.PublicURL,
+		ServerExistingEnabled: len(processConfig.Repo.LocalAllowedRoots) > 0,
 		Reads: &repo.Reader{
 			Clock: systemClock, Git: gitClient,
 			MaxTextBytes: processConfig.Repo.MaxTextBytes,

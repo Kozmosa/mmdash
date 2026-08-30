@@ -61,7 +61,7 @@ func TestWorkspaceWriterPushesRecoversAndReplaysPreparedCommit(t *testing.T) {
 		Message:   "docs(repo): add generated result",
 		ProjectID: repository.ProjectID, Workspace: WorkspaceCode,
 	}
-	connection := provider.Connection{Provider: "local"}
+	connection := provider.Connection{Provider: "server_existing"}
 	prepared, err := writer.Prepare(
 		context.Background(), claim, connection, request,
 	)

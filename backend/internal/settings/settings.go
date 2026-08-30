@@ -346,14 +346,15 @@ func (service Service) Get(
 	if err := service.Access.Authorize(ctx, identity, scope, scopeID, false); err != nil {
 		return Setting{}, err
 	}
-	if _, err := service.definition(typeKey, scope); err != nil {
+	definition, err := service.definition(typeKey, scope)
+	if err != nil {
 		return Setting{}, err
 	}
 	stored, err := service.Store.Get(ctx, scope, normalizeScopeID(scope, scopeID), typeKey)
 	if err != nil {
 		return Setting{}, err
 	}
-	return redact(stored), nil
+	return redact(stored, definition), nil
 }
 
 func (service Service) Update(
@@ -394,7 +395,7 @@ func (service Service) Update(
 	if err != nil {
 		return Setting{}, err
 	}
-	return redact(updated), nil
+	return redact(updated, definition), nil
 }
 
 func (service Service) Delete(
@@ -562,7 +563,8 @@ func (service Service) GetResource(
 	if err := service.Access.Authorize(ctx, identity, scope, scopeID, false); err != nil {
 		return Setting{}, err
 	}
-	if _, err := service.definition(typeKey, scope); err != nil {
+	definition, err := service.definition(typeKey, scope)
+	if err != nil {
 		return Setting{}, err
 	}
 	store, ok := service.Store.(ResourceStore)
@@ -575,7 +577,7 @@ func (service Service) GetResource(
 	if err != nil {
 		return Setting{}, err
 	}
-	return redact(stored), nil
+	return redact(stored, definition), nil
 }
 
 // UpdateResource stores encrypted module secrets without exposing them through
@@ -625,7 +627,7 @@ func (service Service) UpdateResource(
 	if err != nil {
 		return Setting{}, err
 	}
-	return redact(updated), nil
+	return redact(updated, definition), nil
 }
 
 // ResolveResource decrypts one module-owned instance setting for trusted
@@ -697,6 +699,7 @@ func (service Service) applyPatch(
 		if field.Kind == FieldSecret {
 			if value == nil {
 				delete(stored.EncryptedSecrets, key)
+				delete(stored.PublicValues, key)
 				continue
 			}
 			plaintext, ok := value.(string)
@@ -714,6 +717,7 @@ func (service Service) applyPatch(
 				return err
 			}
 			stored.EncryptedSecrets[key] = encrypted
+			delete(stored.PublicValues, key)
 			continue
 		}
 		if value == nil {
@@ -825,10 +829,25 @@ func validateValue(field FieldDefinition, value interface{}) error {
 	return nil
 }
 
-func redact(stored StoredSetting) Setting {
-	values := cloneValues(stored.PublicValues)
-	for key := range stored.EncryptedSecrets {
-		values[key] = RedactedSecret
+func redact(stored StoredSetting, definition TypeDefinition) Setting {
+	values := map[string]interface{}{}
+	for _, field := range definition.Fields {
+		if field.Kind == FieldSecret {
+			if _, encrypted := stored.EncryptedSecrets[field.Key]; encrypted {
+				values[field.Key] = RedactedSecret
+				continue
+			}
+			// Compatibility for settings written before a field was promoted to
+			// secret storage. The trusted Resolve path may still read it, while
+			// browser-facing Settings APIs only expose the redaction marker.
+			if _, legacy := stored.PublicValues[field.Key]; legacy {
+				values[field.Key] = RedactedSecret
+			}
+			continue
+		}
+		if value, exists := stored.PublicValues[field.Key]; exists {
+			values[field.Key] = value
+		}
 	}
 	return Setting{
 		ResourceID: stored.ResourceID,

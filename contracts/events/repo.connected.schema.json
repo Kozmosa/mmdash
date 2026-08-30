@@ -12,7 +12,7 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["github", "local"]
+      "enum": ["managed", "github", "server_existing"]
     },
     "workspaces": {
       "type": "array",

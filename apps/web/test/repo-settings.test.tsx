@@ -22,6 +22,63 @@ afterEach(() => {
 });
 
 describe("Repo settings flow", () => {
+  it("defaults to managed and disables server repositories when deployment support is absent", async () => {
+    vi.spyOn(apiClient, "request").mockImplementation(async (path) => {
+      if (path.endsWith("/permissions")) {
+        return {
+          permissions: ["project.repo.manage", "project.repo.read"],
+          role: "owner",
+        } as never;
+      }
+      if (path.endsWith("/repository/capabilities")) {
+        return {
+          providers: [
+            { disabled_reason: null, enabled: true, provider: "managed" },
+            { disabled_reason: null, enabled: true, provider: "github" },
+            {
+              disabled_reason:
+                "Current deployment has not enabled server repository access",
+              enabled: false,
+              provider: "server_existing",
+            },
+          ],
+        } as never;
+      }
+      if (
+        path.includes("/settings/repo.connection") ||
+        path.endsWith("/repository")
+      ) {
+        throw new ApiError({
+          code: "REPOSITORY_NOT_CONFIGURED",
+          message: "Not configured",
+          status: 404,
+        });
+      }
+      throw new Error(`unexpected request ${path}`);
+    });
+
+    render(
+      <TestQueryProvider>
+        <RepoSettingsPanel />
+      </TestQueryProvider>,
+    );
+
+    const provider = await screen.findByLabelText("Provider");
+    await waitFor(() => expect(provider).toHaveValue("managed"));
+    expect(
+      screen.getByText(/不提供外部 Git clone、fetch 或 push 地址/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /服务器已有仓库（当前部署未启用）/ }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("当前部署未启用服务器仓库接入。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Core 服务容器内的绝对路径"),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps PAT redacted while saving and testing branch mappings", async () => {
     const request = vi
       .spyOn(apiClient, "request")
@@ -88,7 +145,7 @@ describe("Repo settings flow", () => {
         article_branch: "article",
         code_branch: "main",
         provider: "github",
-        remote_url: "https://github.com/acme/model",
+        remote_url: "********",
         result_branch: "result",
       }),
     });
@@ -154,6 +211,7 @@ describe("Repo settings flow", () => {
     );
 
     const provider = await screen.findByLabelText("Provider");
+    await waitFor(() => expect(provider).toHaveValue("github"));
     const remoteUrl = screen.getByLabelText("GitHub HTTPS URL");
     await waitFor(() => expect(provider).toBeDisabled());
     expect(remoteUrl).toBeDisabled();
@@ -232,6 +290,7 @@ describe("Repo settings flow", () => {
     );
 
     const provider = await screen.findByLabelText("Provider");
+    await waitFor(() => expect(provider).toHaveValue("github"));
     const remoteUrl = screen.getByLabelText("GitHub HTTPS URL");
     await waitFor(() => {
       expect(provider).toBeEnabled();
@@ -302,10 +361,6 @@ describe("Repo settings flow", () => {
           const saved = settingFixture();
           return {
             ...saved,
-            values: {
-              ...saved.values,
-              remote_url: "https://github.com/acme/replacement",
-            },
             version: options?.method === "PATCH" ? 5 : 4,
           } as never;
         }
@@ -357,9 +412,10 @@ describe("Repo settings flow", () => {
     );
 
     const remoteUrl = await screen.findByLabelText("GitHub HTTPS URL");
-    await waitFor(() =>
-      expect(remoteUrl).toHaveValue("https://github.com/acme/replacement"),
-    );
+    await waitFor(() => expect(remoteUrl).toHaveValue(""));
+    fireEvent.change(remoteUrl, {
+      target: { value: "https://github.com/acme/replacement" },
+    });
     expect(
       screen.getByRole("button", { name: "立即清理旧绑定并改绑" }),
     ).toBeInTheDocument();
@@ -370,7 +426,7 @@ describe("Repo settings flow", () => {
       screen.queryByText(/可以立即恢复并复用原记录/),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/不会删除或修改 GitHub 远程仓库/),
+      screen.getByText(/GitHub 和服务器已有仓库的外部 Git/),
     ).toBeInTheDocument();
 
     fireEvent.click(
@@ -387,7 +443,7 @@ describe("Repo settings flow", () => {
       }),
     );
     expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("GitHub 远程仓库不会被删除"),
+      expect.stringContaining("外部 GitHub/服务器仓库不会被删除"),
     );
     expect(await screen.findByText("pending")).toBeInTheDocument();
   });
@@ -405,7 +461,7 @@ function settingFixture() {
       article_branch: "article",
       code_branch: "main",
       provider: "github",
-      remote_url: "https://github.com/acme/model",
+      remote_url: "********",
       result_branch: "result",
     },
     version: 3,

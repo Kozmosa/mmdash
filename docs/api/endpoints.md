@@ -158,7 +158,11 @@ machine-readable source of truth.
 `repo.connect` and `bff.repo.connect` accept the optional, explicitly confirmed
 `replace_disconnected` request flag. It authorizes removal of a different
 disconnected binding's Core-managed local data and metadata before creating the
-new binding; remote Git data is never deleted.
+new binding. External GitHub/server-existing data is never deleted; replacing a
+managed binding deletes that managed repository's authoritative Git data after
+explicit confirmation. Issue #60 intentionally replaces the old `local`
+provider enum with `server_existing`, backed by migration
+`000050_repo_provider_paths`; `managed` is the new default product path.
 
 Stage 3.16 adds the following account and collaboration operations:
 
@@ -341,6 +345,7 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository`                                                                                  | `repo.get`                                 | repo                 | `core.yaml`                 |
 | Core        | HTTP          | `PUT`         | `/v1/projects/{projectId}/repository`                                                                                  | `repo.connect`                             | repo                 | `core.yaml`                 |
 | Core        | HTTP          | `DELETE`      | `/v1/projects/{projectId}/repository`                                                                                  | `repo.disconnect`                          | repo                 | `core.yaml`                 |
+| Core        | HTTP          | `GET`         | `/v1/projects/{projectId}/repository/capabilities`                                                                     | `repo.capabilities.get`                    | repo                 | `core.yaml`                 |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/test`                                                                             | `repo.connection.test`                     | repo                 | `core.yaml`                 |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/sync`                                                                             | `repo.sync.request`                        | repo                 | `core.yaml`                 |
 | Core        | HTTP          | `POST`        | `/v1/projects/{projectId}/repository/webhook-secret`                                                                   | `repo.webhook-secret.rotate`               | repo                 | `core.yaml`                 |
@@ -359,6 +364,7 @@ Stage 3 CLI adds Core `auth.refresh`, `auth.device.authorize`,
 | Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository`                                                                                 | `bff.repo.get`                             | repo                 | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `PUT`         | `/api/projects/{projectId}/repository`                                                                                 | `bff.repo.connect`                         | repo                 | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `DELETE`      | `/api/projects/{projectId}/repository`                                                                                 | `bff.repo.disconnect`                      | repo                 | `web-bff.yaml`              |
+| Web BFF     | HTTP          | `GET`         | `/api/projects/{projectId}/repository/capabilities`                                                                    | `bff.repo.capabilities.get`                | repo                 | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/test`                                                                            | `bff.repo.connection.test`                 | repo                 | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/sync`                                                                            | `bff.repo.sync.request`                    | repo                 | `web-bff.yaml`              |
 | Web BFF     | HTTP          | `POST`        | `/api/projects/{projectId}/repository/webhook-secret`                                                                  | `bff.repo.webhook-secret.rotate`           | repo                 | `web-bff.yaml`              |

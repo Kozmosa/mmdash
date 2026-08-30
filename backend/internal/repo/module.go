@@ -66,6 +66,11 @@ func (module Module) handleProjectResource(
 		return
 	}
 	switch segments[2] {
+	case "capabilities":
+		if len(segments) == 3 {
+			module.handleCapabilities(response, request, identity, projectID)
+			return
+		}
 	case "branches":
 		if len(segments) == 3 {
 			module.handleBranches(response, request, identity, projectID)
@@ -128,6 +133,25 @@ func (module Module) handleProjectResource(
 		}
 	}
 	writeRepoError(response, request, ErrNotConfigured)
+}
+
+func (module Module) handleCapabilities(
+	response http.ResponseWriter,
+	request *http.Request,
+	identity auth.Identity,
+	projectID string,
+) {
+	if !httpx.RequireMethod(response, request, http.MethodGet) {
+		return
+	}
+	capabilities, err := module.Service.Capabilities(
+		request.Context(), identity, projectID,
+	)
+	if err != nil {
+		writeRepoError(response, request, err)
+		return
+	}
+	httpx.WriteJSON(response, http.StatusOK, capabilities)
 }
 
 func (module Module) handleGitHubWebhook(
@@ -778,6 +802,10 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 	case errors.Is(err, provider.ErrUnsupported):
 		httpx.WriteError(response, request, apperror.New(
 			http.StatusBadRequest, "REPO_PROVIDER_UNSUPPORTED", "Repository provider is unsupported",
+		))
+	case errors.Is(err, provider.ErrUnavailable):
+		httpx.WriteError(response, request, apperror.New(
+			http.StatusBadRequest, "REPO_PROVIDER_UNAVAILABLE", "Repository provider is not enabled for this deployment",
 		))
 	case errors.Is(err, settings.ErrNotFound), errors.Is(err, settings.ErrTypeNotFound):
 		httpx.WriteError(response, request, apperror.New(

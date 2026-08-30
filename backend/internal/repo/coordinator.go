@@ -295,6 +295,8 @@ func safeSyncFailure(err error) (string, string) {
 		return "REPO_WRITE_PERMISSION_REQUIRED", "Repository write permission is required"
 	case errors.Is(err, provider.ErrUnsupported):
 		return "REPO_PROVIDER_UNSUPPORTED", "Repository provider is unsupported"
+	case errors.Is(err, provider.ErrUnavailable):
+		return "REPO_PROVIDER_UNAVAILABLE", "Repository provider is not enabled for this deployment"
 	case errors.Is(err, settings.ErrNotFound),
 		errors.Is(err, settings.ErrTypeNotFound):
 		return "REPO_SETTINGS_NOT_FOUND", "Repository settings are incomplete"

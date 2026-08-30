@@ -58,7 +58,7 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
   const project = await jsonChecked(`${webUrl}/api/projects`, {
     body: {
       name: `Repo smoke ${runId}`,
-      problem_summary: "Stage 1 Local Git Docker acceptance",
+      problem_summary: "Stage 1 server-existing Git Docker acceptance",
       problem_title: "Repository integration",
     },
     headers: { cookie },
@@ -72,7 +72,7 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
       values: {
         article_branch: "article",
         code_branch: "main",
-        provider: "local",
+        provider: "server_existing",
         remote_url: remote,
         result_branch: "result",
       },
@@ -80,6 +80,11 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
     headers: { cookie },
     method: "PATCH",
   });
+  assert(
+    setting.body.values?.remote_url === "********" &&
+      !JSON.stringify(setting.body).includes(remote),
+    "Server-existing Repo setting exposed its mounted path.",
+  );
   const tested = await jsonChecked(`${projectPath}/repository/test`, {
     headers: { cookie },
     method: "POST",
@@ -89,7 +94,7 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
       ["main", "article", "result"].every((branch) =>
         tested.body.branches.includes(branch),
       ),
-    `Local Repo connection test failed: ${JSON.stringify(tested.body)}`,
+    `Server-existing Repo connection test failed: ${JSON.stringify(tested.body)}`,
   );
 
   const accepted = await jsonChecked(`${projectPath}/repository`, {
@@ -98,7 +103,10 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
     method: "PUT",
   });
   const repositoryId = accepted.body.repository_id;
-  assert(repositoryId, "Repo connection did not return a repository ID.");
+  assert(
+    repositoryId && accepted.body.remote_url === null,
+    "Server-existing Repo connection exposed a mounted path.",
+  );
   const ready = await poll(
     async () =>
       (
@@ -113,7 +121,7 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
         (workspace) =>
           workspace.status === "ready" && workspace.head_commit_sha,
       ),
-    "Local Repo did not synchronize three logical workspaces.",
+    "Server-existing Repo did not synchronize three logical workspaces.",
   );
   const resolvedCodeHead = ready.workspaces.find(
     (workspace) => workspace.workspace === "code",
@@ -273,6 +281,158 @@ with open("/output/tables/result.csv", "w", encoding="utf-8") as handle:
     project_id: projectId,
     remote,
     repository_id: repositoryId,
+  };
+}
+
+export async function runManagedRepoSmoke({
+  coreUrl,
+  email,
+  password,
+  runId,
+  webUrl,
+}) {
+  const login = await jsonChecked(`${webUrl}/api/auth/login`, {
+    body: { email, password },
+    method: "POST",
+  });
+  const cookieHeader =
+    login.response.headers.getSetCookie?.()[0] ??
+    login.response.headers.get("set-cookie");
+  assert(
+    cookieHeader,
+    "Managed Repo smoke login did not set a browser cookie.",
+  );
+  const cookie = cookieHeader.split(";", 1)[0];
+  const project = await jsonChecked(`${webUrl}/api/projects`, {
+    body: {
+      name: `Managed Repo smoke ${runId}`,
+      problem_summary: "mmdash managed repository acceptance",
+      problem_title: "Managed repository integration",
+    },
+    headers: { cookie },
+    method: "POST",
+  });
+  const projectId = project.body.id;
+  assert(projectId, "Managed Repo project creation did not return an ID.");
+  const projectPath = `${webUrl}/api/projects/${encodeURIComponent(projectId)}`;
+  const capabilities = await jsonChecked(
+    `${projectPath}/repository/capabilities`,
+    { headers: { cookie } },
+  );
+  assert(
+    capabilities.body.providers?.some(
+      (item) => item.provider === "managed" && item.enabled === true,
+    ),
+    "Managed Repo capability is not enabled.",
+  );
+  const setting = await jsonChecked(`${projectPath}/settings/repo.connection`, {
+    body: {
+      values: {
+        article_branch: "article",
+        code_branch: "main",
+        provider: "managed",
+        result_branch: "result",
+      },
+    },
+    headers: { cookie },
+    method: "PATCH",
+  });
+  assert(
+    !JSON.stringify(setting.body).includes("/var/lib/mmdash/repos"),
+    "Managed Repo setting leaked its storage root.",
+  );
+  const tested = await jsonChecked(`${projectPath}/repository/test`, {
+    headers: { cookie },
+    method: "POST",
+  });
+  assert(
+    tested.body.status === "passed" &&
+      ["main", "article", "result"].every((branch) =>
+        tested.body.branches.includes(branch),
+      ),
+    `Managed Repo test failed: ${JSON.stringify(tested.body)}`,
+  );
+  const accepted = await jsonChecked(`${projectPath}/repository`, {
+    body: { settings_version: setting.body.version },
+    headers: { cookie },
+    method: "PUT",
+  });
+  assert(
+    accepted.body.provider === "managed" && accepted.body.remote_url === null,
+    "Managed Repo response exposed a remote or storage path.",
+  );
+  let ready = await poll(
+    async () =>
+      (
+        await jsonChecked(`${projectPath}/repository`, {
+          headers: { cookie },
+        })
+      ).body,
+    (repository) =>
+      repository.status === "ready" &&
+      repository.provider === "managed" &&
+      repository.remote_url === null &&
+      repository.workspaces?.length === 3 &&
+      repository.workspaces.every(
+        (workspace) =>
+          workspace.status === "ready" && workspace.head_commit_sha,
+      ),
+    "Managed Repo did not initialize three workspaces.",
+  );
+  const coreLogin = await jsonChecked(`${coreUrl}/v1/auth/login`, {
+    body: { email, password },
+    method: "POST",
+  });
+  const authorization = `Bearer ${coreLogin.body.access_token}`;
+  for (const workspace of ["code", "article", "result"]) {
+    const current = ready.workspaces.find(
+      (candidate) => candidate.workspace === workspace,
+    );
+    assert(current?.head_commit_sha, `Managed ${workspace} head is missing.`);
+    const filename = `${workspace}.txt`;
+    const content = `managed ${workspace} acceptance\n`;
+    const committed = await jsonChecked(
+      `${coreUrl}/v1/projects/${encodeURIComponent(projectId)}/repository/commits`,
+      {
+        body: {
+          changes: [
+            {
+              content_base64: Buffer.from(content).toString("base64"),
+              operation: "put",
+              path: filename,
+            },
+          ],
+          expected_head_sha: current.head_commit_sha,
+          idempotency_key: `managed-smoke-${runId}-${workspace}`,
+          message: `test(repo): write managed ${workspace}`,
+          workspace,
+        },
+        headers: { authorization },
+        method: "POST",
+      },
+    );
+    const contentResponse = await jsonChecked(
+      withQuery(`${projectPath}/repository/content`, {
+        path: filename,
+        revision: committed.body.commit_sha,
+        workspace,
+      }),
+      { headers: { cookie } },
+    );
+    assert(
+      contentResponse.body.content === content,
+      `Managed ${workspace} content did not round-trip through Repo.`,
+    );
+    ready = (
+      await jsonChecked(`${projectPath}/repository`, { headers: { cookie } })
+    ).body;
+  }
+  return {
+    code_head: ready.workspaces.find(
+      (workspace) => workspace.workspace === "code",
+    )?.head_commit_sha,
+    project_id: projectId,
+    repository_id: accepted.body.repository_id,
   };
 }
 

@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -429,7 +430,7 @@ func TestServiceConnectRejectsStaleSettingsVersion(t *testing.T) {
 	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
 	settingSource.resolved.Version = 3
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+	if err := providers.Register("server_existing", coordinatorProvider{}); err != nil {
 		t.Fatal(err)
 	}
 	store := &serviceStore{}
@@ -453,7 +454,7 @@ func TestServiceConnectRestoresDisconnectedRepositoryInPlace(t *testing.T) {
 	cleanupAfter := now.Add(time.Hour)
 	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+	if err := providers.Register("server_existing", coordinatorProvider{}); err != nil {
 		t.Fatal(err)
 	}
 	store := &serviceStore{value: Repository{
@@ -461,7 +462,7 @@ func TestServiceConnectRestoresDisconnectedRepositoryInPlace(t *testing.T) {
 		CleanupAfter:       &cleanupAfter,
 		ID:                 "repository-1",
 		ProjectID:          "project-1",
-		Provider:           ProviderLocal,
+		Provider:           ProviderServerExisting,
 		Status:             StatusDisconnected,
 		StorageKey:         "storage-1",
 		Webhook:            Webhook{HookID: "hook-1"},
@@ -504,7 +505,7 @@ func TestServiceConnectRejectsDifferentRemoteDuringRecoveryGrace(t *testing.T) {
 	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
 	settingSource.resolved.Values["remote_url"] = "C:/repositories/different"
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+	if err := providers.Register("server_existing", coordinatorProvider{}); err != nil {
 		t.Fatal(err)
 	}
 	store := &serviceStore{value: Repository{
@@ -512,7 +513,7 @@ func TestServiceConnectRejectsDifferentRemoteDuringRecoveryGrace(t *testing.T) {
 		CleanupAfter:       &cleanupAfter,
 		ID:                 "repository-1",
 		ProjectID:          "project-1",
-		Provider:           ProviderLocal,
+		Provider:           ProviderServerExisting,
 		Status:             StatusDisconnected,
 	}}
 	service := Service{
@@ -539,7 +540,7 @@ func TestServiceConnectReplacesDifferentDisconnectedRemoteAfterConfirmation(t *t
 	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
 	settingSource.resolved.Values["remote_url"] = "C:/repositories/different"
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+	if err := providers.Register("server_existing", coordinatorProvider{}); err != nil {
 		t.Fatal(err)
 	}
 	store := &serviceStore{value: Repository{
@@ -547,7 +548,7 @@ func TestServiceConnectReplacesDifferentDisconnectedRemoteAfterConfirmation(t *t
 		CleanupAfter:       &cleanupAfter,
 		ID:                 "old-repository",
 		ProjectID:          "project-1",
-		Provider:           ProviderLocal,
+		Provider:           ProviderServerExisting,
 		Status:             StatusDisconnected,
 		StorageKey:         "old-storage",
 	}}
@@ -591,7 +592,7 @@ func TestServiceConnectPreservesDisconnectedBindingWhenReplacementCleanupFails(t
 	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
 	settingSource.resolved.Values["remote_url"] = "C:/repositories/different"
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+	if err := providers.Register("server_existing", coordinatorProvider{}); err != nil {
 		t.Fatal(err)
 	}
 	store := &serviceStore{value: Repository{
@@ -599,7 +600,7 @@ func TestServiceConnectPreservesDisconnectedBindingWhenReplacementCleanupFails(t
 		CleanupAfter:       &cleanupAfter,
 		ID:                 "old-repository",
 		ProjectID:          "project-1",
-		Provider:           ProviderLocal,
+		Provider:           ProviderServerExisting,
 		Status:             StatusDisconnected,
 		StorageKey:         "old-storage",
 	}}
@@ -640,7 +641,7 @@ func TestServiceConnectRejectsRecoveryAfterCleanupLease(t *testing.T) {
 	cleanupOwner := "repo-cleanup"
 	settingSource := &serviceSettings{resolved: coordinatorResolvedSetting()}
 	providers := provider.NewRegistry()
-	if err := providers.Register("local", coordinatorProvider{}); err != nil {
+	if err := providers.Register("server_existing", coordinatorProvider{}); err != nil {
 		t.Fatal(err)
 	}
 	store := &serviceStore{value: Repository{
@@ -648,7 +649,7 @@ func TestServiceConnectRejectsRecoveryAfterCleanupLease(t *testing.T) {
 		CleanupAfter:       &cleanupAfter,
 		ID:                 "repository-1",
 		ProjectID:          "project-1",
-		Provider:           ProviderLocal,
+		Provider:           ProviderServerExisting,
 		Status:             StatusDisconnected,
 		SyncLockedBy:       &cleanupOwner,
 	}}
@@ -695,6 +696,26 @@ func TestServiceDisconnectIsIdempotent(t *testing.T) {
 	}
 	if access.permission != project.PermissionRepoManage {
 		t.Fatalf("unexpected permission: %s", access.permission)
+	}
+}
+
+func TestServiceCapabilitiesHideDeploymentPaths(t *testing.T) {
+	access := &serviceAccess{}
+	capabilities, err := (Service{
+		Access: access, ServerExistingEnabled: false,
+	}).Capabilities(
+		context.Background(), auth.Identity{User: auth.User{ID: "user-1"}}, "project-1",
+	)
+	if err != nil {
+		t.Fatalf("capabilities: %v", err)
+	}
+	if access.permission != project.PermissionRepoRead || len(capabilities.Providers) != 3 {
+		t.Fatalf("unexpected capabilities: %#v permission=%s", capabilities, access.permission)
+	}
+	server := capabilities.Providers[2]
+	if server.Provider != ProviderServerExisting || server.Enabled ||
+		server.DisabledReason == nil || strings.Contains(*server.DisabledReason, "/") {
+		t.Fatalf("server capability leaked deployment details: %#v", server)
 	}
 }
 

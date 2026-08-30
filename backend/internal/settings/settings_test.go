@@ -364,6 +364,27 @@ func TestServiceRejectsInvalidResolvedConfigBeforePersistence(t *testing.T) {
 	}
 }
 
+func TestRedactionHidesLegacyPublicValuePromotedToSecret(t *testing.T) {
+	definition := TypeDefinition{Fields: []FieldDefinition{
+		{Key: "provider", Kind: FieldSelect, Label: "Provider", Options: []string{"server_existing"}},
+		{Key: "remote_url", Kind: FieldSecret, Label: "Repository location"},
+	}}
+	setting := redact(StoredSetting{
+		PublicValues: map[string]interface{}{
+			"provider":   "server_existing",
+			"remote_url": "/srv/private/repository.git",
+			"unknown":    "must not escape",
+		},
+	}, definition)
+	if setting.Values["remote_url"] != RedactedSecret ||
+		setting.Values["provider"] != "server_existing" {
+		t.Fatalf("legacy secret was not redacted: %#v", setting.Values)
+	}
+	if _, exists := setting.Values["unknown"]; exists {
+		t.Fatalf("unknown stored value escaped registry projection: %#v", setting.Values)
+	}
+}
+
 func fixtureDefinition(tester ConnectionTester) TypeDefinition {
 	return TypeDefinition{
 		Description: "Test-only provider contract",

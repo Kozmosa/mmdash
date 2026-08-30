@@ -1005,6 +1005,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/repository/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** List browser-safe repository provider availability for this deployment */
+    get: operations["repo.capabilities.get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/repository/test": {
     parameters: {
       query?: never;
@@ -6126,7 +6145,7 @@ export interface components {
       items: components["schemas"]["ArtifactPreview"][];
     };
     /** @enum {string} */
-    RepoProvider: "github" | "local";
+    RepoProvider: "managed" | "github" | "server_existing";
     /** @enum {string} */
     RepoWorkspaceKind: "code" | "article" | "result";
     /** @enum {string} */
@@ -6166,7 +6185,7 @@ export interface components {
       project_id: string;
       provider: components["schemas"]["RepoProvider"];
       display_name: string;
-      /** @description Canonical GitHub URL. Local provider paths are always returned as null. */
+      /** @description Canonical GitHub URL. Managed and server-existing storage locations are always returned as null. */
       remote_url: string | null;
       default_branch: string;
       status: components["schemas"]["RepositoryStatus"];
@@ -6186,6 +6205,14 @@ export interface components {
       settings_version: number;
       /** @description After explicit user confirmation, remove a disconnected repository's managed local data and metadata when the tested provider or canonical remote differs, then bind the tested repository. This never deletes remote Git data. */
       replace_disconnected?: boolean;
+    };
+    RepoProviderCapability: {
+      provider: components["schemas"]["RepoProvider"];
+      enabled: boolean;
+      disabled_reason: string | null;
+    };
+    RepoCapabilities: {
+      providers: components["schemas"]["RepoProviderCapability"][];
     };
     RepoUpdateWorkspacesRequest: {
       code_branch: string;
@@ -10195,6 +10222,28 @@ export interface operations {
         content?: never;
       };
       404: components["responses"]["Error"];
+    };
+  };
+  "repo.capabilities.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Provider availability without storage roots, allowlists, or server paths. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RepoCapabilities"];
+        };
+      };
     };
   };
   "repo.connection.test": {

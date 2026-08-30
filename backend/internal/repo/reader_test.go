@@ -275,7 +275,7 @@ func readerFixture(t *testing.T) (Reader, Repository, string) {
 	repository := Repository{
 		DefaultBranch: "main",
 		ID:            "00000000-0000-4000-8000-000000000011",
-		Provider:      ProviderLocal,
+		Provider:      ProviderServerExisting,
 		Status:        StatusPending,
 		StorageKey:    "00000000-0000-4000-8000-000000000012",
 		Workspaces: mappingList(WorkspaceMappings{
@@ -290,7 +290,7 @@ func readerFixture(t *testing.T) (Reader, Repository, string) {
 		context.Background(), repository,
 		provider.Connection{
 			CanonicalRemoteURL: source, DefaultBranch: "main",
-			DisplayName: "local", FetchURL: source, Provider: "local",
+			DisplayName: "server", FetchURL: source, Provider: "server_existing",
 		},
 		"manual",
 	)

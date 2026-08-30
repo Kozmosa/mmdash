@@ -18,6 +18,7 @@ var (
 	ErrInvalidConfig   = errors.New("invalid repository provider configuration")
 	ErrRemoteNotFound  = errors.New("repository remote not found")
 	ErrUnsupported     = errors.New("repository provider unsupported")
+	ErrUnavailable     = errors.New("repository provider unavailable")
 	ErrWritePermission = errors.New("repository write permission unavailable")
 )
 

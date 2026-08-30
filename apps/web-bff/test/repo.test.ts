@@ -83,6 +83,51 @@ describe("Repo browser routes", () => {
     expect(headers.get("x-request-id")).toBe("repo-browser-request");
   });
 
+  it("forwards provider availability without deployment paths", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        providers: [
+          { disabled_reason: null, enabled: true, provider: "managed" },
+          { disabled_reason: null, enabled: true, provider: "github" },
+          {
+            disabled_reason:
+              "Current deployment has not enabled server repository access",
+            enabled: false,
+            provider: "server_existing",
+          },
+        ],
+      }),
+    );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const response = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/projects/project-1/repository/capabilities",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      providers: [
+        { enabled: true, provider: "managed" },
+        { enabled: true, provider: "github" },
+        { enabled: false, provider: "server_existing" },
+      ],
+    });
+    expect(JSON.stringify(response.json())).not.toContain(
+      "REPO_LOCAL_ALLOWED_ROOTS",
+    );
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      "http://core.test/v1/projects/project-1/repository/capabilities",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("exposes management status codes but no commit or checkout writes", async () => {
     const repository = {
       created_at: "2026-07-29T00:00:00Z",

@@ -48,25 +48,50 @@ type AuditRecorder interface {
 
 // Service applies Repo RBAC, settings, provider, and persistence policy.
 type Service struct {
-	Access           Access
-	Audit            AuditRecorder
-	Checkouts        CheckoutStore
-	CheckoutTTL      time.Duration
-	Clock            interface{ Now() time.Time }
-	Commits          CommitStore
-	DisconnectGrace  time.Duration
-	Generator        identity.Generator
-	MaxWriteBytes    int64
-	Providers        *provider.Registry
-	PublicURL        string
-	Reads            *Reader
-	ReplacementLease time.Duration
-	Settings         SettingAccess
-	Storage          RepositoryStorage
-	Store            Store
-	WriteLease       time.Duration
-	Writer           *WorkspaceWriter
-	Webhooks         WebhookStore
+	Access                Access
+	Audit                 AuditRecorder
+	Checkouts             CheckoutStore
+	CheckoutTTL           time.Duration
+	Clock                 interface{ Now() time.Time }
+	Commits               CommitStore
+	DisconnectGrace       time.Duration
+	Generator             identity.Generator
+	MaxWriteBytes         int64
+	Providers             *provider.Registry
+	PublicURL             string
+	Reads                 *Reader
+	ReplacementLease      time.Duration
+	Settings              SettingAccess
+	ServerExistingEnabled bool
+	Storage               RepositoryStorage
+	Store                 Store
+	WriteLease            time.Duration
+	Writer                *WorkspaceWriter
+	Webhooks              WebhookStore
+}
+
+func (service Service) Capabilities(
+	ctx context.Context,
+	identity auth.Identity,
+	projectID string,
+) (Capabilities, error) {
+	if err := service.Access.Authorize(
+		ctx, identity, projectID, project.PermissionRepoRead,
+	); err != nil {
+		return Capabilities{}, err
+	}
+	disabledReason := "Current deployment has not enabled server repository access"
+	server := ProviderCapability{
+		Enabled: service.ServerExistingEnabled, Provider: ProviderServerExisting,
+	}
+	if !server.Enabled {
+		server.DisabledReason = &disabledReason
+	}
+	return Capabilities{Providers: []ProviderCapability{
+		{Enabled: true, Provider: ProviderManaged},
+		{Enabled: true, Provider: ProviderGitHub},
+		server,
+	}}, nil
 }
 
 // ConnectRequest carries the tested settings version and explicit authority
@@ -731,6 +756,12 @@ func (service Service) UpdateMappings(
 	if current.SyncLockedBy != nil {
 		return Repository{}, ErrLocked
 	}
+	if current.Provider == ProviderManaged {
+		currentMappings := mappingsFromRepository(current)
+		if currentMappings != mappings {
+			return Repository{}, ErrBranchMapping
+		}
+	}
 	resolved, err := service.Settings.Resolve(
 		ctx, settings.ScopeProject, projectID, SettingType,
 	)
@@ -880,11 +911,28 @@ func safeProviderCode(err error) string {
 		return "REPO_BRANCH_NOT_FOUND"
 	case errors.Is(err, provider.ErrRemoteNotFound):
 		return "REPO_REMOTE_NOT_FOUND"
+	case errors.Is(err, provider.ErrUnavailable):
+		return "REPO_PROVIDER_UNAVAILABLE"
 	case errors.Is(err, provider.ErrUnsupported):
 		return "REPO_PROVIDER_UNSUPPORTED"
 	default:
 		return "REPO_CONNECTION_FAILED"
 	}
+}
+
+func mappingsFromRepository(repository Repository) WorkspaceMappings {
+	var mappings WorkspaceMappings
+	for _, workspace := range repository.Workspaces {
+		switch workspace.Workspace {
+		case WorkspaceCode:
+			mappings.CodeBranch = workspace.RemoteBranch
+		case WorkspaceArticle:
+			mappings.ArticleBranch = workspace.RemoteBranch
+		case WorkspaceResult:
+			mappings.ResultBranch = workspace.RemoteBranch
+		}
+	}
+	return mappings
 }
 
 func safeCommitFailure(err error) (string, string) {

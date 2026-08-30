@@ -88,6 +88,9 @@ func (runtime Runtime) initialize(
 	repository Repository,
 	connection provider.Connection,
 ) (err error) {
+	if connection.Provider == "managed" {
+		return runtime.initializeManaged(ctx, repository, connection)
+	}
 	staging, err := runtime.Storage.Prepare(repository.StorageKey)
 	if err != nil {
 		return err
@@ -122,6 +125,106 @@ func (runtime Runtime) initialize(
 	if err := runtime.fetchAt(
 		ctx, staging, bare, connection, timeout,
 	); err != nil {
+		return err
+	}
+	if err := runtime.Storage.Promote(staging, repository.StorageKey); err != nil {
+		return err
+	}
+	promoted = true
+	return nil
+}
+
+func (runtime Runtime) initializeManaged(
+	ctx context.Context,
+	repository Repository,
+	connection provider.Connection,
+) (err error) {
+	staging, err := runtime.Storage.Prepare(repository.StorageKey)
+	if err != nil {
+		return err
+	}
+	promoted := false
+	defer func() {
+		if !promoted {
+			_ = runtime.Storage.Discard(staging, repository.StorageKey)
+		}
+	}()
+	timeout := runtime.CloneTimeout
+	if timeout <= 0 {
+		timeout = 15 * time.Minute
+	}
+	seed := filepath.Join(staging, "seed")
+	if err := os.Mkdir(seed, 0o700); err != nil {
+		return err
+	}
+	run := func(directory, operation string, args ...string) error {
+		_, commandErr := runtime.Git.Run(ctx, gitcli.Command{
+			Args: args, Directory: directory, Operation: operation, Timeout: timeout,
+		})
+		return commandErr
+	}
+	if err := run(seed, "repo.managed.seed.init", "init"); err != nil {
+		return err
+	}
+	if err := run(
+		seed,
+		"repo.managed.seed.commit",
+		"commit", "--allow-empty", "--no-gpg-sign", "-m",
+		"chore(repo): initialize mmdash managed repository",
+	); err != nil {
+		return err
+	}
+	if err := run(
+		seed, "repo.managed.seed.default-branch",
+		"branch", "-M", connection.DefaultBranch,
+	); err != nil {
+		return err
+	}
+	branches := make([]string, 0, len(repository.Workspaces))
+	seen := map[string]bool{connection.DefaultBranch: true}
+	for _, workspace := range repository.Workspaces {
+		if seen[workspace.RemoteBranch] {
+			continue
+		}
+		seen[workspace.RemoteBranch] = true
+		branches = append(branches, workspace.RemoteBranch)
+	}
+	sort.Strings(branches)
+	for _, branch := range branches {
+		if err := run(
+			seed, "repo.managed.seed.branch", "branch", branch,
+		); err != nil {
+			return err
+		}
+	}
+	if err := run(staging, "repo.managed.bare.init", "init", "--bare", "bare.git"); err != nil {
+		return err
+	}
+	if err := run(
+		seed, "repo.managed.seed.remote", "remote", "add", "origin", "../bare.git",
+	); err != nil {
+		return err
+	}
+	if err := run(seed, "repo.managed.seed.push", "push", "origin", "--all"); err != nil {
+		return err
+	}
+	bare := filepath.Join(staging, "bare.git")
+	if err := run(
+		staging, "repo.managed.bare.head", "--git-dir="+bare,
+		"symbolic-ref", "HEAD", "refs/heads/"+connection.DefaultBranch,
+	); err != nil {
+		return err
+	}
+	if err := run(
+		staging, "repo.managed.remote.add", "--git-dir="+bare,
+		"remote", "add", "origin", "bare.git",
+	); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(seed); err != nil {
+		return err
+	}
+	if err := runtime.fetchAt(ctx, staging, bare, connection, timeout); err != nil {
 		return err
 	}
 	if err := runtime.Storage.Promote(staging, repository.StorageKey); err != nil {

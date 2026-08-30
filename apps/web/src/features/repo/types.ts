@@ -1,4 +1,5 @@
 export type RepoWorkspaceKind = "code" | "article" | "result";
+export type RepoProvider = "managed" | "github" | "server_existing";
 
 export type RepoWorkspace = {
   head_commit_sha: string | null;
@@ -18,7 +19,7 @@ export type Repository = {
   last_error_message: string | null;
   last_synced_at: string | null;
   project_id: string;
-  provider: "github" | "local";
+  provider: RepoProvider;
   remote_url: string | null;
   repository_id: string;
   settings_version: number;
@@ -38,6 +39,14 @@ export type Repository = {
     secret_configured: boolean;
   };
   workspaces: RepoWorkspace[];
+};
+
+export type RepoCapabilities = {
+  providers: {
+    disabled_reason: string | null;
+    enabled: boolean;
+    provider: RepoProvider;
+  }[];
 };
 
 export type RepoConnectionTestResult = {

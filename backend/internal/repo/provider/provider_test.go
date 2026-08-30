@@ -88,7 +88,7 @@ func TestRegistryValidatesMappingsAndGitHubPATWithoutPuttingTokenInArgs(t *testi
 
 func TestRegistryRejectsMissingMappedBranch(t *testing.T) {
 	registry := NewRegistry()
-	if err := registry.Register("local", adapterFunc(func(
+	if err := registry.Register("server_existing", adapterFunc(func(
 		context.Context,
 		Config,
 	) (Connection, error) {
@@ -98,10 +98,29 @@ func TestRegistryRejectsMissingMappedBranch(t *testing.T) {
 	}
 	_, err := registry.Test(context.Background(), Config{
 		ArticleBranch: "article", CodeBranch: "main",
-		Provider: "local", ResultBranch: "result",
+		Provider: "server_existing", ResultBranch: "result",
 	})
 	if !errors.Is(err, ErrBranchMissing) {
 		t.Fatalf("missing branch should fail: %v", err)
+	}
+}
+
+func TestManagedAndDisabledServerExistingProviders(t *testing.T) {
+	managed, err := (Managed{}).Test(context.Background(), Config{
+		Provider: "managed", CodeBranch: "main",
+		ArticleBranch: "article", ResultBranch: "result",
+	})
+	if err != nil || managed.Provider != "managed" ||
+		managed.CanonicalRemoteURL != managedCanonicalRemote ||
+		len(managed.Branches) != 3 {
+		t.Fatalf("managed provider: %#v %v", managed, err)
+	}
+	_, err = (ServerExisting{}).Test(context.Background(), Config{
+		Provider: "server_existing", RemoteURL: "/srv/repository",
+		CodeBranch: "main", ArticleBranch: "article", ResultBranch: "result",
+	})
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("empty allowlist should disable server provider: %v", err)
 	}
 }
 

@@ -2,8 +2,9 @@
 
 `scripts/coding-agent-experiment-smoke.mjs` is a repeatable development-only
 acceptance path for the environment-preparation flow. It acts as a local
-Coding Agent: it creates a temporary Project and local Git remote containing a
-small Python program and a non-empty, hash-pinned `requirements.lock`, calls
+Coding Agent: it creates a temporary Project and server-existing Git remote
+containing a small Python program and a non-empty, hash-pinned
+`requirements.lock`, calls
 `experiment.create` and `experiment.run` through the MCP Gateway, polls
 `experiment.status` and its persisted logs, and verifies `result.get`.
 
@@ -26,7 +27,7 @@ $env:REPO_LOCAL_ALLOWED_ROOTS = (Join-Path (Get-Location) ".tmp")
 node .localscripts\dev.mjs
 ```
 
-The native Core process disables the Local Git provider when
+The native Core process disables the `server_existing` provider when
 `REPO_LOCAL_ALLOWED_ROOTS` is empty. The acceptance script creates its
 temporary bare remote below `.tmp`, so the allowlist must be present before
 starting the supervisor. This is the only extra development prerequisite; the

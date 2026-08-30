@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { resolveComposeCommand, runCompose } from "./compose-command.mjs";
-import { runRepoSmoke } from "./repo-smoke.mjs";
+import { runManagedRepoSmoke, runRepoSmoke } from "./repo-smoke.mjs";
 
 const webUrl = trim(process.env.MMDASH_SMOKE_URL ?? "http://localhost:3000");
 const coreUrl = trim(
@@ -255,16 +255,13 @@ assert(
   "MCP Gateway health check failed.",
 );
 
+const repoMode = process.env.MMDASH_SMOKE_REPO_MODE;
 const repo =
-  process.env.MMDASH_SMOKE_REPO_MODE === "docker"
-    ? await runRepoSmoke({
-        coreUrl,
-        email,
-        password,
-        runId,
-        webUrl,
-      })
-    : null;
+  repoMode === "docker"
+    ? await runRepoSmoke({ coreUrl, email, password, runId, webUrl })
+    : repoMode === "managed"
+      ? await runManagedRepoSmoke({ coreUrl, email, password, runId, webUrl })
+      : null;
 const stage8 = await runStage8Smoke({
   accessToken,
   coreUrl,

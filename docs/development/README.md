@@ -34,8 +34,10 @@ pnpm dev:down
 The baseline smoke verifies login/project creation, Web → BFF → Core →
 PostgreSQL, Worker Job handling, Outbox delivery, Data Hub routing,
 Audit/request IDs, MCP health, CLI startup, and metrics. Set
-`MMDASH_SMOKE_REPO_MODE=docker` to add the managed Local Git Stage 1 E2E
-described in the [Repo guide](repo.md). Local ports are Web `3000`, BFF `3001`,
+`MMDASH_SMOKE_REPO_MODE=managed` to add the default managed-repository Stage 1
+E2E. Set `MMDASH_SMOKE_REPO_MODE=docker` only when the server-existing fixture
+is needed, including the legacy Stage 8 path described in the
+[Repo guide](repo.md). Local ports are Web `3000`, BFF `3001`,
 MCP Gateway `3002`, Core `8080`, PostgreSQL `5432`, MinIO API `9000`, and MinIO
 Console `9001`.
 
@@ -52,7 +54,7 @@ Treat this smoke only as migration-source regression coverage while completing
 the account-owned, outbound, offline-resumable redesign in the
 [Box guide](box.md) and [Experiment guide](experiment.md); it is not acceptance
 for the target Stage 8 product. The normal smoke does not start Box or claim an
-Experiment. The optional Stage 8 smoke first creates the managed Local Git
+Experiment. The optional Stage 8 smoke first creates the server-existing Git
 fixture and then creates and reads a frozen Experiment from its fixed code commit; set
 `MMDASH_SMOKE_STAGE8_RUN=1` only when a registered online Box is available.
 `MMDASH_SMOKE_STAGE8_COMMIT` may override the fixture commit for a separately

@@ -133,7 +133,7 @@ export function RepoBrowser() {
   if (!repository.data) {
     return (
       <EmptyState
-        description="请先在设置页测试并绑定 GitHub 或允许的 Local Git repository。"
+        description="请先在设置页创建 mmdash 托管仓库，或绑定 GitHub / 已启用的服务器仓库。"
         title="尚未绑定 Repository"
       />
     );

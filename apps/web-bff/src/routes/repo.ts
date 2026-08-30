@@ -44,6 +44,16 @@ export function registerRepoRoutes(
       coreClient.getRepository(request.currentProjectId!, coreContext(request)),
   );
 
+  app.get(
+    "/api/projects/:projectId/repository/capabilities",
+    { config: { auth: "required", project: "required" } },
+    async (request) =>
+      coreClient.getRepositoryCapabilities(
+        request.currentProjectId!,
+        coreContext(request),
+      ),
+  );
+
   app.put(
     "/api/projects/:projectId/repository",
     { config: { auth: "required", project: "required" } },

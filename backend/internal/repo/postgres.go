@@ -1057,7 +1057,9 @@ func scanRepository(scan scanFunction) (Repository, error) {
 
 func validateSnapshot(snapshot ConnectionSnapshot) error {
 	if snapshot.ProjectID == "" ||
-		(snapshot.Provider != ProviderGitHub && snapshot.Provider != ProviderLocal) ||
+		(snapshot.Provider != ProviderManaged &&
+			snapshot.Provider != ProviderGitHub &&
+			snapshot.Provider != ProviderServerExisting) ||
 		snapshot.CanonicalRemoteURL == "" ||
 		snapshot.DisplayName == "" ||
 		snapshot.DefaultBranch == "" ||

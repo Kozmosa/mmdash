@@ -84,7 +84,7 @@ func TestResolveLocalSourceEnforcesAllowlistAndSymlinks(t *testing.T) {
 		t.Fatalf("outside source should be rejected: %v", err)
 	}
 	if _, err := ResolveLocalSource(source, nil); !errors.Is(err, ErrLocalDisabled) {
-		t.Fatalf("empty allowlist should disable Local Git: %v", err)
+		t.Fatalf("empty allowlist should disable server-existing Git: %v", err)
 	}
 
 	link := filepath.Join(allowed, "escape")

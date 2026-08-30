@@ -7,13 +7,16 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
 )
 
-// Local tests an administrator-allowlisted server-visible Git repository.
-type Local struct {
+// ServerExisting tests an administrator-allowlisted server-visible Git repository.
+type ServerExisting struct {
 	AllowedRoots []string
 	Git          CommandRunner
 }
 
-func (provider Local) Test(ctx context.Context, config Config) (Connection, error) {
+func (provider ServerExisting) Test(ctx context.Context, config Config) (Connection, error) {
+	if len(provider.AllowedRoots) == 0 {
+		return Connection{}, ErrUnavailable
+	}
 	source, err := gitcli.ResolveLocalSource(config.RemoteURL, provider.AllowedRoots)
 	if err != nil {
 		return Connection{}, ErrInvalidConfig
@@ -21,7 +24,7 @@ func (provider Local) Test(ctx context.Context, config Config) (Connection, erro
 	defaultResult, err := provider.Git.Run(ctx, gitcli.Command{
 		Args:      []string{"symbolic-ref", "--quiet", "--short", "HEAD"},
 		Directory: source,
-		Operation: "provider.local.default-branch",
+		Operation: "provider.server-existing.default-branch",
 		Sensitive: []string{source},
 	})
 	if err != nil {
@@ -38,7 +41,7 @@ func (provider Local) Test(ctx context.Context, config Config) (Connection, erro
 			"refs/heads",
 		},
 		Directory: source,
-		Operation: "provider.local.branches",
+		Operation: "provider.server-existing.branches",
 		Sensitive: []string{source},
 	})
 	if err != nil {
@@ -50,8 +53,8 @@ func (provider Local) Test(ctx context.Context, config Config) (Connection, erro
 	}
 	return Connection{
 		Branches: branches, CanonicalRemoteURL: source,
-		DefaultBranch: defaultBranch, DisplayName: "Local Git",
-		FetchURL: source, Provider: "local",
+		DefaultBranch: defaultBranch, DisplayName: "Server repository",
+		FetchURL: source, Provider: "server_existing",
 	}, nil
 }
 

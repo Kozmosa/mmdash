@@ -7,8 +7,9 @@ import "time"
 type Provider string
 
 const (
-	ProviderGitHub Provider = "github"
-	ProviderLocal  Provider = "local"
+	ProviderManaged        Provider = "managed"
+	ProviderGitHub         Provider = "github"
+	ProviderServerExisting Provider = "server_existing"
 )
 
 // WorkspaceKind is a stable logical workspace independent of remote branch names.
@@ -99,6 +100,18 @@ type WorkspaceMappings struct {
 	CodeBranch    string
 	ArticleBranch string
 	ResultBranch  string
+}
+
+// ProviderCapability is the browser-safe deployment availability for one Repo path.
+type ProviderCapability struct {
+	DisabledReason *string  `json:"disabled_reason"`
+	Enabled        bool     `json:"enabled"`
+	Provider       Provider `json:"provider"`
+}
+
+// Capabilities lists the three product paths without exposing storage roots or allowlists.
+type Capabilities struct {
+	Providers []ProviderCapability `json:"providers"`
 }
 
 // ConnectionSnapshot is the secret-free, tested settings snapshot persisted by Repo.

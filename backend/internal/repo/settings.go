@@ -22,21 +22,24 @@ type ConnectionTester struct {
 }
 
 // SettingDefinition is registered by Repo during Core composition.
-func SettingDefinition(tester settings.ConnectionTester) settings.TypeDefinition {
+func SettingDefinition(
+	tester settings.ConnectionTester,
+	serverExistingEnabled bool,
+) settings.TypeDefinition {
 	return settings.TypeDefinition{
-		Description: "Connects one managed Git repository and maps the code, article, and result workspaces.",
+		Description: "Creates an mmdash-managed repository or connects GitHub or an administrator-enabled server repository.",
 		Fields: []settings.FieldDefinition{
 			{
 				Key: "provider", Kind: settings.FieldSelect, Label: "Provider",
-				Options: []string{"github", "local"}, Required: true,
+				Options: []string{"managed", "github", "server_existing"}, Required: true,
 			},
 			{
-				Description: "GitHub HTTPS URL or an administrator-allowlisted server path.",
-				Key:         "remote_url", Kind: settings.FieldString,
-				Label: "Repository", Required: true,
+				Description: "GitHub HTTPS URL or an administrator-allowlisted Core container path. Stored as a secret so server paths are never returned by Settings APIs.",
+				Key:         "remote_url", Kind: settings.FieldSecret,
+				Label: "Repository location", Required: false,
 			},
 			{
-				Description: "Fine-grained GitHub PAT. Not used by Local Git.",
+				Description: "Fine-grained GitHub PAT. Not used by managed or server-existing repositories.",
 				Key:         "access_token", Kind: settings.FieldSecret,
 				Label: "Access token", Required: false,
 			},
@@ -61,6 +64,44 @@ func SettingDefinition(tester settings.ConnectionTester) settings.TypeDefinition
 		Key: SettingType, Order: 20, Owner: "repo",
 		Scopes: []settings.Scope{settings.ScopeProject},
 		Tester: tester, Title: "Repository",
+		Validator: ConnectionConfigValidator{
+			ServerExistingEnabled: serverExistingEnabled,
+		},
+	}
+}
+
+// ConnectionConfigValidator applies provider-conditional requirements that
+// the generic Settings field registry cannot express.
+type ConnectionConfigValidator struct {
+	ServerExistingEnabled bool
+}
+
+func (validator ConnectionConfigValidator) ValidateConfig(
+	values map[string]interface{},
+) error {
+	resolved := settings.ResolvedSetting{Values: values}
+	config, err := providerConfig(resolved)
+	if err != nil {
+		return err
+	}
+	switch config.Provider {
+	case "managed":
+		return nil
+	case "github":
+		if config.RemoteURL == "" || config.AccessToken == "" {
+			return provider.ErrInvalidConfig
+		}
+		return nil
+	case "server_existing":
+		if !validator.ServerExistingEnabled {
+			return provider.ErrUnavailable
+		}
+		if config.RemoteURL == "" {
+			return provider.ErrInvalidConfig
+		}
+		return nil
+	default:
+		return provider.ErrUnsupported
 	}
 }
 
@@ -84,20 +125,35 @@ func (tester ConnectionTester) Test(
 			Status:  "failed",
 		}}, err
 	}
-	return []settings.ConnectionCheck{
+	checks := []settings.ConnectionCheck{
 		{Name: "provider", Status: "passed"},
-		{Name: "authentication", Status: "passed"},
-		{
+	}
+	if config.Provider == "github" {
+		checks = append(checks, settings.ConnectionCheck{
+			Name: "authentication", Status: "passed",
+		})
+	} else if config.Provider == "managed" {
+		checks = append(checks, settings.ConnectionCheck{
+			Name: "managed_storage", Status: "passed",
+		})
+	} else {
+		checks = append(checks, settings.ConnectionCheck{
+			Name: "server_mount_allowlist", Status: "passed",
+		})
+	}
+	checks = append(checks,
+		settings.ConnectionCheck{
 			Message: connection.DefaultBranch,
 			Name:    "default_branch",
 			Status:  "passed",
 		},
-		{
+		settings.ConnectionCheck{
 			Message: strings.Join(connection.BranchNames(), ", "),
 			Name:    "workspace_branches",
 			Status:  "passed",
 		},
-	}, nil
+	)
+	return checks, nil
 }
 
 func providerConfig(resolved settings.ResolvedSetting) (provider.Config, error) {
@@ -114,7 +170,6 @@ func providerConfig(resolved settings.ResolvedSetting) (provider.Config, error) 
 		ResultBranch:  stringValue("result_branch"),
 	}
 	if config.Provider == "" ||
-		config.RemoteURL == "" ||
 		config.CodeBranch == "" ||
 		config.ArticleBranch == "" ||
 		config.ResultBranch == "" {
@@ -133,6 +188,8 @@ func safeProviderMessage(err error) string {
 		return "Repository contents write permission is required"
 	case errors.Is(err, provider.ErrRemoteNotFound):
 		return "Repository was not found"
+	case errors.Is(err, provider.ErrUnavailable):
+		return "Server repository access is not enabled for this deployment"
 	default:
 		return "Repository connection test failed"
 	}
