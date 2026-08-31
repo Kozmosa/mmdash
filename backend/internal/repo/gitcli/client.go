@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mmdash/mmdash/backend/internal/repo/egress"
 )
 
 const (
@@ -20,6 +22,7 @@ const (
 
 // Credentials are injected only into one Git subprocess through AskPass.
 type Credentials struct {
+	Proxy    egress.Config
 	Token    string
 	Username string
 }
@@ -50,6 +53,7 @@ type StreamResult struct {
 
 // CommandError intentionally omits argv, paths, credentials, and provider output.
 type CommandError struct {
+	Cause     error
 	Code      error
 	ExitCode  int
 	Operation string
@@ -59,8 +63,12 @@ func (err *CommandError) Error() string {
 	return fmt.Sprintf("%s: %v", err.Operation, err.Code)
 }
 
-func (err *CommandError) Unwrap() error {
-	return err.Code
+func (err *CommandError) Unwrap() []error {
+	result := []error{err.Code}
+	if err.Cause != nil {
+		result = append(result, err.Cause)
+	}
+	return result
 }
 
 // Client runs Git with bounded concurrency, time, environment, and output.
@@ -129,10 +137,7 @@ func (client *Client) Run(ctx context.Context, request Command) (Result, error) 
 	startedAt := time.Now()
 	runErr := command.Run()
 	duration := time.Since(startedAt)
-	sensitive := append([]string(nil), request.Sensitive...)
-	if request.Credentials != nil {
-		sensitive = append(sensitive, request.Credentials.Token)
-	}
+	sensitive := commandSensitive(request)
 	result := Result{
 		Duration: duration,
 		Stderr:   redact(stderr.Bytes(), sensitive),
@@ -141,22 +146,16 @@ func (client *Client) Run(ctx context.Context, request Command) (Result, error) 
 	if runErr == nil && !stdout.exceeded && !stderr.exceeded {
 		return result, nil
 	}
-	code := ErrCommandFailed
-	switch {
-	case commandContext.Err() != nil:
-		code = ErrTimeout
-	case stdout.exceeded || stderr.exceeded:
-		code = ErrOutputLimit
-	case looksLikeAuthenticationFailure(result.Stderr):
-		code = ErrAuthentication
-	}
+	code := classifyCommandFailure(
+		commandContext.Err(), stdout.exceeded, stderr.exceeded, result.Stderr,
+	)
 	exitCode := -1
 	var exitError *exec.ExitError
 	if errors.As(runErr, &exitError) {
 		exitCode = exitError.ExitCode()
 	}
 	return result, &CommandError{
-		Code: code, ExitCode: exitCode, Operation: request.Operation,
+		Cause: runErr, Code: code, ExitCode: exitCode, Operation: request.Operation,
 	}
 }
 
@@ -202,22 +201,18 @@ func (client *Client) RunStream(
 	if runErr == nil && !stdout.exceeded && !stderr.exceeded {
 		return result, nil
 	}
-	code := ErrCommandFailed
-	redactedStderr := redact(stderr.Bytes(), request.Sensitive)
-	switch {
-	case commandContext.Err() != nil:
-		code = ErrTimeout
-	case stdout.exceeded || stderr.exceeded:
-		code = ErrOutputLimit
-	case looksLikeAuthenticationFailure(redactedStderr):
-		code = ErrAuthentication
-	}
+	redactedStderr := redact(stderr.Bytes(), commandSensitive(request))
+	code := classifyCommandFailure(
+		commandContext.Err(), stdout.exceeded, stderr.exceeded, redactedStderr,
+	)
 	exitCode := -1
 	var exitError *exec.ExitError
 	if errors.As(runErr, &exitError) {
 		exitCode = exitError.ExitCode()
 	}
-	return result, &CommandError{Code: code, ExitCode: exitCode, Operation: request.Operation}
+	return result, &CommandError{
+		Cause: runErr, Code: code, ExitCode: exitCode, Operation: request.Operation,
+	}
 }
 
 func (client *Client) commandEnvironment(request Command) []string {
@@ -257,6 +252,9 @@ func (client *Client) commandEnvironment(request Command) []string {
 		}
 	}
 	if request.Credentials != nil {
+		for key, value := range request.Credentials.Proxy.GitEnvironment() {
+			environment = append(environment, key+"="+value)
+		}
 		username := request.Credentials.Username
 		if username == "" {
 			username = "x-access-token"
@@ -288,7 +286,88 @@ func looksLikeAuthenticationFailure(stderr []byte) bool {
 	message := strings.ToLower(string(stderr))
 	return strings.Contains(message, "authentication failed") ||
 		strings.Contains(message, "could not read username") ||
-		strings.Contains(message, "permission denied")
+		strings.Contains(message, "invalid username or password") ||
+		strings.Contains(message, "permission denied") ||
+		strings.Contains(message, "requested url returned error: 401") ||
+		strings.Contains(message, "requested url returned error: 403")
+}
+
+func classifyCommandFailure(
+	contextErr error,
+	stdoutExceeded bool,
+	stderrExceeded bool,
+	stderr []byte,
+) error {
+	switch {
+	case contextErr != nil:
+		return ErrTimeout
+	case stdoutExceeded || stderrExceeded:
+		return ErrOutputLimit
+	case looksLikeAuthenticationFailure(stderr):
+		return ErrAuthentication
+	case containsAny(stderr,
+		"repository not found",
+		"requested url returned error: 404",
+	):
+		return ErrRemoteNotFound
+	case containsAny(stderr,
+		"couldn't find remote ref",
+		"remote ref does not exist",
+	):
+		return ErrBranchNotFound
+	case containsAny(stderr,
+		"requested url returned error: 429",
+		"requested url returned error: 500",
+		"requested url returned error: 502",
+		"requested url returned error: 503",
+		"requested url returned error: 504",
+		"remote: internal server error",
+		"service unavailable",
+	):
+		return ErrProviderUnavailable
+	case containsAny(stderr,
+		"could not resolve host",
+		"could not resolve hostname",
+		"could not resolve proxy",
+		"failed to connect",
+		"connection refused",
+		"connection reset",
+		"connection timed out",
+		"network is unreachable",
+		"no route to host",
+		"proxy connect aborted",
+		"proxy connect failed",
+		"ssl certificate problem",
+		"server certificate verification failed",
+		"tls connect error",
+		"gnutls_handshake",
+	):
+		return ErrNetworkUnavailable
+	default:
+		return ErrCommandFailed
+	}
+}
+
+func containsAny(contents []byte, fragments ...string) bool {
+	message := strings.ToLower(string(contents))
+	for _, fragment := range fragments {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func commandSensitive(request Command) []string {
+	sensitive := append([]string(nil), request.Sensitive...)
+	if request.Credentials != nil {
+		sensitive = append(sensitive, request.Credentials.Token)
+		sensitive = append(
+			sensitive,
+			request.Credentials.Proxy.SensitiveValues()...,
+		)
+	}
+	return sensitive
 }
 
 func redact(contents []byte, sensitive []string) []byte {

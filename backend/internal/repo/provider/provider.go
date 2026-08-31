@@ -13,14 +13,38 @@ import (
 )
 
 var (
-	ErrAuthentication  = errors.New("repository authentication failed")
-	ErrBranchMissing   = errors.New("repository branch not found")
-	ErrInvalidConfig   = errors.New("invalid repository provider configuration")
-	ErrRemoteNotFound  = errors.New("repository remote not found")
-	ErrUnsupported     = errors.New("repository provider unsupported")
-	ErrUnavailable     = errors.New("repository provider unavailable")
-	ErrWritePermission = errors.New("repository write permission unavailable")
+	ErrAuthentication         = errors.New("repository authentication failed")
+	ErrBranchMissing          = errors.New("repository branch not found")
+	ErrInvalidConfig          = errors.New("invalid repository provider configuration")
+	ErrInvalidResponse        = errors.New("repository provider returned an invalid response")
+	ErrNetworkUnavailable     = errors.New("repository network is unavailable")
+	ErrRemoteNotFound         = errors.New("repository remote not found")
+	ErrTemporarilyUnavailable = errors.New("repository provider is temporarily unavailable")
+	ErrTimeout                = errors.New("repository provider operation timed out")
+	ErrUnsupported            = errors.New("repository provider unsupported")
+	ErrUnavailable            = errors.New("repository provider unavailable")
+	ErrWritePermission        = errors.New("repository write permission unavailable")
 )
+
+type classifiedError struct {
+	cause error
+	class error
+}
+
+func (err *classifiedError) Error() string {
+	return err.class.Error()
+}
+
+func (err *classifiedError) Unwrap() []error {
+	return []error{err.class, err.cause}
+}
+
+func classify(class, cause error) error {
+	if cause == nil || errors.Is(cause, class) {
+		return class
+	}
+	return &classifiedError{cause: cause, class: class}
+}
 
 // Config is resolved only inside Core and may contain a credential.
 type Config struct {

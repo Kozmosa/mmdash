@@ -16,6 +16,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/apperror"
 	"github.com/mmdash/mmdash/backend/internal/platform/httpx"
 	"github.com/mmdash/mmdash/backend/internal/project"
+	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
 	"github.com/mmdash/mmdash/backend/internal/repo/provider"
 	"github.com/mmdash/mmdash/backend/internal/settings"
 )
@@ -699,9 +700,13 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 	}
 	var safeError *SafeError
 	if errors.As(err, &safeError) {
-		httpx.WriteError(response, request, apperror.New(
+		applicationError := apperror.New(
 			http.StatusBadRequest, safeError.Code, safeError.Message,
-		))
+		)
+		applicationError.WithDetails(map[string]interface{}{
+			"retryable": safeError.Retryable,
+		})
+		httpx.WriteError(response, request, applicationError)
 		return
 	}
 	switch {
@@ -788,16 +793,56 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 			http.StatusBadRequest, "REPO_BRANCH_MAPPING_INVALID", "Repository branch mapping is invalid",
 		))
 	case errors.Is(err, provider.ErrAuthentication):
-		httpx.WriteError(response, request, apperror.New(
+		httpx.WriteError(response, request, repoProviderError(
 			http.StatusBadRequest, "REPO_AUTH_FAILED", "Repository authentication failed",
+			false,
 		))
 	case errors.Is(err, provider.ErrRemoteNotFound):
-		httpx.WriteError(response, request, apperror.New(
+		httpx.WriteError(response, request, repoProviderError(
 			http.StatusBadRequest, "REPO_REMOTE_NOT_FOUND", "Repository was not found",
+			false,
 		))
 	case errors.Is(err, provider.ErrBranchMissing):
-		httpx.WriteError(response, request, apperror.New(
+		httpx.WriteError(response, request, repoProviderError(
 			http.StatusBadRequest, "REPO_BRANCH_NOT_FOUND", "A mapped branch was not found",
+			false,
+		))
+	case errors.Is(err, provider.ErrWritePermission):
+		httpx.WriteError(response, request, repoProviderError(
+			http.StatusBadRequest,
+			"REPO_WRITE_PERMISSION_REQUIRED",
+			"Repository contents write permission is required",
+			false,
+		))
+	case errors.Is(err, provider.ErrNetworkUnavailable),
+		errors.Is(err, gitcli.ErrNetworkUnavailable):
+		httpx.WriteError(response, request, repoProviderError(
+			http.StatusServiceUnavailable,
+			"REPO_NETWORK_UNAVAILABLE",
+			"External repository network is temporarily unavailable",
+			true,
+		))
+	case errors.Is(err, provider.ErrTimeout), errors.Is(err, gitcli.ErrTimeout):
+		httpx.WriteError(response, request, repoProviderError(
+			http.StatusGatewayTimeout,
+			"REPO_GIT_TIMEOUT",
+			"Repository operation timed out",
+			true,
+		))
+	case errors.Is(err, provider.ErrTemporarilyUnavailable),
+		errors.Is(err, gitcli.ErrProviderUnavailable):
+		httpx.WriteError(response, request, repoProviderError(
+			http.StatusServiceUnavailable,
+			"REPO_PROVIDER_TEMPORARILY_UNAVAILABLE",
+			"GitHub is temporarily unavailable",
+			true,
+		))
+	case errors.Is(err, provider.ErrInvalidResponse):
+		httpx.WriteError(response, request, repoProviderError(
+			http.StatusBadGateway,
+			"REPO_PROVIDER_RESPONSE_INVALID",
+			"GitHub returned an invalid response",
+			false,
 		))
 	case errors.Is(err, provider.ErrUnsupported):
 		httpx.WriteError(response, request, apperror.New(
@@ -818,4 +863,15 @@ func writeRepoError(response http.ResponseWriter, request *http.Request, err err
 	default:
 		httpx.WriteError(response, request, err)
 	}
+}
+
+func repoProviderError(
+	status int,
+	code string,
+	message string,
+	retryable bool,
+) *apperror.Error {
+	return apperror.New(status, code, message).WithDetails(map[string]interface{}{
+		"retryable": retryable,
+	})
 }

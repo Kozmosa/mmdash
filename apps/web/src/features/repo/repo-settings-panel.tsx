@@ -705,6 +705,14 @@ export function RepoSettingsPanel() {
                 </li>
               ))}
             </ul>
+            {tested.error_code ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                {tested.error_code}
+                {tested.retryable
+                  ? " · 外部网络暂时不可用，可以稍后重试。"
+                  : " · 请修正配置或权限后重试。"}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
@@ -737,9 +745,15 @@ export function RepoSettingsPanel() {
                 ))}
               </dl>
               {activeRepository.last_error_code ? (
-                <div className="rounded-md border border-red-300 bg-red-50 p-3 text-red-950">
+                <div
+                  className={
+                    activeRepository.last_error_retryable
+                      ? "rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950"
+                      : "rounded-md border border-red-300 bg-red-50 p-3 text-red-950"
+                  }
+                >
                   <strong>{activeRepository.last_error_code}</strong>
-                  <p>{activeRepository.last_error_message}</p>
+                  <p>{repositoryFailureMessage(activeRepository)}</p>
                 </div>
               ) : null}
             </CardContent>
@@ -1052,9 +1066,26 @@ function isTransitional(status: Repository["status"] | undefined): boolean {
 
 function safeMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.retryable) {
+      return `${error.code}: 外部网络暂时不可用，请稍后重试。`;
+    }
     return `${error.code}: ${error.message}`;
   }
   return error instanceof Error ? error.message : "Repository 操作失败";
+}
+
+function repositoryFailureMessage(repository: Repository): string {
+  if (!repository.last_error_retryable) {
+    return repository.last_error_message ?? "Repository 同步失败";
+  }
+  switch (repository.last_error_code) {
+    case "REPO_GIT_TIMEOUT":
+      return "外部仓库操作超时，系统正在按退避策略重试。现有镜像和工作区仍可只读浏览。";
+    case "REPO_PROVIDER_TEMPORARILY_UNAVAILABLE":
+      return "GitHub 暂时不可用，系统正在按退避策略重试。现有镜像和工作区仍可只读浏览。";
+    default:
+      return "外部网络暂时不可用，系统正在按退避策略重试。现有镜像和工作区仍可只读浏览。";
+  }
 }
 
 const selectClass =
