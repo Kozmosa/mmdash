@@ -172,6 +172,9 @@ func (service Service) AcceptGitHubWebhook(
 	}
 	duplicate, err := service.Webhooks.RecordWebhook(ctx, delivery)
 	if err != nil {
+		if service.WebhookError != nil {
+			service.WebhookError(ctx, err)
+		}
 		return WebhookAcceptance{}, err
 	}
 	service.record(
