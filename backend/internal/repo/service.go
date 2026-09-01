@@ -68,6 +68,7 @@ type Service struct {
 	WriteLease            time.Duration
 	Writer                *WorkspaceWriter
 	Webhooks              WebhookStore
+	WebhookError          func(context.Context, error)
 }
 
 func (service Service) Capabilities(

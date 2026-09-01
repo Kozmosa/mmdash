@@ -594,7 +594,14 @@ func run(logger *logging.Logger) error {
 		Settings: settingsService,
 		Storage:  repoStorage,
 		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
-		Webhooks: repoStore, Writer: repoWriter,
+		Webhooks: repoStore,
+		WebhookError: func(ctx context.Context, webhookErr error) {
+			logger.Error("repo.webhook.persist.failed", map[string]interface{}{
+				"error":      webhookErr.Error(),
+				"request_id": requestctx.RequestID(ctx),
+			})
+		},
+		Writer: repoWriter,
 	}
 	syncOwnerID, err := idGenerator.New()
 	if err != nil {
