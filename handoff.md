@@ -1,8 +1,8 @@
 # mmdash v0.1 resilient Repo operations and branch-scoped sync
 
 - Updated: 2026-09-01
-- Branch: `main` (the sandbox could not create a `codex/` ref because `.git`
-  is read-only; all changes remain uncommitted in the shared worktree).
+- Branch: `main`; implementation commit `304b1ff` is included by current merge
+  commit `baf66d5`.
 - Scope: remove Git network waits from the Web Article commit path and harden
   every Repo workspace write against timeouts, lost Webhooks, and Core crashes.
 - Runtime branch policy: callers select `code`, `article`, or `result`; Repo
@@ -34,19 +34,20 @@
   a leased Core coordinator retries transient failures and binds the confirmed
   Repo SHA; publication operations then atomically enqueue the formal build.
   The old synchronous `POST /article/commits` and `POST /article/publications`
-  remain deprecated for existing API clients. Result already executes inside the asynchronous
-  Experiment result-processing job and continues to keep large staged files
-  outside PostgreSQL while using the same Repo write state machine.
+  remain deprecated for existing API clients. Result already executes inside
+  the asynchronous Experiment result-processing job and continues to keep
+  large staged files outside PostgreSQL while using the same Repo write state
+  machine.
 - Migrations: `000052_repo_resilient_sync` adds coalesced workspace scopes and
   reconciliation scheduling; `000053_article_commit_operations` adds the
   frozen, idempotent, leased Article operation queue.
 - Verification completed: focused and full Go tests, all TS/BFF/Web tests,
   Python Worker tests, all TS/Go/Python builds and lint, generated-contract
-  freshness, compatibility, and API catalog coverage (539 operations) pass.
-  `pnpm check` reached only its final Caddyfile step; Caddy is not installed
-  and the local Docker daemon is not running, so Caddy syntax and Compose
-  migration/smoke acceptance still require an environment with either Caddy
-  or Docker. Static Caddy boundary checks ran before the unavailable validator.
+  freshness, compatibility, and API catalog coverage (541 operations) pass on
+  current `main`. The user explicitly excluded Caddy and Docker/Compose tests
+  from this acceptance run; `pnpm check` therefore has one expected final
+  Caddy validation failure after every in-scope gate passed. No Docker smoke
+  or live migration test was run.
 
 # mmdash v0.1 Repo provider paths and production deployment (issue #60)
 
