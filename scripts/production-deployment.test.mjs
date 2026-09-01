@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 const composePath = "deploy/production/compose.yaml";
 const caddyfilePath = "deploy/production/caddy/Caddyfile";
 const caddyDockerfilePath = "deploy/production/caddy/Dockerfile";
+const mihomoConfigPath = "deploy/production/mihomo/config.example.yaml";
+const mihomoDockerfilePath = "deploy/production/mihomo/Dockerfile";
 
 describe("production deployment", () => {
   it("keeps every service off host ports and preserves private boundaries", async () => {
@@ -18,6 +20,7 @@ describe("production deployment", () => {
         "minio",
         "minio-init",
         "migrate",
+        "mihomo",
         "core",
         "web-bff",
         "web",
@@ -42,11 +45,46 @@ describe("production deployment", () => {
 
     expect(services.cloudflared.networks).toEqual(["edge", "tunnel-egress"]);
     expect(services.caddy.networks).toEqual(["edge", "app", "data"]);
+    expect(services.mihomo.networks).toEqual(["egress"]);
     expect(services.core.networks).toEqual(["app", "data", "egress"]);
     expect(services.postgres.networks).toEqual(["data"]);
     expect(services.minio.networks).toEqual(["data"]);
     expect(services.worker.networks).toEqual(["data"]);
     expect(services.worker.profiles).toEqual(["worker"]);
+  });
+
+  it("runs the Repo proxy as an isolated non-root Compose service", async () => {
+    const compose = yaml.load(await readFile(composePath, "utf8"));
+    const { core, mihomo } = compose.services;
+
+    expect(mihomo.image).toContain("MMDASH_MIHOMO_IMAGE");
+    expect(mihomo.read_only).toBe(true);
+    expect(mihomo.user).toContain("MMDASH_MIHOMO_UID");
+    expect(mihomo.user).toContain("MMDASH_MIHOMO_GID");
+    expect(mihomo.cap_drop).toEqual(["ALL"]);
+    expect(mihomo.security_opt).toEqual(["no-new-privileges:true"]);
+    expect(mihomo.restart).toBe("unless-stopped");
+    expect(mihomo.volumes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ read_only: true, target: "/config.yaml" }),
+        expect.objectContaining({
+          read_only: true,
+          target: "/state/providers",
+        }),
+      ]),
+    );
+    expect(mihomo.tmpfs).toEqual([
+      expect.stringContaining("/state:rw,noexec,nosuid"),
+    ]);
+    expect(mihomo.healthcheck.test).toEqual(
+      expect.arrayContaining(["/usr/local/bin/mihomo", "-t"]),
+    );
+    expect(core.environment.REPO_GITHUB_PROXY_URL).toContain(
+      "REPO_GITHUB_PROXY_URL",
+    );
+    expect(core.depends_on.mihomo.condition).toBe("service_healthy");
+    expect(compose.networks.egress).not.toHaveProperty("ipam");
+    expect(compose.networks.egress).not.toHaveProperty("driver_opts");
   });
 
   it("makes Cloudflare Tunnel the sole ingress through Caddy", async () => {
@@ -124,5 +162,30 @@ describe("production deployment", () => {
     expect(dockerfile).toContain("--chown=65532:65532 --chmod=0444");
     expect(dockerfile).toContain("USER 65532:65532");
     expect(dockerfile).toContain("EXPOSE 8080");
+  });
+
+  it("builds a minimal pinned mihomo image with a fail-closed config", async () => {
+    const dockerfile = await readFile(mihomoDockerfilePath, "utf8");
+    const config = yaml.load(await readFile(mihomoConfigPath, "utf8"));
+
+    expect(dockerfile).toContain("FROM scratch");
+    expect(dockerfile).toContain("ca-certificates.crt");
+    expect(dockerfile).toContain("COPY --chmod=0555 mihomo");
+    expect(dockerfile).toContain("USER 65532:65532");
+    expect(config["mixed-port"]).toBe(17890);
+    expect(config["bind-address"]).toBe("0.0.0.0");
+    expect(config["external-controller"]).toBe("127.0.0.1:19090");
+    expect(config["proxy-providers"].upstream.path).toBe(
+      "/state/providers/upstream.yaml",
+    );
+    expect(config["proxy-groups"]).toEqual([
+      expect.objectContaining({
+        name: "MMDASH-REPO-EGRESS",
+        type: "url-test",
+        use: ["upstream"],
+      }),
+    ]);
+    expect(config.rules).toEqual(["MATCH,MMDASH-REPO-EGRESS"]);
+    expect(config.rules).not.toContain("MATCH,DIRECT");
   });
 });

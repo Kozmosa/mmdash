@@ -14,6 +14,7 @@ export type CoreRequestOptions = Omit<RequestInit, "body"> & {
 
 export type CoreErrorBody = {
   code?: string;
+  details?: unknown;
   message?: string;
   request_id?: string;
 };

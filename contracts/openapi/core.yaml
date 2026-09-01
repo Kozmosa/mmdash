@@ -8971,6 +8971,8 @@ components:
           type: [string, "null"]
         last_error_message:
           type: [string, "null"]
+        last_error_retryable:
+          type: boolean
         workspaces:
           type: array
           minItems: 3
@@ -9060,6 +9062,10 @@ components:
           type: array
           items:
             type: string
+        error_code:
+          type: [string, "null"]
+        retryable:
+          type: boolean
     RepoBranch:
       type: object
       additionalProperties: false

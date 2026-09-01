@@ -17,6 +17,7 @@ type coordinatorStore struct {
 	completed          []string
 	failedCode         string
 	failedRetry        time.Time
+	retryable          bool
 	mutex              sync.Mutex
 	renewals           int
 	requestedWorkspace WorkspaceKind
@@ -45,16 +46,16 @@ func (store *coordinatorStore) CompleteSync(
 func (store *coordinatorStore) FailSync(
 	_ context.Context,
 	_ string,
-	_ string,
-	code string,
-	_ string,
+	_ SyncClaim,
+	failure SyncFailure,
 	retryAt time.Time,
 	_ time.Time,
 ) error {
 	store.mutex.Lock()
 	defer store.mutex.Unlock()
-	store.failedCode = code
+	store.failedCode = failure.Code
 	store.failedRetry = retryAt
+	store.retryable = failure.Retryable
 	return nil
 }
 
@@ -213,7 +214,7 @@ func TestCoordinatorRequestsOnlyTheResultWorkspace(t *testing.T) {
 	}
 }
 
-func TestCoordinatorPersistsSafeFailureWithExponentialBackoff(t *testing.T) {
+func TestCoordinatorPersistsRetryableNetworkFailureWithExponentialBackoff(t *testing.T) {
 	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
 	store := &coordinatorStore{claims: []SyncClaim{{
 		Repository: Repository{
@@ -223,7 +224,7 @@ func TestCoordinatorPersistsSafeFailureWithExponentialBackoff(t *testing.T) {
 	}}}
 	providers := provider.NewRegistry()
 	if err := providers.Register("server_existing", coordinatorProvider{
-		err: provider.ErrAuthentication,
+		err: provider.ErrNetworkUnavailable,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -241,14 +242,45 @@ func TestCoordinatorPersistsSafeFailureWithExponentialBackoff(t *testing.T) {
 	if err := coordinator.RunOnce(context.Background()); err != nil {
 		t.Fatalf("run coordinator: %v", err)
 	}
-	if store.failedCode != "REPO_AUTH_FAILED" {
+	if store.failedCode != "REPO_NETWORK_UNAVAILABLE" || !store.retryable {
 		t.Fatalf("unexpected failure code: %s", store.failedCode)
 	}
 	if !store.failedRetry.Equal(now.Add(8 * time.Second)) {
 		t.Fatalf("unexpected retry time: %s", store.failedRetry)
 	}
-	if !errors.Is(reported, provider.ErrAuthentication) {
+	if !errors.Is(reported, provider.ErrNetworkUnavailable) {
 		t.Fatalf("provider failure was not reported: %v", reported)
+	}
+	var syncFailure *SyncFailureError
+	if !errors.As(reported, &syncFailure) || syncFailure.Code != "REPO_NETWORK_UNAVAILABLE" ||
+		!syncFailure.Retryable || syncFailure.RepositoryID != "repo-1" {
+		t.Fatalf("safe structured sync failure missing: %#v", syncFailure)
+	}
+}
+
+func TestCoordinatorStopsAutomaticRetryForAuthenticationFailure(t *testing.T) {
+	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+	store := &coordinatorStore{claims: []SyncClaim{{
+		Repository: Repository{ID: "repo-1", ProjectID: "project-1"},
+		Requested:  now, Source: "manual",
+	}}}
+	providers := provider.NewRegistry()
+	if err := providers.Register("server_existing", coordinatorProvider{
+		err: provider.ErrAuthentication,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	coordinator := Coordinator{
+		Clock: clock.Fixed{Time: now}, Lease: time.Minute,
+		Owner: "core-test", Providers: providers, Runtime: &coordinatorRuntime{},
+		Settings: coordinatorSettings{resolved: coordinatorResolvedSetting()},
+		Store:    store,
+	}
+	if err := coordinator.RunOnce(context.Background()); err != nil {
+		t.Fatalf("run coordinator: %v", err)
+	}
+	if store.failedCode != "REPO_AUTH_FAILED" || store.retryable {
+		t.Fatalf("authentication failure should be terminal: %#v", store)
 	}
 }
 

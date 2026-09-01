@@ -177,6 +177,9 @@ export function createServiceConfiguration(
         OBJECT_STORAGE_REGION: "us-east-1",
         OBJECT_STORAGE_SECRET_KEY: minioSecretKey,
         REPO_ASKPASS_PATH: path.join(layout.runtimeBin, askPassBinary),
+        REPO_GITHUB_NO_PROXY:
+          process.env.REPO_GITHUB_NO_PROXY ?? "localhost,127.0.0.1,::1",
+        REPO_GITHUB_PROXY_URL: process.env.REPO_GITHUB_PROXY_URL ?? "",
       },
       mcp: {
         CORE_BASE_URL: coreUrl,

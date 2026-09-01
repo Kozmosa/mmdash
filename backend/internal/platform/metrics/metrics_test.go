@@ -13,6 +13,7 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 	registry.ObserveHTTP("get", http.StatusOK, 1500*time.Millisecond)
 	registry.IncrementAuditFailure()
 	registry.ObserveRepoOperation("sync", "success", "local", 125*time.Millisecond)
+	registry.ObserveRepoOperation("sync", "network", "github", 25*time.Millisecond)
 	registry.ObserveRepoOperation("unbounded-value", "other", "repository-id", time.Millisecond)
 	registry.ObserveArtifactOperation("confirm", "success", "minio", 250*time.Millisecond)
 	registry.ObserveArtifactOperation(
@@ -48,6 +49,7 @@ func TestRegistryExposesBoundedHTTPMetricsAndVersion(t *testing.T) {
 		`mmdash_http_request_duration_seconds_sum{method="GET",status="200"} 1.500000`,
 		`mmdash_audit_write_failures_total 1`,
 		`mmdash_repo_operations_total{operation="sync",outcome="success",provider="local"} 1`,
+		`mmdash_repo_operations_total{operation="sync",outcome="network",provider="github"} 1`,
 		`mmdash_repo_operations_total{operation="other",outcome="error",provider="unknown"} 1`,
 		`mmdash_repo_operation_duration_seconds{operation="sync",provider="local"} 0.125000`,
 		`mmdash_repo_sync_queue_depth 3`,

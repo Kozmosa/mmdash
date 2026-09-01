@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -53,7 +54,9 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 		config.Repo.CommitLease != 90*time.Second ||
 		config.Repo.WriteTimeout != 45*time.Second ||
 		config.Repo.ReconcileInterval != 15*time.Minute ||
-		config.Repo.MaxTextBytes != 1024*1024 {
+		config.Repo.MaxTextBytes != 1024*1024 ||
+		config.Repo.GitHubNoProxy != "localhost,127.0.0.1,::1" ||
+		config.Repo.GitHubProxyURL != "" {
 		t.Fatalf("unexpected Repo defaults: %+v", config.Repo)
 	}
 	if config.Version != "0.1.0" {
@@ -151,6 +154,30 @@ func TestLoadRejectsMissingAndInvalidConfiguration(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected invalid Repo concurrency to fail")
+	}
+
+	proxySecret := "must-not-leak"
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+		"REPO_GITHUB_PROXY_URL":     "socks5://user:" + proxySecret + "@127.0.0.1:1080",
+	}))
+	if err == nil || strings.Contains(err.Error(), proxySecret) {
+		t.Fatalf("expected safely reported invalid Repo proxy: %v", err)
+	}
+
+	_, err = Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+		"REPO_GITHUB_NO_PROXY":      "github.com",
+		"REPO_GITHUB_PROXY_URL":     "http://127.0.0.1:22334",
+	}))
+	if err == nil {
+		t.Fatal("expected public Repo NO_PROXY target to fail")
 	}
 
 	_, err = Load(mapLookup(map[string]string{
@@ -305,6 +332,24 @@ func TestLoadAppliesExplicitAgentConnectorPolicy(t *testing.T) {
 		loaded.Agent.Runtime.MaxResponseBytes != 2*1024*1024 ||
 		loaded.Agent.ManagementMinimumInterval != 750*time.Millisecond {
 		t.Fatalf("unexpected explicit Agent runtime policy: %+v", loaded.Agent.Runtime)
+	}
+}
+
+func TestLoadAppliesExplicitRepoGitHubProxy(t *testing.T) {
+	loaded, err := Load(mapLookup(map[string]string{
+		"DATABASE_URL":              "postgres://localhost/mmdash",
+		"OBJECT_STORAGE_ACCESS_KEY": "access",
+		"OBJECT_STORAGE_ENDPOINT":   "http://localhost:9000",
+		"OBJECT_STORAGE_SECRET_KEY": "secret",
+		"REPO_GITHUB_NO_PROXY":      "localhost,127.0.0.1,postgres",
+		"REPO_GITHUB_PROXY_URL":     "https://proxy-user:proxy-password@proxy.internal:8443",
+	}))
+	if err != nil {
+		t.Fatalf("load explicit Repo proxy: %v", err)
+	}
+	if loaded.Repo.GitHubProxyURL != "https://proxy-user:proxy-password@proxy.internal:8443" ||
+		loaded.Repo.GitHubNoProxy != "localhost,127.0.0.1,postgres" {
+		t.Fatalf("unexpected Repo proxy config: %+v", loaded.Repo)
 	}
 }
 

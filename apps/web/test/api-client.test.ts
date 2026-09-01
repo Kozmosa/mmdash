@@ -52,6 +52,31 @@ describe("ApiClient", () => {
     });
   });
 
+  it("preserves the retryable flag from safe error details", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "REPO_NETWORK_UNAVAILABLE",
+          details: { retryable: true },
+          message: "External repository network is temporarily unavailable",
+        }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 503,
+        },
+      ),
+    );
+    const client = new ApiClient("/api", fetchImplementation);
+
+    await expect(
+      client.request("/projects/project-1/repository"),
+    ).rejects.toMatchObject({
+      code: "REPO_NETWORK_UNAVAILABLE",
+      retryable: true,
+      status: 503,
+    });
+  });
+
   it("does not recursively redirect public authentication pages", () => {
     expect(shouldRedirectToLogin(401, "/auth/me", "/login")).toBe(false);
     expect(shouldRedirectToLogin(401, "/auth/me", "/register")).toBe(false);

@@ -1097,17 +1097,16 @@ func validateSyncWorkspaces(
 // FailSync stores a bounded failure and releases the current lease for retry.
 func (store PostgresStore) FailSync(
 	ctx context.Context,
-	repositoryID string,
 	owner string,
-	code string,
-	message string,
+	claim SyncClaim,
+	failure SyncFailure,
 	retryAt time.Time,
 	now time.Time,
 ) error {
-	if repositoryID == "" || owner == "" || code == "" {
+	if claim.Repository.ID == "" || owner == "" || failure.Code == "" {
 		return ErrInvalid
 	}
-	message = strings.TrimSpace(message)
+	message := strings.TrimSpace(failure.Message)
 	if len(message) > 500 {
 		message = message[:500]
 	}
@@ -1121,11 +1120,20 @@ func (store PostgresStore) FailSync(
 		    sync_locked_by = NULL,
 		    sync_lease_expires_at = NULL,
 		    sync_attempts = sync_attempts + 1,
-		    next_sync_at = $5,
-		    updated_at = $6
+		    sync_requested_at = CASE
+		      WHEN NOT $5 AND sync_requested_at <= $6 THEN NULL
+		      ELSE sync_requested_at
+		    END,
+		    next_sync_at = CASE
+		      WHEN sync_requested_at > $6 THEN $8
+		      WHEN $5 THEN $7
+		      ELSE NULL
+		    END,
+		    updated_at = $8
 		WHERE repository_id = $1 AND sync_locked_by = $2
 		  AND status <> 'disconnected'
-	`, repositoryID, owner, code, message, retryAt.UTC(), now)
+	`, claim.Repository.ID, owner, failure.Code, message, failure.Retryable,
+		claim.Requested.UTC(), retryAt.UTC(), now)
 	if err != nil {
 		return err
 	}
