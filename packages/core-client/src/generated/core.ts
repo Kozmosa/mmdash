@@ -6194,6 +6194,7 @@ export interface components {
       last_synced_at: string | null;
       last_error_code: string | null;
       last_error_message: string | null;
+      last_error_retryable?: boolean;
       workspaces: components["schemas"]["RepoWorkspace"][];
       webhook: components["schemas"]["RepoWebhook"];
       /** Format: date-time */
@@ -6227,6 +6228,8 @@ export interface components {
       checks: components["schemas"]["ConnectionCheck"][];
       default_branch: string;
       branches: string[];
+      error_code?: string | null;
+      retryable?: boolean;
     };
     RepoBranch: {
       name: string;

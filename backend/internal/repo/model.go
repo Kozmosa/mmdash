@@ -57,6 +57,7 @@ type Repository struct {
 	ID                 string           `json:"repository_id"`
 	LastErrorCode      *string          `json:"last_error_code"`
 	LastErrorMessage   *string          `json:"last_error_message"`
+	LastErrorRetryable bool             `json:"last_error_retryable"`
 	LastSyncedAt       *time.Time       `json:"last_synced_at"`
 	NextSyncAt         *time.Time       `json:"-"`
 	ProjectID          string           `json:"project_id"`

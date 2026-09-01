@@ -135,6 +135,7 @@ describe("Repo browser routes", () => {
       display_name: "acme/model",
       last_error_code: null,
       last_error_message: null,
+      last_error_retryable: false,
       last_synced_at: null,
       project_id: "project-1",
       provider: "github",
