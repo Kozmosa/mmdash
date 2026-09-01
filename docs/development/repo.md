@@ -21,6 +21,11 @@ legacy server path usable while the Settings HTTP projection returns only the
 redaction marker. The next actual path edit moves it into encrypted secret
 storage.
 
+Migration `000051_repo_webhook_deliveries_repair` idempotently restores the
+webhook delivery ledger for an older database that recorded the Repo baseline
+without retaining that relation. It preserves repositories, Git data, and any
+existing webhook delivery history.
+
 Apply it with the normal migrator:
 
 ```bash

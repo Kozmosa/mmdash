@@ -33,6 +33,36 @@ func TestRunnerAppliesFreshCanonicalCatalog(t *testing.T) {
 	assertMigrationCount(t, db, len(names))
 }
 
+func TestRunnerRepairsIncompleteRepoWebhookDeliveryTable(t *testing.T) {
+	db := openMigrationRunnerDatabase(t)
+	directory := migrationTestDirectory(t)
+	names, err := migrationNames(directory)
+	if err != nil {
+		t.Fatalf("read canonical migration catalog: %v", err)
+	}
+	if len(names) == 0 || names[len(names)-1] != "000051_repo_webhook_deliveries_repair.up.sql" {
+		t.Fatalf("unexpected final migration: %#v", names)
+	}
+
+	seedMigrations(t, db, directory, names[:len(names)-1], nil)
+	if _, err := db.Exec("DROP TABLE repo_webhook_deliveries"); err != nil {
+		t.Fatalf("simulate missing webhook delivery table: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE repo_webhook_deliveries (
+			provider TEXT,
+			delivery_id TEXT
+		)
+	`); err != nil {
+		t.Fatalf("simulate partial webhook delivery table: %v", err)
+	}
+
+	runMigrations(t, db, directory)
+	assertTableExists(t, db, "repo_webhook_deliveries", true)
+	assertColumnExists(t, db, "repo_webhook_deliveries", "repository_id", true)
+	assertMigrationRecorded(t, db, "000051_repo_webhook_deliveries_repair.up.sql")
+}
+
 func TestRunnerReconcilesLegacyMigrationNamesWithoutReexecution(t *testing.T) {
 	db := openMigrationRunnerDatabase(t)
 	directory := migrationTestDirectory(t)

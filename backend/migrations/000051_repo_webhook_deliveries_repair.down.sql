@@ -1,0 +1,3 @@
+-- This migration restores a missing baseline relation. Dropping it on
+-- downgrade would destroy webhook deduplication history, so rollback is a
+-- deliberate no-op.
