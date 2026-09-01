@@ -1,7 +1,7 @@
-# Copy to /etc/mmdash-mihomo/config.yaml with mode 0600. The actual upstream
-# provider file is deployment secret material and must not be committed.
+# Copy outside the repository with mode 0600. The actual upstream provider
+# file is deployment secret material and must not be committed.
 mixed-port: 17890
-bind-address: 172.31.240.1
+bind-address: 0.0.0.0
 allow-lan: true
 mode: rule
 log-level: warning
@@ -14,7 +14,7 @@ profile:
 proxy-providers:
   upstream:
     type: file
-    path: /etc/mmdash-mihomo/providers/upstream.yaml
+    path: /state/providers/upstream.yaml
     health-check:
       enable: true
       interval: 300
@@ -23,9 +23,12 @@ proxy-providers:
 
 proxy-groups:
   - name: MMDASH-REPO-EGRESS
-    type: select
+    type: url-test
     use:
       - upstream
+    url: https://github.com/favicon.ico
+    interval: 300
+    tolerance: 100
 
 # Core sends only GitHub API and Git HTTPS traffic to this listener. There is
 # deliberately no DIRECT fallback: an unavailable provider fails closed and
