@@ -50,6 +50,9 @@ func TestLoadReturnsValidatedConfiguration(t *testing.T) {
 	}
 	if config.Repo.MaxConcurrentGit != 4 ||
 		config.Repo.CommandTimeout != 2*time.Minute ||
+		config.Repo.CommitLease != 90*time.Second ||
+		config.Repo.WriteTimeout != 45*time.Second ||
+		config.Repo.ReconcileInterval != 15*time.Minute ||
 		config.Repo.MaxTextBytes != 1024*1024 {
 		t.Fatalf("unexpected Repo defaults: %+v", config.Repo)
 	}

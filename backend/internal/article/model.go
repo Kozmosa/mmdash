@@ -131,6 +131,51 @@ type Commit struct {
 	FrozenReferences  []Reference            `json:"-"`
 }
 
+type CommitOperation struct {
+	Attempts       int        `json:"attempts"`
+	CommitID       string     `json:"commit_id,omitempty"`
+	CommitSHA      string     `json:"commit_sha,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	DraftRevision  int64      `json:"draft_revision"`
+	ErrorCode      string     `json:"error_code,omitempty"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	IdempotencyKey string     `json:"-"`
+	MaxAttempts    int        `json:"max_attempts"`
+	NextAttemptAt  time.Time  `json:"next_attempt_at"`
+	OperationKind  string     `json:"operation_kind"`
+	OperationID    string     `json:"operation_id"`
+	ProjectID      string     `json:"project_id"`
+	PublicationID  string     `json:"publication_id,omitempty"`
+	Stage          string     `json:"stage"`
+	Status         string     `json:"status"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+
+	BibliographyTool  string                 `json:"-"`
+	CreatedBy         string                 `json:"-"`
+	Engine            string                 `json:"-"`
+	ExpectedHeadSHA   string                 `json:"-"`
+	FrozenReferences  []Reference            `json:"-"`
+	LeaseExpiresAt    *time.Time             `json:"-"`
+	LockedBy          string                 `json:"-"`
+	ManifestBytes     []byte                 `json:"-"`
+	ManifestSHA256    string                 `json:"-"`
+	Manuscript        string                 `json:"-"`
+	ManuscriptSHA256  string                 `json:"-"`
+	Message           string                 `json:"-"`
+	Notes             string                 `json:"-"`
+	PreviousCommitSHA string                 `json:"-"`
+	PublicationKey    string                 `json:"-"`
+	ReferencesBIB     string                 `json:"-"`
+	ReferencesSHA256  string                 `json:"-"`
+	RequestSHA256     string                 `json:"-"`
+	StateVector       string                 `json:"-"`
+	Tag               string                 `json:"-"`
+	TemplateID        string                 `json:"-"`
+	TiptapJSON        map[string]interface{} `json:"-"`
+	Title             string                 `json:"-"`
+	YjsUpdate         string                 `json:"-"`
+}
+
 type TemplateManifest struct {
 	BibliographyTarget string `json:"bibliography_target"`
 	BibliographyTool   string `json:"bibliography_tool"`

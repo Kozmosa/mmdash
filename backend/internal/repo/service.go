@@ -395,10 +395,23 @@ func (service Service) commitTrusted(
 	if claim.AlreadySucceeded {
 		return result, nil
 	}
+	operationContext, cancelOperation := context.WithCancel(ctx)
+	leaseDone := make(chan struct{})
+	go service.renewCommitLease(
+		operationContext, cancelOperation, claim, lease, leaseDone,
+	)
+	defer func() {
+		cancelOperation()
+		<-leaseDone
+	}()
 	fail := func(operationErr error, action string) {
 		code, _ := safeCommitFailure(operationErr)
+		cleanupContext, cancelCleanup := context.WithTimeout(
+			context.WithoutCancel(ctx), 5*time.Second,
+		)
+		defer cancelCleanup()
 		_ = service.Commits.FailCommit(
-			ctx, claim, code, service.Clock.Now().UTC(),
+			cleanupContext, claim, code, service.Clock.Now().UTC(),
 		)
 		service.record(
 			ctx, action, request.ProjectID,
@@ -406,7 +419,7 @@ func (service Service) commitTrusted(
 		)
 	}
 	resolved, err := service.Settings.Resolve(
-		ctx, settings.ScopeProject, request.ProjectID, SettingType,
+		operationContext, settings.ScopeProject, request.ProjectID, SettingType,
 	)
 	if err != nil {
 		fail(err, "repo.commit.failed")
@@ -417,7 +430,7 @@ func (service Service) commitTrusted(
 		fail(err, "repo.commit.failed")
 		return CommitResult{}, err
 	}
-	connection, err := service.Providers.Test(ctx, config)
+	connection, err := service.Providers.Resolve(operationContext, config)
 	if err != nil {
 		fail(err, "repo.commit.failed")
 		return CommitResult{}, err
@@ -425,7 +438,7 @@ func (service Service) commitTrusted(
 	prepared := claim.PreparedCommitSHA
 	if prepared == "" {
 		commit, prepareErr := service.Writer.Prepare(
-			ctx, claim, connection, request,
+			operationContext, claim, connection, request,
 		)
 		if prepareErr != nil {
 			fail(prepareErr, "repo.commit.failed")
@@ -433,7 +446,7 @@ func (service Service) commitTrusted(
 		}
 		prepared = commit.CommitSHA
 		if err := service.Commits.SavePreparedCommit(
-			ctx, claim, prepared, service.Clock.Now().UTC(),
+			operationContext, claim, prepared, service.Clock.Now().UTC(),
 		); err != nil {
 			fail(err, "repo.commit.failed")
 			return CommitResult{}, err
@@ -441,15 +454,19 @@ func (service Service) commitTrusted(
 		claim.PreparedCommitSHA = prepared
 	}
 	commit, err := service.Writer.PushPrepared(
-		ctx, claim, connection, prepared,
+		operationContext, claim, connection, prepared,
 	)
 	if err != nil {
 		fail(err, "repo.push.failed")
 		return CommitResult{}, err
 	}
 	result.CommitSHA = commit.CommitSHA
+	finalizeContext, cancelFinalize := context.WithTimeout(
+		context.WithoutCancel(ctx), 5*time.Second,
+	)
+	defer cancelFinalize()
 	if err := service.Commits.CompleteCommit(
-		ctx, claim, commit, result, service.Clock.Now().UTC(),
+		finalizeContext, claim, commit, result, service.Clock.Now().UTC(),
 	); err != nil {
 		fail(err, "repo.commit.failed")
 		return CommitResult{}, err
@@ -459,6 +476,36 @@ func (service Service) commitTrusted(
 		commit.CommitSHA, "success", "",
 	)
 	return result, nil
+}
+
+func (service Service) renewCommitLease(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	claim CommitClaim,
+	lease time.Duration,
+	done chan<- struct{},
+) {
+	defer close(done)
+	interval := lease / 3
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			expiresAt := service.Clock.Now().UTC().Add(lease)
+			if err := service.Commits.RenewCommitLease(
+				ctx, claim, expiresAt,
+			); err != nil {
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 func (service Service) validateCommitRequest(

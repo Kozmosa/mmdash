@@ -42,6 +42,7 @@ import {
   type DragEvent,
 } from "react";
 import * as Y from "yjs";
+import { toast } from "sonner";
 
 import { useCurrentProject } from "@/components/providers/project-provider";
 import { Badge } from "@/components/ui/badge";
@@ -1473,6 +1474,18 @@ export function articleActionMessage(error: Error): string {
   return `${error.message}${error.requestId ? `（请求 ${error.requestId}）` : ""}`;
 }
 
+async function waitForArticleCommit(projectId: string, operationId: string) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    const operation = await articleApi.commitOperation(projectId, operationId);
+    if (operation.status === "succeeded") return operation;
+    if (operation.status === "failed") {
+      throw new Error(operation.error_code ?? "论文 Commit 失败");
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+  }
+  throw new Error("论文 Commit 仍在后台执行，请稍后到版本历史查看");
+}
+
 export function CommitDialog({
   canBuild,
   canRelease,
@@ -1507,10 +1520,20 @@ export function CommitDialog({
         message.trim(),
       );
     },
-    onSuccess: async () => {
-      await onRefresh();
+    onSuccess: (operation) => {
       onClose();
-      onOpenHistory();
+      toast.info("论文 Commit 已进入后台队列，可以继续编辑");
+      void waitForArticleCommit(data.draft.project_id, operation.operation_id)
+        .then(async () => {
+          await onRefresh();
+          toast.success("论文 Commit 已完成并通过远端确认");
+          onOpenHistory();
+        })
+        .catch((error: unknown) => {
+          toast.error(
+            error instanceof Error ? error.message : "论文 Commit 执行失败",
+          );
+        });
     },
   });
   const publish = useMutation({
@@ -1528,10 +1551,20 @@ export function CommitDialog({
         title: title.trim(),
       });
     },
-    onSuccess: async () => {
-      await onRefresh();
+    onSuccess: (operation) => {
       onClose();
-      onOpenHistory();
+      toast.info("提交并发布已进入后台队列，可以继续编辑");
+      void waitForArticleCommit(data.draft.project_id, operation.operation_id)
+        .then(async () => {
+          await onRefresh();
+          toast.success("Commit 已通过远端确认，正式构建已进入队列");
+          onOpenHistory();
+        })
+        .catch((error: unknown) => {
+          toast.error(
+            error instanceof Error ? error.message : "提交并发布执行失败",
+          );
+        });
     },
   });
   const error = commit.error ?? publish.error;

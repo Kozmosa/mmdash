@@ -278,7 +278,8 @@ func (store PostgresStore) GetByProject(ctx context.Context, projectID string) (
 		       settings_version, webhook_id, connected_at, last_synced_at,
 		       last_error_code, last_error_message, sync_requested_at,
 		       sync_started_at, sync_locked_by, sync_lease_expires_at,
-		       sync_attempts, next_sync_at, cleanup_after, created_by,
+		       sync_attempts, next_sync_at, cleanup_after,
+		       array_to_string(sync_workspace_kinds, ','), next_reconcile_at, created_by,
 		       created_at, updated_at
 		FROM repo_repositories
 		WHERE project_id = $1
@@ -292,7 +293,8 @@ func (store PostgresStore) GetByHook(ctx context.Context, hookID string) (Reposi
 		       settings_version, webhook_id, connected_at, last_synced_at,
 		       last_error_code, last_error_message, sync_requested_at,
 		       sync_started_at, sync_locked_by, sync_lease_expires_at,
-		       sync_attempts, next_sync_at, cleanup_after, created_by,
+		       sync_attempts, next_sync_at, cleanup_after,
+		       array_to_string(sync_workspace_kinds, ','), next_reconcile_at, created_by,
 		       created_at, updated_at
 		FROM repo_repositories
 		WHERE webhook_id = $1
@@ -306,7 +308,8 @@ func (store PostgresStore) GetByID(ctx context.Context, repositoryID string) (Re
 		       settings_version, webhook_id, connected_at, last_synced_at,
 		       last_error_code, last_error_message, sync_requested_at,
 		       sync_started_at, sync_locked_by, sync_lease_expires_at,
-		       sync_attempts, next_sync_at, cleanup_after, created_by,
+		       sync_attempts, next_sync_at, cleanup_after,
+		       array_to_string(sync_workspace_kinds, ','), next_reconcile_at, created_by,
 		       created_at, updated_at
 		FROM repo_repositories
 		WHERE repository_id = $1
@@ -423,6 +426,7 @@ func (store PostgresStore) RequestSyncSource(
 		UPDATE repo_repositories
 		SET sync_requested_at = $2,
 		    sync_source = $3,
+		    sync_workspace_kinds = ARRAY['code','article','result']::TEXT[],
 		    next_sync_at = LEAST(COALESCE(next_sync_at, $2), $2),
 		    updated_at = $2
 		WHERE project_id = $1 AND status <> 'disconnected'
@@ -431,6 +435,81 @@ func (store PostgresStore) RequestSyncSource(
 		return Repository{}, err
 	}
 	return store.GetByProject(ctx, projectID)
+}
+
+func (store PostgresStore) RequestWorkspaceSyncSource(
+	ctx context.Context,
+	projectID string,
+	workspace WorkspaceKind,
+	now time.Time,
+	source string,
+) (Repository, error) {
+	if !validSyncSource(source) || !validWorkspaceKind(workspace) {
+		return Repository{}, ErrInvalid
+	}
+	result, err := store.DB.ExecContext(ctx, `
+		UPDATE repo_repositories
+		SET sync_workspace_kinds = CASE
+		      WHEN sync_requested_at IS NULL THEN ARRAY[$3]::TEXT[]
+		      ELSE ARRAY(
+		        SELECT DISTINCT value
+		        FROM unnest(sync_workspace_kinds || ARRAY[$3]::TEXT[]) AS value
+		        ORDER BY value
+		      )
+		    END,
+		    sync_requested_at = $2,
+		    sync_source = $4,
+		    next_sync_at = LEAST(COALESCE(next_sync_at, $2), $2),
+		    updated_at = $2
+		WHERE project_id = $1 AND status <> 'disconnected'
+	`, projectID, now.UTC(), workspace, source)
+	if err := requireAffected(result, err); err != nil {
+		return Repository{}, err
+	}
+	return store.GetByProject(ctx, projectID)
+}
+
+// RequestPeriodicSyncs is the webhook-loss safety net. It queues every remote
+// provider on its own reconciliation clock; a busy workspace must not mask a
+// lost webhook on another workspace. Managed repositories are authoritative
+// locally and never need remote reconciliation.
+func (store PostgresStore) RequestPeriodicSyncs(
+	ctx context.Context,
+	now time.Time,
+	interval time.Duration,
+	limit int,
+) (int, error) {
+	if interval <= 0 || limit < 1 {
+		return 0, ErrInvalid
+	}
+	now = now.UTC()
+	result, err := store.DB.ExecContext(ctx, `
+		WITH candidates AS (
+			SELECT repository_id
+			FROM repo_repositories
+			WHERE provider IN ('github', 'server_existing')
+			  AND status <> 'disconnected'
+			  AND sync_requested_at IS NULL
+			  AND (next_reconcile_at IS NULL OR next_reconcile_at <= $1)
+			ORDER BY next_reconcile_at NULLS FIRST, repository_id
+			FOR UPDATE SKIP LOCKED
+			LIMIT $3
+		)
+		UPDATE repo_repositories AS repository
+		SET sync_requested_at = $1,
+		    sync_source = 'poll',
+		    sync_workspace_kinds = ARRAY['code','article','result']::TEXT[],
+		    next_sync_at = $1,
+		    next_reconcile_at = $2,
+		    updated_at = $1
+		FROM candidates
+		WHERE repository.repository_id = candidates.repository_id
+	`, now, now.Add(interval), limit)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	return int(affected), err
 }
 
 func (store PostgresStore) UpdateMappings(
@@ -635,15 +714,17 @@ func (store PostgresStore) ClaimSync(
 	now = now.UTC()
 	expiresAt := now.Add(lease)
 	type claimed struct {
-		projectID string
-		requested time.Time
-		source    string
+		projectID  string
+		requested  time.Time
+		source     string
+		workspaces string
 	}
 	claimedRows := []claimed{}
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		rows, err := tx.QueryContext(ctx, `
 			WITH candidates AS (
-				SELECT repository_id, sync_requested_at, sync_source
+				SELECT repository_id, sync_requested_at, sync_source,
+				       sync_workspace_kinds
 				FROM repo_repositories
 				WHERE sync_requested_at IS NOT NULL
 				  AND status <> 'disconnected'
@@ -669,7 +750,8 @@ func (store PostgresStore) ClaimSync(
 			FROM candidates
 			WHERE repository.repository_id = candidates.repository_id
 			RETURNING repository.project_id, candidates.sync_requested_at,
-			          candidates.sync_source
+			          candidates.sync_source,
+			          array_to_string(candidates.sync_workspace_kinds, ',')
 		`, now, owner, expiresAt, limit)
 		if err != nil {
 			return err
@@ -677,7 +759,9 @@ func (store PostgresStore) ClaimSync(
 		defer rows.Close()
 		for rows.Next() {
 			var item claimed
-			if err := rows.Scan(&item.projectID, &item.requested, &item.source); err != nil {
+			if err := rows.Scan(
+				&item.projectID, &item.requested, &item.source, &item.workspaces,
+			); err != nil {
 				return err
 			}
 			claimedRows = append(claimedRows, item)
@@ -693,8 +777,13 @@ func (store PostgresStore) ClaimSync(
 		if err != nil {
 			return nil, err
 		}
+		workspaces, err := parseWorkspaceKinds(item.workspaces)
+		if err != nil {
+			return nil, err
+		}
 		claims = append(claims, SyncClaim{
 			Repository: repository, Requested: item.requested, Source: item.source,
+			Workspaces: workspaces,
 		})
 	}
 	return claims, nil
@@ -730,8 +819,7 @@ func (store PostgresStore) CompleteSync(
 	now time.Time,
 ) error {
 	if owner == "" || claim.Repository.ID == "" ||
-		!validSyncSource(claim.Source) ||
-		len(syncResult.Workspaces) != 3 {
+		!validSyncSource(claim.Source) {
 		return ErrInvalid
 	}
 	now = now.UTC()
@@ -747,24 +835,9 @@ func (store PostgresStore) CompleteSync(
 			}
 		}
 	}
-	workspaceResults := map[WorkspaceKind]SyncedWorkspace{}
-	for _, workspace := range syncResult.Workspaces {
-		if workspace.Status != WorkspaceReady ||
-			gitcli.ValidateFullSHA(workspace.HeadCommitSHA) != nil ||
-			gitcli.ValidateFullSHA(workspace.TreeSHA) != nil {
-			return ErrInvalid
-		}
-		if _, exists := workspaceResults[workspace.Workspace]; exists {
-			return ErrInvalid
-		}
-		workspaceResults[workspace.Workspace] = workspace
-	}
-	for _, kind := range []WorkspaceKind{
-		WorkspaceCode, WorkspaceArticle, WorkspaceResult,
-	} {
-		if _, exists := workspaceResults[kind]; !exists {
-			return ErrInvalid
-		}
+	workspaceResults, expectedKinds, err := validateSyncWorkspaces(claim, syncResult)
+	if err != nil {
+		return err
 	}
 
 	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
@@ -849,9 +922,7 @@ func (store PostgresStore) CompleteSync(
 			}
 		}
 
-		for _, kind := range []WorkspaceKind{
-			WorkspaceCode, WorkspaceArticle, WorkspaceResult,
-		} {
+		for _, kind := range expectedKinds {
 			current := workspaceResults[kind]
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE repo_workspaces
@@ -865,10 +936,11 @@ func (store PostgresStore) CompleteSync(
 		}
 
 		if !connectedAt.Valid {
+			if len(workspaceResults) != 3 {
+				return ErrInvalid
+			}
 			workspaces := make([]interface{}, 0, 3)
-			for _, kind := range []WorkspaceKind{
-				WorkspaceCode, WorkspaceArticle, WorkspaceResult,
-			} {
+			for _, kind := range expectedKinds {
 				current := workspaceResults[kind]
 				workspaces = append(workspaces, map[string]interface{}{
 					"workspace":  string(kind),
@@ -888,9 +960,7 @@ func (store PostgresStore) CompleteSync(
 				return err
 			}
 		} else {
-			for _, kind := range []WorkspaceKind{
-				WorkspaceCode, WorkspaceArticle, WorkspaceResult,
-			} {
+			for _, kind := range expectedKinds {
 				current := workspaceResults[kind]
 				before := previous[kind]
 				if before.head.Valid && before.head.String == current.HeadCommitSHA {
@@ -952,6 +1022,11 @@ func (store PostgresStore) CompleteSync(
 			      WHEN sync_requested_at <= $3 THEN NULL
 			      ELSE sync_requested_at
 			    END,
+			    sync_workspace_kinds = CASE
+			      WHEN sync_requested_at <= $3
+			        THEN ARRAY['code','article','result']::TEXT[]
+			      ELSE sync_workspace_kinds
+			    END,
 			    sync_started_at = NULL,
 			    sync_locked_by = NULL,
 			    sync_lease_expires_at = NULL,
@@ -975,6 +1050,48 @@ func (store PostgresStore) CompleteSync(
 		}
 		return nil
 	})
+}
+
+func validateSyncWorkspaces(
+	claim SyncClaim,
+	syncResult SyncResult,
+) (map[WorkspaceKind]SyncedWorkspace, []WorkspaceKind, error) {
+	if len(syncResult.Workspaces) < 1 || len(syncResult.Workspaces) > 3 {
+		return nil, nil, ErrInvalid
+	}
+	workspaceResults := map[WorkspaceKind]SyncedWorkspace{}
+	for _, workspace := range syncResult.Workspaces {
+		if !validWorkspaceKind(workspace.Workspace) ||
+			workspace.Status != WorkspaceReady ||
+			gitcli.ValidateFullSHA(workspace.HeadCommitSHA) != nil ||
+			gitcli.ValidateFullSHA(workspace.TreeSHA) != nil {
+			return nil, nil, ErrInvalid
+		}
+		if _, exists := workspaceResults[workspace.Workspace]; exists {
+			return nil, nil, ErrInvalid
+		}
+		workspaceResults[workspace.Workspace] = workspace
+	}
+	expectedKinds := claim.Workspaces
+	if syncResult.Initial || len(expectedKinds) == 0 {
+		expectedKinds = []WorkspaceKind{
+			WorkspaceCode, WorkspaceArticle, WorkspaceResult,
+		}
+	}
+	seen := map[WorkspaceKind]bool{}
+	for _, kind := range expectedKinds {
+		if !validWorkspaceKind(kind) || seen[kind] {
+			return nil, nil, ErrInvalid
+		}
+		seen[kind] = true
+		if _, exists := workspaceResults[kind]; !exists {
+			return nil, nil, ErrInvalid
+		}
+	}
+	if len(workspaceResults) != len(expectedKinds) {
+		return nil, nil, ErrInvalid
+	}
+	return workspaceResults, expectedKinds, nil
 }
 
 // FailSync stores a bounded failure and releases the current lease for retry.
@@ -1026,6 +1143,7 @@ type scanFunction func(...interface{}) error
 
 func scanRepository(scan scanFunction) (Repository, error) {
 	var repository Repository
+	var syncWorkspaces string
 	err := scan(
 		&repository.ID,
 		&repository.ProjectID,
@@ -1048,10 +1166,15 @@ func scanRepository(scan scanFunction) (Repository, error) {
 		&repository.SyncAttempts,
 		&repository.NextSyncAt,
 		&repository.CleanupAfter,
+		&syncWorkspaces,
+		&repository.NextReconcileAt,
 		&repository.CreatedBy,
 		&repository.CreatedAt,
 		&repository.UpdatedAt,
 	)
+	if err == nil {
+		repository.SyncWorkspaces, err = parseWorkspaceKinds(syncWorkspaces)
+	}
 	return repository, err
 }
 
@@ -1085,6 +1208,29 @@ func validateMappings(mappings WorkspaceMappings) error {
 
 func validSyncSource(source string) bool {
 	return source == "manual" || source == "webhook" || source == "poll"
+}
+
+func validWorkspaceKind(workspace WorkspaceKind) bool {
+	return workspace == WorkspaceCode || workspace == WorkspaceArticle ||
+		workspace == WorkspaceResult
+}
+
+func parseWorkspaceKinds(value string) ([]WorkspaceKind, error) {
+	parts := strings.Split(value, ",")
+	result := make([]WorkspaceKind, 0, len(parts))
+	seen := map[WorkspaceKind]bool{}
+	for _, part := range parts {
+		workspace := WorkspaceKind(part)
+		if !validWorkspaceKind(workspace) || seen[workspace] {
+			return nil, ErrInvalid
+		}
+		seen[workspace] = true
+		result = append(result, workspace)
+	}
+	if len(result) == 0 {
+		return nil, ErrInvalid
+	}
+	return result, nil
 }
 
 func postgresSHAArray(values []string) string {

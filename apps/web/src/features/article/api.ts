@@ -6,11 +6,10 @@ import type {
   ArticleBlock,
   ArticleBuild,
   ArticleChapterTag,
-  ArticleCommit,
+  ArticleCommitOperation,
   ArticleDraft,
   ArticleReference,
   ArticleRelease,
-  ArticlePublication,
   ArticleTemplate,
   ArticleTemplateManifest,
   ZoteroBinding,
@@ -32,10 +31,22 @@ export const articleApi = {
     });
   },
   createCommit(projectId: string, draftRevision: number, message: string) {
-    return apiClient.request<ArticleCommit>(`${base(projectId)}/commits`, {
-      body: { draft_revision: draftRevision, message },
-      method: "POST",
-    });
+    return apiClient.request<ArticleCommitOperation>(
+      `${base(projectId)}/commit-operations`,
+      {
+        body: {
+          draft_revision: draftRevision,
+          idempotency_key: crypto.randomUUID(),
+          message,
+        },
+        method: "POST",
+      },
+    );
+  },
+  commitOperation(projectId: string, operationId: string) {
+    return apiClient.request<ArticleCommitOperation>(
+      `${base(projectId)}/commit-operations/${encodeURIComponent(operationId)}`,
+    );
   },
   reviewBlock(projectId: string, blockId: string) {
     return apiClient.request<ArticleBlock>(
@@ -123,8 +134,8 @@ export const articleApi = {
       title: string;
     },
   ) {
-    return apiClient.request<ArticlePublication>(
-      `${base(projectId)}/publications`,
+    return apiClient.request<ArticleCommitOperation>(
+      `${base(projectId)}/publication-operations`,
       {
         body: input,
         method: "POST",

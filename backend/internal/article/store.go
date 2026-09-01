@@ -3,6 +3,7 @@ package article
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
@@ -26,6 +27,13 @@ type Store interface {
 	ListReferences(context.Context, string) ([]Reference, error)
 	DeleteReference(context.Context, string, string, string) error
 	CreateCommit(context.Context, Commit) (Commit, bool, error)
+	CreateCommitOperation(context.Context, CommitOperation) (CommitOperation, bool, error)
+	ClaimCommitOperations(context.Context, string, time.Time, time.Duration, int) ([]CommitOperation, error)
+	BindCommitOperation(context.Context, CommitOperation, Commit, time.Time) (Commit, error)
+	CompleteCommitOperation(context.Context, CommitOperation, time.Time) error
+	FailCommitOperation(context.Context, CommitOperation, string, bool, time.Time, time.Time) error
+	GetCommitOperation(context.Context, string, string) (CommitOperation, error)
+	RenewCommitOperationLease(context.Context, string, string, time.Time) error
 	GetCommit(context.Context, string, string) (Commit, error)
 	ListCommits(context.Context, string) ([]Commit, error)
 	CreateTemplate(context.Context, Template) (Template, bool, error)

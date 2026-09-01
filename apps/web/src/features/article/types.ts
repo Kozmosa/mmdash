@@ -66,6 +66,25 @@ export type ArticleCommit = {
   created_at: string;
 };
 
+export type ArticleCommitOperation = {
+  operation_id: string;
+  commit_id: string;
+  project_id: string;
+  operation_kind: "commit" | "publication";
+  publication_id?: string;
+  draft_revision: number;
+  status: "queued" | "running" | "retry_wait" | "succeeded" | "failed";
+  stage: "queued" | "committing" | "publishing" | "completed" | "failed";
+  commit_sha?: string;
+  error_code?: string;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string;
+  created_at: string;
+  updated_at: string;
+  finished_at?: string;
+};
+
 export type ArticleBuildOutput = {
   role:
     "pdf" | "tex_source" | "source_zip" | "build_report" | "log" | "synctex";

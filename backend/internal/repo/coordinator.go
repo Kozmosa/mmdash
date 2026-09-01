@@ -17,34 +17,42 @@ type SyncStore interface {
 	CompleteSync(context.Context, string, SyncClaim, SyncResult, time.Time) error
 	FailSync(context.Context, string, string, string, string, time.Time, time.Time) error
 	RenewSyncLease(context.Context, string, string, time.Time) error
+	RequestPeriodicSyncs(context.Context, time.Time, time.Duration, int) (int, error)
 }
 
 // Synchronizer performs Git I/O outside the database transaction.
 type Synchronizer interface {
-	Synchronize(context.Context, Repository, provider.Connection, string) (SyncResult, error)
+	Synchronize(
+		context.Context, Repository, provider.Connection, []WorkspaceKind, string,
+	) (SyncResult, error)
 }
 
 // Coordinator owns bounded, leased synchronization inside Core.
 type Coordinator struct {
-	BatchSize  int
-	Clock      interface{ Now() time.Time }
-	Lease      time.Duration
-	Metrics    MetricSink
-	OnError    func(error)
-	Owner      string
-	Poll       time.Duration
-	Providers  *provider.Registry
-	Runtime    Synchronizer
-	Settings   SettingsResolver
-	Store      SyncStore
-	RetryBase  time.Duration
-	RetryLimit time.Duration
+	BatchSize          int
+	Clock              interface{ Now() time.Time }
+	Lease              time.Duration
+	Metrics            MetricSink
+	OnError            func(error)
+	Owner              string
+	Poll               time.Duration
+	Providers          *provider.Registry
+	Runtime            Synchronizer
+	Settings           SettingsResolver
+	Store              SyncStore
+	RetryBase          time.Duration
+	RetryLimit         time.Duration
+	ReconcileInterval  time.Duration
+	ReconcileBatchSize int
 }
 
 type projectSyncStore interface {
 	SyncStore
 	GetByProject(context.Context, string) (Repository, error)
 	RequestSyncSource(context.Context, string, time.Time, string) (Repository, error)
+	RequestWorkspaceSyncSource(
+		context.Context, string, WorkspaceKind, time.Time, string,
+	) (Repository, error)
 }
 
 // SyncProject requests and waits for one authoritative remote fetch. The same
@@ -62,6 +70,36 @@ func (coordinator Coordinator) SyncProject(
 	if _, err := store.RequestSyncSource(ctx, projectID, requestedAt, "manual"); err != nil {
 		return Repository{}, err
 	}
+	return coordinator.waitForProjectSync(ctx, store, projectID, requestedAt)
+}
+
+// SyncProjectWorkspace requests and waits for exactly one logical branch. It
+// is used by domain modules that already know which workspace owns the data.
+func (coordinator Coordinator) SyncProjectWorkspace(
+	ctx context.Context,
+	projectID string,
+	workspace WorkspaceKind,
+) (Repository, error) {
+	store, ok := coordinator.Store.(projectSyncStore)
+	if !ok || coordinator.Clock == nil || projectID == "" ||
+		!validWorkspaceKind(workspace) {
+		return Repository{}, ErrInvalid
+	}
+	requestedAt := coordinator.Clock.Now().UTC()
+	if _, err := store.RequestWorkspaceSyncSource(
+		ctx, projectID, workspace, requestedAt, "manual",
+	); err != nil {
+		return Repository{}, err
+	}
+	return coordinator.waitForProjectSync(ctx, store, projectID, requestedAt)
+}
+
+func (coordinator Coordinator) waitForProjectSync(
+	ctx context.Context,
+	store projectSyncStore,
+	projectID string,
+	requestedAt time.Time,
+) (Repository, error) {
 	for {
 		// It is safe if the background loop wins the claim; the durable state
 		// check below observes either coordinator's completion.
@@ -102,6 +140,20 @@ func (coordinator Coordinator) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+			reconcileInterval := coordinator.ReconcileInterval
+			if reconcileInterval <= 0 {
+				reconcileInterval = 15 * time.Minute
+			}
+			reconcileBatchSize := coordinator.ReconcileBatchSize
+			if reconcileBatchSize < 1 {
+				reconcileBatchSize = 50
+			}
+			if _, err := coordinator.Store.RequestPeriodicSyncs(
+				ctx, coordinator.Clock.Now().UTC(), reconcileInterval,
+				reconcileBatchSize,
+			); err != nil {
+				coordinator.report(err)
+			}
 			if err := coordinator.RunOnce(ctx); err != nil {
 				coordinator.report(err)
 			}
@@ -179,7 +231,7 @@ func (coordinator Coordinator) process(ctx context.Context, claim SyncClaim) err
 		config, err = providerConfig(resolved)
 		if err == nil {
 			var connection provider.Connection
-			connection, err = coordinator.Providers.Test(syncContext, config)
+			connection, err = coordinator.Providers.Resolve(syncContext, config)
 			if err == nil {
 				source := claim.Source
 				if !validSyncSource(source) {
@@ -188,7 +240,8 @@ func (coordinator Coordinator) process(ctx context.Context, claim SyncClaim) err
 				}
 				var result SyncResult
 				result, err = coordinator.Runtime.Synchronize(
-					syncContext, claim.Repository, connection, source,
+					syncContext, claim.Repository, connection,
+					claim.Workspaces, source,
 				)
 				if err == nil {
 					result.Source = source

@@ -85,7 +85,8 @@ func TestServiceAcceptsSignedMappedWebhookAndDeduplicates(t *testing.T) {
 	delivery := store.deliveries[0]
 	if !delivery.RequestSync || delivery.Status != "accepted" ||
 		delivery.Ref == nil || *delivery.Ref != "refs/heads/main" ||
-		delivery.BeforeSHA == nil || delivery.AfterSHA == nil {
+		delivery.BeforeSHA == nil || delivery.AfterSHA == nil ||
+		delivery.Workspace == nil || *delivery.Workspace != WorkspaceCode {
 		t.Fatalf("mapped push metadata is incomplete: %#v", delivery)
 	}
 	replayed, err := service.AcceptGitHubWebhook(

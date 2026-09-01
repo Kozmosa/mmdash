@@ -26,6 +26,13 @@ webhook delivery ledger for an older database that recorded the Repo baseline
 without retaining that relation. It preserves repositories, Git data, and any
 existing webhook delivery history.
 
+Migration `000052_repo_resilient_sync` records the exact logical workspaces
+coalesced into each sync request and the next periodic reconciliation time.
+Migration `000053_article_commit_operations` stores frozen Article commit
+inputs in a leased queue; it is Article-owned because Result inputs may be
+multi-gigabyte staged files, while both executors still use Repo's common
+workspace commit state machine.
+
 Apply it with the normal migrator:
 
 ```bash
@@ -58,8 +65,11 @@ approved.
 | `REPO_MAX_CONCURRENT_GIT`  | `4`                     | Process Git concurrency                                 |
 | `REPO_COMMAND_TIMEOUT`     | `2m`                    | Ordinary command timeout                                |
 | `REPO_CLONE_TIMEOUT`       | `15m`                   | Clone/fetch timeout                                     |
+| `REPO_WRITE_TIMEOUT`       | `45s`                   | One write-path fetch, push, or confirmation timeout     |
 | `REPO_SYNC_POLL_INTERVAL`  | `2s`                    | Idle sync coordinator delay                             |
 | `REPO_SYNC_LEASE`          | `20m`                   | Recoverable sync lease                                  |
+| `REPO_COMMIT_LEASE`        | `90s`                   | Renewable write/commit-operation lease                  |
+| `REPO_RECONCILE_INTERVAL`  | `15m`                   | Remote reconciliation safety-net interval               |
 | `REPO_CHECKOUT_TTL`        | `1h`                    | Default detached checkout lease                         |
 | `REPO_MAX_TEXT_BYTES`      | `1048576`               | Read/write text ceiling                                 |
 | `REPO_DISCONNECT_GRACE`    | `24h`                   | Delayed managed cleanup                                 |
@@ -91,6 +101,47 @@ Every Git subprocess receives the stable internal maintenance identity
 `mmdash <repo@mmdash.local>` so ref and reflog updates never depend on host
 name resolution. Authenticated workspace commits override both author and
 committer with the requesting user's validated identity.
+
+## Branch-scoped synchronization and writes
+
+Callers select a logical workspace (`code`, `article`, or `result`); they never
+pass an arbitrary refspec. Repo resolves the configured remote branch and
+fetches only:
+
+```text
++refs/heads/<mapped-branch>:refs/remotes/origin/<mapped-branch>
+```
+
+The GitHub API and `git ls-remote --heads` are used when a connection or branch
+mapping is explicitly tested, not before every runtime sync or commit. Runtime
+operations normalize the already-tested setting and go directly to the scoped
+refspec.
+
+Article commits therefore do not fetch code or result, Result verification
+fetches only result, and a mapped GitHub push queues only the workspace for the
+changed branch. Manual synchronization and periodic reconciliation intentionally
+queue all three mapped workspaces. Initial connection also fetches all three so
+the repository cannot become ready with a partial mapping.
+
+Every write is idempotent by `(repository, workspace, idempotency key)`. A
+short renewable lease makes a crashed writer reclaimable. After every push,
+including a push that returned success, Repo fetches only the target branch and
+compares its remote head with the prepared commit SHA. A timeout followed by a
+matching SHA is success; a different new SHA is a branch conflict; an
+unobservable result remains retryable instead of being reported as committed.
+
+GitHub Webhooks must use `Content-Type: application/json` (not
+`application/x-www-form-urlencoded`), the `push` event, and the generated
+webhook secret. The signed raw JSON body is deduplicated by
+`X-GitHub-Delivery`. Webhooks are the low-latency signal; reconciliation polls
+GitHub and server-existing providers every `REPO_RECONCILE_INTERVAL` so a lost
+or delayed delivery cannot leave durable heads stale forever.
+
+The browser-facing Article commit endpoint freezes the exact draft and returns
+a durable Commit Operation with HTTP 202 before Git network I/O. Result
+processing is already an asynchronous Experiment job and keeps large inputs in
+its bounded staging area; it calls the same Repo result-workspace commit path
+and only binds success after Repo confirms the remote SHA.
 
 ## Readiness, logs, and metrics
 
