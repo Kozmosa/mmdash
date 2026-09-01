@@ -148,6 +148,8 @@ services:
       REPO_MAX_TEXT_BYTES: ${REPO_MAX_TEXT_BYTES:-1048576}
       REPO_DISCONNECT_GRACE: ${REPO_DISCONNECT_GRACE:-24h}
       REPO_ASKPASS_PATH: /usr/local/bin/mmdash-git-askpass
+      REPO_GITHUB_PROXY_URL: ${REPO_GITHUB_PROXY_URL:?set REPO_GITHUB_PROXY_URL}
+      REPO_GITHUB_NO_PROXY: ${REPO_GITHUB_NO_PROXY:-localhost,127.0.0.1,::1}
       MMDASH_BOX_RELEASE_PROJECT_ID: ${MMDASH_BOX_RELEASE_PROJECT_ID:-00000000-0000-4000-8000-000000000900}
       AGENT_MCP_GATEWAY_URL: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}/mcp
       AGENT_RUNTIME_ALLOW_LOOPBACK: "false"
@@ -385,6 +387,14 @@ networks:
   data:
     internal: true
   egress:
+    name: mmdash-prod-egress
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: mmdash-egress
+    ipam:
+      config:
+        - subnet: ${MMDASH_EGRESS_SUBNET:-172.31.240.0/24}
+          gateway: ${MMDASH_EGRESS_GATEWAY:-172.31.240.1}
   tunnel-egress:
 
 volumes:

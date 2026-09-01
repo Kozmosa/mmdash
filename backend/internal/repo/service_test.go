@@ -158,7 +158,7 @@ func (store *serviceStore) Disconnect(
 }
 
 func (*serviceStore) FailSync(
-	context.Context, string, string, string, string, time.Time, time.Time,
+	context.Context, string, SyncClaim, SyncFailure, time.Time, time.Time,
 ) error {
 	return nil
 }

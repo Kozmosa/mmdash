@@ -45,6 +45,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/progress"
 	"github.com/mmdash/mmdash/backend/internal/project"
 	"github.com/mmdash/mmdash/backend/internal/repo"
+	"github.com/mmdash/mmdash/backend/internal/repo/egress"
 	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
 	"github.com/mmdash/mmdash/backend/internal/repo/provider"
 	"github.com/mmdash/mmdash/backend/internal/settings"
@@ -430,6 +431,13 @@ func run(logger *logging.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initialize Repo storage: %w", err)
 	}
+	repoEgress, err := egress.Parse(
+		processConfig.Repo.GitHubProxyURL,
+		processConfig.Repo.GitHubNoProxy,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Repo GitHub egress: %w", err)
+	}
 	gitOutputBytes := int(processConfig.Repo.MaxTextBytes)
 	if gitOutputBytes < 16*1024*1024 {
 		gitOutputBytes = 16 * 1024 * 1024
@@ -449,6 +457,7 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := repoProviders.Register("github", provider.GitHub{
+		Client: repoEgress.HTTPClient(), Egress: repoEgress,
 		Git: gitClient, RuntimeRoot: repoStorage.Root(),
 		UserAgent: "mmdash-core/" + processConfig.Version,
 	}); err != nil {
@@ -613,6 +622,18 @@ func run(logger *logging.Logger) error {
 		Lease:     processConfig.Repo.SyncLease,
 		Metrics:   metricRegistry,
 		OnError: func(syncErr error) {
+			var failure *repo.SyncFailureError
+			if errors.As(syncErr, &failure) {
+				logger.Error("repo.sync.failed", map[string]interface{}{
+					"duration_ms":   failure.Duration.Milliseconds(),
+					"error_code":    failure.Code,
+					"operation":     "sync",
+					"provider":      string(failure.Provider),
+					"repository_id": failure.RepositoryID,
+					"retryable":     failure.Retryable,
+				})
+				return
+			}
 			logger.Error("repo.sync.failed", map[string]interface{}{
 				"error": syncErr.Error(),
 			})
