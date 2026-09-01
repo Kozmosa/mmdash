@@ -10,7 +10,7 @@ Article 是 Stage 9 的 Core 领域模块，拥有协作草稿、块、Patch/Tag
 4. 保存同步后检查“章节与块 tags”：新块标为 draft，已存在且内容改变的块自动标为 revision；人工点击“审阅”会写入审阅人/时间并产生 `article.block.reviewed` 审计与 Outbox 事件。章节状态独立持久化；未改动的 reviewed 块在后续 flush 中保留，重新编辑则回到 revision。
 5. `Commit…` 先强制刷新 Yjs 房间，再把该 revision 的 Yjs/Markdown/引用快照写入可恢复的 Commit Operation，并立即返回 HTTP 202；Core 使用短 lease 在后台调用 Repo 的 `ArticleWorkspaceService`，只 fetch/push/确认 article 分支并写入唯一三个可编辑文件。浏览器轮询 Operation，网络抖动或页面断开不会取消后台提交。“提交并发布”同样先返回 durable Publication Operation，再在后台按 Commit → formal Build → Release 执行，不会在 HTTP 请求内等待 Git；Build 失败保留 Commit，可从版本历史重试同一固定 Commit。草稿预览与正式 Build 都显示由 Worker 回报的真实阶段进度（准备模板、整理资源、生成 TeX、编译 PDF、打包源码、归档产物），而不是用前端模拟百分比。
 6. Zotero 凭据在 Project Settings 的 Article · Zotero 区配置。公开字段与加密 API key 均由 Settings Registry 管理，读取时只返回脱敏占位；写作页仅执行只读搜索并固定条目版本。
-7. 成功 Release 固定关联正式 Build 的不可变输出。Release 详情可预览 PDF，并下载完整的 TeX 源码 ZIP；源码包包含入口 TeX、参考文献、模板内容、资源文件和构建清单，可用于离线复现。
+7. 版本历史的 Release 页先选择已有 Commit，再选择该 Commit 的一次成功正式 Build；没有成功 Build 时会禁用发布并引导回 Commits 页创建构建。成功 Release 固定关联正式 Build 的不可变输出。Release 详情可预览 PDF，并下载完整的 TeX 源码 ZIP；源码包包含入口 TeX、参考文献、模板内容、资源文件和构建清单，可用于离线复现。
 
 手测 Issue #41 时至少验证：同一块拖动排序后 ID 不变；重复拖入同一 Artifact Version 只产生一个引用；数学公式可视化且 Markdown 投影使用 `$`/`$$`；表格、代码与 `/` 菜单可用；reviewed 块编辑后变为 revision；未配置 Repo 和缺少模板均有可执行引导；Zotero key 从不回显明文。
 

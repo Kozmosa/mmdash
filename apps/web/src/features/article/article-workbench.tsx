@@ -1720,6 +1720,7 @@ function VersionHistoryWorkspace(
         <ReleaseWorkspace
           canRelease={props.canRelease}
           data={props.data}
+          onOpenCommits={() => setTab("commits")}
           onRefresh={props.onRefresh}
           projectId={props.projectId}
         />
@@ -1928,24 +1929,37 @@ function BuildCard({
   );
 }
 
-function ReleaseWorkspace({
+export function ReleaseWorkspace({
   canRelease,
   data,
+  onOpenCommits,
   onRefresh,
   projectId,
 }: Readonly<{
   canRelease: boolean;
   data: ArticleAggregate;
+  onOpenCommits: () => void;
   onRefresh: () => Promise<void>;
   projectId: string;
 }>) {
-  const eligible = data.builds.filter(
-    (build) =>
-      build.build_kind === "formal" &&
-      build.status === "succeeded" &&
-      build.commit_id,
+  const eligible = useMemo(
+    () =>
+      data.builds.filter(
+        (build) =>
+          build.build_kind === "formal" &&
+          build.status === "succeeded" &&
+          build.commit_id,
+      ),
+    [data.builds],
   );
-  const [buildId, setBuildId] = useState(eligible[0]?.build_id ?? "");
+  const [commitId, setCommitId] = useState(
+    eligible[0]?.commit_id ?? data.commits[0]?.commit_id ?? "",
+  );
+  const eligibleBuilds = useMemo(
+    () => eligible.filter((build) => build.commit_id === commitId),
+    [commitId, eligible],
+  );
+  const [buildId, setBuildId] = useState(eligibleBuilds[0]?.build_id ?? "");
   const [tag, setTag] = useState(`v0.1.${data.releases.length + 1}`);
   const [title, setTitle] = useState("论文版本");
   const [notes, setNotes] = useState("");
@@ -1953,13 +1967,24 @@ function ReleaseWorkspace({
   const selected =
     data.releases.find((release) => release.release_id === selectedId) ??
     data.releases[0];
+  useEffect(() => {
+    if (data.commits.some((commit) => commit.commit_id === commitId)) return;
+    setCommitId(eligible[0]?.commit_id ?? data.commits[0]?.commit_id ?? "");
+  }, [commitId, data.commits, eligible]);
+  useEffect(() => {
+    if (eligibleBuilds.some((build) => build.build_id === buildId)) return;
+    setBuildId(eligibleBuilds[0]?.build_id ?? "");
+  }, [buildId, eligibleBuilds]);
   const release = useMutation({
     mutationFn: () => {
-      const build = eligible.find((item) => item.build_id === buildId);
-      if (!build?.commit_id) throw new Error("请选择成功的正式构建");
+      const build = eligibleBuilds.find((item) => item.build_id === buildId);
+      if (!commitId) throw new Error("请选择已有 Commit");
+      if (!build || build.commit_id !== commitId) {
+        throw new Error("请选择该 Commit 的成功正式构建");
+      }
       return articleApi.createRelease(projectId, {
         build_id: buildId,
-        commit_id: build.commit_id,
+        commit_id: commitId,
         notes,
         tag: tag.trim(),
         title: title.trim(),
@@ -1978,18 +2003,58 @@ function ReleaseWorkspace({
             <CardTitle>创建不可变 Release</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <select
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              value={buildId}
-              onChange={(event) => setBuildId(event.target.value)}
-            >
-              {eligible.map((build) => (
-                <option key={build.build_id} value={build.build_id}>
-                  {build.commit_sha?.slice(0, 12)} ·{" "}
-                  {build.build_id.slice(0, 8)}
-                </option>
-              ))}
-            </select>
+            <label className="block text-xs text-muted-foreground">
+              Release Commit
+              <select
+                aria-label="Release Commit"
+                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={commitId}
+                onChange={(event) => {
+                  const nextCommitId = event.target.value;
+                  setCommitId(nextCommitId);
+                  setBuildId(
+                    eligible.find((build) => build.commit_id === nextCommitId)
+                      ?.build_id ?? "",
+                  );
+                }}
+              >
+                {!data.commits.length ? (
+                  <option value="">尚无 Commit</option>
+                ) : null}
+                {data.commits.map((commit) => (
+                  <option key={commit.commit_id} value={commit.commit_id}>
+                    {commit.commit_sha.slice(0, 12)} · {commit.message}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              成功的正式 Build
+              <select
+                aria-label="Release Build"
+                className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={buildId}
+                onChange={(event) => setBuildId(event.target.value)}
+              >
+                {!eligibleBuilds.length ? (
+                  <option value="">该 Commit 暂无成功正式构建</option>
+                ) : null}
+                {eligibleBuilds.map((build) => (
+                  <option key={build.build_id} value={build.build_id}>
+                    {build.commit_sha?.slice(0, 12)} ·{" "}
+                    {build.build_id.slice(0, 8)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {commitId && !eligibleBuilds.length ? (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                <span>请先为此 Commit 创建并完成一次正式 Build。</span>
+                <Button onClick={onOpenCommits} size="sm" variant="outline">
+                  前往 Commits
+                </Button>
+              </div>
+            ) : null}
             <Input
               aria-label="Release tag"
               value={tag}
@@ -2010,6 +2075,7 @@ function ReleaseWorkspace({
               className="w-full"
               disabled={
                 !canRelease ||
+                !commitId ||
                 !buildId ||
                 !tag.trim() ||
                 !title.trim() ||
