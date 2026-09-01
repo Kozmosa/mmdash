@@ -23,11 +23,12 @@ Internet
 
 Core is deliberately not a Caddy upstream. The `edge`, `app`, and `data`
 networks are internal. Only `cloudflared` has the dedicated `tunnel-egress`
-network, and only Core has the separate, fixed `mmdash-prod-egress` bridge for
-approved external integrations. GitHub API and Git HTTPS traffic goes from Core
-to the host-owned `mmdash-mihomo` listener on that bridge gateway. Internal
-PostgreSQL, MinIO, Web BFF, and MCP traffic remains on Docker internal networks;
-cloudflared never joins the Repo egress bridge.
+network. Core and the dedicated `mihomo` service share `mmdash-prod-egress`;
+only mihomo receives Repo GitHub traffic, while Core retains the egress network
+for separately reviewed integrations. The proxy publishes no host port and is
+absent from the `edge`, `app`, and `data` networks. Internal PostgreSQL, MinIO,
+Web BFF, and MCP traffic remains on Docker internal networks; cloudflared never
+joins the Repo egress bridge.
 
 ## 1. Configure Cloudflare
 
@@ -110,85 +111,70 @@ provision a separate bucket-scoped application identity or use managed S3,
 then inject those application credentials into Core; that lifecycle is not yet
 automated by this Compose file.
 
-## 3. Install the host-owned Repo proxy
+## 3. Build and configure the Docker-managed Repo proxy
 
-The production Repo proxy is a dedicated host service, not a container, TUN,
-shared network namespace, or personal desktop process. The tracked templates
-are under `deploy/production/mihomo/`; the actual node/provider file and any
-subscription URL remain outside Git with mode `0600`.
+Production hosts require Docker access but not root access. Mihomo therefore
+runs as a dedicated Compose service instead of a host systemd unit, privileged
+container, TUN device, or personal desktop process. It joins only the Repo
+egress bridge, publishes no host port, uses a read-only root filesystem, and
+drops every Linux capability. The controller remains on container loopback and
+is unreachable from Core.
 
-First verify that `MMDASH_EGRESS_SUBNET` does not overlap a host route, VPN,
-site network, or existing Docker network:
+Keep the binary build context, provider file, and subscription URL outside Git
+with mode `0600`. The examples below use a sibling secret directory; choose an
+absolute path appropriate for the host and copy those paths into
+`.env.production`:
 
 ```bash
-ip -brief address
-ip route show
-docker network inspect $(docker network ls -q) --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}'
+mihomo_root=../mmdash-secrets/mihomo
+mkdir -p "$mihomo_root/image" "$mihomo_root/providers"
+chmod 700 "$mihomo_root" "$mihomo_root/image" "$mihomo_root/providers"
+install -m 0600 deploy/production/mihomo/config.example.yaml "$mihomo_root/config.yaml"
 ```
 
-Change both subnet/gateway values in `.env.production`, the mihomo config, and
-the nftables fragment together if `172.31.240.0/24` conflicts. Compose assigns
-the stable bridge interface name `mmdash-egress`; do not expose its listener on
-`0.0.0.0` or a LAN address.
+Provision `$mihomo_root/providers/upstream.yaml` through the deployment secret
+system. It must be a Mihomo provider document with a top-level `proxies` list
+and only approved upstream nodes. Never copy its subscription URL, node names,
+or credentials into the repository, build context, shell logs, or chat.
 
-Install the reviewed Linux amd64-compatible mihomo v1.19.30 binary. The digest
-below is for the upstream release asset
-`mihomo-linux-amd64-compatible-v1.19.30.gz` published 2026-08-16:
+Install the reviewed Linux amd64-compatible mihomo v1.19.30 binary into the
+non-secret image context. The digest is for the upstream
+`mihomo-linux-amd64-compatible-v1.19.30.gz` asset published 2026-08-16:
 
 ```bash
-mihomo_archive=/tmp/mihomo-linux-amd64-compatible-v1.19.30.gz
-mihomo_binary=/tmp/mmdash-mihomo-v1.19.30
+mihomo_archive="$mihomo_root/mihomo-linux-amd64-compatible-v1.19.30.gz"
 curl --fail --show-error --location \
   --output "$mihomo_archive" \
   https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-compatible-v1.19.30.gz
-echo 'db214c7a2517e63c150d123178d16d102e03a241ccdae4e5e07ffbe9cf56c6f9  /tmp/mihomo-linux-amd64-compatible-v1.19.30.gz' | sha256sum --check
-gzip --decompress --stdout "$mihomo_archive" > "$mihomo_binary"
-sudo install -o root -g root -m 0755 "$mihomo_binary" /usr/local/libexec/mmdash-mihomo
-rm "$mihomo_archive" "$mihomo_binary"
+echo "db214c7a2517e63c150d123178d16d102e03a241ccdae4e5e07ffbe9cf56c6f9  $mihomo_archive" | sha256sum --check
+gzip --decompress --stdout "$mihomo_archive" > "$mihomo_root/image/mihomo"
+chmod 0555 "$mihomo_root/image/mihomo"
 ```
 
-Create a least-privilege account and directories, then install the templates:
+Build Core first, then build the network-free minimal mihomo image. The
+Dockerfile copies only the verified binary plus the CA bundle from the local
+Core image; the provider and subscription never enter an image layer:
 
 ```bash
-sudo useradd --system --home-dir /var/lib/mmdash-mihomo --shell /usr/sbin/nologin mmdash-mihomo
-sudo install -d -o root -g mmdash-mihomo -m 0750 /etc/mmdash-mihomo /etc/mmdash-mihomo/providers
-sudo install -d -o mmdash-mihomo -g mmdash-mihomo -m 0700 /var/lib/mmdash-mihomo
-sudo install -o root -g mmdash-mihomo -m 0600 \
-  deploy/production/mihomo/config.example.yaml /etc/mmdash-mihomo/config.yaml
-sudo install -o root -g root -m 0644 \
-  deploy/production/mihomo/mmdash-mihomo.service /etc/systemd/system/mmdash-mihomo.service
+prod_compose=(docker compose --env-file deploy/production/.env.production -f deploy/production/compose.yaml)
+"${prod_compose[@]}" build core
+docker build --network=none --pull=false \
+  --build-arg MMDASH_CORE_IMAGE=mmdash/core:0.1.0 \
+  --file deploy/production/mihomo/Dockerfile \
+  --tag mmdash/mihomo:1.19.30-local \
+  "$mihomo_root/image"
+docker run --rm --network none mmdash/mihomo:1.19.30-local -v
 ```
 
-Provision `/etc/mmdash-mihomo/providers/upstream.yaml` through the deployment
-secret/configuration system. It must contain only the approved upstream nodes
-needed by this service and must not be copied into the repository, shell logs,
-or chat. Keep the controller on `127.0.0.1:19090`; the Core container must not
-reach it.
+Set `MMDASH_MIHOMO_UID=$(id -u)`, `MMDASH_MIHOMO_GID=$(id -g)`, the two
+absolute config/provider paths, and
+`REPO_GITHUB_PROXY_URL=http://mihomo:17890` in `.env.production`. The same
+UID/GID must own the mode-`0600` files so the non-root container can read them.
 
-Install the narrow host firewall fragment after reviewing it against the
-existing nftables policy. It permits TCP 17890 only from the fixed Repo bridge
-subnet to its gateway and drops other traffic to that listener:
-
-```bash
-sudo install -o root -g root -m 0600 \
-  deploy/production/mihomo/mmdash-mihomo.nft /etc/nftables.d/mmdash-mihomo.nft
-sudo nft --check --file /etc/nftables.d/mmdash-mihomo.nft
-sudo nft --file /etc/nftables.d/mmdash-mihomo.nft
-```
-
-Include the fragment from the host's persistent nftables configuration using
-the distribution's normal mechanism. Do not flush an existing ruleset. Enable
-the service; it will restart until Compose creates the `mmdash-egress` bridge:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now mmdash-mihomo.service
-```
-
-The proxy has no DIRECT fallback. If its upstream is unavailable, Core receives
-a safe retryable network error and retains existing Repo mirrors for reads.
-Never work around an outage by enabling a host-wide TUN, changing the default
-route, or routing cloudflared/internal services through this listener.
+The tracked config has no DIRECT fallback. If every upstream is unavailable,
+Core receives a safe retryable network error and retains existing Repo mirrors
+for reads. Never work around an outage by enabling a host-wide TUN, changing
+the default route, or routing cloudflared/internal services through the proxy.
 
 ## 4. Validate and start
 
@@ -224,20 +210,23 @@ with code 0 before Core starts. Inspect the result and recent logs:
 
 ```bash
 "${prod_compose[@]}" ps -a
-"${prod_compose[@]}" logs --tail 200 postgres minio migrate minio-init core web-bff web mcp-gateway caddy cloudflared
+"${prod_compose[@]}" logs --tail 200 postgres minio migrate minio-init mihomo core web-bff web mcp-gateway caddy cloudflared
 "${prod_compose[@]}" exec -T caddy wget -qO- http://127.0.0.1:8080/_internal/health
 curl --fail --show-error --location https://prod.mmdash.moe/
 ```
 
-Expected state: the long-running services are healthy/running, while `migrate`
-and `minio-init` are exited with status 0. Check logs for panic, fatal, repeated
-errors, failed Tunnel registration, and accidental credential output.
+Expected state: the long-running services, including `mihomo`, are
+healthy/running, while `migrate` and `minio-init` are exited with status 0.
+Check logs for panic, fatal, repeated errors, failed Tunnel registration, and
+accidental credential output.
 
-Confirm the host proxy after the bridge exists:
+Confirm the Docker-managed proxy after the stack starts:
 
 ```bash
-sudo systemctl is-active mmdash-mihomo.service
-curl --fail --silent --show-error http://127.0.0.1:19090/version
+"${prod_compose[@]}" ps mihomo core
+"${prod_compose[@]}" exec -T mihomo /usr/local/bin/mihomo -v
+"${prod_compose[@]}" exec -T core sh -ec \
+  'proxy="$REPO_GITHUB_PROXY_URL"; GIT_TERMINAL_PROMPT=0 HTTPS_PROXY="$proxy" HTTP_PROXY="$proxy" git ls-remote https://github.com/Kozmosa/mmdash.git HEAD >/dev/null'
 ```
 
 Do not print `REPO_GITHUB_PROXY_URL` if it contains userinfo. A real GitHub
@@ -294,7 +283,7 @@ immutable image references and run `build --pull` (source mode) or `pull`
 ```bash
 "${prod_compose[@]}" up -d
 "${prod_compose[@]}" ps -a
-"${prod_compose[@]}" logs --tail 200 migrate core web-bff web mcp-gateway worker caddy cloudflared
+"${prod_compose[@]}" logs --tail 200 migrate mihomo core web-bff web mcp-gateway worker caddy cloudflared
 ```
 
 Do not run `down` during a normal upgrade; Compose can replace services while
@@ -302,12 +291,13 @@ preserving named volumes. A code/image rollback is safe only when the older
 release supports every migration already applied. Never run down migrations
 or delete volumes as an ad hoc rollback.
 
-The proxy service and fixed bridge require no database migration. During a
-proxy incident, inspect `systemctl status mmdash-mihomo` and the bounded Core
-error code before restarting only the proxy. Keep `REPO_GITHUB_PROXY_URL`
-configured so failure remains closed; do not silently fall back to the unstable
-direct path. Rolling back the application release may leave the dedicated
-proxy running safely because no other service receives its URL.
+The proxy service requires no database migration. During a proxy incident,
+inspect `"${prod_compose[@]}" ps mihomo`, its bounded logs, and the Core error
+code before restarting only that service with
+`"${prod_compose[@]}" restart mihomo`. Keep `REPO_GITHUB_PROXY_URL` configured
+so failure remains closed; do not silently fall back to the unstable direct
+path. Rolling back the application release may leave the dedicated proxy
+running safely because no other service receives its URL.
 
 ## Backup and restore
 
@@ -353,12 +343,13 @@ Never publish Core as a public Caddy upstream for acceptance.
 
 For GitHub acceptance, connect a dedicated private test repository, verify all
 three workspaces become `ready`, perform a manual sync and an external commit,
-and restart Core before syncing again. In a scheduled maintenance window, stop
-`mmdash-mihomo`, request a sync, and confirm
-`REPO_NETWORK_UNAVAILABLE` with `last_error_retryable=true`; start the proxy and
-confirm the same queued synchronization succeeds through bounded retry. Check
-recent Core/mihomo/cloudflared logs for panic/fatal/error loops and exact PAT,
-proxy credential, or subscription matches without printing those secrets.
+and restart Core before syncing again. In a scheduled maintenance window, run
+`"${prod_compose[@]}" stop -t 30 mihomo`, request a sync, and confirm
+`REPO_NETWORK_UNAVAILABLE` with `last_error_retryable=true`; run
+`"${prod_compose[@]}" start mihomo` and confirm the same queued synchronization
+succeeds through bounded retry. Check recent Core/mihomo/cloudflared logs for
+panic/fatal/error loops and exact PAT, proxy credential, or subscription
+matches without printing those secrets.
 
 Use a pinned `minio/mc` container attached to the `mmdash-prod_data` network to
 `mc mirror` the configured bucket into encrypted backup storage. This keeps the
