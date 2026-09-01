@@ -79,6 +79,71 @@ describe("Repo settings flow", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows retryable network failures without hiding the readable mirror", async () => {
+    vi.spyOn(apiClient, "request").mockImplementation(async (path) => {
+      if (path.endsWith("/permissions")) {
+        return {
+          permissions: ["project.repo.manage", "project.repo.read"],
+          role: "owner",
+        } as never;
+      }
+      if (path.endsWith("/repository/capabilities")) {
+        return {
+          providers: [
+            { disabled_reason: null, enabled: true, provider: "managed" },
+            { disabled_reason: null, enabled: true, provider: "github" },
+            {
+              disabled_reason: "disabled",
+              enabled: false,
+              provider: "server_existing",
+            },
+          ],
+        } as never;
+      }
+      if (path.includes("/settings/repo.connection")) {
+        return settingFixture() as never;
+      }
+      if (path.endsWith("/repository/branches")) {
+        return { items: [] } as never;
+      }
+      if (path.endsWith("/repository/commits")) {
+        return {
+          branch: "main",
+          has_more: false,
+          items: [],
+          next_cursor: null,
+          resolved_revision: "a".repeat(40),
+          workspace: "code",
+        } as never;
+      }
+      if (path.endsWith("/repository")) {
+        return {
+          ...repositoryFixture(),
+          last_error_code: "REPO_NETWORK_UNAVAILABLE",
+          last_error_message:
+            "External repository network is temporarily unavailable",
+          last_error_retryable: true,
+          status: "error",
+        } as never;
+      }
+      throw new Error(`unexpected request ${path}`);
+    });
+
+    render(
+      <TestQueryProvider>
+        <RepoSettingsPanel />
+      </TestQueryProvider>,
+    );
+
+    expect(
+      await screen.findByText("REPO_NETWORK_UNAVAILABLE"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/系统正在按退避策略重试/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "查看 Repository" }),
+    ).toHaveAttribute("href", "/projects/project-1/repository");
+  });
+
   it("keeps PAT redacted while saving and testing branch mappings", async () => {
     const request = vi
       .spyOn(apiClient, "request")
@@ -475,6 +540,7 @@ function repositoryFixture() {
     display_name: "acme/model",
     last_error_code: null,
     last_error_message: null,
+    last_error_retryable: false,
     last_synced_at: "2026-07-29T00:00:00Z",
     project_id: "project-1",
     provider: "github",

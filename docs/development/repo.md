@@ -74,6 +74,30 @@ approved.
 | `REPO_MAX_TEXT_BYTES`      | `1048576`               | Read/write text ceiling                                 |
 | `REPO_DISCONNECT_GRACE`    | `24h`                   | Delayed managed cleanup                                 |
 | `REPO_ASKPASS_PATH`        | `mmdash-git-askpass`    | Static credential helper                                |
+| `REPO_GITHUB_PROXY_URL`    | empty                   | Repo-only HTTP(S) proxy for GitHub API and Git HTTPS    |
+| `REPO_GITHUB_NO_PROXY`     | loopback addresses      | Explicit internal/loopback proxy bypasses               |
+
+`REPO_GITHUB_PROXY_URL` is deployment configuration, not a Project Setting.
+It accepts only an `http://` or `https://` origin, optionally with userinfo;
+path, query, fragment, malformed host/port, and SOCKS URLs are rejected. Treat
+the complete value as a secret when it contains credentials. The dedicated
+GitHub client never reads process-wide proxy variables. Git commands receive
+only the validated `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` values plus
+their lowercase libcurl-compatible aliases for the single subprocess;
+`ALL_PROXY` and arbitrary Core environment variables remain unavailable.
+
+`REPO_GITHUB_NO_PROXY` accepts loopback/private IPs and CIDRs, single-label
+internal service names, and `.local`, `.localhost`, or `.internal` names. Public
+targets such as `github.com` and wildcard bypasses are rejected so a configured
+proxy fails closed instead of silently returning to direct egress. With no Repo
+proxy URL, both GitHub metadata and Git operations remain direct and still do
+not inherit a process-wide proxy.
+
+Production runs mihomo as a non-root Compose service on the dedicated Repo
+egress network. Core uses `http://mihomo:17890`; the proxy publishes no host
+port, mounts its provider from an external mode-`0600` directory, has a
+read-only root filesystem, and drops all capabilities. See
+`deploy/production/README.md` for the pinned binary and image build procedure.
 
 Server-existing roots are colon-separated on Linux/macOS and semicolon-separated on
 Windows. An empty allowlist disables this provider. Core canonicalizes the source
@@ -159,8 +183,26 @@ mmdash_repo_storage_bytes
 ```
 
 Structured Repo logs may contain operation, provider, safe error code,
-duration, repository ID, and request ID. They must not contain PATs, webhook
+retryable, duration, repository ID, and request ID. They must not contain PATs, webhook
 secrets, AskPass variables, file content, remote provider bodies, or paths.
+
+GitHub failures use stable retry semantics:
+
+| Condition                                      | Code                                    | Automatic retry |
+| ---------------------------------------------- | --------------------------------------- | --------------- |
+| DNS, connect, TLS, or proxy connection failure | `REPO_NETWORK_UNAVAILABLE`              | yes             |
+| Git or metadata request timeout                | `REPO_GIT_TIMEOUT`                      | yes             |
+| GitHub 429 or 5xx                              | `REPO_PROVIDER_TEMPORARILY_UNAVAILABLE` | yes             |
+| GitHub/Git authentication failure              | `REPO_AUTH_FAILED`                      | no              |
+| Authenticated GitHub 404                       | `REPO_REMOTE_NOT_FOUND`                 | no              |
+| Missing mapped branch                          | `REPO_BRANCH_NOT_FOUND`                 | no              |
+| Missing contents write permission              | `REPO_WRITE_PERMISSION_REQUIRED`        | no              |
+
+Retryable failures keep the current bounded exponential backoff. Terminal
+failures clear the automatic request but can be retried explicitly after a
+configuration, permission, or remote-state change. Existing fetched objects
+and worktrees remain available for immutable reads while synchronization is in
+an error state.
 
 ## Native checks
 
@@ -177,6 +219,11 @@ pnpm --filter @mmdash/web test
 pnpm --filter @mmdash/mcp-gateway test
 pnpm check
 ```
+
+Focused proxy tests use a fake HTTP proxy for GitHub metadata and a real local
+Git dumb-HTTP repository for `git ls-remote`. They also prove that proxy/PAT
+credentials are absent from command results and errors and that unreviewed Core
+proxy variables are not inherited.
 
 Real Git tests create temporary bare remotes. On Windows, run them in an
 environment permitted to create symbolic links so the Local-root and cleanup

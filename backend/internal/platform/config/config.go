@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mmdash/mmdash/backend/internal/repo/egress"
 )
 
 // Config contains the complete Core Server process configuration.
@@ -141,6 +143,8 @@ type RepoConfig struct {
 	CommitLease       time.Duration
 	CommandTimeout    time.Duration
 	DisconnectGrace   time.Duration
+	GitHubNoProxy     string
+	GitHubProxyURL    string
 	LocalAllowedRoots []string
 	MaxConcurrentGit  int
 	MaxTextBytes      int64
@@ -300,6 +304,8 @@ func Load(lookup LookupEnv) (Config, error) {
 			CommitLease:       durationOrDefault(lookup, "REPO_COMMIT_LEASE", 90*time.Second),
 			CommandTimeout:    durationOrDefault(lookup, "REPO_COMMAND_TIMEOUT", 2*time.Minute),
 			DisconnectGrace:   durationOrDefault(lookup, "REPO_DISCONNECT_GRACE", 24*time.Hour),
+			GitHubNoProxy:     envOrDefault(lookup, "REPO_GITHUB_NO_PROXY", "localhost,127.0.0.1,::1"),
+			GitHubProxyURL:    envOrDefault(lookup, "REPO_GITHUB_PROXY_URL", ""),
 			LocalAllowedRoots: pathList(lookup, "REPO_LOCAL_ALLOWED_ROOTS"),
 			MaxConcurrentGit:  intOrDefault(lookup, "REPO_MAX_CONCURRENT_GIT", 4),
 			MaxTextBytes:      int64OrDefault(lookup, "REPO_MAX_TEXT_BYTES", 1024*1024),
@@ -520,6 +526,12 @@ func (config Config) Validate() error {
 		config.Repo.CheckoutTTL <= 0 ||
 		config.Repo.DisconnectGrace <= 0 {
 		return fmt.Errorf("Repo durations must be positive")
+	}
+	if _, err := egress.Parse(
+		config.Repo.GitHubProxyURL,
+		config.Repo.GitHubNoProxy,
+	); err != nil {
+		return fmt.Errorf("REPO_GITHUB_PROXY_URL or REPO_GITHUB_NO_PROXY is invalid")
 	}
 	for _, root := range config.Repo.LocalAllowedRoots {
 		if strings.TrimSpace(root) == "" {

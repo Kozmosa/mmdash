@@ -132,6 +132,7 @@ function repositoryFixture() {
     display_name: "acme/model",
     last_error_code: null,
     last_error_message: null,
+    last_error_retryable: false,
     last_synced_at: "2026-07-29T00:00:00Z",
     project_id: "project-1",
     provider: "github",

@@ -108,6 +108,7 @@
       "last_synced_at": "2026-07-29T12:00:00Z",
       "last_error_code": null,
       "last_error_message": null,
+      "last_error_retryable": false,
       "workspaces": [
         {
           "workspace": "code",

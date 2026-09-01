@@ -157,8 +157,17 @@ checked by Core on every operation.
 Representative safe error codes include `REPO_AUTH_FAILED`,
 `REPO_BRANCH_NOT_FOUND`, `REPO_HEAD_CONFLICT`, `REPO_WORKTREE_DIRTY`,
 `REPO_WEBHOOK_SIGNATURE_INVALID`, `REPO_PATH_INVALID`, and
-`REPO_GIT_TIMEOUT`. Provider bodies, credentials, command arguments, and
-filesystem paths are never copied into API errors.
+`REPO_GIT_TIMEOUT`. Transient GitHub egress failures are distinguished as
+`REPO_NETWORK_UNAVAILABLE` (DNS/connect/TLS/proxy), `REPO_GIT_TIMEOUT`, and
+`REPO_PROVIDER_TEMPORARILY_UNAVAILABLE` (429/recoverable 5xx). Authenticated
+404 remains `REPO_REMOTE_NOT_FOUND`, and missing fine-grained PAT contents
+write access is `REPO_WRITE_PERMISSION_REQUIRED`.
+
+Repository responses expose `last_error_retryable`; connection-test responses
+expose `error_code` and `retryable`. Retryable failures keep bounded background
+backoff, while auth, not-found, branch, permission, and configuration failures
+require an explicit request after correction. Provider bodies, credentials,
+command arguments, and filesystem paths are never copied into API errors.
 
 See [Repo development and operations](../development/repo.md) for migration,
 configuration, readiness, metrics, tests, and Docker acceptance.

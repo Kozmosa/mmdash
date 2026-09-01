@@ -108,6 +108,8 @@ type ConnectionTestResult struct {
 	CheckedAt     time.Time                  `json:"checked_at"`
 	Checks        []settings.ConnectionCheck `json:"checks"`
 	DefaultBranch string                     `json:"default_branch"`
+	ErrorCode     *string                    `json:"error_code"`
+	Retryable     bool                       `json:"retryable"`
 	Status        string                     `json:"status"`
 }
 
@@ -592,11 +594,14 @@ func (service Service) TestConnection(
 		return ConnectionTestResult{}, err
 	}
 	connection, err := service.Providers.Test(ctx, config)
+	providerFailure := classifyProviderFailure(err)
 	checks := []settings.ConnectionCheck{}
 	status := "failed"
+	var errorCode *string
 	if err != nil {
+		errorCode = &providerFailure.Code
 		checks = append(checks, settings.ConnectionCheck{
-			Message: safeProviderMessage(err), Name: "provider", Status: "failed",
+			Message: providerFailure.Message, Name: "provider", Status: "failed",
 		})
 	} else {
 		status = "passed"
@@ -617,7 +622,8 @@ func (service Service) TestConnection(
 	}
 	result := ConnectionTestResult{
 		Branches: connection.BranchNames(), CheckedAt: checkedAt,
-		Checks: checks, DefaultBranch: connection.DefaultBranch, Status: status,
+		Checks: checks, DefaultBranch: connection.DefaultBranch,
+		ErrorCode: errorCode, Retryable: providerFailure.Retryable, Status: status,
 	}
 	service.record(ctx, "repo.connection.tested", projectID, "", status, safeProviderCode(err))
 	return result, nil
@@ -893,6 +899,9 @@ func (service Service) decorate(
 		repository.Webhook.PublicURL = strings.TrimSuffix(service.PublicURL, "/") +
 			"/api/webhooks/github/" + repository.Webhook.HookID
 	}
+	if repository.LastErrorCode != nil {
+		repository.LastErrorRetryable = retryableFailureCode(*repository.LastErrorCode)
+	}
 	resolved, err := service.Settings.Resolve(
 		ctx, settings.ScopeProject, repository.ProjectID, SettingType,
 	)
@@ -950,22 +959,7 @@ func newWebhookSecret() (string, error) {
 }
 
 func safeProviderCode(err error) string {
-	switch {
-	case err == nil:
-		return ""
-	case errors.Is(err, provider.ErrAuthentication):
-		return "REPO_AUTH_FAILED"
-	case errors.Is(err, provider.ErrBranchMissing):
-		return "REPO_BRANCH_NOT_FOUND"
-	case errors.Is(err, provider.ErrRemoteNotFound):
-		return "REPO_REMOTE_NOT_FOUND"
-	case errors.Is(err, provider.ErrUnavailable):
-		return "REPO_PROVIDER_UNAVAILABLE"
-	case errors.Is(err, provider.ErrUnsupported):
-		return "REPO_PROVIDER_UNSUPPORTED"
-	default:
-		return "REPO_CONNECTION_FAILED"
-	}
+	return classifyProviderFailure(err).Code
 }
 
 func mappingsFromRepository(repository Repository) WorkspaceMappings {
