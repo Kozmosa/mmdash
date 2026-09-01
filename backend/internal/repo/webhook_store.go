@@ -66,14 +66,25 @@ func (store PostgresStore) RecordWebhook(
 		if !delivery.RequestSync {
 			return nil
 		}
+		if delivery.Workspace == nil || !validWorkspaceKind(*delivery.Workspace) {
+			return ErrInvalid
+		}
 		result, err = tx.ExecContext(ctx, `
 			UPDATE repo_repositories
-			SET sync_requested_at = $2,
+			SET sync_workspace_kinds = CASE
+			      WHEN sync_requested_at IS NULL THEN ARRAY[$3]::TEXT[]
+			      ELSE ARRAY(
+			        SELECT DISTINCT value
+			        FROM unnest(sync_workspace_kinds || ARRAY[$3]::TEXT[]) AS value
+			        ORDER BY value
+			      )
+			    END,
+			    sync_requested_at = $2,
 			    sync_source = 'webhook',
 			    next_sync_at = LEAST(COALESCE(next_sync_at, $2), $2),
 			    updated_at = $2
 			WHERE repository_id = $1 AND status <> 'disconnected'
-		`, delivery.RepositoryID, delivery.ReceivedAt.UTC())
+		`, delivery.RepositoryID, delivery.ReceivedAt.UTC(), *delivery.Workspace)
 		if err := requireAffected(result, err); err != nil {
 			return err
 		}

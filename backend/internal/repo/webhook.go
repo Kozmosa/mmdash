@@ -49,6 +49,7 @@ type WebhookDelivery struct {
 	RepositoryID string
 	RequestSync  bool
 	Status       string
+	Workspace    *WorkspaceKind
 }
 
 // WebhookStore atomically records delivery identity and coalesces push syncs.
@@ -166,6 +167,8 @@ func (service Service) AcceptGitHubWebhook(
 			if workspace.RemoteBranch == branch {
 				delivery.RequestSync = true
 				delivery.Status = "accepted"
+				kind := workspace.Workspace
+				delivery.Workspace = &kind
 				break
 			}
 		}

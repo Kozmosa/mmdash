@@ -35,7 +35,13 @@ export function registerArticleRoutes(
           let body: Record<string, unknown> | undefined;
           if (
             method === "POST" &&
-            ["commits", "preview-builds", "publications"].includes(name)
+            [
+              "commit-operations",
+              "commits",
+              "preview-builds",
+              "publications",
+              "publication-operations",
+            ].includes(name)
           ) {
             const draft = await collaboration.flush(
               await roomContext(coreClient, request),
@@ -72,9 +78,11 @@ export function registerArticleRoutes(
   collection("patches", ["GET", "POST"]);
   collection("references", ["GET", "POST"]);
   collection("commits", ["GET", "POST"]);
+  collection("commit-operations", ["POST"]);
   collection("builds", ["GET", "POST"]);
   collection("preview-builds", ["POST"]);
   collection("publications", ["POST"]);
+  collection("publication-operations", ["POST"]);
   collection("releases", ["GET", "POST"]);
   collection("templates", ["GET", "POST"]);
   collection("zotero", ["GET", "PUT", "DELETE"]);
@@ -86,6 +94,7 @@ export function registerArticleRoutes(
     ["chapter-tags", "", ["GET", "PATCH", "DELETE"]],
     ["chapter-tags", "review", ["POST"]],
     ["patches", "review", ["POST"]],
+    ["commit-operations", "", ["GET"]],
     ["commits", "", ["GET"]],
     ["commits", "restore", ["POST"]],
     ["builds", "", ["GET"]],
@@ -154,9 +163,14 @@ async function proxy(
   if (method === "DELETE") return reply.code(204).send();
   if (
     method === "POST" &&
-    ["/builds", "/preview-builds", "/publications", "/templates"].includes(
-      suffix,
-    )
+    [
+      "/builds",
+      "/commit-operations",
+      "/preview-builds",
+      "/publication-operations",
+      "/publications",
+      "/templates",
+    ].includes(suffix)
   ) {
     return reply.code(202).send(value);
   }

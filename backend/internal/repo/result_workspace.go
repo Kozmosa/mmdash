@@ -74,7 +74,9 @@ func (workspace ResultWorkspaceService) SyncNow(
 	if workspace.Coordinator == nil {
 		return ErrNotReady
 	}
-	_, err := workspace.Coordinator.SyncProject(ctx, projectID)
+	_, err := workspace.Coordinator.SyncProjectWorkspace(
+		ctx, projectID, WorkspaceResult,
+	)
 	return err
 }
 

@@ -802,7 +802,8 @@ export function RepoSettingsPanel() {
                   GitHub Webhook
                 </CardTitle>
                 <CardDescription>
-                  在 GitHub 配置 Push Event，并使用下方 URL 与一次性 Secret。
+                  在 GitHub 配置 Push Event，Content type 选择
+                  application/json，并使用下方 URL 与一次性 Secret。
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">

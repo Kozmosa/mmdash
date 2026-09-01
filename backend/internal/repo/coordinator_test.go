@@ -13,13 +13,15 @@ import (
 )
 
 type coordinatorStore struct {
-	claims      []SyncClaim
-	completed   []string
-	failedCode  string
-	failedRetry time.Time
-	retryable   bool
-	mutex       sync.Mutex
-	renewals    int
+	claims             []SyncClaim
+	completed          []string
+	failedCode         string
+	failedRetry        time.Time
+	retryable          bool
+	mutex              sync.Mutex
+	renewals           int
+	requestedWorkspace WorkspaceKind
+	syncedAt           *time.Time
 }
 
 func (store *coordinatorStore) ClaimSync(
@@ -66,6 +68,33 @@ func (store *coordinatorStore) RenewSyncLease(
 	return nil
 }
 
+func (*coordinatorStore) RequestPeriodicSyncs(
+	context.Context, time.Time, time.Duration, int,
+) (int, error) {
+	return 0, nil
+}
+
+func (store *coordinatorStore) GetByProject(
+	context.Context, string,
+) (Repository, error) {
+	return Repository{LastSyncedAt: store.syncedAt}, nil
+}
+
+func (store *coordinatorStore) RequestSyncSource(
+	_ context.Context, _ string, now time.Time, _ string,
+) (Repository, error) {
+	store.syncedAt = &now
+	return Repository{}, nil
+}
+
+func (store *coordinatorStore) RequestWorkspaceSyncSource(
+	_ context.Context, _ string, workspace WorkspaceKind, now time.Time, _ string,
+) (Repository, error) {
+	store.requestedWorkspace = workspace
+	store.syncedAt = &now
+	return Repository{}, nil
+}
+
 type coordinatorSettings struct {
 	resolved settings.ResolvedSetting
 }
@@ -109,6 +138,7 @@ func (runtime *coordinatorRuntime) Synchronize(
 	ctx context.Context,
 	repository Repository,
 	_ provider.Connection,
+	_ []WorkspaceKind,
 	source string,
 ) (SyncResult, error) {
 	runtime.mutex.Lock()
@@ -166,6 +196,21 @@ func TestCoordinatorRunsClaimsConcurrentlyAndRenewsLeases(t *testing.T) {
 	}
 	if store.renewals < 2 {
 		t.Fatalf("expected lease renewals, got %d", store.renewals)
+	}
+}
+
+func TestCoordinatorRequestsOnlyTheResultWorkspace(t *testing.T) {
+	now := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC)
+	store := &coordinatorStore{}
+	coordinator := Coordinator{Clock: clock.Fixed{Time: now}, Store: store}
+
+	if _, err := coordinator.SyncProjectWorkspace(
+		context.Background(), "project-1", WorkspaceResult,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if store.requestedWorkspace != WorkspaceResult {
+		t.Fatalf("requested workspace = %q", store.requestedWorkspace)
 	}
 }
 

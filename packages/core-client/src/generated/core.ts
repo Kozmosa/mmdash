@@ -3984,8 +3984,51 @@ export interface paths {
     /** List Article commits */
     get: operations["article.commits.list"];
     put?: never;
-    /** Commit one exact flushed draft revision through Repo ArticleWorkspace */
+    /**
+     * Commit one exact flushed draft revision through Repo ArticleWorkspace
+     * @deprecated
+     * @description Compatibility endpoint for existing clients. New interactive clients should create and poll a durable Article Commit Operation.
+     */
     post: operations["article.commits.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/commit-operations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Queue one exact flushed draft revision for Repo ArticleWorkspace */
+    post: operations["article.commit-operations.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/commit-operations/{operationId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        operationId: string;
+      };
+      cookie?: never;
+    };
+    /** Read a durable Article commit operation */
+    get: operations["article.commit-operations.get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -4122,8 +4165,31 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Orchestrate Commit then Build then immutable Release */
+    /**
+     * Orchestrate Commit then Build then immutable Release
+     * @deprecated
+     * @description Compatibility endpoint. Interactive clients should queue a durable publication operation.
+     */
     post: operations["article.publications.create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/publication-operations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Queue a durable Commit then formal Publication build */
+    post: operations["article.publication-operations.create"];
     delete?: never;
     options?: never;
     head?: never;
@@ -4490,6 +4556,7 @@ export interface components {
       /** Format: int64 */
       draft_revision: number;
       message: string;
+      idempotency_key?: string;
     };
     CreateArticleBuildRequest: {
       /** Format: uuid */
@@ -4704,6 +4771,36 @@ export interface components {
       created_by: string;
       /** Format: date-time */
       created_at: string;
+    };
+    ArticleCommitOperation: {
+      /** Format: uuid */
+      operation_id: string;
+      /** Format: uuid */
+      commit_id: string;
+      /** Format: uuid */
+      project_id: string;
+      /** @enum {string} */
+      operation_kind: "commit" | "publication";
+      /** Format: uuid */
+      publication_id?: string;
+      /** Format: int64 */
+      draft_revision: number;
+      /** @enum {string} */
+      status: "queued" | "running" | "retry_wait" | "succeeded" | "failed";
+      /** @enum {string} */
+      stage: "queued" | "committing" | "publishing" | "completed" | "failed";
+      commit_sha?: string;
+      error_code?: string;
+      attempts: number;
+      max_attempts: number;
+      /** Format: date-time */
+      next_attempt_at: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      finished_at?: string;
     };
     ArticleCommitList: {
       items: components["schemas"]["ArticleCommit"][];
@@ -14912,6 +15009,56 @@ export interface operations {
       409: components["responses"]["Error"];
     };
   };
+  "article.commit-operations.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticleCommitRequest"];
+      };
+    };
+    responses: {
+      /** @description Durable Article commit operation accepted. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleCommitOperation"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "article.commit-operations.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+        operationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Current operation state and confirmed commit SHA when complete. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleCommitOperation"];
+        };
+      };
+    };
+  };
   "article.commits.get": {
     parameters: {
       query?: never;
@@ -15102,6 +15249,33 @@ export interface operations {
           "application/json": components["schemas"]["ArticlePublication"];
         };
       };
+    };
+  };
+  "article.publication-operations.create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateArticlePublicationRequest"];
+      };
+    };
+    responses: {
+      /** @description Durable publication operation accepted. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleCommitOperation"];
+        };
+      };
+      409: components["responses"]["Error"];
     };
   };
   "article.publications.retry": {

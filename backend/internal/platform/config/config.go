@@ -140,6 +140,7 @@ type RepoConfig struct {
 	AskPassPath       string
 	CheckoutTTL       time.Duration
 	CloneTimeout      time.Duration
+	CommitLease       time.Duration
 	CommandTimeout    time.Duration
 	DisconnectGrace   time.Duration
 	GitHubNoProxy     string
@@ -147,9 +148,11 @@ type RepoConfig struct {
 	LocalAllowedRoots []string
 	MaxConcurrentGit  int
 	MaxTextBytes      int64
+	ReconcileInterval time.Duration
 	StorageRoot       string
 	SyncLease         time.Duration
 	SyncPollInterval  time.Duration
+	WriteTimeout      time.Duration
 }
 
 // SettingsConfig configures encryption for persisted module secrets.
@@ -298,6 +301,7 @@ func Load(lookup LookupEnv) (Config, error) {
 			AskPassPath:       envOrDefault(lookup, "REPO_ASKPASS_PATH", "mmdash-git-askpass"),
 			CheckoutTTL:       durationOrDefault(lookup, "REPO_CHECKOUT_TTL", time.Hour),
 			CloneTimeout:      durationOrDefault(lookup, "REPO_CLONE_TIMEOUT", 15*time.Minute),
+			CommitLease:       durationOrDefault(lookup, "REPO_COMMIT_LEASE", 90*time.Second),
 			CommandTimeout:    durationOrDefault(lookup, "REPO_COMMAND_TIMEOUT", 2*time.Minute),
 			DisconnectGrace:   durationOrDefault(lookup, "REPO_DISCONNECT_GRACE", 24*time.Hour),
 			GitHubNoProxy:     envOrDefault(lookup, "REPO_GITHUB_NO_PROXY", "localhost,127.0.0.1,::1"),
@@ -305,9 +309,11 @@ func Load(lookup LookupEnv) (Config, error) {
 			LocalAllowedRoots: pathList(lookup, "REPO_LOCAL_ALLOWED_ROOTS"),
 			MaxConcurrentGit:  intOrDefault(lookup, "REPO_MAX_CONCURRENT_GIT", 4),
 			MaxTextBytes:      int64OrDefault(lookup, "REPO_MAX_TEXT_BYTES", 1024*1024),
+			ReconcileInterval: durationOrDefault(lookup, "REPO_RECONCILE_INTERVAL", 15*time.Minute),
 			StorageRoot:       envOrDefault(lookup, "REPO_STORAGE_ROOT", "/var/lib/mmdash/repos"),
 			SyncLease:         durationOrDefault(lookup, "REPO_SYNC_LEASE", 20*time.Minute),
 			SyncPollInterval:  durationOrDefault(lookup, "REPO_SYNC_POLL_INTERVAL", 2*time.Second),
+			WriteTimeout:      durationOrDefault(lookup, "REPO_WRITE_TIMEOUT", 45*time.Second),
 		},
 		Settings: SettingsConfig{
 			EncryptionKey: envOrDefault(
@@ -511,8 +517,10 @@ func (config Config) Validate() error {
 		config.Repo.MaxTextBytes > 64*1024*1024 {
 		return fmt.Errorf("REPO_MAX_TEXT_BYTES must be between 1 byte and 64 MiB")
 	}
-	if config.Repo.CommandTimeout <= 0 ||
+	if config.Repo.CommandTimeout <= 0 || config.Repo.CommitLease <= 0 ||
 		config.Repo.CloneTimeout <= 0 ||
+		config.Repo.WriteTimeout <= 0 ||
+		config.Repo.ReconcileInterval <= 0 ||
 		config.Repo.SyncPollInterval <= 0 ||
 		config.Repo.SyncLease <= 0 ||
 		config.Repo.CheckoutTTL <= 0 ||

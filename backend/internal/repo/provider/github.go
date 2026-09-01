@@ -29,20 +29,19 @@ type GitHub struct {
 }
 
 func (provider GitHub) Test(ctx context.Context, config Config) (Connection, error) {
-	remote, err := gitcli.NormalizeGitHubURL(config.RemoteURL)
-	if err != nil || config.AccessToken == "" {
-		return Connection{}, ErrInvalidConfig
-	}
-	metadata, err := provider.metadata(ctx, remote.DisplayName, config.AccessToken)
+	connection, err := provider.Resolve(ctx, config)
 	if err != nil {
 		return Connection{}, err
 	}
-	credentials := &gitcli.Credentials{
-		Proxy: provider.Egress, Token: config.AccessToken, Username: "x-access-token",
+	metadata, err := provider.metadata(
+		ctx, connection.DisplayName, config.AccessToken,
+	)
+	if err != nil {
+		return Connection{}, err
 	}
 	result, err := provider.Git.Run(ctx, gitcli.Command{
-		Args:        []string{"ls-remote", "--heads", remote.FetchURL},
-		Credentials: credentials,
+		Args:        []string{"ls-remote", "--heads", connection.FetchURL},
+		Credentials: connection.Credentials,
 		Directory:   provider.RuntimeRoot,
 		Operation:   "provider.github.ls-remote",
 		Sensitive:   []string{config.RemoteURL},
@@ -69,9 +68,24 @@ func (provider GitHub) Test(ctx context.Context, config Config) (Connection, err
 	if err != nil {
 		return Connection{}, classify(ErrInvalidResponse, err)
 	}
+	connection.Branches = branches
+	connection.DefaultBranch = metadata.DefaultBranch
+	return connection, nil
+}
+
+func (provider GitHub) Resolve(
+	_ context.Context,
+	config Config,
+) (Connection, error) {
+	remote, err := gitcli.NormalizeGitHubURL(config.RemoteURL)
+	if err != nil || config.AccessToken == "" {
+		return Connection{}, ErrInvalidConfig
+	}
 	return Connection{
-		Branches: branches, CanonicalRemoteURL: remote.CanonicalURL,
-		Credentials: credentials, DefaultBranch: metadata.DefaultBranch,
+		Branches: map[string]string{}, CanonicalRemoteURL: remote.CanonicalURL,
+		Credentials: &gitcli.Credentials{
+			Proxy: provider.Egress, Token: config.AccessToken, Username: "x-access-token",
+		},
 		DisplayName: remote.DisplayName, FetchURL: remote.FetchURL,
 		Provider: "github",
 	}, nil

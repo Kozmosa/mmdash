@@ -90,6 +90,36 @@ func TestRegistryValidatesMappingsAndGitHubPATWithoutPuttingTokenInArgs(t *testi
 	}
 }
 
+func TestGitHubRuntimeResolveDoesNotCallAPIOrEnumerateRemoteHeads(t *testing.T) {
+	const token = "github_pat_runtime"
+	registry := NewRegistry()
+	if err := registry.Register("github", GitHub{
+		Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			t.Fatal("runtime resolution called the GitHub API")
+			return nil, errors.New("unexpected API call")
+		})},
+		Git: fakeRunner{handler: func(gitcli.Command) (gitcli.Result, error) {
+			t.Fatal("runtime resolution enumerated remote refs")
+			return gitcli.Result{}, errors.New("unexpected Git call")
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	connection, err := registry.Resolve(context.Background(), Config{
+		AccessToken: token, ArticleBranch: "article", CodeBranch: "main",
+		Provider: "github", RemoteURL: "https://github.com/Kozmosa/mmdash",
+		ResultBranch: "result",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connection.FetchURL != "https://github.com/Kozmosa/mmdash.git" ||
+		connection.Credentials == nil || connection.Credentials.Token != token ||
+		len(connection.Branches) != 0 {
+		t.Fatalf("unexpected runtime connection: %#v", connection)
+	}
+}
+
 func TestGitHubMetadataAndLsRemoteShareTheExplicitRepoProxy(t *testing.T) {
 	const token = "github_pat_shared_proxy"
 	var requests atomic.Int64

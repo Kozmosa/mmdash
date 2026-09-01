@@ -30,9 +30,43 @@ type CommitStore interface {
 		context.Context, CommitClaim, Commit, CommitResult, time.Time,
 	) error
 	FailCommit(context.Context, CommitClaim, string, time.Time) error
+	RenewCommitLease(context.Context, CommitClaim, time.Time) error
 	SavePreparedCommit(
 		context.Context, CommitClaim, string, time.Time,
 	) error
+}
+
+func (store PostgresStore) RenewCommitLease(
+	ctx context.Context,
+	claim CommitClaim,
+	expiresAt time.Time,
+) error {
+	if claim.Repository.ID == "" || claim.Owner == "" ||
+		claim.IdempotencyKey == "" || claim.Workspace.Workspace == "" {
+		return ErrInvalid
+	}
+	return store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		requestResult, err := tx.ExecContext(ctx, `
+			UPDATE repo_commit_requests
+			SET lease_expires_at = $5, updated_at = $5
+			WHERE repository_id = $1 AND workspace_kind = $2
+			  AND idempotency_key = $3 AND locked_by = $4
+			  AND status = 'pending'
+		`, claim.Repository.ID, claim.Workspace.Workspace,
+			claim.IdempotencyKey, claim.Owner, expiresAt.UTC())
+		if err := requireAffected(requestResult, err); err != nil {
+			return ErrLocked
+		}
+		repositoryResult, err := tx.ExecContext(ctx, `
+			UPDATE repo_repositories
+			SET sync_lease_expires_at = $3, updated_at = $3
+			WHERE repository_id = $1 AND sync_locked_by = $2
+		`, claim.Repository.ID, claim.Owner, expiresAt.UTC())
+		if err := requireAffected(repositoryResult, err); err != nil {
+			return ErrLocked
+		}
+		return nil
+	})
 }
 
 func (store PostgresStore) CreateCheckout(

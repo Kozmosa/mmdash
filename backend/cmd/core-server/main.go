@@ -580,6 +580,7 @@ func run(logger *logging.Logger) error {
 	repoRuntime := repo.Runtime{
 		Clock: systemClock, CloneTimeout: processConfig.Repo.CloneTimeout,
 		Git: gitClient, Storage: repoStorage,
+		WriteTimeout: processConfig.Repo.WriteTimeout,
 	}
 	repoWriter := &repo.WorkspaceWriter{
 		Clock: systemClock, Git: gitClient,
@@ -602,7 +603,7 @@ func run(logger *logging.Logger) error {
 		},
 		Settings: settingsService,
 		Storage:  repoStorage,
-		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
+		Store:    repoStore, WriteLease: processConfig.Repo.CommitLease,
 		Webhooks: repoStore,
 		WebhookError: func(ctx context.Context, webhookErr error) {
 			logger.Error("repo.webhook.persist.failed", map[string]interface{}{
@@ -638,12 +639,13 @@ func run(logger *logging.Logger) error {
 				"error": syncErr.Error(),
 			})
 		},
-		Owner:     "core-" + syncOwnerID,
-		Poll:      processConfig.Repo.SyncPollInterval,
-		Providers: repoProviders,
-		Runtime:   repoRuntime,
-		Settings:  settingsService,
-		Store:     repoStore,
+		Owner:             "core-" + syncOwnerID,
+		Poll:              processConfig.Repo.SyncPollInterval,
+		ReconcileInterval: processConfig.Repo.ReconcileInterval,
+		Providers:         repoProviders,
+		Runtime:           repoRuntime,
+		Settings:          settingsService,
+		Store:             repoStore,
 	}
 	artifactService.Git = artifact.RepoGitContentReader{Service: &repoService}
 	artifactModule.Service = artifactService
@@ -658,6 +660,21 @@ func run(logger *logging.Logger) error {
 		Generator: idGenerator, HTTPClient: zoteroHTTPClient, JobAccess: jobService,
 		JobWriter: jobStore, Settings: &settingsService, Store: articleStore,
 		Workspace: repo.ArticleWorkspaceService{Reader: repoService.Reads, Repositories: repoStore, Service: &repoService},
+	}
+	articleCommitOwnerID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Article commit operation owner identity: %w", err)
+	}
+	articleCommitCoordinator := article.CommitOperationCoordinator{
+		Clock: systemClock, Lease: processConfig.Repo.CommitLease,
+		Limit: processConfig.Repo.MaxConcurrentGit,
+		OnError: func(commitErr error) {
+			logger.Error("article.commit.operation.failed", map[string]interface{}{
+				"error": commitErr.Error(),
+			})
+		},
+		Owner: "core-article-commit-" + articleCommitOwnerID,
+		Poll:  time.Second, Service: articleService, Store: articleStore,
 	}
 	jobStore.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService, articleService}
 	jobService.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService, articleService}
@@ -1109,6 +1126,7 @@ func run(logger *logging.Logger) error {
 		return fmt.Errorf("reconcile Repo worktrees: %w", err)
 	}
 	go repoCoordinator.Run(ctx)
+	go articleCommitCoordinator.Run(ctx)
 	go (repo.CheckoutReaper{
 		Clock: systemClock, Interval: time.Minute, Limit: 50,
 		OnError: func(checkoutErr error) {

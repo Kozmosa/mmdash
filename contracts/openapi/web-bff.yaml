@@ -4123,6 +4123,8 @@ paths:
       tags: [Article]
       operationId: bff.article.commits.create
       summary: Flush and commit one exact Article draft revision
+      deprecated: true
+      description: Compatibility route; the Web product uses the durable commit-operations route.
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
       requestBody:
         {
@@ -4155,6 +4157,45 @@ paths:
                 },
             },
         }
+  /api/projects/{projectId}/article/commit-operations:
+    post:
+      tags: [Article]
+      operationId: bff.article.commit-operations.create
+      summary: Flush and queue one exact Article draft revision
+      parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/CreateArticleCommitRequest"
+      responses:
+        "202":
+          description: Durable commit operation accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArticleCommitOperation"
+  /api/projects/{projectId}/article/commit-operations/{operationId}:
+    get:
+      tags: [Article]
+      operationId: bff.article.commit-operations.get
+      summary: Read an Article commit operation
+      parameters:
+        - { $ref: "./core.yaml#/components/parameters/ProjectId" }
+        - {
+            name: operationId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200":
+          description: Current operation state.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArticleCommitOperation"
   /api/projects/{projectId}/article/commits/{commitId}:
     get:
       tags: [Article]
@@ -4376,6 +4417,8 @@ paths:
       tags: [Article]
       operationId: bff.article.publications.create
       summary: Flush and orchestrate Commit, Build, then Release
+      deprecated: true
+      description: Compatibility route; the Web product uses publication-operations.
       parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
       requestBody:
         {
@@ -4408,6 +4451,25 @@ paths:
                 },
             },
         }
+  /api/projects/{projectId}/article/publication-operations:
+    post:
+      tags: [Article]
+      operationId: bff.article.publication-operations.create
+      summary: Flush and queue a durable Commit then Publication build
+      parameters: [{ $ref: "./core.yaml#/components/parameters/ProjectId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./core.yaml#/components/schemas/CreateArticlePublicationRequest"
+      responses:
+        "202":
+          description: Durable publication operation accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "./core.yaml#/components/schemas/ArticleCommitOperation"
   /api/projects/{projectId}/article/publications/{publicationId}/retry:
     post:
       tags: [Article]

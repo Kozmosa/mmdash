@@ -8,7 +8,7 @@ Article 是 Stage 9 的 Core 领域模块，拥有协作草稿、块、Patch/Tag
 2. 首次读取 Article 聚合时，Core 会为新旧项目幂等安装受保护的 `mmdash` 默认 XeLaTeX 模板并创建模板测试 Build。用户无需进入模板页或上传 ZIP；模板页仍可导入 Overleaf ZIP、登记标准模板 Artifact Version，或将内置模板复制为普通 Artifact 后自定义。若模板测试尚未进入 `ready`，Commit 对话框会显示明确状态，但仍允许“仅提交”。模板 ZIP 和固定 Artifact 资源始终使用 `CORE_INTERNAL_URL` 下的短期 Core Transfer Grant 流向 Worker，包括 MinIO/S3 部署；不要为了 Article Build 给 Worker 开放公网出口。
 3. 写作页支持块拖拽手柄、`/` 命令、代码块、GFM 表格和 KaTeX 公式。Artifact 卡可拖到编辑器；系统先按 immutable Artifact Version 幂等固定引用，再插入 `artifactReference` 块。相邻普通图片或图片 Artifact 可合并为一个 `articleImageGroup` 块：组合块支持 1–4 张/行并自动换行（最多 16 张），每个子图保留独立图注，组合块另有位于整组下方的大题注；拆分、移出或删除子图不会丢失其固定版本信息。
 4. 保存同步后检查“章节与块 tags”：新块标为 draft，已存在且内容改变的块自动标为 revision；人工点击“审阅”会写入审阅人/时间并产生 `article.block.reviewed` 审计与 Outbox 事件。章节状态独立持久化；未改动的 reviewed 块在后续 flush 中保留，重新编辑则回到 revision。
-5. `Commit…` 先强制刷新 Yjs 房间，再由 Repo 的 `ArticleWorkspaceService` 写入唯一三个可编辑文件。可选择“提交并发布”，按 Commit → formal Build → Release 执行；Build 失败保留 Commit，可从版本历史重试同一固定 Commit。草稿预览与正式 Build 都显示由 Worker 回报的真实阶段进度（准备模板、整理资源、生成 TeX、编译 PDF、打包源码、归档产物），而不是用前端模拟百分比。
+5. `Commit…` 先强制刷新 Yjs 房间，再把该 revision 的 Yjs/Markdown/引用快照写入可恢复的 Commit Operation，并立即返回 HTTP 202；Core 使用短 lease 在后台调用 Repo 的 `ArticleWorkspaceService`，只 fetch/push/确认 article 分支并写入唯一三个可编辑文件。浏览器轮询 Operation，网络抖动或页面断开不会取消后台提交。“提交并发布”同样先返回 durable Publication Operation，再在后台按 Commit → formal Build → Release 执行，不会在 HTTP 请求内等待 Git；Build 失败保留 Commit，可从版本历史重试同一固定 Commit。草稿预览与正式 Build 都显示由 Worker 回报的真实阶段进度（准备模板、整理资源、生成 TeX、编译 PDF、打包源码、归档产物），而不是用前端模拟百分比。
 6. Zotero 凭据在 Project Settings 的 Article · Zotero 区配置。公开字段与加密 API key 均由 Settings Registry 管理，读取时只返回脱敏占位；写作页仅执行只读搜索并固定条目版本。
 7. 成功 Release 固定关联正式 Build 的不可变输出。Release 详情可预览 PDF，并下载完整的 TeX 源码 ZIP；源码包包含入口 TeX、参考文献、模板内容、资源文件和构建清单，可用于离线复现。
 

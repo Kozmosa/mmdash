@@ -37,6 +37,7 @@ type articleTestStore struct {
 	createdCommit Commit
 	draft         Draft
 	outputs       []BuildOutput
+	operation     CommitOperation
 	persisted     PersistDraftInput
 	publications  []Publication
 	references    []Reference
@@ -104,6 +105,10 @@ func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID,
 func (store *articleTestStore) CreateCommit(_ context.Context, item Commit) (Commit, bool, error) {
 	store.createdCommit = item
 	store.commit = item
+	return item, true, nil
+}
+func (store *articleTestStore) CreateCommitOperation(_ context.Context, item CommitOperation) (CommitOperation, bool, error) {
+	store.operation = item
 	return item, true, nil
 }
 func (store *articleTestStore) GetCommit(context.Context, string, string) (Commit, error) {
@@ -300,6 +305,71 @@ func TestCommitPinsOneDraftRevisionAndOnlyThreeEditableFiles(t *testing.T) {
 	}
 	if _, err := service.Commit(context.Background(), human(), "project-1", 3, "stale"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale revision was accepted: %v", err)
+	}
+}
+
+func TestQueueCommitFreezesDraftWithoutGitNetworkIO(t *testing.T) {
+	store := &articleTestStore{
+		draft: draftAt(4),
+		references: []Reference{{
+			CitationKey: "ref", ReferenceType: "model_snapshot",
+			SourceObjectID: "model", SourceVersionID: "v3", Title: "Model",
+		}},
+	}
+	workspace := &articleTestWorkspace{}
+	service := testService(store, workspace)
+
+	operation, err := service.QueueCommit(
+		context.Background(), human(), "project-1", 4, "checkpoint", "request-1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspace.commits) != 0 {
+		t.Fatal("queueing performed Git network I/O")
+	}
+	if operation.Status != "queued" || operation.Stage != "queued" ||
+		operation.IdempotencyKey != "request-1" || operation.MaxAttempts != 10 ||
+		operation.ExpectedHeadSHA != strings.Repeat("a", 40) {
+		t.Fatalf("unexpected operation: %#v", operation)
+	}
+	if operation.Manuscript != "# Paper\n" || len(operation.FrozenReferences) != 1 ||
+		len(operation.ManifestBytes) == 0 || operation.RequestSHA256 == "" {
+		t.Fatalf("operation did not freeze the draft: %#v", operation)
+	}
+	store.draft.TiptapJSON["type"] = "changed-after-queue"
+	if store.operation.TiptapJSON["type"] == "changed-after-queue" {
+		t.Fatal("queued operation aliases the mutable draft")
+	}
+}
+
+func TestQueuePublicationFreezesCommitAndBuildIntentWithoutGitNetworkIO(t *testing.T) {
+	store := &articleTestStore{
+		draft: draftAt(4),
+		template: Template{
+			TemplateID: "template-1", VersionID: "version-1",
+			ArtifactID: "artifact-1", Status: "ready",
+		},
+	}
+	workspace := &articleTestWorkspace{}
+	service := testService(store, workspace)
+	operation, err := service.QueuePublication(
+		context.Background(), human(), "project-1", PublicationInput{
+			DraftRevision: 4, Message: "publish", TemplateID: "template-1",
+			Engine: "auto", BibliographyTool: "auto", Tag: "v1.0.0",
+			Title: "Paper", Notes: "accepted", IdempotencyKey: "publish-1",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspace.commits) != 0 || len(store.builds) != 0 {
+		t.Fatalf("queueing performed Git or build work: %#v %#v", workspace.commits, store.builds)
+	}
+	if operation.OperationKind != "publication" || operation.PublicationID == "" ||
+		operation.PublicationKey != "publish-1" || operation.TemplateID != "template-1" ||
+		operation.Tag != "v1.0.0" || operation.Status != "queued" {
+		t.Fatalf("publication intent was not frozen: %#v", operation)
 	}
 }
 
