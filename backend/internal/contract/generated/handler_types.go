@@ -2983,8 +2983,9 @@ func (request CreateArticleReferenceRequest) Validate() error {
 
 // CreateArticleCommitRequest is generated from the Core request-body schema.
 type CreateArticleCommitRequest struct {
-	DraftRevision int64  `json:"draft_revision"`
-	Message       string `json:"message"`
+	DraftRevision  int64   `json:"draft_revision"`
+	Message        string  `json:"message"`
+	IdempotencyKey *string `json:"idempotency_key,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -3000,6 +3001,14 @@ func (request CreateArticleCommitRequest) Validate() error {
 	}
 	if len(request.Message) > 500 {
 		return fmt.Errorf("message is too long")
+	}
+	if request.IdempotencyKey != nil {
+		if len(*request.IdempotencyKey) < 1 {
+			return fmt.Errorf("idempotency_key is too short")
+		}
+		if len(*request.IdempotencyKey) > 200 {
+			return fmt.Errorf("idempotency_key is too long")
+		}
 	}
 	return nil
 }

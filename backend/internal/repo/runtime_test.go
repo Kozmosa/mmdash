@@ -64,7 +64,7 @@ func TestRuntimeSynchronizesThreeWorktreesAndRejectsDirtyState(t *testing.T) {
 	}
 
 	first, err := runtime.Synchronize(
-		context.Background(), repository, connection, "manual",
+		context.Background(), repository, connection, nil, "manual",
 	)
 	if err != nil {
 		t.Fatalf("initial synchronize: %v", err)
@@ -91,6 +91,24 @@ func TestRuntimeSynchronizesThreeWorktreesAndRejectsDirtyState(t *testing.T) {
 			}
 		}
 	}
+	articleDirty := filepath.Join(layout.Worktrees["article"], "article-only.txt")
+	if err := os.WriteFile(articleDirty, []byte("draft"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scoped, err := runtime.Synchronize(
+		context.Background(), repository, connection,
+		[]WorkspaceKind{WorkspaceCode}, "webhook",
+	)
+	if err != nil {
+		t.Fatalf("code-only sync inspected the dirty Article worktree: %v", err)
+	}
+	if len(scoped.Workspaces) != 1 ||
+		scoped.Workspaces[0].Workspace != WorkspaceCode {
+		t.Fatalf("sync was not limited to code: %#v", scoped.Workspaces)
+	}
+	if err := os.Remove(articleDirty); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.WriteFile(
 		filepath.Join(source, "README.md"), []byte("second\n"), 0o600,
@@ -100,7 +118,7 @@ func TestRuntimeSynchronizesThreeWorktreesAndRejectsDirtyState(t *testing.T) {
 	runTestGit(t, gitPath, source, "add", "README.md")
 	runTestGit(t, gitPath, source, "commit", "-m", "second")
 	second, err := runtime.Synchronize(
-		context.Background(), repository, connection, "manual",
+		context.Background(), repository, connection, nil, "manual",
 	)
 	if err != nil {
 		t.Fatalf("incremental synchronize: %v", err)
@@ -129,7 +147,7 @@ func TestRuntimeSynchronizesThreeWorktreesAndRejectsDirtyState(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = runtime.Synchronize(
-		context.Background(), repository, connection, "manual",
+		context.Background(), repository, connection, nil, "manual",
 	)
 	if !errors.Is(err, ErrWorktreeDirty) {
 		t.Fatalf("expected dirty worktree protection, got %v", err)
@@ -175,7 +193,7 @@ func TestManagedRuntimeInitializesAndCommitsAllWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := runtime.Synchronize(
-		context.Background(), repository, connection, "manual",
+		context.Background(), repository, connection, nil, "manual",
 	)
 	if err != nil {
 		t.Fatalf("initialize managed repository: %v", err)
@@ -275,7 +293,7 @@ func TestRuntimeDetectsForcePushWithoutDiscardingOldObjects(t *testing.T) {
 			CanonicalRemoteURL: source, DefaultBranch: "main",
 			DisplayName: "server", FetchURL: source, Provider: "server_existing",
 		},
-		"webhook",
+		[]WorkspaceKind{WorkspaceCode}, "webhook",
 	)
 	if err != nil {
 		t.Fatalf("synchronize rewritten history: %v", err)

@@ -56,7 +56,7 @@ type Config struct {
 	ResultBranch  string
 }
 
-// Connection contains a tested, credential-free identity plus ephemeral credentials.
+// Connection contains a normalized provider identity plus ephemeral credentials.
 type Connection struct {
 	Branches           map[string]string
 	CanonicalRemoteURL string
@@ -80,6 +80,12 @@ func (connection Connection) BranchNames() []string {
 // Adapter tests provider metadata, credentials, and mapped branch existence.
 type Adapter interface {
 	Test(context.Context, Config) (Connection, error)
+}
+
+// Resolver builds a runtime connection from settings that were already tested
+// when connected or remapped. It must not enumerate remote refs.
+type Resolver interface {
+	Resolve(context.Context, Config) (Connection, error)
 }
 
 // Registry maps stable provider names to reviewed adapters.
@@ -130,6 +136,27 @@ func (registry *Registry) Test(ctx context.Context, config Config) (Connection, 
 		}
 	}
 	return connection, nil
+}
+
+func (registry *Registry) Resolve(
+	ctx context.Context,
+	config Config,
+) (Connection, error) {
+	registry.mutex.RLock()
+	adapter := registry.adapters[config.Provider]
+	registry.mutex.RUnlock()
+	if adapter == nil {
+		return Connection{}, ErrUnsupported
+	}
+	if err := validateMappings(config); err != nil {
+		return Connection{}, err
+	}
+	if resolver, ok := adapter.(Resolver); ok {
+		return resolver.Resolve(ctx, config)
+	}
+	// Compatibility for custom test/development adapters. Production adapters
+	// implement Resolver so runtime operations never fall back to a ref listing.
+	return adapter.Test(ctx, config)
 }
 
 func validateMappings(config Config) error {

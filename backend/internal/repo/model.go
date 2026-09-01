@@ -60,6 +60,7 @@ type Repository struct {
 	LastErrorRetryable bool             `json:"last_error_retryable"`
 	LastSyncedAt       *time.Time       `json:"last_synced_at"`
 	NextSyncAt         *time.Time       `json:"-"`
+	NextReconcileAt    *time.Time       `json:"-"`
 	ProjectID          string           `json:"project_id"`
 	Provider           Provider         `json:"provider"`
 	RemoteURL          *string          `json:"remote_url"`
@@ -71,6 +72,7 @@ type Repository struct {
 	SyncLockedBy       *string          `json:"-"`
 	SyncRequestedAt    *time.Time       `json:"-"`
 	SyncStartedAt      *time.Time       `json:"-"`
+	SyncWorkspaces     []WorkspaceKind  `json:"-"`
 	UpdatedAt          time.Time        `json:"updated_at"`
 	Webhook            Webhook          `json:"webhook"`
 	Workspaces         []Workspace      `json:"workspaces"`
@@ -131,6 +133,7 @@ type SyncClaim struct {
 	Repository Repository
 	Requested  time.Time
 	Source     string
+	Workspaces []WorkspaceKind
 }
 
 // SyncedWorkspace is the immutable result of one fetched workspace.

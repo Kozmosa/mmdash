@@ -4847,6 +4847,8 @@ paths:
     post:
       tags: [Article]
       summary: Commit one exact flushed draft revision through Repo ArticleWorkspace
+      deprecated: true
+      description: Compatibility endpoint for existing clients. New interactive clients should create and poll a durable Article Commit Operation.
       operationId: article.commits.create
       requestBody:
         required: true
@@ -4867,6 +4869,43 @@ paths:
                 { schema: { $ref: "#/components/schemas/ArticleCommit" } },
             }
         "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/commit-operations:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    post:
+      tags: [Article]
+      summary: Queue one exact flushed draft revision for Repo ArticleWorkspace
+      operationId: article.commit-operations.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateArticleCommitRequest" }
+      responses:
+        "202":
+          description: Durable Article commit operation accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleCommitOperation" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/commit-operations/{operationId}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+      - {
+          name: operationId,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    get:
+      tags: [Article]
+      summary: Read a durable Article commit operation
+      operationId: article.commit-operations.get
+      responses:
+        "200":
+          description: Current operation state and confirmed commit SHA when complete.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleCommitOperation" }
   /v1/projects/{projectId}/article/commits/{commitId}:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
@@ -5020,6 +5059,8 @@ paths:
     post:
       tags: [Article]
       summary: Orchestrate Commit then Build then immutable Release
+      deprecated: true
+      description: Compatibility endpoint. Interactive clients should queue a durable publication operation.
       operationId: article.publications.create
       requestBody:
         required: true
@@ -5041,6 +5082,25 @@ paths:
               application/json:
                 { schema: { $ref: "#/components/schemas/ArticlePublication" } },
             }
+  /v1/projects/{projectId}/article/publication-operations:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    post:
+      tags: [Article]
+      summary: Queue a durable Commit then formal Publication build
+      operationId: article.publication-operations.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/CreateArticlePublicationRequest" }
+      responses:
+        "202":
+          description: Durable publication operation accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleCommitOperation" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/publications/{publicationId}/retry:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
@@ -5822,6 +5882,7 @@ components:
       properties:
         draft_revision: { type: integer, format: int64, minimum: 1 }
         message: { type: string, minLength: 1, maxLength: 500 }
+        idempotency_key: { type: string, minLength: 1, maxLength: 200 }
     CreateArticleBuildRequest:
       type: object
       additionalProperties: false
@@ -6124,6 +6185,49 @@ components:
         message: { type: string }
         created_by: { type: string }
         created_at: { type: string, format: date-time }
+    ArticleCommitOperation:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          operation_id,
+          commit_id,
+          project_id,
+          operation_kind,
+          draft_revision,
+          status,
+          stage,
+          attempts,
+          max_attempts,
+          next_attempt_at,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        operation_id: { type: string, format: uuid }
+        commit_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        operation_kind: { type: string, enum: [commit, publication] }
+        publication_id: { type: string, format: uuid }
+        draft_revision: { type: integer, format: int64, minimum: 1 }
+        status:
+          {
+            type: string,
+            enum: [queued, running, retry_wait, succeeded, failed],
+          }
+        stage:
+          {
+            type: string,
+            enum: [queued, committing, publishing, completed, failed],
+          }
+        commit_sha: { type: string, pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+        error_code: { type: string }
+        attempts: { type: integer, minimum: 0 }
+        max_attempts: { type: integer, minimum: 1 }
+        next_attempt_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
     ArticleCommitList:
       type: object
       additionalProperties: false

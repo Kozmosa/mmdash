@@ -11,6 +11,10 @@ const managedCanonicalRemote = "managed://mmdash"
 type Managed struct{}
 
 func (Managed) Test(_ context.Context, config Config) (Connection, error) {
+	return Managed{}.Resolve(context.Background(), config)
+}
+
+func (Managed) Resolve(_ context.Context, config Config) (Connection, error) {
 	branches := map[string]string{
 		config.CodeBranch:    zeroSHA,
 		config.ArticleBranch: zeroSHA,

@@ -114,8 +114,28 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 				if !decode(w, r, &body) {
 					return
 				}
-				value, err := module.Service.Commit(r.Context(), caller, projectID, body.DraftRevision, body.Message)
+				value, err := module.Service.Commit(
+					r.Context(), caller, projectID,
+					body.DraftRevision, body.Message,
+				)
 				writeResult(w, r, http.StatusCreated, value, err)
+				return
+			}
+		case "commit-operations":
+			if r.Method == http.MethodPost {
+				var body contract.CreateArticleCommitRequest
+				if !decode(w, r, &body) {
+					return
+				}
+				idempotency := ""
+				if body.IdempotencyKey != nil {
+					idempotency = *body.IdempotencyKey
+				}
+				value, err := module.Service.QueueCommit(
+					r.Context(), caller, projectID, body.DraftRevision,
+					body.Message, idempotency,
+				)
+				writeResult(w, r, http.StatusAccepted, value, err)
 				return
 			}
 		case "builds":
@@ -180,6 +200,25 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				value, _, err := module.Service.Publish(r.Context(), caller, projectID, PublicationInput{DraftRevision: body.DraftRevision, Message: body.Message, TemplateID: body.TemplateID, Engine: body.Engine, BibliographyTool: body.BibliographyTool, Tag: body.Tag, Title: body.Title, Notes: body.Notes, IdempotencyKey: body.IdempotencyKey})
+				writeResult(w, r, http.StatusAccepted, value, err)
+				return
+			}
+		case "publication-operations":
+			if r.Method == http.MethodPost {
+				var body contract.CreateArticlePublicationRequest
+				if !decode(w, r, &body) {
+					return
+				}
+				value, err := module.Service.QueuePublication(
+					r.Context(), caller, projectID,
+					PublicationInput{
+						DraftRevision: body.DraftRevision, Message: body.Message,
+						TemplateID: body.TemplateID, Engine: body.Engine,
+						BibliographyTool: body.BibliographyTool, Tag: body.Tag,
+						Title: body.Title, Notes: body.Notes,
+						IdempotencyKey: body.IdempotencyKey,
+					},
+				)
 				writeResult(w, r, http.StatusAccepted, value, err)
 				return
 			}
@@ -249,6 +288,13 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(tail) == 2 && tail[0] == "commits" && r.Method == http.MethodGet {
 		value, err := module.Service.CommitDetail(r.Context(), caller, projectID, tail[1])
+		writeResult(w, r, http.StatusOK, value, err)
+		return
+	}
+	if len(tail) == 2 && tail[0] == "commit-operations" && r.Method == http.MethodGet {
+		value, err := module.Service.GetCommitOperation(
+			r.Context(), caller, projectID, tail[1],
+		)
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}

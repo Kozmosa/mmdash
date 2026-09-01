@@ -1,3 +1,53 @@
+# mmdash v0.1 resilient Repo operations and branch-scoped sync
+
+- Updated: 2026-09-01
+- Branch: `main` (the sandbox could not create a `codex/` ref because `.git`
+  is read-only; all changes remain uncommitted in the shared worktree).
+- Scope: remove Git network waits from the Web Article commit path and harden
+  every Repo workspace write against timeouts, lost Webhooks, and Core crashes.
+- Runtime branch policy: callers select `code`, `article`, or `result`; Repo
+  resolves the configured branch and uses one explicit branch refspec. Normal
+  runtime operations no longer run GitHub API metadata requests or
+  `ls-remote --heads`; those remain connection/mapping tests only. Article
+  writes use article, Result writes and self-result verification use result,
+  while manual sync, first connection, and periodic reconciliation use all
+  three mapped branches.
+- Push authority: every attempted push is followed by a target-branch fetch
+  and exact remote-head comparison. A timeout with the prepared SHA observed
+  is success, a competing SHA is `REPO_HEAD_CHANGED`, and an unobservable
+  outcome remains retryable as `REPO_PUSH_UNCONFIRMED`.
+- Recovery: Repo commit requests use a renewable `REPO_COMMIT_LEASE` (default
+  90 seconds), write Git commands use `REPO_WRITE_TIMEOUT` (default 45
+  seconds), and detached finalization/failure cleanup survives request
+  cancellation. Prepared commits remain idempotently replayable after lease
+  expiry.
+- Synchronization: GitHub push deliveries atomically coalesce the exact mapped
+  workspace into the PostgreSQL sync request. Independent periodic
+  reconciliation (default every 15 minutes) fetches all mapped workspaces for
+  GitHub and server-existing repositories, so activity on one branch cannot
+  mask a lost Webhook on another. GitHub Webhook configuration is explicitly
+  JSON with the push event.
+- Article UX/API: the Web uses the additive, compatibility-safe
+  `POST /article/commit-operations` and `POST /article/publication-operations`
+  (HTTP 202) and polls the operation. The
+  exact Yjs/Markdown/reference snapshot is durable before any Git network I/O;
+  a leased Core coordinator retries transient failures and binds the confirmed
+  Repo SHA; publication operations then atomically enqueue the formal build.
+  The old synchronous `POST /article/commits` and `POST /article/publications`
+  remain deprecated for existing API clients. Result already executes inside the asynchronous
+  Experiment result-processing job and continues to keep large staged files
+  outside PostgreSQL while using the same Repo write state machine.
+- Migrations: `000052_repo_resilient_sync` adds coalesced workspace scopes and
+  reconciliation scheduling; `000053_article_commit_operations` adds the
+  frozen, idempotent, leased Article operation queue.
+- Verification completed: focused and full Go tests, all TS/BFF/Web tests,
+  Python Worker tests, all TS/Go/Python builds and lint, generated-contract
+  freshness, compatibility, and API catalog coverage (539 operations) pass.
+  `pnpm check` reached only its final Caddyfile step; Caddy is not installed
+  and the local Docker daemon is not running, so Caddy syntax and Compose
+  migration/smoke acceptance still require an environment with either Caddy
+  or Docker. Static Caddy boundary checks ran before the unavailable validator.
+
 # mmdash v0.1 Repo provider paths and production deployment (issue #60)
 
 - Updated: 2026-08-31

@@ -21,8 +21,12 @@ type Store interface {
 	ReconnectPending(context.Context, ConnectionSnapshot, time.Time) (Repository, error)
 	ReleaseReplacement(context.Context, string, time.Time, time.Time) error
 	RenewSyncLease(context.Context, string, string, time.Time) error
+	RequestPeriodicSyncs(context.Context, time.Time, time.Duration, int) (int, error)
 	RequestSync(context.Context, string, time.Time) (Repository, error)
 	RequestSyncSource(context.Context, string, time.Time, string) (Repository, error)
+	RequestWorkspaceSyncSource(
+		context.Context, string, WorkspaceKind, time.Time, string,
+	) (Repository, error)
 	UpdateMappings(
 		context.Context, string, WorkspaceMappings, int64, time.Time,
 	) (Repository, error)
