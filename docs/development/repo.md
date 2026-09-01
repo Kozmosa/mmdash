@@ -83,6 +83,12 @@ proxy fails closed instead of silently returning to direct egress. With no Repo
 proxy URL, both GitHub metadata and Git operations remain direct and still do
 not inherit a process-wide proxy.
 
+Production runs mihomo as a non-root Compose service on the dedicated Repo
+egress network. Core uses `http://mihomo:17890`; the proxy publishes no host
+port, mounts its provider from an external mode-`0600` directory, has a
+read-only root filesystem, and drops all capabilities. See
+`deploy/production/README.md` for the pinned binary and image build procedure.
+
 Server-existing roots are colon-separated on Linux/macOS and semicolon-separated on
 Windows. An empty allowlist disables this provider. Core canonicalizes the source
 and rejects traversal, symlink escape, non-bare/non-worktree repositories, and
