@@ -20,6 +20,7 @@ type TransactionalAuditRecorder interface {
 // Store is the authoritative Artifact persistence boundary.
 type Store interface {
 	CreateFolder(context.Context, Folder) (Folder, error)
+	EnsureFolderPath(context.Context, string, []string) (Folder, error)
 	GetFolderTree(context.Context, string) (FolderTree, error)
 	RenameFolder(context.Context, string, string, string, time.Time) (Folder, error)
 	MoveFolder(context.Context, string, string, *string, *int, time.Time) (Folder, error)

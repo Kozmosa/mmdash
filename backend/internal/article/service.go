@@ -1123,7 +1123,7 @@ func (service *Service) WorkerOutput(ctx context.Context, caller auth.Identity, 
 	if !rolePattern.MatchString(role) || !shaPattern.MatchString(strings.ToLower(expectedSHA)) || expectedSize < 1 || expectedSize > maxOutputBytes || !safeFilename(filename) {
 		return BuildOutput{}, ErrInvalid
 	}
-	artifactID, versionID, err := service.Artifacts.ArchiveArticleBuildOutput(ctx, job.ProjectID, build.BuildID, build.CreatedBy, role, filename, mimeType, expectedSHA, expectedSize, input)
+	artifactID, versionID, err := service.Artifacts.ArchiveArticleBuildOutput(ctx, job.ProjectID, build.BuildID, build.CreatedBy, articleBuildArtifactFolder(build), role, filename, mimeType, expectedSHA, expectedSize, input)
 	if err != nil {
 		return BuildOutput{}, err
 	}
