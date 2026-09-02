@@ -11,6 +11,7 @@ import {
   runSlashItemForTest,
 } from "@/features/article/slash-command";
 import {
+  droppedLocalImage,
   migrateLegacyTableCaptions,
   parseArticleArtifactDrop,
   parseArticleZoteroDrop,
@@ -84,6 +85,22 @@ describe("Article editor block capabilities", () => {
     expect(() =>
       parseArticleArtifactDrop(JSON.stringify({ artifactId: "artifact-1" })),
     ).toThrow("数据不完整");
+  });
+
+  it("prioritizes an existing Artifact drag over browser-provided image files", () => {
+    const file = new File(["image"], "figure.png", { type: "image/png" });
+    expect(
+      droppedLocalImage({
+        files: [file] as unknown as FileList,
+        types: ["Files", "application/vnd.mmdash.article-artifact+json"],
+      }),
+    ).toBeUndefined();
+    expect(
+      droppedLocalImage({
+        files: [file] as unknown as FileList,
+        types: ["Files"],
+      }),
+    ).toBe(file);
   });
 
   it("routes image, Model, Experiment, and Zotero slash commands", () => {

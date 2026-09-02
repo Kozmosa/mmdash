@@ -572,7 +572,8 @@ func (service *Service) prepareResultFiles(
 			commitPaths = append(commitPaths, repositoryPath)
 		} else {
 			detail, archiveErr := service.ResultArtifacts.ArchiveExperimentFile(
-				ctx, item.ProjectID, item.ID, item.CreatedBy, manifestFile.Path,
+				ctx, item.ProjectID, item.ID, item.CreatedBy,
+				experimentArtifactFolder(item), manifestFile.Path,
 				manifestFile.MediaType, manifestFile.SHA256, manifestFile.SizeBytes, reader,
 			)
 			_ = reader.Close()

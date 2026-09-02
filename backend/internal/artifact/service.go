@@ -209,7 +209,8 @@ func (service Service) Initialize(
 		ctx, projectID, input.IdempotencyKey,
 	); err == nil {
 		if !service.uploadOwnedBy(identity, existing) ||
-			!matchesInitial(existing, createdBy, input) {
+			!matchesInitial(existing, createdBy, input) ||
+			!service.matchesInitialFolder(ctx, projectID, existing.ArtifactID, input.FolderID) {
 			return PublicUploadSession{}, safe(
 				"ARTIFACT_UPLOAD_CONFLICT",
 				"Idempotency key belongs to another upload",
@@ -232,6 +233,7 @@ func (service Service) Initialize(
 		Source: source, Tags: input.Tags, Name: input.Name,
 		Description: input.Description, RecommendedUsage: []string{},
 		CurrentVersionID: &versionID, Status: StatusPendingUpload,
+		FolderID:  input.FolderID,
 		CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
 	}
 	version := Version{
@@ -267,7 +269,8 @@ func (service Service) Initialize(
 				ctx, projectID, input.IdempotencyKey,
 			)
 			if findErr == nil && service.uploadOwnedBy(identity, existing) &&
-				matchesInitial(existing, createdBy, input) {
+				matchesInitial(existing, createdBy, input) &&
+				service.matchesInitialFolder(ctx, projectID, existing.ArtifactID, input.FolderID) {
 				outcome = "success"
 				return service.publicUpload(existing), nil
 			}
@@ -1494,6 +1497,13 @@ func (service Service) normalizeInitialize(
 	input.Kind = strings.TrimSpace(input.Kind)
 	input.SHA256 = strings.ToLower(strings.TrimSpace(input.SHA256))
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+	if input.FolderID != nil {
+		value := strings.TrimSpace(*input.FolderID)
+		if !validFolderUUID(value) {
+			return MultipartPlan{}, ErrInvalid
+		}
+		input.FolderID = &value
+	}
 	if input.Name == "" {
 		input.Name = input.Filename
 	}
@@ -1538,6 +1548,23 @@ func (service Service) normalizeInitialize(
 		return MultipartPlan{}, ErrInvalid
 	}
 	return plan, nil
+}
+
+func (service Service) matchesInitialFolder(
+	ctx context.Context,
+	projectID string,
+	artifactID string,
+	folderID *string,
+) bool {
+	artifact, err := service.Store.GetArtifact(ctx, projectID, artifactID)
+	return err == nil && equalOptionalString(artifact.FolderID, folderID)
+}
+
+func equalOptionalString(left *string, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (service Service) normalizeVersionInitialize(

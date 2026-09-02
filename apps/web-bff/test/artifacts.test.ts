@@ -254,6 +254,30 @@ describe("Artifact BFF routes", () => {
     expect(tree.statusCode).toBe(200);
     expect(tree.json().items[0].name).toBe("Data");
 
+    const initialized = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      payload: {
+        filename: "figure.png",
+        folder_id: folderId,
+        idempotency_key: "upload-into-folder",
+        kind: "attachment",
+        mime_type: "image/png",
+        sha256: "a".repeat(64),
+        size_bytes: 42,
+      },
+      url: `/api/projects/${projectId}/artifacts/uploads`,
+    });
+    expect(initialized.statusCode).toBe(201);
+    const [initializeUrl, initializeOptions] =
+      fetchImplementation.mock.calls.at(-1)!;
+    expect(initializeUrl).toBe(
+      `http://core.test/v1/projects/${projectId}/artifacts/uploads`,
+    );
+    expect(JSON.parse(String(initializeOptions?.body))).toMatchObject({
+      folder_id: folderId,
+    });
+
     const moved = await app.inject({
       headers: { cookie },
       method: "PUT",

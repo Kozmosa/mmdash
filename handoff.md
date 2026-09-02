@@ -1,8 +1,73 @@
+# mmdash v0.1 managed Article and Experiment Artifact output folders
+
+## 2026-09-02 Issue #71 output placement repair
+
+- Scope: Article and Experiment generated outputs no longer create Artifact
+  records at the Project root. Object bytes remain Project-local and
+  content-addressed; this change concerns logical folder metadata only.
+- Article: all outputs from one formal Build share
+  `article/build/<commit_sha>_<created_at_utc>`; preview and template-test
+  Builds use `article/draft/<created_at_utc>` and
+  `article/template/<created_at_utc>`. Timestamps are UTC with microsecond
+  precision.
+- Experiment: the immutable `execution-bundle.zip` and every oversized result
+  file share `experiment/<source_commit>_<experiment_created_at_utc>`. The
+  source Commit is used because the result Commit does not yet exist when the
+  bundle is archived.
+- Artifact: one transaction creates or resolves the complete case-insensitive
+  folder path under the existing sibling uniqueness constraint. Each new
+  Artifact receives the leaf folder in its creation transaction. Completed
+  idempotent retries reuse the original Artifact and reconcile legacy records
+  that are still at the root. Concurrent path creation therefore converges
+  without duplicating folders or bytes.
+- Verification: focused Article, Experiment, and Artifact Go tests pass;
+  contract compatibility and the 541-operation API catalog pass; all
+  TypeScript, Go, and Python lint/tests and production builds pass. One
+  unrelated Windows `local-process` child-handle timing test failed during the
+  first full gate and passed immediately in isolation. Caddy required/forbidden
+  fragment checks passed, but syntax validation could not run because neither
+  the Caddy CLI nor a Docker daemon is available on this host; no Caddy files
+  changed.
+
+# mmdash v0.1 Artifact upload consistency and persistent browser sessions
+
+- Updated: 2026-09-02
+- Branch: `main`
+- Scope: resolve Kozmosa/mmdash#69 and #70 without introducing an
+  Article-specific storage path. Artifact remains the owner of uploads for
+  Article and every other caller; browser authentication remains owned by the
+  Web BFF and Core Auth session.
+- Artifact placement: new upload initialization accepts an optional
+  Project-scoped `folder_id`, and Core persists it in the same transaction as
+  the Artifact, Version, upload session, Audit record, and Outbox work. A
+  confirmed file therefore cannot land at the Project root because a second
+  folder request received a 502. Legacy/resumed uploads retain a bounded
+  folder-move retry plus read-after-error reconciliation; an exhausted move is
+  reported as a partial-success warning and its local recovery record is kept.
+- Article drag behavior: internal Artifact, Zotero, and image-group MIME types
+  take precedence over browser `Files`; Artifact thumbnails are not native
+  draggable images. Dragging an existing Artifact into the editor therefore
+  inserts its immutable reference instead of uploading the preview again.
+- Observability: compatibility folder moves carry bounded attempt and upload
+  identifiers to the BFF, whose warning log records safe Project, Artifact,
+  folder, attempt, and upload context without file contents or credentials.
+- Authentication: Core login/refresh/device exchange now expose the absolute
+  session expiry. The BFF writes a signed, HTTP-only persistent cookie with
+  `Expires` set to that boundary while retaining `SameSite=Lax`, production
+  `Secure`, logout revocation, access-token rotation, and compatibility with
+  cookies and Core responses created before the additive field existed.
+- Verification: changed Go Artifact/Auth tests, Web upload/drag tests, and BFF
+  Artifact/Auth tests pass. Full TypeScript, Go, and Python lint/tests/builds,
+  generated-contract freshness and compatibility, and API catalog checks pass.
+  Caddyfile fragment policy passed, but syntax validation could not run because
+  neither Caddy nor a Docker daemon is available on this workstation; no Caddy
+  file changed in this work.
+
 # mmdash v0.1 resilient Repo operations and branch-scoped sync
 
 - Updated: 2026-09-01
-- Branch: `main` (the sandbox could not create a `codex/` ref because `.git`
-  is read-only; all changes remain uncommitted in the shared worktree).
+- Branch: `main`; implementation commit `304b1ff` is included by current merge
+  commit `baf66d5`.
 - Scope: remove Git network waits from the Web Article commit path and harden
   every Repo workspace write against timeouts, lost Webhooks, and Core crashes.
 - Runtime branch policy: callers select `code`, `article`, or `result`; Repo
@@ -34,19 +99,20 @@
   a leased Core coordinator retries transient failures and binds the confirmed
   Repo SHA; publication operations then atomically enqueue the formal build.
   The old synchronous `POST /article/commits` and `POST /article/publications`
-  remain deprecated for existing API clients. Result already executes inside the asynchronous
-  Experiment result-processing job and continues to keep large staged files
-  outside PostgreSQL while using the same Repo write state machine.
+  remain deprecated for existing API clients. Result already executes inside
+  the asynchronous Experiment result-processing job and continues to keep
+  large staged files outside PostgreSQL while using the same Repo write state
+  machine.
 - Migrations: `000052_repo_resilient_sync` adds coalesced workspace scopes and
   reconciliation scheduling; `000053_article_commit_operations` adds the
   frozen, idempotent, leased Article operation queue.
 - Verification completed: focused and full Go tests, all TS/BFF/Web tests,
   Python Worker tests, all TS/Go/Python builds and lint, generated-contract
-  freshness, compatibility, and API catalog coverage (539 operations) pass.
-  `pnpm check` reached only its final Caddyfile step; Caddy is not installed
-  and the local Docker daemon is not running, so Caddy syntax and Compose
-  migration/smoke acceptance still require an environment with either Caddy
-  or Docker. Static Caddy boundary checks ran before the unavailable validator.
+  freshness, compatibility, and API catalog coverage (541 operations) pass on
+  current `main`. The user explicitly excluded Caddy and Docker/Compose tests
+  from this acceptance run; `pnpm check` therefore has one expected final
+  Caddy validation failure after every in-scope gate passed. No Docker smoke
+  or live migration test was run.
 
 # mmdash v0.1 Repo provider paths and production deployment (issue #60)
 

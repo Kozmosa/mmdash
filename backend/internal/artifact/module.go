@@ -294,6 +294,7 @@ func (module Module) handleUploads(
 				SizeBytes: body.SizeBytes, SHA256: body.Sha256,
 				MIMEType: optionalString(body.MimeType), Kind: body.Kind,
 				Tags: optionalStrings(body.Tags), Description: body.Description,
+				FolderID:       body.FolderID,
 				IdempotencyKey: body.IdempotencyKey,
 			},
 		)
