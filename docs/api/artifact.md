@@ -117,6 +117,17 @@ nested tree. `POST` creates a folder, `PATCH` renames it, and
 Folder names are unique case-insensitively among siblings, including the
 project root.
 
+Internal Article and Experiment archive operations also use this folder model.
+The owning domain supplies a stable semantic path. Artifact transactionally
+ensures the tree, then assigns its leaf in the transaction that creates each
+file record. All outputs of one Article
+Build share one leaf under `article/build`, `article/draft`, or
+`article/template`; an Experiment execution bundle and its oversized files
+share one leaf under `experiment`. Repeated operations converge on the same
+case-insensitive path and reconcile an already completed Artifact that was
+previously left at the Project root. This placement is metadata only and does
+not alter content-addressed object keys.
+
 `PUT /v1/projects/{projectId}/artifacts/{artifactId}/folder` assigns an
 Artifact to a folder. Sending `{"folder_id": null}` moves it to the project
 root. The target folder must belong to the same Project, and all mutations are

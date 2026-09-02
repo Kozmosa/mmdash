@@ -1,3 +1,34 @@
+# mmdash v0.1 managed Article and Experiment Artifact output folders
+
+## 2026-09-02 Issue #71 output placement repair
+
+- Scope: Article and Experiment generated outputs no longer create Artifact
+  records at the Project root. Object bytes remain Project-local and
+  content-addressed; this change concerns logical folder metadata only.
+- Article: all outputs from one formal Build share
+  `article/build/<commit_sha>_<created_at_utc>`; preview and template-test
+  Builds use `article/draft/<created_at_utc>` and
+  `article/template/<created_at_utc>`. Timestamps are UTC with microsecond
+  precision.
+- Experiment: the immutable `execution-bundle.zip` and every oversized result
+  file share `experiment/<source_commit>_<experiment_created_at_utc>`. The
+  source Commit is used because the result Commit does not yet exist when the
+  bundle is archived.
+- Artifact: one transaction creates or resolves the complete case-insensitive
+  folder path under the existing sibling uniqueness constraint. Each new
+  Artifact receives the leaf folder in its creation transaction. Completed
+  idempotent retries reuse the original Artifact and reconcile legacy records
+  that are still at the root. Concurrent path creation therefore converges
+  without duplicating folders or bytes.
+- Verification: focused Article, Experiment, and Artifact Go tests pass;
+  contract compatibility and the 541-operation API catalog pass; all
+  TypeScript, Go, and Python lint/tests and production builds pass. One
+  unrelated Windows `local-process` child-handle timing test failed during the
+  first full gate and passed immediately in isolation. Caddy required/forbidden
+  fragment checks passed, but syntax validation could not run because neither
+  the Caddy CLI nor a Docker daemon is available on this host; no Caddy files
+  changed.
+
 # mmdash v0.1 Artifact upload consistency and persistent browser sessions
 
 - Updated: 2026-09-02

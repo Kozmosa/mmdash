@@ -230,7 +230,7 @@ func (service Service) ArchiveArticleTemplate(
 // ArchiveArticleBuildOutput streams one immutable build output through the
 // Artifact verification/promotion boundary. Article stores only the returned
 // stable Artifact and Version identifiers.
-func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID, buildID, createdBy, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID, buildID, createdBy string, folderPath []string, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
 	filename = strings.TrimSpace(filename)
 	mimeType = strings.TrimSpace(mimeType)
 	expectedSHA = strings.ToLower(strings.TrimSpace(expectedSHA))
@@ -241,10 +241,14 @@ func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID,
 		!sha256Pattern.MatchString(expectedSHA) {
 		return "", "", ErrInvalid
 	}
+	folderID, err := service.ensureManagedFolder(ctx, projectID, folderPath)
+	if err != nil {
+		return "", "", err
+	}
 	initial := InitializeUploadInput{
 		Filename: filename, SizeBytes: expectedSize, SHA256: expectedSHA,
 		MIMEType: mimeType, Kind: KindArticleBuild,
-		IdempotencyKey: idempotencyKey,
+		FolderID: folderID, IdempotencyKey: idempotencyKey,
 	}
 	if existing, lookupErr := service.Store.GetUploadByIdempotency(
 		ctx, projectID, idempotencyKey,
@@ -253,6 +257,11 @@ func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID,
 			return "", "", ErrUploadConflict
 		}
 		if existing.Status == UploadCompleted {
+			if err := service.ensureManagedArtifactPlacement(
+				ctx, projectID, existing.ArtifactID, folderID,
+			); err != nil {
+				return "", "", err
+			}
 			return existing.ArtifactID, existing.VersionID, nil
 		}
 		return "", "", ErrUploadConflict
@@ -287,7 +296,7 @@ func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID,
 	}
 	now := service.now()
 	sourceID := buildID
-	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindArticleBuild, Source: SourceArticle, SourceObjectID: &sourceID, Tags: []string{"article-build", role}, Name: filename, RecommendedUsage: []string{role}, CurrentVersionID: &versionID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
+	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindArticleBuild, Source: SourceArticle, SourceObjectID: &sourceID, Tags: []string{"article-build", role}, Name: filename, RecommendedUsage: []string{role}, CurrentVersionID: &versionID, FolderID: folderID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
 	version := Version{ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1, StorageClass: "object", Filename: filename, SHA256: expectedSHA, MIMEType: mimeType, SizeBytes: expectedSize, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now}
 	upload, providerUpload, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, filename, mimeType, expectedSHA, expectedSize, idempotencyKey, plan)
 	if err != nil {
@@ -307,6 +316,11 @@ func (service Service) ArchiveArticleBuildOutput(ctx context.Context, projectID,
 			)
 			if findErr == nil && matchesInitial(existing, createdBy, initial) &&
 				existing.Status == UploadCompleted {
+				if placeErr := service.ensureManagedArtifactPlacement(
+					ctx, projectID, existing.ArtifactID, folderID,
+				); placeErr != nil {
+					return "", "", placeErr
+				}
 				return existing.ArtifactID, existing.VersionID, nil
 			}
 		}

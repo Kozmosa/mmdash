@@ -67,5 +67,5 @@ type ArtifactAccess interface {
 	ArticleTemplateGrant(context.Context, string, string, string) (map[string]interface{}, error)
 	ArticleResourceGrant(context.Context, string, string, string) (map[string]interface{}, error)
 	ArchiveArticleTemplate(context.Context, string, string, string, string, string, int64, io.Reader) (string, string, error)
-	ArchiveArticleBuildOutput(context.Context, string, string, string, string, string, string, string, int64, io.Reader) (string, string, error)
+	ArchiveArticleBuildOutput(context.Context, string, string, string, []string, string, string, string, string, int64, io.Reader) (string, string, error)
 }

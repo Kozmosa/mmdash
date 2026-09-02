@@ -76,6 +76,18 @@ Version available transactionally. A competing confirmation receives a
 bounded conflict or the idempotent completed result. Crash recovery recognizes
 provider-completed and already-promoted states.
 
+Domain modules provide semantic folder segments for internal archives;
+Artifact remains the only owner of folder creation and Artifact placement.
+Article Build outputs use `article/build`, `article/draft`, or
+`article/template` leaves, while Experiment bundles and oversized files use an
+`experiment` leaf. Core ensures an entire path in one transaction against the
+case-insensitive sibling uniqueness constraint, so concurrent workers resolve
+the same folders instead of producing duplicates. The leaf `folder_id` is
+persisted by the first Artifact transaction. On an idempotent retry, Artifact
+also reconciles an existing successful result into the expected leaf. Object
+keys remain Project-local and content-addressed; logical folders never change
+or duplicate stored bytes.
+
 Ordinary deletion moves an Artifact to trash. Restore preserves all Versions.
 Permanent purge is owner/maintainer-only and deletes an object only after the
 transaction proves no Version or retained preview references the Blob.

@@ -46,6 +46,72 @@ func (store PostgresStore) CreateFolder(ctx context.Context, folder Folder) (Fol
 	return created, err
 }
 
+// EnsureFolderPath creates or resolves one complete Project-scoped folder
+// path in a single transaction. The unique parent/name index serializes
+// concurrent Article and Experiment jobs targeting the same path.
+func (store PostgresStore) EnsureFolderPath(
+	ctx context.Context,
+	projectID string,
+	segments []string,
+) (Folder, error) {
+	var leaf Folder
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var parentID *string
+		for _, name := range segments {
+			folderID, err := store.Generator.New()
+			if err != nil {
+				return err
+			}
+			created := true
+			err = tx.QueryRowContext(ctx, `
+				INSERT INTO artifact_folders(
+					folder_id, project_id, parent_folder_id, name, position,
+					created_at, updated_at
+				)
+				SELECT $1, $2, NULLIF($3, '')::uuid, $4,
+					COALESCE((
+						SELECT MAX(position) + 1 FROM artifact_folders
+						WHERE project_id=$2
+						  AND parent_folder_id IS NOT DISTINCT FROM NULLIF($3, '')::uuid
+					), 0), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				ON CONFLICT DO NOTHING
+				RETURNING folder_id, project_id, parent_folder_id, name, position
+			`, folderID, projectID, folderParentArg(parentID), name).Scan(
+				&leaf.ID, &leaf.ProjectID, &leaf.ParentFolderID, &leaf.Name, &leaf.Position,
+			)
+			if errors.Is(err, sql.ErrNoRows) {
+				created = false
+				err = tx.QueryRowContext(ctx, `
+					SELECT folder_id, project_id, parent_folder_id, name, position
+					FROM artifact_folders
+					WHERE project_id=$1
+					  AND parent_folder_id IS NOT DISTINCT FROM NULLIF($2, '')::uuid
+					  AND lower(name)=lower($3)
+				`, projectID, folderParentArg(parentID), name).Scan(
+					&leaf.ID, &leaf.ProjectID, &leaf.ParentFolderID, &leaf.Name, &leaf.Position,
+				)
+			}
+			if err != nil {
+				return mapFolderPostgresError(err)
+			}
+			leaf.Children = []Folder{}
+			if created {
+				if err := store.audit(ctx, tx, "artifact.folder.created", projectID, leaf.ID, map[string]interface{}{
+					"managed":          true,
+					"name":             leaf.Name,
+					"parent_folder_id": leaf.ParentFolderID,
+				}); err != nil {
+					return err
+				}
+			}
+			parent := leaf.ID
+			parentID = &parent
+		}
+		return nil
+	})
+	return leaf, err
+}
+
 func (store PostgresStore) GetFolderTree(ctx context.Context, projectID string) (FolderTree, error) {
 	rows, err := store.DB.QueryContext(ctx, `
 		SELECT folder_id, project_id, parent_folder_id, name, position

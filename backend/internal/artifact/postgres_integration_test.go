@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -163,12 +164,53 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	service := newLocalTestService(t, store, projectService, now)
 	resultExperimentID := generator.MustNew()
 	resultBytes := makeResultArchive(t, resultExperimentID, []byte("summary"))
-	resultDetail, err := service.ArchiveExperimentResult(ctx, projectID, resultExperimentID, userID, digest(resultBytes), int64(len(resultBytes)), bytes.NewReader(resultBytes))
-	if err != nil || resultDetail.CurrentVersion == nil || resultDetail.CurrentVersion.Filename != "artifact.zip" || resultDetail.Artifact.Kind != KindExperimentResult {
+	resultFolderPath := []string{"experiment", strings.Repeat("a", 40) + "_20260730T100000.000000Z"}
+	const folderWorkers = 8
+	folderIDs := make(chan string, folderWorkers)
+	folderErrors := make(chan error, folderWorkers)
+	var folderGroup sync.WaitGroup
+	for range folderWorkers {
+		folderGroup.Add(1)
+		go func() {
+			defer folderGroup.Done()
+			leaf, ensureErr := store.EnsureFolderPath(ctx, projectID, resultFolderPath)
+			if ensureErr != nil {
+				folderErrors <- ensureErr
+				return
+			}
+			folderIDs <- leaf.ID
+		}()
+	}
+	folderGroup.Wait()
+	close(folderIDs)
+	close(folderErrors)
+	for ensureErr := range folderErrors {
+		t.Fatalf("concurrent managed folder ensure: %v", ensureErr)
+	}
+	var managedLeafID string
+	for folderID := range folderIDs {
+		if managedLeafID == "" {
+			managedLeafID = folderID
+		} else if folderID != managedLeafID {
+			t.Fatalf("concurrent folder creation returned different leaves: %s and %s", managedLeafID, folderID)
+		}
+	}
+	resultDetail, err := service.ArchiveExperimentResult(ctx, projectID, resultExperimentID, userID, resultFolderPath, digest(resultBytes), int64(len(resultBytes)), bytes.NewReader(resultBytes))
+	if err != nil || resultDetail.CurrentVersion == nil || resultDetail.CurrentVersion.Filename != "execution-bundle.zip" || resultDetail.Artifact.Kind != KindExperimentResult {
 		t.Fatalf("archive experiment result: %#v, %v", resultDetail, err)
 	}
 	if resultDetail.Artifact.SourceObjectID == nil || *resultDetail.Artifact.SourceObjectID != resultExperimentID {
 		t.Fatalf("archive experiment result source relation: %#v", resultDetail.Artifact.SourceObjectID)
+	}
+	if resultDetail.Artifact.FolderID == nil {
+		t.Fatalf("archive experiment result was left at the Artifact root: %#v", resultDetail.Artifact)
+	}
+	folderTree, err := store.GetFolderTree(ctx, projectID)
+	if err != nil || len(folderTree.Items) != 1 || folderTree.Items[0].Name != "experiment" ||
+		len(folderTree.Items[0].Children) != 1 || folderTree.Items[0].Children[0].Name != resultFolderPath[1] ||
+		folderTree.Items[0].Children[0].ID != managedLeafID ||
+		managedLeafID != *resultDetail.Artifact.FolderID {
+		t.Fatalf("unexpected managed Experiment folder tree: %#v, %v", folderTree, err)
 	}
 	owner := auth.Identity{
 		Kind: "session", User: auth.User{ID: userID},
