@@ -119,6 +119,7 @@ func (store PostgresStore) CreateFirst(
 			ctx, tx, "artifact.upload.initialized", artifact.ProjectID,
 			artifact.ID, map[string]interface{}{
 				"deduplicated": upload.Status == UploadCompleted,
+				"folder_id":    artifact.FolderID,
 				"size_bytes":   upload.ExpectedSize,
 				"version_id":   version.ID,
 			},

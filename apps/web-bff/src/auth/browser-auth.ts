@@ -15,6 +15,7 @@ const sessionAssertionSchema = z.object({
   email: z.string().email(),
   expires_at: z.string().datetime({ offset: true }),
   refresh_token: z.string().min(32),
+  session_expires_at: z.string().datetime({ offset: true }).optional(),
   session_id: z.string().min(1).max(200),
   status: z.enum(["active", "disabled"]),
   system_role: z.enum(["admin", "member"]),
@@ -28,6 +29,7 @@ export type BrowserIdentity = {
   email: string;
   expiresAt: string;
   refreshToken: string;
+  sessionExpiresAt: string;
   sessionId: string;
   status: "active" | "disabled";
   systemRole: "admin" | "member";
@@ -89,6 +91,8 @@ export function registerBrowserAuth(
           email: refreshed.user.email,
           expires_at: refreshed.expires_at,
           refresh_token: refreshed.refresh_token,
+          session_expires_at:
+            refreshed.session_expires_at ?? refreshed.expires_at,
           session_id: refreshed.session_id,
           status: refreshed.user.status,
           system_role: refreshed.user.system_role,
@@ -107,6 +111,7 @@ export function registerBrowserAuth(
       email: session.email,
       expiresAt: session.expires_at,
       refreshToken: session.refresh_token,
+      sessionExpiresAt: session.session_expires_at ?? session.expires_at,
       sessionId: session.session_id,
       status: session.status,
       systemRole: session.system_role,
@@ -123,6 +128,7 @@ export function setBrowserSessionCookie(
   if (!result.refresh_token) {
     throw new Error("Core did not return a refreshable session");
   }
+  const sessionExpiresAt = result.session_expires_at ?? result.expires_at;
   const assertion = encodeSessionAssertion({
     access_token: result.access_token,
     created_at: result.user.created_at,
@@ -130,12 +136,14 @@ export function setBrowserSessionCookie(
     email: result.user.email,
     expires_at: result.expires_at,
     refresh_token: result.refresh_token,
+    session_expires_at: sessionExpiresAt,
     session_id: result.session_id,
     status: result.user.status,
     system_role: result.user.system_role,
     user_id: result.user.id,
   });
   reply.setCookie(sessionCookieName, assertion, {
+    expires: new Date(sessionExpiresAt),
     httpOnly: true,
     path: "/",
     sameSite: "lax",

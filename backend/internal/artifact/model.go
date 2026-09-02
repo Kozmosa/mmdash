@@ -264,6 +264,7 @@ type InitializeUploadInput struct {
 	Kind           string
 	Tags           []string
 	Description    *string
+	FolderID       *string
 	IdempotencyKey string
 }
 

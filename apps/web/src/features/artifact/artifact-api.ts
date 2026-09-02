@@ -69,10 +69,24 @@ export const artifactApi = {
     );
   },
 
-  moveArtifact(projectId: string, artifactId: string, folderId: string | null) {
+  moveArtifact(
+    projectId: string,
+    artifactId: string,
+    folderId: string | null,
+    placement?: { attempt: number; uploadId: string },
+  ) {
     return apiClient.request<ArtifactDetail>(
       `${projectPath(projectId)}/${encodeURIComponent(artifactId)}/folder`,
-      { body: { folder_id: folderId }, method: "PUT" },
+      {
+        body: { folder_id: folderId },
+        headers: placement
+          ? {
+              "x-mmdash-placement-attempt": String(placement.attempt),
+              "x-mmdash-upload-id": placement.uploadId,
+            }
+          : undefined,
+        method: "PUT",
+      },
     );
   },
 

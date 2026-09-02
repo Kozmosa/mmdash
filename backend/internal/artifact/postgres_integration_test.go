@@ -43,6 +43,7 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	viewerID := generator.MustNew()
 	projectID := generator.MustNew()
 	agentInstanceID := generator.MustNew()
+	folderID := generator.MustNew()
 	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO auth_users(
@@ -60,6 +61,13 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		) VALUES($1,'Artifact integration',$2,$3,$3)
 	`, projectID, userID, now); err != nil {
 		t.Fatalf("insert project: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artifact_folders(
+			folder_id,project_id,name,position,created_at,updated_at
+		) VALUES($1,$2,'Article',0,$3,$3)
+	`, folderID, projectID, now); err != nil {
+		t.Fatalf("insert Artifact folder: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO project_members(
@@ -185,7 +193,8 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		Filename: "dataset.bin", Name: "Dataset",
 		SizeBytes: int64(len(contents)), SHA256: digest(contents),
 		MIMEType: "application/octet-stream", Kind: KindAttachment,
-		Tags: []string{"raw"}, IdempotencyKey: "multipart-1",
+		Tags: []string{"raw"}, FolderID: &folderID,
+		IdempotencyKey: "multipart-1",
 	}
 	if _, err := service.Initialize(ctx, viewer, projectID, input); !errors.Is(
 		err, ErrForbidden,
@@ -196,9 +205,19 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initialize multipart: %v", err)
 	}
+	initializedArtifact, err := store.GetArtifact(ctx, projectID, upload.ArtifactID)
+	if err != nil || initializedArtifact.FolderID == nil ||
+		*initializedArtifact.FolderID != folderID {
+		t.Fatalf("initialize did not assign folder atomically: %#v, %v", initializedArtifact, err)
+	}
 	repeated, err := service.Initialize(ctx, owner, projectID, input)
 	if err != nil || repeated.UploadID != upload.UploadID {
 		t.Fatalf("idempotent initialize: %#v, %v", repeated, err)
+	}
+	differentPlacement := input
+	differentPlacement.FolderID = nil
+	if _, err := service.Initialize(ctx, owner, projectID, differentPlacement); !errors.Is(err, ErrUploadConflict) {
+		t.Fatalf("idempotency key accepted a different folder: %v", err)
 	}
 	grants, err := service.SignParts(
 		ctx, owner, projectID, upload.UploadID, []int{2, 1},

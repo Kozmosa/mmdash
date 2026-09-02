@@ -7740,6 +7740,10 @@ components:
         expires_at:
           type: string
           format: date-time
+        session_expires_at:
+          type: string
+          format: date-time
+          description: Absolute expiry of the refreshable session. Browser cookies must not outlive this value.
         session_id:
           type: string
           format: uuid
@@ -8250,6 +8254,10 @@ components:
         description:
           type: string
           maxLength: 4000
+        folder_id:
+          type: string
+          format: uuid
+          description: Optional Project Artifact folder assigned atomically when the Artifact is created.
         idempotency_key:
           type: string
           minLength: 1

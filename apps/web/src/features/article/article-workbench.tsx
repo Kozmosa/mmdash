@@ -1075,6 +1075,7 @@ function ArticleArtifactCard({
           <Image
             alt={item.artifact.name}
             className="object-contain p-2"
+            draggable={false}
             fill
             sizes="320px"
             src={download.data.transfer.url}

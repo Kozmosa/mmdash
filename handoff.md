@@ -1,3 +1,37 @@
+# mmdash v0.1 Artifact upload consistency and persistent browser sessions
+
+- Updated: 2026-09-02
+- Branch: `main`
+- Scope: resolve Kozmosa/mmdash#69 and #70 without introducing an
+  Article-specific storage path. Artifact remains the owner of uploads for
+  Article and every other caller; browser authentication remains owned by the
+  Web BFF and Core Auth session.
+- Artifact placement: new upload initialization accepts an optional
+  Project-scoped `folder_id`, and Core persists it in the same transaction as
+  the Artifact, Version, upload session, Audit record, and Outbox work. A
+  confirmed file therefore cannot land at the Project root because a second
+  folder request received a 502. Legacy/resumed uploads retain a bounded
+  folder-move retry plus read-after-error reconciliation; an exhausted move is
+  reported as a partial-success warning and its local recovery record is kept.
+- Article drag behavior: internal Artifact, Zotero, and image-group MIME types
+  take precedence over browser `Files`; Artifact thumbnails are not native
+  draggable images. Dragging an existing Artifact into the editor therefore
+  inserts its immutable reference instead of uploading the preview again.
+- Observability: compatibility folder moves carry bounded attempt and upload
+  identifiers to the BFF, whose warning log records safe Project, Artifact,
+  folder, attempt, and upload context without file contents or credentials.
+- Authentication: Core login/refresh/device exchange now expose the absolute
+  session expiry. The BFF writes a signed, HTTP-only persistent cookie with
+  `Expires` set to that boundary while retaining `SameSite=Lax`, production
+  `Secure`, logout revocation, access-token rotation, and compatibility with
+  cookies and Core responses created before the additive field existed.
+- Verification: changed Go Artifact/Auth tests, Web upload/drag tests, and BFF
+  Artifact/Auth tests pass. Full TypeScript, Go, and Python lint/tests/builds,
+  generated-contract freshness and compatibility, and API catalog checks pass.
+  Caddyfile fragment policy passed, but syntax validation could not run because
+  neither Caddy nor a Docker daemon is available on this workstation; no Caddy
+  file changed in this work.
+
 # mmdash v0.1 resilient Repo operations and branch-scoped sync
 
 - Updated: 2026-09-01

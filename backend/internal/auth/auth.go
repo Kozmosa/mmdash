@@ -188,11 +188,12 @@ func (identity Identity) ActorID() string {
 
 // LoginResult returns the JWT only at login time.
 type LoginResult struct {
-	AccessToken  string    `json:"access_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	RefreshToken string    `json:"refresh_token"`
-	SessionID    string    `json:"session_id"`
-	User         User      `json:"user"`
+	AccessToken      string    `json:"access_token"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RefreshToken     string    `json:"refresh_token"`
+	SessionExpiresAt time.Time `json:"session_expires_at"`
+	SessionID        string    `json:"session_id"`
+	User             User      `json:"user"`
 }
 
 // RegisterInput contains public account registration fields.
@@ -584,11 +585,12 @@ func (service Service) Login(ctx context.Context, email string, password string)
 	}
 	requestctx.SetActor(ctx, user.ID, "session")
 	return LoginResult{
-		AccessToken:  accessToken,
-		ExpiresAt:    accessExpiresAt,
-		RefreshToken: refreshToken,
-		SessionID:    sessionID,
-		User:         user,
+		AccessToken:      accessToken,
+		ExpiresAt:        accessExpiresAt,
+		RefreshToken:     refreshToken,
+		SessionExpiresAt: sessionExpiresAt,
+		SessionID:        sessionID,
+		User:             user,
 	}, nil
 }
 
@@ -620,7 +622,7 @@ func (service Service) Refresh(ctx context.Context, refreshToken string) (LoginR
 		return LoginResult{}, ErrUnauthenticated
 	}
 	requestctx.SetActor(ctx, user.ID, "session")
-	return LoginResult{AccessToken: accessToken, ExpiresAt: accessExpiresAt, RefreshToken: newRefresh, SessionID: session.ID, User: user}, nil
+	return LoginResult{AccessToken: accessToken, ExpiresAt: accessExpiresAt, RefreshToken: newRefresh, SessionExpiresAt: session.ExpiresAt, SessionID: session.ID, User: user}, nil
 }
 
 // StartDeviceAuthorization creates one short-lived device login challenge.
@@ -735,7 +737,7 @@ func (service Service) ExchangeDeviceAuthorization(ctx context.Context, deviceCo
 	session := *exchange.Session
 	accessExpiresAt := service.accessExpiresAt(now, session.ExpiresAt)
 	requestctx.SetActor(ctx, user.ID, "session")
-	return LoginResult{AccessToken: accessToken, ExpiresAt: accessExpiresAt, RefreshToken: refreshToken, SessionID: session.ID, User: user}, nil
+	return LoginResult{AccessToken: accessToken, ExpiresAt: accessExpiresAt, RefreshToken: refreshToken, SessionExpiresAt: session.ExpiresAt, SessionID: session.ID, User: user}, nil
 }
 
 func (service Service) createSessionTokens(sessionID string, userID string, now time.Time, sessionExpiresAt time.Time) (string, string, time.Time, error) {

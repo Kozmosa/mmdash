@@ -38,8 +38,11 @@ choices are explicit in the browser UI.
 ## Multipart upload
 
 1. The browser or Agent runtime incrementally computes SHA-256 and initializes an upload with a
-   filename, size, MIME hint, kind, tags, idempotency key, and optional existing
-   Artifact ID through the version-upload route.
+   filename, size, MIME hint, kind, tags, idempotency key, an optional Project
+   folder, and an optional existing Artifact ID through the version-upload
+   route. For a new browser Artifact, Core assigns the folder in the same
+   transaction that creates the stable Artifact; callers do not need a
+   follow-up move request.
 2. Core checks Project RBAC and system limits, creates the pending immutable
    Version, chooses a MiB-aligned part size within the S3 10,000-part limit, and
    starts provider multipart state unless a Project-local blob is reusable.
@@ -118,6 +121,12 @@ project root.
 Artifact to a folder. Sending `{"folder_id": null}` moves it to the project
 root. The target folder must belong to the same Project, and all mutations are
 authorized by the Project Artifact permission boundary.
+
+`POST /v1/projects/{projectId}/artifacts/uploads` also accepts an optional
+`folder_id`. The assignment is validated by the same Project-scoped foreign
+key and persisted atomically with Artifact initialization. Reusing an
+idempotency key with a different target folder returns
+`ARTIFACT_UPLOAD_CONFLICT`.
 
 Deleting a folder has an intentionally safe, non-recursive policy: direct
 Artifacts are moved to the root in the same transaction, but a folder with
