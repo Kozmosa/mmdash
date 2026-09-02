@@ -289,6 +289,22 @@ export function parseArticleArtifactDrop(raw: string): ArticleArtifactDrop {
   return value as ArticleArtifactDrop;
 }
 
+export function droppedLocalImage(
+  dataTransfer: Pick<DataTransfer, "files" | "types">,
+): File | undefined {
+  const types = Array.from(dataTransfer.types);
+  if (
+    types.includes(articleArtifactMime) ||
+    types.includes(articleZoteroMime) ||
+    types.includes("application/vnd.mmdash.image-group-item")
+  ) {
+    return undefined;
+  }
+  return Array.from(dataTransfer.files).find((item) =>
+    item.type.startsWith("image/"),
+  );
+}
+
 export type ArticleZoteroDrop = {
   citationKey: string;
   itemKey: string;
@@ -1673,14 +1689,17 @@ export function ArticleEditor({
           projectId,
           "article",
         );
-        const uploadDetail = await new MultipartUploadTask({
+        const uploadTask = new MultipartUploadTask({
           file: detail.file,
           folderId: articleFolder.folder_id,
           kind: "attachment",
           name: detail.file.name,
           projectId,
           tags: ["article-image"],
-        }).start();
+        });
+        const uploadDetail = await uploadTask.start();
+        const placementMessage =
+          uploadTask.getSnapshot().placementError?.message;
         const version = uploadDetail.current_version;
         if (!version || version.status !== "available") {
           throw new Error("图片上传完成，但不可变版本尚不可用");
@@ -1714,7 +1733,9 @@ export function ArticleEditor({
             node,
           );
           if (inserted) {
-            setDropError(`图片 ${detail.file.name} 已加入图片组合`);
+            setDropError(
+              placementMessage ?? `图片 ${detail.file.name} 已加入图片组合`,
+            );
             return;
           }
         }
@@ -1740,7 +1761,9 @@ export function ArticleEditor({
                 ),
               );
               editor.view.focus();
-              setDropError(`已创建图片组合并加入 ${detail.file.name}`);
+              setDropError(
+                placementMessage ?? `已创建图片组合并加入 ${detail.file.name}`,
+              );
               return;
             }
           }
@@ -2063,14 +2086,16 @@ export function ArticleEditor({
         projectId,
         "article",
       );
-      const detail = await new MultipartUploadTask({
+      const uploadTask = new MultipartUploadTask({
         file,
         folderId: articleFolder.folder_id,
         kind: "attachment",
         name: file.name,
         projectId,
         tags: ["article-image"],
-      }).start();
+      });
+      const detail = await uploadTask.start();
+      const placementMessage = uploadTask.getSnapshot().placementError?.message;
       const version = detail.current_version;
       if (!version || version.status !== "available") {
         throw new Error("图片上传完成，但不可变版本尚不可用");
@@ -2084,10 +2109,12 @@ export function ArticleEditor({
       } satisfies ArticleArtifactDrop;
       if (replacementTarget) {
         await replaceImageWithArtifact(payload, replacementTarget);
-        setDropError(`图片 ${file.name} 已上传并替换原图片块`);
+        setDropError(
+          placementMessage ?? `图片 ${file.name} 已上传并替换原图片块`,
+        );
       } else {
         await insertArtifactNode(payload, insertionPosition);
-        setDropError(`图片 ${file.name} 已上传并插入`);
+        setDropError(placementMessage ?? `图片 ${file.name} 已上传并插入`);
       }
     } catch (error) {
       setDropError(error instanceof Error ? error.message : "图片上传失败");
@@ -3230,9 +3257,7 @@ export function ArticleEditor({
         const insertionPosition = dropIndicatorRef.current?.position;
         const inlinePosition = inlineDropIndicatorRef.current?.pos;
         clearDropIndicator();
-        const localImage = Array.from(event.dataTransfer?.files ?? []).find(
-          (item) => item.type.startsWith("image/"),
-        );
+        const localImage = droppedLocalImage(event.dataTransfer);
         if (localImage) {
           event.preventDefault();
           void uploadImage(localImage, undefined, insertionPosition);

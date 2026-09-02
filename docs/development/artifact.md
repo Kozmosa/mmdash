@@ -59,13 +59,17 @@ Versions.
 
 ## Core lifecycle
 
-Initialization validates Project RBAC, normalizes metadata, computes an
+Initialization validates Project RBAC, normalizes metadata and an optional
+Project-scoped folder assignment, computes an
 S3-compatible dynamic multipart plan, and reuses a matching Project-local
 SHA-256 plus size Blob only after a real object `Stat`. Part grants are signed
 on demand. Upload-session reads reconcile completed parts with the provider so
 pause, reconnect, and browser refresh do not create a second Version.
 
-Confirmation holds a database lease, compares the exact ordered part list with
+The target folder is written in the same transaction as the new stable
+Artifact, so a confirmed upload cannot be left at the Project root merely
+because a later folder request encountered a network failure. Confirmation
+holds a database lease, compares the exact ordered part list with
 provider state, completes multipart storage, verifies full object size and
 streaming SHA-256, promotes to the Project content-addressed key, and makes the
 Version available transactionally. A competing confirmation receives a
