@@ -1736,6 +1736,7 @@ type ArtifactInitializeUploadRequest struct {
 	Kind           string    `json:"kind"`
 	Tags           *[]string `json:"tags,omitempty"`
 	Description    *string   `json:"description,omitempty"`
+	FolderID       *string   `json:"folder_id,omitempty"`
 	IdempotencyKey string    `json:"idempotency_key"`
 }
 

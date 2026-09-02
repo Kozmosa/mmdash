@@ -4,6 +4,7 @@ import {
   listStoredUploads,
   MultipartUploadTask,
 } from "@/features/artifact/multipart-upload";
+import { ApiError } from "@/lib/api-client";
 
 const mocks = vi.hoisted(() => ({
   abortUpload: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getUpload: vi.fn(),
   initializeUpload: vi.fn(),
   initializeVersionUpload: vi.fn(),
+  moveArtifact: vi.fn(),
   signParts: vi.fn(),
 }));
 
@@ -39,6 +41,39 @@ function uploadSession(overrides: Record<string, unknown> = {}) {
     upload_mode: "multipart",
     version_id: "00000000-0000-4000-8000-000000000004",
     ...overrides,
+  };
+}
+
+function artifactDetail(folderId: string | null = null) {
+  return {
+    artifact: {
+      artifact_id: "00000000-0000-4000-8000-000000000003",
+      folder_id: folderId,
+    },
+    current_version: {
+      filename: "source.txt",
+      mime_type: "text/plain",
+      status: "available",
+      version_id: "00000000-0000-4000-8000-000000000004",
+    },
+  };
+}
+
+function storedUpload(folderId: string) {
+  return {
+    artifactId: "00000000-0000-4000-8000-000000000003",
+    createdAt: "2026-07-30T00:00:00Z",
+    fileLastModified: 100,
+    fileName: "source.txt",
+    fileSize: 6,
+    folderId,
+    idempotencyKey: "upload-key",
+    kind: "attachment" as const,
+    projectId,
+    sha256: "bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721",
+    tags: [],
+    uploadId,
+    versionId: "00000000-0000-4000-8000-000000000004",
   };
 }
 
@@ -74,6 +109,10 @@ describe("Artifact multipart upload task", () => {
         artifact_id: "00000000-0000-4000-8000-000000000003",
       },
     });
+    mocks.moveArtifact.mockImplementation(
+      (_projectId: string, _artifactId: string, folderId: string) =>
+        Promise.resolve(artifactDetail(folderId)),
+    );
   });
 
   afterEach(() => {
@@ -139,6 +178,111 @@ describe("Artifact multipart upload task", () => {
       status: "completed",
     });
     expect(listStoredUploads(projectId)).toEqual([]);
+  });
+
+  it("assigns the target folder atomically during upload initialization", async () => {
+    const folderId = "00000000-0000-4000-8000-000000000005";
+    mocks.confirmUpload.mockResolvedValue(artifactDetail(folderId));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(null, {
+            headers: { etag: '"etag"' },
+            status: 204,
+          }),
+        ),
+      ),
+    );
+
+    const task = new MultipartUploadTask({
+      file: new File(["abcdef"], "source.txt", { type: "text/plain" }),
+      folderId,
+      projectId,
+    });
+    await task.start();
+
+    expect(mocks.initializeUpload).toHaveBeenCalledWith(
+      projectId,
+      expect.objectContaining({ folder_id: folderId }),
+    );
+    expect(mocks.moveArtifact).not.toHaveBeenCalled();
+    expect(task.getSnapshot()).toMatchObject({ status: "completed" });
+  });
+
+  it("reconciles and retries a transient folder assignment for a legacy upload", async () => {
+    const folderId = "00000000-0000-4000-8000-000000000005";
+    const stored = storedUpload(folderId);
+    localStorage.setItem(
+      `mmdash.artifact-upload.v1.${projectId}.${uploadId}`,
+      JSON.stringify(stored),
+    );
+    mocks.getUpload.mockResolvedValue(
+      uploadSession({ status: "completed", upload_mode: "multipart" }),
+    );
+    mocks.get.mockResolvedValue(artifactDetail());
+    mocks.moveArtifact
+      .mockRejectedValueOnce(
+        new ApiError({
+          message: "Core service is temporarily unavailable",
+          status: 502,
+        }),
+      )
+      .mockResolvedValueOnce(artifactDetail(folderId));
+
+    const task = new MultipartUploadTask({
+      file: new File(["abcdef"], "source.txt", {
+        lastModified: 100,
+        type: "text/plain",
+      }),
+      projectId,
+      retryLimit: 2,
+      stored,
+    });
+    const detail = await task.start();
+
+    expect(mocks.moveArtifact).toHaveBeenCalledTimes(2);
+    expect(detail.artifact.folder_id).toBe(folderId);
+    expect(task.getSnapshot()).toMatchObject({ status: "completed" });
+    expect(task.getSnapshot().placementError).toBeUndefined();
+    expect(listStoredUploads(projectId)).toEqual([]);
+  });
+
+  it("keeps a confirmed legacy upload recoverable when folder assignment stays unavailable", async () => {
+    const folderId = "00000000-0000-4000-8000-000000000005";
+    const stored = storedUpload(folderId);
+    localStorage.setItem(
+      `mmdash.artifact-upload.v1.${projectId}.${uploadId}`,
+      JSON.stringify(stored),
+    );
+    mocks.getUpload.mockResolvedValue(
+      uploadSession({ status: "completed", upload_mode: "multipart" }),
+    );
+    mocks.get.mockResolvedValue(artifactDetail());
+    mocks.moveArtifact.mockRejectedValue(
+      new ApiError({
+        message: "Core service is temporarily unavailable",
+        status: 502,
+      }),
+    );
+
+    const task = new MultipartUploadTask({
+      file: new File(["abcdef"], "source.txt", {
+        lastModified: 100,
+        type: "text/plain",
+      }),
+      projectId,
+      retryLimit: 2,
+      stored,
+    });
+    const detail = await task.start();
+
+    expect(detail.artifact.folder_id).toBeNull();
+    expect(task.getSnapshot()).toMatchObject({ status: "completed" });
+    expect(task.getSnapshot().placementError?.message).toContain(
+      "文件已上传，但暂未归档到目标文件夹",
+    );
+    expect(listStoredUploads(projectId)).toEqual([stored]);
   });
 
   it("recovers completed provider parts after a refresh and uploads only missing parts", async () => {

@@ -14,8 +14,10 @@ schemas remain in `contracts/openapi/core.yaml` and
 5. Authenticated BFF calls forward that JWT to Core as a Bearer token.
 
 The cookie uses `SameSite=Lax`, is scoped to `/`, and is `Secure` in
-production. `POST /api/auth/logout` revokes the Core session before clearing
-the browser cookie.
+production. It is a persistent cookie whose `Expires` value is the absolute
+Core session expiry, so closing and reopening the browser preserves the login
+without allowing the cookie to outlive the revocable session. `POST
+/api/auth/logout` revokes the Core session before clearing the browser cookie.
 
 ## CLI device authorization and refresh
 

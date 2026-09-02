@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -242,6 +243,7 @@ func (access articleTestJobAccess) ClaimedWorkerJob(context.Context, auth.Identi
 
 type articleTestArtifacts struct {
 	archived      []BuildOutput
+	folderPaths   [][]string
 	resourceCalls [][2]string
 }
 
@@ -262,7 +264,7 @@ func (artifacts *articleTestArtifacts) ArticleResourceGrant(_ context.Context, _
 	artifacts.resourceCalls = append(artifacts.resourceCalls, [2]string{artifactID, versionID})
 	return map[string]interface{}{"method": "GET", "url": "https://grant.test/resource", "headers": map[string]string{"x-job": "scoped"}, "expires_at": "2026-08-13T01:00:00Z", "filename": "figure.png", "mime_type": "image/png", "size_bytes": int64(12), "sha256": strings.Repeat("a", 64)}, nil
 }
-func (artifacts *articleTestArtifacts) ArchiveArticleBuildOutput(_ context.Context, _, buildID, _, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+func (artifacts *articleTestArtifacts) ArchiveArticleBuildOutput(_ context.Context, _, buildID, _ string, folderPath []string, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
 	contents, err := io.ReadAll(input)
 	if err != nil {
 		return "", "", err
@@ -270,6 +272,7 @@ func (artifacts *articleTestArtifacts) ArchiveArticleBuildOutput(_ context.Conte
 	if int64(len(contents)) != expectedSize || hashBytes(contents) != expectedSHA {
 		return "", "", errors.New("output integrity mismatch")
 	}
+	artifacts.folderPaths = append(artifacts.folderPaths, append([]string(nil), folderPath...))
 	artifacts.archived = append(artifacts.archived, BuildOutput{Role: role, Filename: filename, MIMEType: mimeType, SHA256: expectedSHA, SizeBytes: expectedSize})
 	return "artifact-" + buildID + "-" + role, "version-" + role, nil
 }
@@ -517,7 +520,9 @@ func TestArticlePermissionsAndWorkerOutputBoundary(t *testing.T) {
 
 	contents := []byte("%PDF-1.7\n")
 	digest := hashBytes(contents)
-	store.builds = []Build{{BuildID: "build-1", ProjectID: "project-1", BuildKind: BuildFormal, Status: BuildRunning, JobID: "job-1", TemplateID: "template-1", CreatedBy: "user-1"}}
+	commitSHA := strings.Repeat("c", 40)
+	createdAt := time.Date(2026, time.August, 13, 1, 2, 3, 456789000, time.UTC)
+	store.builds = []Build{{BuildID: "build-1", ProjectID: "project-1", BuildKind: BuildFormal, Status: BuildRunning, JobID: "job-1", TemplateID: "template-1", CreatedBy: "user-1", CommitSHA: commitSHA, CreatedAt: createdAt}}
 	artifacts := &articleTestArtifacts{}
 	service.Artifacts = artifacts
 	service.JobAccess = articleTestJobAccess{job: jobs.Job{ID: "job-1", JobType: JobTypeBuild, ProjectID: "project-1", Payload: map[string]interface{}{"build_id": "build-1"}}}
@@ -537,6 +542,10 @@ func TestArticlePermissionsAndWorkerOutputBoundary(t *testing.T) {
 	}
 	if output.ArtifactID == "" || output.VersionID == "" || len(artifacts.archived) != 1 || len(store.outputs) != 1 {
 		t.Fatalf("Worker output bypassed immutable Artifact registration: %#v %#v", output, artifacts.archived)
+	}
+	wantFolder := []string{"article", "build", commitSHA + "_20260813T010203.456789Z"}
+	if len(artifacts.folderPaths) != 1 || !reflect.DeepEqual(artifacts.folderPaths[0], wantFolder) {
+		t.Fatalf("Worker output used the wrong Artifact folder: %#v", artifacts.folderPaths)
 	}
 	if _, err = service.WorkerOutput(context.Background(), human(), "job-1", "pdf", "../paper.pdf", "application/pdf", digest, int64(len(contents)), bytes.NewReader(contents)); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unsafe Worker output filename was accepted: %v", err)

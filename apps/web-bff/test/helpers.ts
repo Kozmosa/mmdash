@@ -28,6 +28,9 @@ export async function signedSessionCookie(
     email: "test@example.com",
     expires_at: new Date(Date.now() + 3_600_000).toISOString(),
     refresh_token: "test-refresh-token-that-is-at-least-32-characters",
+    session_expires_at: new Date(
+      Date.now() + 30 * 24 * 3_600_000,
+    ).toISOString(),
     session_id: "session-1",
     status: "active",
     system_role: "admin",

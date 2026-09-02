@@ -5747,6 +5747,11 @@ export interface components {
       refresh_token?: string;
       /** Format: date-time */
       expires_at: string;
+      /**
+       * Format: date-time
+       * @description Absolute expiry of the refreshable session. Browser cookies must not outlive this value.
+       */
+      session_expires_at?: string;
       /** Format: uuid */
       session_id: string;
       user: components["schemas"]["User"];
@@ -6005,6 +6010,11 @@ export interface components {
       kind: components["schemas"]["ArtifactPublicKind"];
       tags?: string[];
       description?: string;
+      /**
+       * Format: uuid
+       * @description Optional Project Artifact folder assigned atomically when the Artifact is created.
+       */
+      folder_id?: string;
       idempotency_key: string;
     };
     AgentArtifactInitializeUploadRequest: {

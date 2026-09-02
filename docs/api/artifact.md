@@ -38,8 +38,11 @@ choices are explicit in the browser UI.
 ## Multipart upload
 
 1. The browser or Agent runtime incrementally computes SHA-256 and initializes an upload with a
-   filename, size, MIME hint, kind, tags, idempotency key, and optional existing
-   Artifact ID through the version-upload route.
+   filename, size, MIME hint, kind, tags, idempotency key, an optional Project
+   folder, and an optional existing Artifact ID through the version-upload
+   route. For a new browser Artifact, Core assigns the folder in the same
+   transaction that creates the stable Artifact; callers do not need a
+   follow-up move request.
 2. Core checks Project RBAC and system limits, creates the pending immutable
    Version, chooses a MiB-aligned part size within the S3 10,000-part limit, and
    starts provider multipart state unless a Project-local blob is reusable.
@@ -114,10 +117,27 @@ nested tree. `POST` creates a folder, `PATCH` renames it, and
 Folder names are unique case-insensitively among siblings, including the
 project root.
 
+Internal Article and Experiment archive operations also use this folder model.
+The owning domain supplies a stable semantic path. Artifact transactionally
+ensures the tree, then assigns its leaf in the transaction that creates each
+file record. All outputs of one Article
+Build share one leaf under `article/build`, `article/draft`, or
+`article/template`; an Experiment execution bundle and its oversized files
+share one leaf under `experiment`. Repeated operations converge on the same
+case-insensitive path and reconcile an already completed Artifact that was
+previously left at the Project root. This placement is metadata only and does
+not alter content-addressed object keys.
+
 `PUT /v1/projects/{projectId}/artifacts/{artifactId}/folder` assigns an
 Artifact to a folder. Sending `{"folder_id": null}` moves it to the project
 root. The target folder must belong to the same Project, and all mutations are
 authorized by the Project Artifact permission boundary.
+
+`POST /v1/projects/{projectId}/artifacts/uploads` also accepts an optional
+`folder_id`. The assignment is validated by the same Project-scoped foreign
+key and persisted atomically with Artifact initialization. Reusing an
+idempotency key with a different target folder returns
+`ARTIFACT_UPLOAD_CONFLICT`.
 
 Deleting a folder has an intentionally safe, non-recursive policy: direct
 Artifacts are moved to the root in the same transaction, but a folder with

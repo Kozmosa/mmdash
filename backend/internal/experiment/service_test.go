@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -115,7 +116,7 @@ func (store *experimentTestStore) Compare(context.Context, string, []string) (Co
 	return Comparison{Items: []Experiment{store.item}}, nil
 }
 
-type experimentTestArtifact struct{}
+type experimentTestArtifact struct{ folderPath []string }
 
 type resultRepoStub struct {
 	reverted repo.ResultRevertRequest
@@ -132,7 +133,8 @@ func (stub *resultRepoStub) Revert(_ context.Context, input repo.ResultRevertReq
 	return repo.CommitResult{CommitSHA: strings.Repeat("c", 40)}, nil
 }
 
-func (experimentTestArtifact) ArchiveExperimentResult(context.Context, string, string, string, string, int64, io.Reader) (artifact.Detail, error) {
+func (archiver *experimentTestArtifact) ArchiveExperimentResult(_ context.Context, _, _, _ string, folderPath []string, _ string, _ int64, _ io.Reader) (artifact.Detail, error) {
+	archiver.folderPath = append([]string(nil), folderPath...)
 	return artifact.Detail{
 		Artifact: artifact.Artifact{ID: "artifact-1"},
 		CurrentVersion: &artifact.Version{
@@ -249,8 +251,11 @@ func TestRerunCreatesNewBoxReIdentityAndLineage(t *testing.T) {
 }
 
 func TestTaskResultAndBundleArchiveUseImmutableExecutionBundle(t *testing.T) {
-	store := &experimentTestStore{item: Experiment{ID: "experiment-1", ProjectID: "project-1", CreatedBy: "user-1"}}
-	service := Service{Store: store, Artifacts: experimentTestArtifact{}}
+	commitSHA := strings.Repeat("d", 40)
+	createdAt := time.Date(2026, time.August, 11, 4, 5, 6, 123456000, time.UTC)
+	store := &experimentTestStore{item: Experiment{ID: "experiment-1", ProjectID: "project-1", CreatedBy: "user-1", SourceCommit: commitSHA, CreatedAt: createdAt}}
+	archiver := &experimentTestArtifact{}
+	service := Service{Store: store, Artifacts: archiver}
 	task := boxcontrol.Task{ID: "task-1", ExperimentID: "experiment-1", ProjectID: "project-1"}
 	if err := service.TaskResult(context.Background(), task, boxcontrol.Result{}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("empty result was accepted: %v", err)
@@ -270,6 +275,10 @@ func TestTaskResultAndBundleArchiveUseImmutableExecutionBundle(t *testing.T) {
 	pointer, err := service.ArchiveArtifact(context.Background(), task, strings.Repeat("a", 64), 10, strings.NewReader("artifact"))
 	if err != nil || pointer["filename"] != "execution-bundle.zip" {
 		t.Fatalf("bundle archive: %#v %v", pointer, err)
+	}
+	wantFolder := []string{"experiment", commitSHA + "_20260811T040506.123456Z"}
+	if !reflect.DeepEqual(archiver.folderPath, wantFolder) {
+		t.Fatalf("bundle archive used the wrong Artifact folder: %#v", archiver.folderPath)
 	}
 }
 

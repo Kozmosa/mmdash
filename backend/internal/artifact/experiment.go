@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"os"
 	"path"
@@ -101,7 +102,9 @@ func (service Service) experimentVersion(
 // Artifact Version. The result branch records only its stable pointer.
 func (service Service) ArchiveExperimentFile(
 	ctx context.Context,
-	projectID, experimentID, createdBy, resultPath, mimeType,
+	projectID, experimentID, createdBy string,
+	folderPath []string,
+	resultPath, mimeType,
 	expectedSHA string,
 	expectedSize int64,
 	input io.Reader,
@@ -109,9 +112,39 @@ func (service Service) ArchiveExperimentFile(
 	expectedSHA = strings.ToLower(strings.TrimSpace(expectedSHA))
 	resultPath = strings.TrimSpace(resultPath)
 	if projectID == "" || experimentID == "" || createdBy == "" ||
-		!safeZipPath(resultPath) || mimeType == "" || expectedSize < 1 ||
+		input == nil || !safeZipPath(resultPath) || mimeType == "" || expectedSize < 1 ||
 		expectedSize > service.MaxUploadBytes || !sha256Pattern.MatchString(expectedSHA) {
 		return Detail{}, ErrInvalid
+	}
+	folderID, err := service.ensureManagedFolder(ctx, projectID, folderPath)
+	if err != nil {
+		return Detail{}, err
+	}
+	filename := path.Base(resultPath)
+	pathHash := sha256.Sum256([]byte(resultPath))
+	idempotencyKey := "experiment-file:" + experimentID + ":" + hex.EncodeToString(pathHash[:8])
+	initial := InitializeUploadInput{
+		Filename: filename, SizeBytes: expectedSize, SHA256: expectedSHA,
+		MIMEType: mimeType, Kind: KindExperimentResult,
+		FolderID: folderID, IdempotencyKey: idempotencyKey,
+	}
+	if existing, lookupErr := service.Store.GetUploadByIdempotency(
+		ctx, projectID, idempotencyKey,
+	); lookupErr == nil {
+		if !matchesInitial(existing, createdBy, initial) {
+			return Detail{}, ErrUploadConflict
+		}
+		if existing.Status != UploadCompleted {
+			return Detail{}, ErrUploadConflict
+		}
+		if err := service.ensureManagedArtifactPlacement(
+			ctx, projectID, existing.ArtifactID, folderID,
+		); err != nil {
+			return Detail{}, err
+		}
+		return service.Store.GetDetail(ctx, projectID, existing.ArtifactID, false)
+	} else if !errors.Is(lookupErr, ErrNotFound) {
+		return Detail{}, lookupErr
 	}
 	temporary, err := stageResultInput(input, expectedSize, expectedSHA)
 	if err != nil {
@@ -141,13 +174,13 @@ func (service Service) ArchiveExperimentFile(
 	}
 	now := service.now()
 	sourceID := experimentID
-	filename := path.Base(resultPath)
 	artifact := Artifact{
 		ID: artifactID, ProjectID: projectID, Kind: KindExperimentResult,
 		Source: SourceExperiment, SourceObjectID: &sourceID,
 		Tags: []string{"experiment-result", "large-result-file"}, Name: resultPath,
 		RecommendedUsage: []string{"result"}, CurrentVersionID: &versionID,
-		Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
+		FolderID: folderID,
+		Status:   StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
 	}
 	version := Version{
 		ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1,
@@ -155,20 +188,39 @@ func (service Service) ArchiveExperimentFile(
 		MIMEType: mimeType, SizeBytes: expectedSize, Status: StatusPendingUpload,
 		CreatedBy: createdBy, CreatedAt: now,
 	}
-	pathHash := sha256.Sum256([]byte(resultPath))
-	idempotency := "experiment-file:" + experimentID + ":" + hex.EncodeToString(pathHash[:8])
-	upload, _, err := service.prepareUpload(
+	upload, providerUpload, err := service.prepareUpload(
 		ctx, projectID, artifactID, versionID, uploadID, createdBy,
-		filename, mimeType, expectedSHA, expectedSize, idempotency, plan,
+		filename, mimeType, expectedSHA, expectedSize, idempotencyKey, plan,
 	)
 	if err != nil {
 		return Detail{}, err
 	}
 	if upload.Status == UploadCompleted {
-		return service.Store.GetDetail(ctx, projectID, upload.ArtifactID, false)
+		artifact.Status = StatusAvailable
+		version.Status = StatusAvailable
+		version.BlobID = strings.TrimPrefix(upload.ProviderUploadID, "deduplicated:")
+		version.AvailableAt = upload.CompletedAt
 	}
 	if err := service.Store.CreateFirst(ctx, artifact, version, upload); err != nil {
+		service.abortPrepared(ctx, providerUpload)
+		if errors.Is(err, ErrUploadConflict) {
+			existing, findErr := service.Store.GetUploadByIdempotency(
+				ctx, projectID, idempotencyKey,
+			)
+			if findErr == nil && matchesInitial(existing, createdBy, initial) &&
+				existing.Status == UploadCompleted {
+				if placeErr := service.ensureManagedArtifactPlacement(
+					ctx, projectID, existing.ArtifactID, folderID,
+				); placeErr != nil {
+					return Detail{}, placeErr
+				}
+				return service.Store.GetDetail(ctx, projectID, existing.ArtifactID, false)
+			}
+		}
 		return Detail{}, err
+	}
+	if upload.Status == UploadCompleted {
+		return service.Store.GetDetail(ctx, projectID, artifactID, false)
 	}
 	provider := providerHandle(upload)
 	parts := make([]CompletedPart, 0, plan.PartCount)

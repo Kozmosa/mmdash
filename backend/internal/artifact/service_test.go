@@ -24,11 +24,12 @@ func TestNormalizeArtifactInputAndContentKey(t *testing.T) {
 		MultipartPartBytes: MultipartMinPartBytes,
 	}
 	description := "  source data  "
+	folderID := "550e8400-e29b-41d4-a716-446655440000"
 	input := InitializeUploadInput{
 		Filename: " input.csv ", SizeBytes: 6 * 1024 * 1024,
 		SHA256: strings.Repeat("a", 64), MIMEType: "text/csv; charset=utf-8",
 		Kind: KindAttachment, Tags: []string{" data ", "DATA", "raw"},
-		Description: &description, IdempotencyKey: " upload-1 ",
+		Description: &description, FolderID: &folderID, IdempotencyKey: " upload-1 ",
 	}
 	plan, err := service.normalizeInitialize(&input)
 	if err != nil {
@@ -39,6 +40,9 @@ func TestNormalizeArtifactInputAndContentKey(t *testing.T) {
 	}
 	if input.Name != "input.csv" || input.MIMEType != "text/csv" {
 		t.Fatalf("unexpected normalized display values: %#v", input)
+	}
+	if input.FolderID == nil || *input.FolderID != folderID {
+		t.Fatalf("unexpected normalized folder: %#v", input.FolderID)
 	}
 	if len(input.Tags) != 2 || input.Tags[0] != "data" || input.Tags[1] != "raw" {
 		t.Fatalf("unexpected normalized tags: %#v", input.Tags)
@@ -72,6 +76,12 @@ func TestNormalizeArtifactInputRejectsPublicForgeryAndUnsafeMetadata(t *testing.
 		t.Fatalf("expected filename rejection, got %v", err)
 	}
 	base.Filename = "input.bin"
+	invalidFolder := "not-a-uuid"
+	base.FolderID = &invalidFolder
+	if _, err := service.normalizeInitialize(&base); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("expected folder rejection, got %v", err)
+	}
+	base.FolderID = nil
 	base.Tags = []string{"line\nbreak"}
 	if _, err := service.normalizeInitialize(&base); !errors.Is(err, ErrTagInvalid) {
 		t.Fatalf("expected tag rejection, got %v", err)
