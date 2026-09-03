@@ -12,6 +12,15 @@ type SlashItem = {
   label: string;
 };
 
+export function nextSlashSelection(
+  selected: number,
+  direction: "down" | "up",
+  itemCount: number,
+): number {
+  if (itemCount <= 0) return 0;
+  return (selected + (direction === "down" ? 1 : -1) + itemCount) % itemCount;
+}
+
 const slashItems: SlashItem[] = [
   {
     label: "正文",
@@ -178,6 +187,7 @@ function renderSlashMenu() {
   const draw = (props: SuggestionProps<SlashItem, SlashItem>) => {
     current = props;
     if (!root) return;
+    const previousScrollTop = root.scrollTop;
     selected = Math.min(selected, Math.max(0, props.items.length - 1));
     root.replaceChildren();
     root.setAttribute("aria-label", "插入块");
@@ -188,12 +198,23 @@ function renderSlashMenu() {
       button.className = `block w-full rounded px-3 py-2 text-left text-sm ${index === selected ? "bg-accent text-accent-foreground" : "hover:bg-muted"}`;
       button.textContent = item.label;
       button.setAttribute("role", "option");
+      button.id = `article-slash-option-${index}`;
       button.setAttribute("aria-selected", String(index === selected));
       button.addEventListener("mousedown", (event) => {
         event.preventDefault();
         props.command(item);
       });
       root.append(button);
+    }
+    const selectedOption = root.querySelector<HTMLElement>(
+      `#article-slash-option-${selected}`,
+    );
+    if (selectedOption) {
+      root.setAttribute("aria-activedescendant", selectedOption.id);
+      root.scrollTop = previousScrollTop;
+      selectedOption.scrollIntoView({ block: "nearest" });
+    } else {
+      root.removeAttribute("aria-activedescendant");
     }
     if (!props.items.length) {
       const empty = document.createElement("p");
@@ -215,11 +236,11 @@ function renderSlashMenu() {
     onKeyDown({ event }: { event: KeyboardEvent }) {
       if (!current?.items.length) return event.key === "Escape";
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        selected =
-          (selected +
-            (event.key === "ArrowDown" ? 1 : -1) +
-            current.items.length) %
-          current.items.length;
+        selected = nextSlashSelection(
+          selected,
+          event.key === "ArrowDown" ? "down" : "up",
+          current.items.length,
+        );
         draw(current);
         return true;
       }
