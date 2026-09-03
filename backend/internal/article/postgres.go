@@ -113,20 +113,42 @@ func (store PostgresStore) ReviewBlock(ctx context.Context, projectID, blockID, 
 		reviewed.BlockID = blockID
 		_ = json.Unmarshal(attrsJSON, &reviewed.Attrs)
 		now := store.now()
-		reviewed.Tag = "reviewed"
 		reviewed.UpdatedAt = now
 		reviewed.Provenance = object(reviewed.Attrs["provenance"])
-		reviewed.Provenance["reviewed_by"] = actorID
-		reviewed.Provenance["reviewed_at"] = now.UTC().Format(time.RFC3339Nano)
+		currentTag, _ := reviewed.Attrs["tag"].(string)
+		eventStatus := "reviewed"
+		if currentTag == "reviewed" {
+			reviewed.Tag = reviewSourceTag(reviewed.Provenance["reviewed_from_tag"])
+			delete(reviewed.Provenance, "reviewed_by")
+			delete(reviewed.Provenance, "reviewed_at")
+			delete(reviewed.Provenance, "reviewed_from_tag")
+			eventStatus = "unreviewed"
+		} else {
+			reviewed.Tag = reviewSourceTag(currentTag)
+			reviewed.Provenance["reviewed_from_tag"] = reviewed.Tag
+			reviewed.Tag = "reviewed"
+			reviewed.Provenance["reviewed_by"] = actorID
+			reviewed.Provenance["reviewed_at"] = now.UTC().Format(time.RFC3339Nano)
+		}
 		reviewed.Attrs["tag"] = reviewed.Tag
 		reviewed.Attrs["provenance"] = reviewed.Provenance
 		encoded, _ := json.Marshal(reviewed.Attrs)
 		if _, err := tx.ExecContext(ctx, `UPDATE article_blocks SET attributes=$3,updated_at=$4 WHERE project_id=$1 AND block_id=$2`, projectID, blockID, encoded, now); err != nil {
 			return err
 		}
-		return store.record(ctx, tx, "article.block.reviewed", projectID, actorID, "article_block", blockID, map[string]interface{}{"block_id": blockID, "status": "reviewed"})
+		return store.record(ctx, tx, "article.block.reviewed", projectID, actorID, "article_block", blockID, map[string]interface{}{"block_id": blockID, "status": eventStatus})
 	})
 	return reviewed, err
+}
+
+func reviewSourceTag(value interface{}) string {
+	tag, _ := value.(string)
+	switch tag {
+	case "ai_draft", "human_draft", "ai_revision", "human_revision":
+		return tag
+	default:
+		return "human_revision"
+	}
 }
 
 func (store PostgresStore) listBlocks(ctx context.Context, projectID string) ([]Block, error) {

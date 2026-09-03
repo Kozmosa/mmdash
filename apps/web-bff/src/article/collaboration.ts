@@ -29,7 +29,7 @@ type Draft = {
   yjs_update: string;
 };
 
-type ReviewedBlock = Record<string, unknown> & { block_id: string };
+type ArticleBlockSnapshot = Record<string, unknown> & { block_id: string };
 
 export class ArticleCollaboration {
   private static readonly maxConnectionsPerProject = 32;
@@ -151,7 +151,7 @@ export class ArticleCollaboration {
     return this.getDraft(context);
   }
 
-  broadcastBlockReviewed(projectId: string, block: ReviewedBlock): void {
+  broadcastBlockReviewed(projectId: string, block: ArticleBlockSnapshot): void {
     this.hocuspocus.documents
       .get(roomName(projectId))
       ?.broadcastStateless(

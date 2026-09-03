@@ -122,18 +122,14 @@ export function ArticleTagPanel({
                           {actor}
                         </span>
                         <Button
-                          aria-label={`审阅块 ${block.ordinal + 1}`}
-                          disabled={
-                            !canEdit ||
-                            block.tag === "reviewed" ||
-                            pending === block.block_id
-                          }
+                          aria-label={`${block.tag === "reviewed" ? "撤回审阅" : "审阅"}块 ${block.ordinal + 1}`}
+                          disabled={!canEdit || pending === block.block_id}
                           onClick={() => void review(block.block_id)}
                           size="sm"
                           variant="ghost"
                         >
                           <Check className="size-3.5" />
-                          审阅
+                          {block.tag === "reviewed" ? "撤回审阅" : "审阅"}
                         </Button>
                       </>
                     ) : null}

@@ -3655,13 +3655,14 @@ export function ArticleEditor({
                       blockMenuIndex < editor.state.doc.childCount - 1
                     }
                     canMoveUp={blockMenuIndex > 0}
-                    canReview={blockMenuMetadata?.tag !== "reviewed"}
+                    canReview={Boolean(blockMenuMetadata)}
                     onAction={runBlockAction}
                     onClose={closeBlockMenu}
                     onCopyId={copyBlockId}
                     onCut={cutBlock}
                     onDelete={deleteBlockFromMenu}
                     onReview={reviewBlockFromMenu}
+                    reviewed={blockMenuMetadata?.tag === "reviewed"}
                     updatedAt={blockMenuMetadata?.updated_at}
                   />
                 </div>,

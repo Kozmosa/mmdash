@@ -103,8 +103,19 @@ func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID,
 			if store.draft.Blocks[index].ContentFingerprint != expectedFingerprint {
 				return Block{}, ErrBlockChanged
 			}
-			store.draft.Blocks[index].Tag = "reviewed"
-			store.draft.Blocks[index].Provenance = map[string]interface{}{"reviewed_by": actorID}
+			block := &store.draft.Blocks[index]
+			if block.Tag == "reviewed" {
+				block.Tag = reviewSourceTag(block.Provenance["reviewed_from_tag"])
+				delete(block.Provenance, "reviewed_by")
+				delete(block.Provenance, "reviewed_from_tag")
+			} else {
+				if block.Provenance == nil {
+					block.Provenance = map[string]interface{}{}
+				}
+				block.Provenance["reviewed_from_tag"] = reviewSourceTag(block.Tag)
+				block.Tag = "reviewed"
+				block.Provenance["reviewed_by"] = actorID
+			}
 			return store.draft.Blocks[index], nil
 		}
 	}
@@ -421,6 +432,10 @@ func TestReviewBlockIsExplicitAndPermissionChecked(t *testing.T) {
 	block, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint)
 	if err != nil || block.Tag != "reviewed" || block.Provenance["reviewed_by"] != "user-1" {
 		t.Fatalf("review was not persisted with actor provenance: %#v %v", block, err)
+	}
+	block, err = service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint)
+	if err != nil || block.Tag != "human_draft" || block.Provenance["reviewed_by"] != nil {
+		t.Fatalf("review withdrawal did not restore the previous tag: %#v %v", block, err)
 	}
 	service.Access = articleTestAccess{denied: project.PermissionArticleEdit}
 	if _, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint); !errors.Is(err, ErrForbidden) {

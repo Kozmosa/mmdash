@@ -3809,7 +3809,7 @@ paths:
   /api/projects/{projectId}/article/blocks/{blockId}/review:
     post:
       tags: [Article]
-      summary: Mark one unchanged Article block as human reviewed
+      summary: Review or withdraw review for one unchanged Article block
       operationId: bff.article.blocks.review
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
@@ -3821,10 +3821,12 @@ paths:
         content:
           application/json:
             schema:
-              { $ref: "./core.yaml#/components/schemas/ReviewArticleBlockRequest" }
+              {
+                $ref: "./core.yaml#/components/schemas/ReviewArticleBlockRequest",
+              }
       responses:
         "200":
-          description: Reviewed Article block.
+          description: Article block after review or review withdrawal.
           content:
             application/json:
               schema: { $ref: "./core.yaml#/components/schemas/ArticleBlock" }

@@ -220,8 +220,8 @@ export function ArticleWorkbench() {
         );
       },
       onStateless: ({ payload }) => {
-        const block = reviewedBlockFromCollaborationEvent(payload);
-        if (block) updateReviewedBlockCache(queryClient, project.id, block);
+        const block = articleBlockFromCollaborationEvent(payload);
+        if (block) updateArticleBlockCache(queryClient, project.id, block);
       },
       onStatus: ({ status }) => setConnection(status),
       onSynced: ({ state }) => {
@@ -521,18 +521,27 @@ export function WritingWorkspace({
           contentFingerprint,
         );
       } catch (error) {
-        if (!(error instanceof ApiError) || error.code !== "ARTICLE_BLOCK_CHANGED") {
+        if (
+          !(error instanceof ApiError) ||
+          error.code !== "ARTICLE_BLOCK_CHANGED"
+        ) {
           throw error;
         }
         const draft = await articleApi.flush(projectId);
         updateArticleDraftCache(queryClient, projectId, draft);
+        const refreshedBlock = draft.blocks.find(
+          (block) => block.block_id === blockId,
+        );
+        if (!refreshedBlock?.content_fingerprint) {
+          throw new Error("同步后找不到该块，请重新选择后审阅");
+        }
         reviewed = await articleApi.reviewBlock(
           projectId,
           blockId,
-          contentFingerprint,
+          refreshedBlock.content_fingerprint,
         );
       }
-      updateReviewedBlockCache(queryClient, projectId, reviewed);
+      updateArticleBlockCache(queryClient, projectId, reviewed);
     },
     [projectId, queryClient],
   );
@@ -3045,7 +3054,7 @@ export function outputLabel(role: ArticleBuildOutput["role"]): string {
   return "构建日志";
 }
 
-function reviewedBlockFromCollaborationEvent(
+function articleBlockFromCollaborationEvent(
   payload: string,
 ): ArticleBlock | undefined {
   try {
@@ -3056,7 +3065,13 @@ function reviewedBlockFromCollaborationEvent(
       !block ||
       typeof block.block_id !== "string" ||
       typeof block.content_fingerprint !== "string" ||
-      block.tag !== "reviewed" ||
+      ![
+        "ai_draft",
+        "human_draft",
+        "ai_revision",
+        "human_revision",
+        "reviewed",
+      ].includes(block.tag as ArticleBlock["tag"]) ||
       typeof block.node_type !== "string" ||
       typeof block.ordinal !== "number" ||
       typeof block.text !== "string" ||
@@ -3094,7 +3109,7 @@ function updateArticleDraftCache(
   );
 }
 
-function updateReviewedBlockCache(
+function updateArticleBlockCache(
   queryClient: QueryClient,
   projectId: string,
   reviewed: ArticleBlock,

@@ -31,6 +31,7 @@ export function ArticleBlockMenu({
   canMoveDown,
   canMoveUp,
   canReview,
+  reviewed = false,
   onAction,
   onCopyId,
   onCut,
@@ -44,6 +45,7 @@ export function ArticleBlockMenu({
   canMoveDown: boolean;
   canMoveUp: boolean;
   canReview: boolean;
+  reviewed?: boolean;
   onAction: (
     action:
       | ArticleBlockConversion
@@ -173,7 +175,7 @@ export function ArticleBlockMenu({
             icon={<Check className="size-3.5 text-green-600" />}
             onClick={onReview}
           >
-            审阅通过
+            {reviewed ? "撤回审阅" : "审阅通过"}
           </MenuButton>
         ) : null}
         <button

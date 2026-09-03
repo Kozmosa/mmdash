@@ -38,6 +38,32 @@ describe("settings routes", () => {
     expect(headers.get("x-mmdash-project-id")).toBe("project-1");
   });
 
+  it("forwards project rendering setting reads to Core", async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ type_key: "article.rendering", values: {} }),
+      );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const response = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/projects/project-1/settings/article.rendering",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchImplementation.mock.calls[0]?.[0]).toBe(
+      "http://core.test/v1/settings/projects/project-1/article.rendering",
+    );
+  });
+
   it("preserves a redacted secret placeholder when updating settings", async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
