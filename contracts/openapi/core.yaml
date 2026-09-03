@@ -5906,7 +5906,7 @@ components:
     CreateArticleReleaseRequest:
       type: object
       additionalProperties: false
-      required: [commit_id, build_id, tag, title, notes]
+      required: [commit_id, build_id, tag, title]
       properties:
         commit_id: { type: string, format: uuid }
         build_id: { type: string, format: uuid }
@@ -5925,7 +5925,6 @@ components:
           bibliography_tool,
           tag,
           title,
-          notes,
           idempotency_key,
         ]
       properties:
@@ -6572,6 +6571,11 @@ components:
           }
         commits:
           { type: array, items: { $ref: "#/components/schemas/ArticleCommit" } }
+        commit_operations:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ArticleCommitOperation" },
+          }
         builds:
           { type: array, items: { $ref: "#/components/schemas/ArticleBuild" } }
         releases:
@@ -6605,6 +6609,7 @@ components:
           enum:
             - references
             - commits
+            - commit_operations
             - builds
             - releases
             - templates

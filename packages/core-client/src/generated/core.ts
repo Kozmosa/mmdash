@@ -4586,7 +4586,7 @@ export interface components {
       build_id: string;
       tag: string;
       title: string;
-      notes: string;
+      notes?: string;
     };
     CreateArticlePublicationRequest: {
       /** Format: int64 */
@@ -4600,7 +4600,7 @@ export interface components {
       bibliography_tool: "auto" | "bibtex" | "biber" | "none";
       tag: string;
       title: string;
-      notes: string;
+      notes?: string;
       idempotency_key: string;
     };
     RegisterArticleTemplateRequest: {
@@ -5006,6 +5006,7 @@ export interface components {
       draft: components["schemas"]["ArticleDraft"];
       references: components["schemas"]["ArticleReference"][];
       commits: components["schemas"]["ArticleCommit"][];
+      commit_operations?: components["schemas"]["ArticleCommitOperation"][];
       builds: components["schemas"]["ArticleBuild"][];
       releases: components["schemas"]["ArticleRelease"][];
       templates: components["schemas"]["ArticleTemplate"][];
@@ -5021,6 +5022,7 @@ export interface components {
       component:
         | "references"
         | "commits"
+        | "commit_operations"
         | "builds"
         | "releases"
         | "templates"
