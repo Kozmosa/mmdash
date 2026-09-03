@@ -6,12 +6,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createArticleNodes } from "@/features/article/article-nodes";
 import {
+  nextSlashSelection,
   openArticleImageUploadEvent,
   openArticleSidebarEvent,
   runSlashItemForTest,
 } from "@/features/article/slash-command";
 import {
   droppedLocalImage,
+  equalizedArticleTableCellWidths,
   migrateLegacyTableCaptions,
   parseArticleArtifactDrop,
   parseArticleZoteroDrop,
@@ -20,6 +22,17 @@ import {
 } from "@/features/article/article-editor";
 
 describe("Article editor block capabilities", () => {
+  it("keeps slash-command keyboard selection stable across the full menu", () => {
+    let selected = 0;
+    for (let index = 0; index < 11; index += 1) {
+      selected = nextSlashSelection(selected, "down", 15);
+    }
+    expect(selected).toBe(11);
+    expect(nextSlashSelection(selected, "up", 15)).toBe(10);
+    expect(nextSlashSelection(14, "down", 15)).toBe(0);
+    expect(nextSlashSelection(0, "up", 15)).toBe(14);
+  });
+
   it("deduplicates unchanged outline and tag-rail measurements", () => {
     const outline = [{ id: "chapter-1", level: 1, text: "方法" }];
     expect(sameArticleOutline(outline, [...outline])).toBe(true);
@@ -211,6 +224,73 @@ describe("Article editor block capabilities", () => {
     expect(
       editor.getJSON().content?.some((node) => node.type === "tableCaption"),
     ).toBe(false);
+    editor.destroy();
+  });
+
+  it("equalizes all table columns to the same width", () => {
+    const editor = new Editor({
+      content: {
+        content: [
+          {
+            content: [
+              {
+                content: [
+                  {
+                    attrs: { colwidth: [100] },
+                    content: [{ type: "paragraph" }],
+                    type: "tableCell",
+                  },
+                  {
+                    attrs: { colwidth: [200] },
+                    content: [{ type: "paragraph" }],
+                    type: "tableCell",
+                  },
+                  {
+                    attrs: { colwidth: [300] },
+                    content: [{ type: "paragraph" }],
+                    type: "tableCell",
+                  },
+                ],
+                type: "tableRow",
+              },
+              {
+                content: [
+                  {
+                    attrs: { colwidth: [80] },
+                    content: [{ type: "paragraph" }],
+                    type: "tableCell",
+                  },
+                  {
+                    attrs: { colwidth: [100] },
+                    content: [{ type: "paragraph" }],
+                    type: "tableCell",
+                  },
+                  {
+                    attrs: { colwidth: [120] },
+                    content: [{ type: "paragraph" }],
+                    type: "tableCell",
+                  },
+                ],
+                type: "tableRow",
+              },
+            ],
+            type: "table",
+          },
+        ],
+        type: "doc",
+      },
+      extensions: [
+        StarterKit,
+        ...createArticleNodes("project-1"),
+        TableKit.configure({ table: false }),
+      ],
+    });
+
+    const table = editor.state.doc.firstChild!;
+    expect(Array.from(equalizedArticleTableCellWidths(table).values())).toEqual(
+      [[150], [150], [150], [150], [150], [150]],
+    );
+
     editor.destroy();
   });
 

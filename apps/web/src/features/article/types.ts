@@ -195,6 +195,7 @@ export type ArticleAggregate = {
   chapter_tags: ArticleChapterTag[];
   references: ArticleReference[];
   commits: ArticleCommit[];
+  commit_operations?: ArticleCommitOperation[];
   builds: ArticleBuild[];
   releases: ArticleRelease[];
   templates: ArticleTemplate[];
@@ -205,6 +206,7 @@ export type ArticleAggregate = {
     component:
       | "references"
       | "commits"
+      | "commit_operations"
       | "builds"
       | "releases"
       | "templates"

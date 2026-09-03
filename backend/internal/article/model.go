@@ -306,6 +306,7 @@ type Aggregate struct {
 	Builds            []Build            `json:"builds"`
 	ChapterTags       []ChapterTag       `json:"chapter_tags"`
 	Commits           []Commit           `json:"commits"`
+	CommitOperations  []CommitOperation  `json:"commit_operations"`
 	Draft             Draft              `json:"draft"`
 	References        []Reference        `json:"references"`
 	Releases          []Release          `json:"releases"`
