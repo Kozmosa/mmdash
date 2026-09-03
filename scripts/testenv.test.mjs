@@ -7,7 +7,10 @@ import {
   createIsolatedEnvironment,
   createLayout,
   createServiceConfiguration,
+  dockerAccessibleUrl,
+  parseDotEnv,
   resolvePorts,
+  resolveWorkerMode,
   serviceOrder,
 } from "./testenv.mjs";
 
@@ -87,11 +90,20 @@ describe("isolated Pixi development environment", () => {
       configuration.environments.core.NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK,
     ).toBe("true");
     expect(configuration.environments.core).toMatchObject({
+      AGENT_MCP_GATEWAY_URL: "http://127.0.0.1:13002/mcp",
       ARTIFACT_STORAGE_BACKEND: "minio",
       ARTIFACT_WEB_ORIGIN: "http://127.0.0.1:13000",
+      CORE_INTERNAL_URL: "http://127.0.0.1:18080",
+      MMDASH_PUBLIC_URL: "http://127.0.0.1:13000",
       OBJECT_STORAGE_PUBLIC_ENDPOINT: "http://127.0.0.1:19000",
       OBJECT_STORAGE_REGION: "us-east-1",
     });
+    expect(configuration.environments.core.NOTION_OAUTH_REDIRECT_URI).toBe(
+      "http://127.0.0.1:13000/api/integrations/notion/oauth/callback",
+    );
+    expect(configuration.environments.core.REPO_LOCAL_ALLOWED_ROOTS).toBe(
+      layout.localRepositoryRoot,
+    );
     expect(configuration.environments.core.REPO_ASKPASS_PATH).toContain(
       "mmdash-git-askpass",
     );
@@ -107,10 +119,62 @@ describe("isolated Pixi development environment", () => {
       "postgres",
       "minio",
       "core",
+      "worker",
       "web-bff",
       "mcp-gateway",
       "web",
     ]);
+  });
+
+  it("binds Core and MinIO for a container Worker without changing public URLs", () => {
+    const layout = createLayout(path.resolve("C:/workspace/mmdash"));
+    const configuration = createServiceConfiguration(
+      resolvePorts({}),
+      layout,
+      {},
+      "docker",
+    );
+
+    expect(configuration.coreBindHost).toBe("0.0.0.0");
+    expect(configuration.minioBindHost).toBe("0.0.0.0");
+    expect(configuration.coreUrl).toBe("http://127.0.0.1:18080");
+    expect(configuration.minioUrl).toBe("http://127.0.0.1:19000");
+    expect(dockerAccessibleUrl(configuration.coreUrl)).toBe(
+      "http://host.docker.internal:18080",
+    );
+  });
+
+  it("loads dotenv syntax without overriding process-level values", () => {
+    expect(
+      parseDotEnv(
+        [
+          "# comment",
+          "PLAIN=value",
+          'QUOTED="two words"',
+          "export SINGLE='three words'",
+        ].join("\n"),
+      ),
+    ).toEqual({
+      PLAIN: "value",
+      QUOTED: "two words",
+      SINGLE: "three words",
+    });
+    expect(() => parseDotEnv("NOT VALID")).toThrow("Invalid .env entry");
+  });
+
+  it("selects a complete Worker runtime and supports an explicit base-only mode", async () => {
+    await expect(resolveWorkerMode({}, async () => true)).resolves.toBe(
+      "native",
+    );
+    await expect(
+      resolveWorkerMode({}, async (command) => command !== "latexmk"),
+    ).resolves.toBe("docker");
+    await expect(
+      resolveWorkerMode({ MMDASH_TESTENV_WORKER_MODE: "disabled" }),
+    ).resolves.toBe("disabled");
+    await expect(
+      resolveWorkerMode({ MMDASH_TESTENV_WORKER_MODE: "invalid" }),
+    ).rejects.toThrow("must be auto, native, docker, or disabled");
   });
 
   it("rejects paths that escape the isolated root", () => {

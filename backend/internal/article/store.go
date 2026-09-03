@@ -29,6 +29,7 @@ type Store interface {
 	CreateCommit(context.Context, Commit) (Commit, bool, error)
 	CreateCommitOperation(context.Context, CommitOperation) (CommitOperation, bool, error)
 	ClaimCommitOperations(context.Context, string, time.Time, time.Duration, int) ([]CommitOperation, error)
+	ListCommitOperations(context.Context, string) ([]CommitOperation, error)
 	BindCommitOperation(context.Context, CommitOperation, Commit, time.Time) (Commit, error)
 	CompleteCommitOperation(context.Context, CommitOperation, time.Time) error
 	FailCommitOperation(context.Context, CommitOperation, string, bool, time.Time, time.Time) error

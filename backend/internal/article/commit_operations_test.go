@@ -11,16 +11,20 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/clock"
 	"github.com/mmdash/mmdash/backend/internal/platform/identity"
+	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 	"github.com/mmdash/mmdash/backend/internal/repo"
 )
 
 type commitOperationStoreStub struct {
 	Store
+	bindErr     error
 	claims      []CommitOperation
 	completed   *Commit
+	failureCode string
 	finished    bool
 	failed      *CommitOperation
 	publication *Publication
+	requestID   string
 	terminal    bool
 }
 
@@ -39,8 +43,12 @@ func (*commitOperationStoreStub) RenewCommitOperationLease(
 }
 
 func (store *commitOperationStoreStub) BindCommitOperation(
-	_ context.Context, _ CommitOperation, item Commit, _ time.Time,
+	ctx context.Context, _ CommitOperation, item Commit, _ time.Time,
 ) (Commit, error) {
+	store.requestID = requestctx.RequestID(ctx)
+	if store.bindErr != nil {
+		return Commit{}, store.bindErr
+	}
 	store.completed = &item
 	return item, nil
 }
@@ -81,12 +89,13 @@ func (store *commitOperationStoreStub) CompleteCommitOperation(
 func (store *commitOperationStoreStub) FailCommitOperation(
 	_ context.Context,
 	operation CommitOperation,
-	_ string,
+	code string,
 	terminal bool,
 	_ time.Time,
 	_ time.Time,
 ) error {
 	store.failed = &operation
+	store.failureCode = code
 	store.terminal = terminal
 	return nil
 }
@@ -150,10 +159,69 @@ func TestCommitOperationCoordinatorCommitsFrozenSnapshotAndBindsResult(t *testin
 		store.completed.DraftRevision != 7 || store.failed != nil {
 		t.Fatalf("operation was not completed: %#v %#v", store.completed, store.failed)
 	}
+	if store.requestID != "article-operation:operation-1" {
+		t.Fatalf("background operation lost its audit request ID: %q", store.requestID)
+	}
 	if len(workspace.request.Changes) != 3 ||
 		string(workspace.request.Changes[0].Content) != "# Frozen\n" ||
 		workspace.request.ExpectedHeadSHA != operation.ExpectedHeadSHA {
 		t.Fatalf("Repo did not receive the frozen snapshot: %#v", workspace.request)
+	}
+}
+
+func TestCommitOperationCoordinatorPersistsBindFailureState(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	operation := CommitOperation{
+		OperationID: "operation-1", CommitID: "commit-1", ProjectID: "project-1",
+		OperationKind: "commit", ExpectedHeadSHA: strings.Repeat("a", 40),
+		RequestSHA256: strings.Repeat("c", 64), Manuscript: "# Frozen\n",
+		ManifestBytes: []byte("{}\n"), Message: "checkpoint",
+		LockedBy: "worker-1", CreatedBy: "user-1", CreatedAt: now, Attempts: 10,
+	}
+	store := &commitOperationStoreStub{
+		bindErr: errors.New("audit unavailable"),
+		claims:  []CommitOperation{operation},
+	}
+	coordinator := CommitOperationCoordinator{
+		Clock: clock.Fixed{Time: now}, Lease: 90 * time.Second, Limit: 1,
+		Owner: "worker-1", Service: &Service{Workspace: &commitOperationWorkspaceStub{}}, Store: store,
+	}
+
+	if err := coordinator.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if store.failed == nil || store.failureCode != "ARTICLE_COMMIT_PERSIST_FAILED" {
+		t.Fatalf("bind failure was not persisted: %#v %q", store.failed, store.failureCode)
+	}
+}
+
+func TestScanCommitOperationStatusIncludesDraftRevision(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	finished := now.Add(time.Minute)
+	operation, err := scanCommitOperationStatus(func(destinations ...interface{}) error {
+		*destinations[0].(*string) = "operation-1"
+		*destinations[1].(*string) = "commit-1"
+		*destinations[2].(*string) = "project-1"
+		*destinations[3].(*string) = "commit"
+		*destinations[4].(*string) = ""
+		*destinations[5].(*int64) = 42
+		*destinations[6].(*string) = "succeeded"
+		*destinations[7].(*string) = "completed"
+		*destinations[8].(*string) = strings.Repeat("b", 40)
+		*destinations[9].(*string) = ""
+		*destinations[10].(*int) = 1
+		*destinations[11].(*int) = 10
+		*destinations[12].(*time.Time) = now
+		*destinations[13].(*time.Time) = now
+		*destinations[14].(*time.Time) = now
+		*destinations[15].(**time.Time) = &finished
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operation.DraftRevision != 42 || operation.Status != "succeeded" || operation.CommitSHA == "" {
+		t.Fatalf("operation status projection lost persisted fields: %#v", operation)
 	}
 }
 

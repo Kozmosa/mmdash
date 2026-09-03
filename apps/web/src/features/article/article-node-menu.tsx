@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  Columns3,
   Images,
   Trash2,
   Ungroup,
@@ -22,7 +23,7 @@ import type {
 export type ArticleNodeMenuKind = "image" | "imageGroup" | "table";
 export type ArticleImageAlignment = "left" | "center" | "right";
 
-type TableAction = "toggleHeaderRow" | "deleteTable";
+export type TableAction = "toggleHeaderRow" | "deleteTable" | "equalizeColumns";
 
 export function ArticleNodeMenu({
   alt,
@@ -367,6 +368,10 @@ function TableMenu({
         <ActionButton onClick={() => onTableAction("toggleHeaderRow")}>
           <ChevronDown className="size-3.5" />
           切换首行为表头
+        </ActionButton>
+        <ActionButton onClick={() => onTableAction("equalizeColumns")}>
+          <Columns3 className="size-3.5" />
+          列等宽
         </ActionButton>
       </div>
       <DangerButton onClick={() => onTableAction("deleteTable")}>

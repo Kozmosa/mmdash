@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  CircleX,
   Clock3,
   Copy,
   Download,
@@ -45,6 +46,7 @@ import * as Y from "yjs";
 import { toast } from "sonner";
 
 import { useCurrentProject } from "@/components/providers/project-provider";
+import { useCurrentUser } from "@/components/providers/user-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +107,7 @@ import type {
   ArticleAggregate,
   ArticleBuild,
   ArticleBuildOutput,
+  ArticleCommitOperation,
   ArticleRelease,
   ArticleTemplateManifest,
   ZoteroCollection,
@@ -134,6 +137,7 @@ const templateDefaults: ArticleTemplateManifest = {
 
 export function ArticleWorkbench() {
   const project = useCurrentProject();
+  const currentUser = useCurrentUser();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<WorkspaceTab>("write");
   const [provider, setProvider] = useState<HocuspocusProvider>();
@@ -148,12 +152,19 @@ export function ArticleWorkbench() {
   const aggregate = useQuery({
     queryFn: () => articleApi.aggregate(project.id),
     queryKey: ["article", project.id],
-    refetchInterval: (query) =>
-      query.state.data?.builds.some((build) =>
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const hasActiveOperation = data?.commit_operations?.some(
+        (operation) =>
+          operation.status === "queued" ||
+          operation.status === "running" ||
+          operation.status === "retry_wait",
+      );
+      const hasActiveBuild = data?.builds.some((build) =>
         ["queued", "running"].includes(build.status),
-      )
-        ? 2_000
-        : 15_000,
+      );
+      return hasActiveOperation || hasActiveBuild ? 2_000 : 15_000;
+    },
   });
   const permissions = useQuery({
     queryFn: () =>
@@ -173,10 +184,12 @@ export function ArticleWorkbench() {
     false;
   const collaborator = useMemo(
     () => ({
-      color: colorFor(project.id),
-      name: project.role ? `${project.role} · 当前用户` : "当前用户",
+      color: colorFor(
+        `${project.id}:${provider?.document.clientID ?? "pending"}`,
+      ),
+      name: currentUser?.displayName || currentUser?.email || "当前用户",
     }),
-    [project.id, project.role],
+    [currentUser?.displayName, currentUser?.email, project.id, provider],
   );
 
   useEffect(() => {
@@ -367,7 +380,6 @@ export function WritingWorkspace({
   collaborator,
   data,
   onFlush,
-  onOpenHistory,
   onOpenTemplates,
   onRefresh,
   provider,
@@ -786,7 +798,6 @@ export function WritingWorkspace({
           canRelease={canRelease}
           data={data}
           onClose={() => setCommitOpen(false)}
-          onOpenHistory={onOpenHistory}
           onOpenTemplates={() => {
             setCommitOpen(false);
             onOpenTemplates();
@@ -1475,16 +1486,187 @@ export function articleActionMessage(error: Error): string {
   return `${error.message}${error.requestId ? `（请求 ${error.requestId}）` : ""}`;
 }
 
-async function waitForArticleCommit(projectId: string, operationId: string) {
-  for (let attempt = 0; attempt < 600; attempt += 1) {
-    const operation = await articleApi.commitOperation(projectId, operationId);
-    if (operation.status === "succeeded") return operation;
-    if (operation.status === "failed") {
-      throw new Error(operation.error_code ?? "论文 Commit 失败");
-    }
-    await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+function operationStateLabel(status: ArticleCommitOperation["status"]): string {
+  return {
+    failed: "失败",
+    queued: "排队中",
+    retry_wait: "等待重试",
+    running: "执行中",
+    succeeded: "已完成",
+  }[status];
+}
+
+function operationStageLabel(operation: ArticleCommitOperation): string {
+  if (operation.status === "failed" || operation.stage === "failed") {
+    return "操作失败";
   }
-  throw new Error("论文 Commit 仍在后台执行，请稍后到版本历史查看");
+  if (operation.operation_kind === "publication") {
+    return {
+      committing: "固定 Commit 中",
+      completed: "Commit 已确认，Build/Release 排队中",
+      failed: "操作失败",
+      publishing: "Commit 已确认，Build/Release 排队中",
+      queued: "等待固定 Commit",
+    }[operation.stage];
+  }
+  return {
+    committing: "固定 Commit 中",
+    completed: "远端 Commit 已确认",
+    failed: "操作失败",
+    publishing: "处理 Commit 结果",
+    queued: "等待固定 Commit",
+  }[operation.stage];
+}
+
+export function ArticleOperationStatus({
+  operations,
+}: Readonly<{
+  operations: ArticleCommitOperation[];
+}>) {
+  const [open, setOpen] = useState(false);
+  const active = operations.some((operation) =>
+    ["queued", "running", "retry_wait"].includes(operation.status),
+  );
+  const latest = operations[0];
+  const state = active
+    ? "active"
+    : latest?.status === "failed"
+      ? "failed"
+      : latest?.status === "succeeded"
+        ? "succeeded"
+        : "idle";
+  const label = {
+    active: "有 Commit / Release 操作正在执行",
+    failed: "最近的 Commit / Release 操作失败",
+    idle: "暂无 Commit / Release 操作",
+    succeeded: "最近的 Commit / Release 操作已完成",
+  }[state];
+  return (
+    <>
+      <Button
+        aria-label={label}
+        className="rounded-full"
+        onClick={() => setOpen(true)}
+        size="icon"
+        title={label}
+        variant="outline"
+      >
+        {state === "active" ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : state === "failed" ? (
+          <CircleX className="size-4 text-destructive" />
+        ) : state === "succeeded" ? (
+          <CheckCircle2 className="size-4 text-emerald-600" />
+        ) : (
+          <Clock3 className="size-4 text-muted-foreground" />
+        )}
+      </Button>
+      {open ? (
+        <ArticleOperationQueueDialog
+          onClose={() => setOpen(false)}
+          operations={operations}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ArticleOperationQueueDialog({
+  onClose,
+  operations,
+}: Readonly<{
+  onClose: () => void;
+  operations: ArticleCommitOperation[];
+}>) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <Card
+        aria-labelledby="article-operation-queue-title"
+        aria-modal="true"
+        className="flex max-h-[min(46rem,calc(100vh-2rem))] w-full max-w-3xl flex-col"
+        role="dialog"
+      >
+        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle id="article-operation-queue-title">
+              Commit / Release 队列
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              最近 {operations.length} 条后台操作
+            </p>
+          </div>
+          <Button onClick={onClose} size="sm" variant="ghost">
+            关闭
+          </Button>
+        </CardHeader>
+        <CardContent className="min-h-0 space-y-2 overflow-y-auto">
+          {operations.map((operation) => (
+            <div
+              className="rounded-lg border bg-muted/20 p-3 text-sm"
+              key={operation.operation_id}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                {["queued", "running", "retry_wait"].includes(
+                  operation.status,
+                ) ? (
+                  <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+                ) : operation.status === "succeeded" ? (
+                  <CheckCircle2 className="size-4 text-emerald-600" />
+                ) : (
+                  <CircleX className="size-4 text-destructive" />
+                )}
+                <span className="font-medium">
+                  {operation.operation_kind === "publication"
+                    ? "提交并发布"
+                    : "论文 Commit"}
+                </span>
+                <Badge>{operationStateLabel(operation.status)}</Badge>
+                <span className="text-xs text-muted-foreground">
+                  {operationStageLabel(operation)} · 草稿 r
+                  {operation.draft_revision}
+                </span>
+                <time className="ml-auto text-xs text-muted-foreground">
+                  {new Date(operation.updated_at).toLocaleString()}
+                </time>
+              </div>
+              {operation.commit_sha ? (
+                <p className="mt-2 font-mono text-xs text-muted-foreground">
+                  Commit {operation.commit_sha}
+                </p>
+              ) : null}
+              {operation.status === "failed" ? (
+                <details className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                  <summary className="cursor-pointer font-medium text-destructive">
+                    查看失败日志
+                  </summary>
+                  <dl className="mt-2 grid gap-1 font-mono text-muted-foreground sm:grid-cols-[7rem_minmax(0,1fr)]">
+                    <dt>error_code</dt>
+                    <dd className="break-all">
+                      {operation.error_code ?? "ARTICLE_OPERATION_FAILED"}
+                    </dd>
+                    <dt>operation_id</dt>
+                    <dd className="break-all">{operation.operation_id}</dd>
+                    <dt>attempts</dt>
+                    <dd>
+                      {operation.attempts} / {operation.max_attempts}
+                    </dd>
+                    <dt>updated_at</dt>
+                    <dd>{operation.updated_at}</dd>
+                  </dl>
+                </details>
+              ) : null}
+            </div>
+          ))}
+          {!operations.length ? <Empty label="暂无后台操作" /> : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 export function CommitDialog({
@@ -1492,7 +1674,6 @@ export function CommitDialog({
   canRelease,
   data,
   onClose,
-  onOpenHistory,
   onOpenTemplates,
   onRefresh,
 }: Readonly<{
@@ -1500,7 +1681,6 @@ export function CommitDialog({
   canRelease: boolean;
   data: ArticleAggregate;
   onClose: () => void;
-  onOpenHistory: () => void;
   onOpenTemplates: () => void;
   onRefresh: () => Promise<void>;
 }>) {
@@ -1521,20 +1701,10 @@ export function CommitDialog({
         message.trim(),
       );
     },
-    onSuccess: (operation) => {
+    onSuccess: async () => {
       onClose();
       toast.info("论文 Commit 已进入后台队列，可以继续编辑");
-      void waitForArticleCommit(data.draft.project_id, operation.operation_id)
-        .then(async () => {
-          await onRefresh();
-          toast.success("论文 Commit 已完成并通过远端确认");
-          onOpenHistory();
-        })
-        .catch((error: unknown) => {
-          toast.error(
-            error instanceof Error ? error.message : "论文 Commit 执行失败",
-          );
-        });
+      await onRefresh();
     },
   });
   const publish = useMutation({
@@ -1552,20 +1722,10 @@ export function CommitDialog({
         title: title.trim(),
       });
     },
-    onSuccess: (operation) => {
+    onSuccess: async () => {
       onClose();
       toast.info("提交并发布已进入后台队列，可以继续编辑");
-      void waitForArticleCommit(data.draft.project_id, operation.operation_id)
-        .then(async () => {
-          await onRefresh();
-          toast.success("Commit 已通过远端确认，正式构建已进入队列");
-          onOpenHistory();
-        })
-        .catch((error: unknown) => {
-          toast.error(
-            error instanceof Error ? error.message : "提交并发布执行失败",
-          );
-        });
+      await onRefresh();
     },
   });
   const error = commit.error ?? publish.error;
@@ -1696,19 +1856,24 @@ function VersionHistoryWorkspace(
   const [tab, setTab] = useState<"commits" | "releases">("commits");
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <Button
-          onClick={() => setTab("commits")}
-          variant={tab === "commits" ? "default" : "outline"}
-        >
-          Commits
-        </Button>
-        <Button
-          onClick={() => setTab("releases")}
-          variant={tab === "releases" ? "default" : "outline"}
-        >
-          Releases
-        </Button>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setTab("commits")}
+            variant={tab === "commits" ? "default" : "outline"}
+          >
+            Commits
+          </Button>
+          <Button
+            onClick={() => setTab("releases")}
+            variant={tab === "releases" ? "default" : "outline"}
+          >
+            Releases
+          </Button>
+        </div>
+        <ArticleOperationStatus
+          operations={props.data.commit_operations ?? []}
+        />
       </div>
       {tab === "commits" ? (
         <BuildWorkspace
@@ -2878,11 +3043,10 @@ function ErrorState({ message }: Readonly<{ message: string }>) {
   );
 }
 function colorFor(value: string) {
-  const colors = ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706"];
   let hash = 0;
   for (const char of value)
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-  return colors[Math.abs(hash) % colors.length];
+  return `hsl(${Math.abs(hash) % 360} 72% 42%)`;
 }
 function formatBytes(value: number) {
   return value < 1024 * 1024

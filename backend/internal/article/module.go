@@ -174,7 +174,7 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 				if !decode(w, r, &body) {
 					return
 				}
-				value, _, err := module.Service.CreateRelease(r.Context(), caller, projectID, body.CommitID, body.BuildID, body.Tag, body.Title, body.Notes)
+				value, _, err := module.Service.CreateRelease(r.Context(), caller, projectID, body.CommitID, body.BuildID, body.Tag, body.Title, optionalString(body.Notes))
 				writeResult(w, r, http.StatusCreated, value, err)
 				return
 			}
@@ -199,7 +199,7 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 				if !decode(w, r, &body) {
 					return
 				}
-				value, _, err := module.Service.Publish(r.Context(), caller, projectID, PublicationInput{DraftRevision: body.DraftRevision, Message: body.Message, TemplateID: body.TemplateID, Engine: body.Engine, BibliographyTool: body.BibliographyTool, Tag: body.Tag, Title: body.Title, Notes: body.Notes, IdempotencyKey: body.IdempotencyKey})
+				value, _, err := module.Service.Publish(r.Context(), caller, projectID, PublicationInput{DraftRevision: body.DraftRevision, Message: body.Message, TemplateID: body.TemplateID, Engine: body.Engine, BibliographyTool: body.BibliographyTool, Tag: body.Tag, Title: body.Title, Notes: optionalString(body.Notes), IdempotencyKey: body.IdempotencyKey})
 				writeResult(w, r, http.StatusAccepted, value, err)
 				return
 			}
@@ -215,7 +215,7 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 						DraftRevision: body.DraftRevision, Message: body.Message,
 						TemplateID: body.TemplateID, Engine: body.Engine,
 						BibliographyTool: body.BibliographyTool, Tag: body.Tag,
-						Title: body.Title, Notes: body.Notes,
+						Title: body.Title, Notes: optionalString(body.Notes),
 						IdempotencyKey: body.IdempotencyKey,
 					},
 				)
@@ -395,6 +395,13 @@ func (module Module) handleWorker(w http.ResponseWriter, r *http.Request) {
 }
 
 type validatable interface{ Validate() error }
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
 
 func decode[T validatable](w http.ResponseWriter, r *http.Request, body T) bool {
 	if !httpx.DecodeJSON(w, r, body) {
