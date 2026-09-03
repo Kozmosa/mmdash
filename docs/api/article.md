@@ -68,5 +68,5 @@ fingerprint; successful review records `reviewed_by` and `reviewed_at`.
 
 The `PATCH` operation resets a tag to `unedited` or `unreviewed` after the
 caller has inspected the heading change and refreshes its fingerprint. The
-dedicated `POST .../review` operation is the only operation that sets the
-reviewed state.
+dedicated `POST .../review` operation sets or withdraws the reviewed state and
+restores the tag that preceded the review when withdrawing it.

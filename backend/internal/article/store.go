@@ -12,7 +12,7 @@ import (
 type Store interface {
 	GetDraft(context.Context, string) (Draft, error)
 	PersistDraft(context.Context, string, string, PersistDraftInput, string, []Block, map[string]interface{}, string) (Draft, error)
-	ReviewBlock(context.Context, string, string, string) (Block, error)
+	ReviewBlock(context.Context, string, string, string, string) (Block, error)
 	CreateChapterTag(context.Context, ChapterTag) (ChapterTag, bool, error)
 	GetChapterTag(context.Context, string, string) (ChapterTag, error)
 	ListChapterTags(context.Context, string) ([]ChapterTag, error)

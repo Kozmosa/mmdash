@@ -2822,6 +2822,22 @@ func (request PersistArticleDraftRequest) Validate() error {
 	return nil
 }
 
+// ReviewArticleBlockRequest is generated from the Core request-body schema.
+type ReviewArticleBlockRequest struct {
+	ContentFingerprint string `json:"content_fingerprint"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ReviewArticleBlockRequest) Validate() error {
+	if request.ContentFingerprint == "" {
+		return fmt.Errorf("content_fingerprint is required")
+	}
+	if matched, err := regexp.MatchString("^[0-9a-f]{64}$", request.ContentFingerprint); err != nil || !matched {
+		return fmt.Errorf("content_fingerprint has an invalid format")
+	}
+	return nil
+}
+
 // CreateArticleChapterTagRequest is generated from the Core request-body schema.
 type CreateArticleChapterTagRequest struct {
 	HeadingBlockID string  `json:"heading_block_id"`

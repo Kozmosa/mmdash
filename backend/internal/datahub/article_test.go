@@ -32,3 +32,14 @@ func TestArticleBlockTitlesAreUTF8Safe(t *testing.T) {
 		t.Fatalf("invalid UTF-8 truncation: %q", truncated)
 	}
 }
+
+func TestArticleProjectionDescribesWithdrawnBlockReview(t *testing.T) {
+	object := articleProjection(contract.EventEnvelope{
+		EventType:  "article.block.reviewed",
+		OccurredAt: time.Now(),
+		Payload:    map[string]interface{}{"block_id": "block-1", "status": "unreviewed"},
+	})
+	if object.title != "Article block" || object.summary != "Review withdrawn" || object.status != "active" {
+		t.Fatalf("withdrawn review projection = %#v", object)
+	}
+}

@@ -110,7 +110,7 @@ export function registerArticleRoutes(
         url: `/api/projects/:projectId/article/${name}/:resourceId${suffix ? `/${suffix}` : ""}`,
         handler: async (request, reply) => {
           const parsed = resource.parse(request.params);
-          return proxy(
+          const value = await proxy(
             coreClient,
             request,
             reply,
@@ -118,10 +118,29 @@ export function registerArticleRoutes(
             `/${name}/${encodeURIComponent(parsed.resourceId)}${suffix ? `/${suffix}` : ""}`,
             method,
           );
+          if (
+            name === "blocks" &&
+            suffix === "review" &&
+            method === "POST" &&
+            isArticleBlock(value)
+          ) {
+            collaboration.broadcastBlockReviewed(parsed.projectId, value);
+          }
+          return value;
         },
       });
     }
   }
+}
+
+function isArticleBlock(
+  value: unknown,
+): value is Record<string, unknown> & { block_id: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).block_id === "string"
+  );
 }
 
 async function proxy(

@@ -97,11 +97,25 @@ func (store *articleTestStore) PersistDraft(_ context.Context, projectID, _ stri
 	store.draft = Draft{ProjectID: projectID, DraftRevision: input.ExpectedRevision + 1, StateVector: input.StateVector, YjsUpdate: input.YjsUpdate, TiptapJSON: input.TiptapJSON, Markdown: markdown, Blocks: blocks, Manifest: manifest, ReferencesBIB: references}
 	return store.draft, nil
 }
-func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID, actorID string) (Block, error) {
+func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID, expectedFingerprint, actorID string) (Block, error) {
 	for index := range store.draft.Blocks {
 		if store.draft.Blocks[index].BlockID == blockID {
-			store.draft.Blocks[index].Tag = "reviewed"
-			store.draft.Blocks[index].Provenance = map[string]interface{}{"reviewed_by": actorID}
+			if store.draft.Blocks[index].ContentFingerprint != expectedFingerprint {
+				return Block{}, ErrBlockChanged
+			}
+			block := &store.draft.Blocks[index]
+			if block.Tag == "reviewed" {
+				block.Tag = reviewSourceTag(block.Provenance["reviewed_from_tag"])
+				delete(block.Provenance, "reviewed_by")
+				delete(block.Provenance, "reviewed_from_tag")
+			} else {
+				if block.Provenance == nil {
+					block.Provenance = map[string]interface{}{}
+				}
+				block.Provenance["reviewed_from_tag"] = reviewSourceTag(block.Tag)
+				block.Tag = "reviewed"
+				block.Provenance["reviewed_by"] = actorID
+			}
 			return store.draft.Blocks[index], nil
 		}
 	}
@@ -412,14 +426,19 @@ func TestAcceptedPatchPersistsDraftAndReviewAtomicallyThroughStore(t *testing.T)
 }
 
 func TestReviewBlockIsExplicitAndPermissionChecked(t *testing.T) {
-	store := &articleTestStore{draft: Draft{Blocks: []Block{{BlockID: "block-1", Tag: "human_draft"}}}}
+	fingerprint := strings.Repeat("a", 64)
+	store := &articleTestStore{draft: Draft{Blocks: []Block{{BlockID: "block-1", ContentFingerprint: fingerprint, Tag: "human_draft"}}}}
 	service := testService(store, &articleTestWorkspace{})
-	block, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1")
+	block, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint)
 	if err != nil || block.Tag != "reviewed" || block.Provenance["reviewed_by"] != "user-1" {
 		t.Fatalf("review was not persisted with actor provenance: %#v %v", block, err)
 	}
+	block, err = service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint)
+	if err != nil || block.Tag != "human_draft" || block.Provenance["reviewed_by"] != nil {
+		t.Fatalf("review withdrawal did not restore the previous tag: %#v %v", block, err)
+	}
 	service.Access = articleTestAccess{denied: project.PermissionArticleEdit}
-	if _, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1"); !errors.Is(err, ErrForbidden) {
+	if _, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("review bypassed article edit permission: %v", err)
 	}
 }

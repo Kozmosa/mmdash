@@ -148,7 +148,8 @@ describe("Article browser routes", () => {
 
   it("proxies block review and preserves actionable repository conflicts", async () => {
     const blockId = "00000000-0000-4000-8000-000000000002";
-    const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
+    const fingerprint = "a".repeat(64);
+    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/permissions"))
         return Response.json({
@@ -156,8 +157,12 @@ describe("Article browser routes", () => {
           project_id: projectId,
           role: "editor",
         });
-      if (url.endsWith(`/article/blocks/${blockId}/review`))
+      if (url.endsWith(`/article/blocks/${blockId}/review`)) {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          content_fingerprint: fingerprint,
+        });
         return Response.json({ block_id: blockId, tag: "reviewed" });
+      }
       if (url.endsWith("/article/draft")) return Response.json(draft(1));
       if (url.endsWith("/article/draft/flush")) return Response.json(draft(2));
       if (url.endsWith("/article/commits"))
@@ -182,6 +187,7 @@ describe("Article browser routes", () => {
     const review = await app.inject({
       headers: { cookie },
       method: "POST",
+      payload: { content_fingerprint: fingerprint },
       url: `/api/projects/${projectId}/article/blocks/${blockId}/review`,
     });
     expect(review.statusCode, review.body).toBe(200);
