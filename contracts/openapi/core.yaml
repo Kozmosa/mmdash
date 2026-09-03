@@ -4615,7 +4615,7 @@ paths:
         schema: { type: string, format: uuid }
     post:
       tags: [Article]
-      summary: Mark one unchanged Article block as human reviewed
+      summary: Review or withdraw review for one unchanged Article block
       operationId: article.blocks.review
       requestBody:
         content:
@@ -4623,7 +4623,7 @@ paths:
             schema: { $ref: "#/components/schemas/ReviewArticleBlockRequest" }
       responses:
         "200":
-          description: Reviewed block with reviewer provenance.
+          description: Block after review or review withdrawal.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ArticleBlock" }
@@ -6000,8 +6000,7 @@ components:
         [block_id, node_type, ordinal, text, attrs, tag, provenance, updated_at]
       properties:
         block_id: { type: string, format: uuid }
-        content_fingerprint:
-          { type: string, pattern: "^[0-9a-f]{64}$" }
+        content_fingerprint: { type: string, pattern: "^[0-9a-f]{64}$" }
         node_type: { type: string }
         ordinal: { type: integer, minimum: 0 }
         text: { type: string }

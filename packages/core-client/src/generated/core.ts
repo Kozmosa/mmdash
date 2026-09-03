@@ -3822,7 +3822,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Mark one unchanged Article block as human reviewed */
+    /** Review or withdraw review for one unchanged Article block */
     post: operations["article.blocks.review"];
     delete?: never;
     options?: never;
@@ -14681,7 +14681,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Reviewed block with reviewer provenance. */
+      /** @description Block after review or review withdrawal. */
       200: {
         headers: {
           [name: string]: unknown;

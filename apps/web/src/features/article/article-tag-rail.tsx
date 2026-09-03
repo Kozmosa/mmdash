@@ -157,16 +157,19 @@ export function ArticleTagRail({
               <span className="shrink-0 text-right leading-tight">{label}</span>
             </button>
             <Button
-              aria-label={`审阅${isChapter ? "章节" : "块"} ${block.ordinal + 1}`}
+              aria-label={`${!isChapter && reviewed ? "撤回审阅" : "审阅"}${isChapter ? "章节" : "块"} ${block.ordinal + 1}`}
               disabled={
-                !canEdit || reviewed || !reviewKey || pending === reviewKey
+                !canEdit ||
+                (isChapter && reviewed) ||
+                !reviewKey ||
+                pending === reviewKey
               }
               onClick={() => void review(marker)}
               size="sm"
               variant="ghost"
             >
               <Check className="size-3" />
-              审阅通过
+              {!isChapter && reviewed ? "撤回审阅" : "审阅通过"}
             </Button>
           </div>
         ) : (

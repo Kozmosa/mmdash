@@ -122,7 +122,7 @@ export function registerArticleRoutes(
             name === "blocks" &&
             suffix === "review" &&
             method === "POST" &&
-            isReviewedBlock(value)
+            isArticleBlock(value)
           ) {
             collaboration.broadcastBlockReviewed(parsed.projectId, value);
           }
@@ -133,7 +133,7 @@ export function registerArticleRoutes(
   }
 }
 
-function isReviewedBlock(
+function isArticleBlock(
   value: unknown,
 ): value is Record<string, unknown> & { block_id: string } {
   return (
