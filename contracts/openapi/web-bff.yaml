@@ -3809,7 +3809,7 @@ paths:
   /api/projects/{projectId}/article/blocks/{blockId}/review:
     post:
       tags: [Article]
-      summary: Mark one stable Article block as human reviewed
+      summary: Mark one unchanged Article block as human reviewed
       operationId: bff.article.blocks.review
       parameters:
         - { $ref: "./core.yaml#/components/parameters/ProjectId" }
@@ -3817,12 +3817,18 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              { $ref: "./core.yaml#/components/schemas/ReviewArticleBlockRequest" }
       responses:
         "200":
           description: Reviewed Article block.
           content:
             application/json:
               schema: { $ref: "./core.yaml#/components/schemas/ArticleBlock" }
+        "409": { $ref: "./core.yaml#/components/responses/Error" }
   /api/projects/{projectId}/article/chapter-tags:
     get:
       tags: [Article]

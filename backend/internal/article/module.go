@@ -304,7 +304,11 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(tail) == 3 && tail[0] == "blocks" && tail[2] == "review" && r.Method == http.MethodPost {
-		value, err := module.Service.ReviewBlock(r.Context(), caller, projectID, tail[1])
+		var body contract.ReviewArticleBlockRequest
+		if !decode(w, r, &body) {
+			return
+		}
+		value, err := module.Service.ReviewBlock(r.Context(), caller, projectID, tail[1], body.ContentFingerprint)
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
@@ -433,6 +437,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusForbidden, "FORBIDDEN", "Article access forbidden"
 	case errors.Is(err, ErrNotFound):
 		status, code, message = http.StatusNotFound, "ARTICLE_NOT_FOUND", "Article object not found"
+	case errors.Is(err, ErrBlockChanged):
+		status, code, message = http.StatusConflict, "ARTICLE_BLOCK_CHANGED", "Article block content changed; synchronize and retry"
 	case errors.Is(err, ErrConflict), errors.Is(err, ErrSuperseded):
 		status, code, message = http.StatusConflict, "ARTICLE_CONFLICT", "Article state changed; refresh and retry"
 	case errors.Is(err, ErrNotReady):

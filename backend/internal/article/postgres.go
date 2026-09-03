@@ -84,7 +84,7 @@ func (store PostgresStore) persistDraftInTransaction(ctx context.Context, tx tra
 	}
 	for _, block := range blocks {
 		attrs, _ := json.Marshal(block.Attrs)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO article_blocks(block_id,project_id,draft_revision,position,block_type,text_content,attributes,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, block.BlockID, projectID, revision, block.Ordinal, block.NodeType, block.Text, attrs, block.UpdatedAt); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO article_blocks(block_id,project_id,draft_revision,position,block_type,text_content,attributes,content_fingerprint,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, block.BlockID, projectID, revision, block.Ordinal, block.NodeType, block.Text, attrs, block.ContentFingerprint, block.UpdatedAt); err != nil {
 			return 0, err
 		}
 	}
@@ -98,14 +98,17 @@ func (store PostgresStore) persistDraftInTransaction(ctx context.Context, tx tra
 	return revision, nil
 }
 
-func (store PostgresStore) ReviewBlock(ctx context.Context, projectID, blockID, actorID string) (Block, error) {
+func (store PostgresStore) ReviewBlock(ctx context.Context, projectID, blockID, expectedFingerprint, actorID string) (Block, error) {
 	var reviewed Block
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		var attrsJSON []byte
-		if err := tx.QueryRowContext(ctx, `SELECT block_type,position,text_content,attributes,updated_at FROM article_blocks WHERE project_id=$1 AND block_id=$2 FOR UPDATE`, projectID, blockID).Scan(&reviewed.NodeType, &reviewed.Ordinal, &reviewed.Text, &attrsJSON, &reviewed.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
+		if err := tx.QueryRowContext(ctx, `SELECT block_type,position,text_content,attributes,content_fingerprint,updated_at FROM article_blocks WHERE project_id=$1 AND block_id=$2 FOR UPDATE`, projectID, blockID).Scan(&reviewed.NodeType, &reviewed.Ordinal, &reviewed.Text, &attrsJSON, &reviewed.ContentFingerprint, &reviewed.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		} else if err != nil {
 			return err
+		}
+		if reviewed.ContentFingerprint == "" || reviewed.ContentFingerprint != expectedFingerprint {
+			return ErrBlockChanged
 		}
 		reviewed.BlockID = blockID
 		_ = json.Unmarshal(attrsJSON, &reviewed.Attrs)
@@ -127,7 +130,7 @@ func (store PostgresStore) ReviewBlock(ctx context.Context, projectID, blockID, 
 }
 
 func (store PostgresStore) listBlocks(ctx context.Context, projectID string) ([]Block, error) {
-	rows, err := store.DB.QueryContext(ctx, `SELECT block_id,block_type,position,text_content,attributes,updated_at FROM article_blocks WHERE project_id=$1 ORDER BY position`, projectID)
+	rows, err := store.DB.QueryContext(ctx, `SELECT block_id,block_type,position,text_content,attributes,content_fingerprint,updated_at FROM article_blocks WHERE project_id=$1 ORDER BY position`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +139,7 @@ func (store PostgresStore) listBlocks(ctx context.Context, projectID string) ([]
 	for rows.Next() {
 		var item Block
 		var attrs []byte
-		if err := rows.Scan(&item.BlockID, &item.NodeType, &item.Ordinal, &item.Text, &attrs, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.BlockID, &item.NodeType, &item.Ordinal, &item.Text, &attrs, &item.ContentFingerprint, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(attrs, &item.Attrs)

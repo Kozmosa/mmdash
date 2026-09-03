@@ -61,7 +61,7 @@ func NormalizeDocument(document map[string]interface{}, generator idGenerator, a
 			}
 		}
 		attrs["provenance"] = blockProvenance
-		blocks = append(blocks, Block{Attrs: attrs, BlockID: blockID, NodeType: nodeType, Ordinal: index, Provenance: blockProvenance, Tag: tag, Text: text, UpdatedAt: now})
+		blocks = append(blocks, Block{Attrs: attrs, BlockID: blockID, ContentFingerprint: semanticNodeFingerprint(node), NodeType: nodeType, Ordinal: index, Provenance: blockProvenance, Tag: tag, Text: text, UpdatedAt: now})
 	}
 	markdown, err := renderDocumentContent(content)
 	if err != nil {
@@ -134,7 +134,10 @@ func ReconcileBlockTags(document map[string]interface{}, previous Draft, blocks 
 	for index := range blocks {
 		block := &blocks[index]
 		prior, existed := previousBlocks[block.BlockID]
-		same := existed && semanticNodeHash(previousNodes[block.BlockID]) == semanticNodeHash(currentNodes[block.BlockID])
+		same := existed && prior.ContentFingerprint != "" && prior.ContentFingerprint == block.ContentFingerprint
+		if existed && prior.ContentFingerprint == "" {
+			same = semanticNodeHash(previousNodes[block.BlockID]) == semanticNodeHash(currentNodes[block.BlockID])
+		}
 		if same {
 			block.Tag = tagForActor("", map[string]interface{}{"tag": prior.Tag})
 			block.Provenance = cloneObject(prior.Provenance)
@@ -190,6 +193,11 @@ func semanticNodeHash(node map[string]interface{}) [32]byte {
 	clean["attrs"] = attrs
 	encoded, _ = json.Marshal(clean)
 	return sha256.Sum256(encoded)
+}
+
+func semanticNodeFingerprint(node map[string]interface{}) string {
+	digest := semanticNodeHash(node)
+	return fmt.Sprintf("%x", digest)
 }
 
 func chapterHeadingFingerprint(block Block) string {

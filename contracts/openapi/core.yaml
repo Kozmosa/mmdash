@@ -4615,8 +4615,12 @@ paths:
         schema: { type: string, format: uuid }
     post:
       tags: [Article]
-      summary: Mark one stable Article block as human reviewed
+      summary: Mark one unchanged Article block as human reviewed
       operationId: article.blocks.review
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewArticleBlockRequest" }
       responses:
         "200":
           description: Reviewed block with reviewer provenance.
@@ -4624,6 +4628,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ArticleBlock" }
         "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/chapter-tags:
     parameters: [{ $ref: "#/components/parameters/ProjectId" }]
     get:
@@ -5839,6 +5844,14 @@ components:
         tiptap_json: { type: object, additionalProperties: true }
         actor_kind: { type: string, enum: [human, ai, restore] }
         provenance: { type: object, additionalProperties: true }
+    ReviewArticleBlockRequest:
+      type: object
+      additionalProperties: false
+      required: [content_fingerprint]
+      properties:
+        content_fingerprint:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
     CreateArticlePatchRequest:
       type: object
       additionalProperties: false
@@ -5987,6 +6000,8 @@ components:
         [block_id, node_type, ordinal, text, attrs, tag, provenance, updated_at]
       properties:
         block_id: { type: string, format: uuid }
+        content_fingerprint:
+          { type: string, pattern: "^[0-9a-f]{64}$" }
         node_type: { type: string }
         ordinal: { type: integer, minimum: 0 }
         text: { type: string }
