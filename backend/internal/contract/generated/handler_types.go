@@ -3111,11 +3111,11 @@ func (request UpdateArticleBuildProgressRequest) Validate() error {
 
 // CreateArticleReleaseRequest is generated from the Core request-body schema.
 type CreateArticleReleaseRequest struct {
-	CommitID string `json:"commit_id"`
-	BuildID  string `json:"build_id"`
-	Tag      string `json:"tag"`
-	Title    string `json:"title"`
-	Notes    string `json:"notes"`
+	CommitID string  `json:"commit_id"`
+	BuildID  string  `json:"build_id"`
+	Tag      string  `json:"tag"`
+	Title    string  `json:"title"`
+	Notes    *string `json:"notes,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -3141,26 +3141,25 @@ func (request CreateArticleReleaseRequest) Validate() error {
 	if len(request.Title) > 255 {
 		return fmt.Errorf("title is too long")
 	}
-	if request.Notes == "" {
-		return fmt.Errorf("notes is required")
-	}
-	if len(request.Notes) > 10000 {
-		return fmt.Errorf("notes is too long")
+	if request.Notes != nil {
+		if len(*request.Notes) > 10000 {
+			return fmt.Errorf("notes is too long")
+		}
 	}
 	return nil
 }
 
 // CreateArticlePublicationRequest is generated from the Core request-body schema.
 type CreateArticlePublicationRequest struct {
-	DraftRevision    int64  `json:"draft_revision"`
-	Message          string `json:"message"`
-	TemplateID       string `json:"template_id"`
-	Engine           string `json:"engine"`
-	BibliographyTool string `json:"bibliography_tool"`
-	Tag              string `json:"tag"`
-	Title            string `json:"title"`
-	Notes            string `json:"notes"`
-	IdempotencyKey   string `json:"idempotency_key"`
+	DraftRevision    int64   `json:"draft_revision"`
+	Message          string  `json:"message"`
+	TemplateID       string  `json:"template_id"`
+	Engine           string  `json:"engine"`
+	BibliographyTool string  `json:"bibliography_tool"`
+	Tag              string  `json:"tag"`
+	Title            string  `json:"title"`
+	Notes            *string `json:"notes,omitempty"`
+	IdempotencyKey   string  `json:"idempotency_key"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.
@@ -3207,11 +3206,10 @@ func (request CreateArticlePublicationRequest) Validate() error {
 	if len(request.Title) > 255 {
 		return fmt.Errorf("title is too long")
 	}
-	if request.Notes == "" {
-		return fmt.Errorf("notes is required")
-	}
-	if len(request.Notes) > 10000 {
-		return fmt.Errorf("notes is too long")
+	if request.Notes != nil {
+		if len(*request.Notes) > 10000 {
+			return fmt.Errorf("notes is too long")
+		}
 	}
 	if request.IdempotencyKey == "" {
 		return fmt.Errorf("idempotency_key is required")

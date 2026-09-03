@@ -373,6 +373,31 @@ func (store PostgresStore) ListCommits(ctx context.Context, projectID string) ([
 	return items, rows.Err()
 }
 
+func (store PostgresStore) ListCommitOperations(ctx context.Context, projectID string) ([]CommitOperation, error) {
+	rows, err := store.DB.QueryContext(ctx, `
+		SELECT operation_id,commit_id,project_id,operation_kind,
+		       COALESCE(publication_id::text,''),draft_revision,status,stage,
+		       COALESCE(commit_sha,''),COALESCE(error_code,''),attempts,
+		       max_attempts,next_attempt_at,created_at,updated_at,finished_at
+		FROM article_commit_operations
+		WHERE project_id=$1
+		ORDER BY created_at DESC
+		LIMIT 20`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CommitOperation{}
+	for rows.Next() {
+		item, err := scanCommitOperationStatus(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 const commitSelect = `SELECT c.commit_id,c.project_id,c.git_commit_sha,c.draft_revision,c.state_vector,c.manuscript_sha256,c.message,c.created_by,c.created_at,c.previous_git_commit_sha,c.references_sha256,c.manifest_sha256,c.frozen_references,c.yjs_update,c.tiptap_json FROM article_commits c`
 
 func scanCommit(scan func(...interface{}) error) (Commit, error) {

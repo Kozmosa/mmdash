@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mmdash/mmdash/backend/internal/platform/requestctx"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 	"github.com/mmdash/mmdash/backend/internal/repo"
 )
@@ -129,9 +130,19 @@ func (store PostgresStore) ClaimCommitOperations(
 	if owner == "" || lease <= 0 || limit < 1 {
 		return nil, ErrInvalid
 	}
-	rows, err := store.DB.QueryContext(ctx, `WITH candidates AS (
+	rows, err := store.DB.QueryContext(ctx, `WITH exhausted AS (
+		UPDATE article_commit_operations
+		SET status='failed',stage='failed',
+			error_code=COALESCE(NULLIF(error_code,''),'ARTICLE_OPERATION_RETRY_EXHAUSTED'),
+			locked_by=NULL,lease_expires_at=NULL,finished_at=$1,updated_at=$1
+		WHERE status IN ('queued','retry_wait','running')
+		  AND attempts>=max_attempts
+		  AND (lease_expires_at IS NULL OR lease_expires_at < $1)
+		RETURNING operation_id
+	), candidates AS (
 		SELECT operation_id FROM article_commit_operations
 		WHERE status IN ('queued','retry_wait','running')
+		  AND attempts<max_attempts
 		  AND next_attempt_at <= $1
 		  AND (lease_expires_at IS NULL OR lease_expires_at < $1)
 		ORDER BY next_attempt_at,created_at
@@ -314,6 +325,23 @@ func scanCommitOperation(scan func(...interface{}) error) (CommitOperation, erro
 	return item, nil
 }
 
+func scanCommitOperationStatus(scan func(...interface{}) error) (CommitOperation, error) {
+	var item CommitOperation
+	var publicationID, commitSHA, errorCode string
+	if err := scan(&item.OperationID, &item.CommitID, &item.ProjectID,
+		&item.OperationKind, &publicationID, &item.DraftRevision,
+		&item.Status, &item.Stage,
+		&commitSHA, &errorCode, &item.Attempts, &item.MaxAttempts,
+		&item.NextAttemptAt, &item.CreatedAt, &item.UpdatedAt,
+		&item.FinishedAt); err != nil {
+		return CommitOperation{}, err
+	}
+	item.PublicationID = publicationID
+	item.CommitSHA = commitSHA
+	item.ErrorCode = errorCode
+	return item, nil
+}
+
 func requireArticleAffected(result sql.Result, err error) error {
 	if err != nil {
 		return err
@@ -412,7 +440,10 @@ func (coordinator CommitOperationCoordinator) process(
 			true, coordinator.Clock.Now().UTC(), coordinator.Clock.Now().UTC(),
 		)
 	}
-	operationContext, cancel := context.WithCancel(ctx)
+	processContext := requestctx.WithValues(ctx, requestctx.Values{
+		RequestID: "article-operation:" + operation.OperationID,
+	})
+	operationContext, cancel := context.WithCancel(processContext)
 	done := make(chan struct{})
 	renewInterval := lease / 3
 	if renewInterval <= 0 {
@@ -477,7 +508,7 @@ func (coordinator CommitOperationCoordinator) process(
 	cancel()
 	<-done
 	now := coordinator.Clock.Now().UTC()
-	finalContext, finalCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	finalContext, finalCancel := context.WithTimeout(context.WithoutCancel(processContext), 5*time.Second)
 	defer finalCancel()
 	if err != nil {
 		code, terminal := commitOperationFailure(err)
@@ -490,7 +521,10 @@ func (coordinator CommitOperationCoordinator) process(
 		finalContext, operation, commit, now,
 	)
 	if err != nil {
-		return err
+		return coordinator.Store.FailCommitOperation(
+			finalContext, operation, "ARTICLE_COMMIT_PERSIST_FAILED", false,
+			now.Add(commitOperationRetry(operation.Attempts)), now,
+		)
 	}
 	if operation.OperationKind == "publication" {
 		if err = coordinator.Service.createPublicationFromOperation(

@@ -39,6 +39,7 @@ type articleTestStore struct {
 	draft         Draft
 	outputs       []BuildOutput
 	operation     CommitOperation
+	operations    []CommitOperation
 	persisted     PersistDraftInput
 	publications  []Publication
 	references    []Reference
@@ -68,6 +69,9 @@ func (store *aggregateTestStore) ListReferences(context.Context, string) ([]Refe
 }
 func (store *aggregateTestStore) ListCommits(context.Context, string) ([]Commit, error) {
 	return store.commits, store.listErrors["commits"]
+}
+func (store *aggregateTestStore) ListCommitOperations(context.Context, string) ([]CommitOperation, error) {
+	return store.operations, store.listErrors["commit_operations"]
 }
 func (store *aggregateTestStore) ListBuilds(context.Context, string, string) ([]Build, error) {
 	return store.builds, store.listErrors["builds"]
@@ -111,6 +115,9 @@ func (store *articleTestStore) CreateCommit(_ context.Context, item Commit) (Com
 func (store *articleTestStore) CreateCommitOperation(_ context.Context, item CommitOperation) (CommitOperation, bool, error) {
 	store.operation = item
 	return item, true, nil
+}
+func (store *articleTestStore) ListCommitOperations(context.Context, string) ([]CommitOperation, error) {
+	return store.operations, nil
 }
 func (store *articleTestStore) GetCommit(context.Context, string, string) (Commit, error) {
 	if store.commit.CommitID == "" {
@@ -632,17 +639,42 @@ func TestEnsureDefaultTemplateReplacesLegacyBrowserCopiesInAggregate(t *testing.
 	}
 }
 
+func TestAggregateIncludesCommitOperationStatus(t *testing.T) {
+	store := &aggregateTestStore{
+		articleTestStore: &articleTestStore{
+			draft: draftAt(3),
+			operations: []CommitOperation{{
+				OperationID: "operation-1", ProjectID: "project-1",
+				OperationKind: "publication", DraftRevision: 3,
+				Status: "running", Stage: "committing",
+			}},
+		},
+		listErrors: map[string]error{
+			"chapter_tags": errors.New("chapter tags unavailable"),
+			"templates":    errors.New("templates unavailable"),
+		},
+	}
+	aggregate, err := testService(store, &articleTestWorkspace{}).Aggregate(context.Background(), human(), "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aggregate.CommitOperations) != 1 || aggregate.CommitOperations[0].OperationID != "operation-1" || aggregate.CommitOperations[0].Stage != "committing" {
+		t.Fatalf("commit operation status was not included in aggregate: %#v", aggregate.CommitOperations)
+	}
+}
+
 func TestAggregateKeepsDraftAvailableWhenSecondaryComponentsFail(t *testing.T) {
 	internal := errors.New("database connection detail must stay private")
 	store := &aggregateTestStore{
 		articleTestStore: &articleTestStore{draft: draftAt(3)},
 		listErrors: map[string]error{
-			"builds":       internal,
-			"chapter_tags": internal,
-			"commits":      internal,
-			"references":   internal,
-			"releases":     internal,
-			"templates":    internal,
+			"builds":            internal,
+			"chapter_tags":      internal,
+			"commits":           internal,
+			"commit_operations": internal,
+			"references":        internal,
+			"releases":          internal,
+			"templates":         internal,
 		},
 	}
 	service := testService(store, &articleTestWorkspace{})
@@ -654,10 +686,10 @@ func TestAggregateKeepsDraftAvailableWhenSecondaryComponentsFail(t *testing.T) {
 	if aggregate.Draft.DraftRevision != 3 {
 		t.Fatalf("usable draft was not returned: %#v", aggregate.Draft)
 	}
-	if aggregate.References == nil || aggregate.Commits == nil || aggregate.Builds == nil || aggregate.Releases == nil || aggregate.Templates == nil || aggregate.ChapterTags == nil {
+	if aggregate.References == nil || aggregate.Commits == nil || aggregate.CommitOperations == nil || aggregate.Builds == nil || aggregate.Releases == nil || aggregate.Templates == nil || aggregate.ChapterTags == nil {
 		t.Fatalf("degraded lists must serialize as arrays: %#v", aggregate)
 	}
-	wantComponents := []string{"references", "commits", "builds", "releases", "templates", "chapter_tags"}
+	wantComponents := []string{"references", "commits", "commit_operations", "builds", "releases", "templates", "chapter_tags"}
 	if len(aggregate.Warnings) != len(wantComponents) {
 		t.Fatalf("unexpected aggregate warnings: %#v", aggregate.Warnings)
 	}

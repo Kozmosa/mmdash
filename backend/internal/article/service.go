@@ -98,6 +98,9 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 	commits, _ := aggregateList("commits", func() ([]Commit, error) {
 		return service.Store.ListCommits(ctx, projectID)
 	}, &warnings)
+	commitOperations, _ := aggregateList("commit_operations", func() ([]CommitOperation, error) {
+		return service.Store.ListCommitOperations(ctx, projectID)
+	}, &warnings)
 	builds, _ := aggregateList("builds", func() ([]Build, error) {
 		return service.Store.ListBuilds(ctx, projectID, "")
 	}, &warnings)
@@ -141,7 +144,7 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 	if len(draft.Blocks) > 0 {
 		completion = float64(completed) / float64(len(draft.Blocks))
 	}
-	return Aggregate{Draft: draft, References: references, Commits: commits, Builds: builds, Releases: releases, Templates: templates, ChapterTags: chapterTags, UnreviewedBlocks: unreviewed, SectionCompletion: completion, Warnings: warnings}, nil
+	return Aggregate{Draft: draft, References: references, Commits: commits, CommitOperations: commitOperations, Builds: builds, Releases: releases, Templates: templates, ChapterTags: chapterTags, UnreviewedBlocks: unreviewed, SectionCompletion: completion, Warnings: warnings}, nil
 }
 
 func aggregateList[T any](component string, load func() ([]T, error), warnings *[]AggregateWarning) ([]T, bool) {

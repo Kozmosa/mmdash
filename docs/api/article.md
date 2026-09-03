@@ -18,6 +18,8 @@ Tiptap JSON for legacy drafts before accepting browser updates. Commit and
 Preview routes flush collaboration first. Preview freezes a draft revision;
 formal Build freezes a Commit and its reference bibliography. A Worker failure
 is reported to Core without terminating the Worker polling loop.
+Publication and Release requests may omit `notes` or send an empty string; the
+stored record keeps an empty publication note in either case.
 
 ## Built-in template and rendering theme
 
@@ -32,8 +34,13 @@ Ordinary template update, version initialization, trash, restore, and purge
 operations reject this protected Artifact; users register a separate template
 to customize it.
 
-The draft is the only mandatory Article aggregate projection. If references,
-commits, builds, releases, templates, or chapter tags temporarily fail to
+The draft is the only mandatory Article aggregate projection. The aggregate
+also includes the latest commit operation statuses when available, allowing
+the Web workbench to restore asynchronous Commit and publication progress after
+a dialog closes or a page is refreshed. Version History renders the latest
+operation state as a compact status icon and opens the recent queue, including
+stable failure details, on demand. If references, commits, commit
+operations, builds, releases, templates, or chapter tags temporarily fail to
 load, Core returns the usable draft plus an `ARTICLE_COMPONENT_UNAVAILABLE`
 entry in `warnings`. The warning exposes a stable component name and safe
 message rather than a database or adapter error. A draft read failure still
