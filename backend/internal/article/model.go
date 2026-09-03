@@ -8,13 +8,14 @@ import (
 )
 
 var (
-	ErrConflict    = errors.New("article state conflict")
-	ErrForbidden   = errors.New("article access forbidden")
-	ErrInvalid     = errors.New("invalid article request")
-	ErrNotFound    = errors.New("article object not found")
-	ErrNotReady    = errors.New("article object is not ready")
-	ErrSuperseded  = errors.New("article preview was superseded")
-	ErrUnavailable = errors.New("article integration unavailable")
+	ErrBlockChanged = errors.New("article block content changed")
+	ErrConflict     = errors.New("article state conflict")
+	ErrForbidden    = errors.New("article access forbidden")
+	ErrInvalid      = errors.New("invalid article request")
+	ErrNotFound     = errors.New("article object not found")
+	ErrNotReady     = errors.New("article object is not ready")
+	ErrSuperseded   = errors.New("article preview was superseded")
+	ErrUnavailable  = errors.New("article integration unavailable")
 )
 
 const (
@@ -33,14 +34,15 @@ const (
 )
 
 type Block struct {
-	Attrs      map[string]interface{} `json:"attrs"`
-	BlockID    string                 `json:"block_id"`
-	NodeType   string                 `json:"node_type"`
-	Ordinal    int                    `json:"ordinal"`
-	Provenance map[string]interface{} `json:"provenance"`
-	Tag        string                 `json:"tag"`
-	Text       string                 `json:"text"`
-	UpdatedAt  time.Time              `json:"updated_at"`
+	Attrs              map[string]interface{} `json:"attrs"`
+	BlockID            string                 `json:"block_id"`
+	ContentFingerprint string                 `json:"content_fingerprint"`
+	NodeType           string                 `json:"node_type"`
+	Ordinal            int                    `json:"ordinal"`
+	Provenance         map[string]interface{} `json:"provenance"`
+	Tag                string                 `json:"tag"`
+	Text               string                 `json:"text"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
 // ChapterTag is independent from the tag carried by an Article block. It is

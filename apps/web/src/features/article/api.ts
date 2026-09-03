@@ -48,10 +48,13 @@ export const articleApi = {
       `${base(projectId)}/commit-operations/${encodeURIComponent(operationId)}`,
     );
   },
-  reviewBlock(projectId: string, blockId: string) {
+  reviewBlock(projectId: string, blockId: string, contentFingerprint: string) {
     return apiClient.request<ArticleBlock>(
       `${base(projectId)}/blocks/${encodeURIComponent(blockId)}/review`,
-      { method: "POST" },
+      {
+        body: { content_fingerprint: contentFingerprint },
+        method: "POST",
+      },
     );
   },
   reviewChapter(projectId: string, chapterTagId: string) {

@@ -314,6 +314,7 @@
     "status": 200,
     "body": {
       "block_id": "8f29fd16-b7d0-4892-94b9-d731f017e0e8",
+      "content_fingerprint": "a6c23378e69314953e319c25e59f1f93ab7d6bfe4142b8356e8b7d154b302f4b",
       "node_type": "paragraph",
       "ordinal": 0,
       "text": "Reviewed paragraph",

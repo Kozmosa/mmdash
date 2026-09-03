@@ -2,6 +2,10 @@
 
 Stage 9 Article operations:
 
+`article.blocks.review` and its BFF proxy accept the reviewed block's
+`content_fingerprint`; a mismatch returns `ARTICLE_BLOCK_CHANGED` (409) so the
+browser can synchronize before retrying.
+
 - Core collaborative source and review: `article.get`, `article.draft.get`,
   `article.draft.flush`, `article.blocks.review`, `article.patches.list`, `article.patches.create`,
   `article.chapter_tags.list`, `article.chapter_tags.create`, `article.chapter_tags.get`,

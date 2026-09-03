@@ -261,14 +261,14 @@ func (service *Service) prepareProjectDraft(ctx context.Context, projectID strin
 	return markdown, blocks, manifest, Bibliography(references), nil
 }
 
-func (service *Service) ReviewBlock(ctx context.Context, caller auth.Identity, projectID, blockID string) (Block, error) {
+func (service *Service) ReviewBlock(ctx context.Context, caller auth.Identity, projectID, blockID, expectedFingerprint string) (Block, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleEdit); err != nil {
 		return Block{}, err
 	}
-	if strings.TrimSpace(blockID) == "" {
+	if strings.TrimSpace(blockID) == "" || !shaPattern.MatchString(expectedFingerprint) {
 		return Block{}, ErrInvalid
 	}
-	return service.Store.ReviewBlock(ctx, projectID, blockID, caller.ActorID())
+	return service.Store.ReviewBlock(ctx, projectID, blockID, expectedFingerprint, caller.ActorID())
 }
 
 func (service *Service) ListPatches(ctx context.Context, caller auth.Identity, projectID, status string) ([]Patch, error) {

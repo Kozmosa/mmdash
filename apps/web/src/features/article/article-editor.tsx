@@ -107,6 +107,7 @@ import {
   ungroupArticleImages,
   type ArticleImageGroupAction,
 } from "./article-image-group";
+import { articleBlockContentFingerprint } from "./article-block-fingerprint";
 import {
   ArticleTableEdgeControls,
   type ArticleTableEdgeAction,
@@ -617,7 +618,7 @@ export function ArticleEditor({
   ) => Promise<{ reference_id: string }>;
   onOpenCommit?: () => void;
   onOutlineChange: (items: ArticleOutlineItem[]) => void;
-  onReviewBlock: (blockId: string) => Promise<void>;
+  onReviewBlock: (blockId: string, contentFingerprint: string) => Promise<void>;
   onReviewChapter: (chapterTagId: string) => Promise<void>;
   onToggleImmersive?: () => void;
   projectId: string;
@@ -2395,13 +2396,25 @@ export function ArticleEditor({
       .catch(() => setDropError("无法访问系统剪贴板，未删除该块"));
   };
 
+  const reviewCurrentBlock = async (blockId: string) => {
+    let current: ProseMirrorNode | undefined;
+    editor.state.doc.forEach((node) => {
+      if (String(node.attrs.id ?? "") === blockId) current = node;
+    });
+    if (!current) throw new Error("该块已经变化，请重新选择后审阅");
+    await onReviewBlock(
+      blockId,
+      await articleBlockContentFingerprint(current.toJSON()),
+    );
+  };
+
   const reviewBlockFromMenu = () => {
     const position = blockMenuAnchor?.pos;
     const id =
       position === undefined ? "" : String(blockAt(position)?.attrs.id ?? "");
     if (!id) return;
     closeBlockMenu();
-    void onReviewBlock(id).catch((error: unknown) => {
+    void reviewCurrentBlock(id).catch((error: unknown) => {
       setDropError(error instanceof Error ? error.message : "审阅失败");
     });
   };
@@ -3772,7 +3785,7 @@ export function ArticleEditor({
           canEdit={canEdit}
           chapterTags={chapterTags}
           onLocate={locateBlock}
-          onReview={onReviewBlock}
+          onReview={reviewCurrentBlock}
           onReviewChapter={onReviewChapter}
           positions={tagPositions}
         />
