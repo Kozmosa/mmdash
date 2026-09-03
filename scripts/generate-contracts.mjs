@@ -134,6 +134,7 @@ function renderGoHandlerTypes(document) {
     "BindExperimentResultRequest",
     "FinalizeExperimentResultRequest",
     "PersistArticleDraftRequest",
+    "ReviewArticleBlockRequest",
     "CreateArticleChapterTagRequest",
     "UpdateArticleChapterTagRequest",
     "CreateArticlePatchRequest",

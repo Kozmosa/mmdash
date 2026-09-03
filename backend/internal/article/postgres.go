@@ -84,7 +84,7 @@ func (store PostgresStore) persistDraftInTransaction(ctx context.Context, tx tra
 	}
 	for _, block := range blocks {
 		attrs, _ := json.Marshal(block.Attrs)
-		if _, err := tx.ExecContext(ctx, `INSERT INTO article_blocks(block_id,project_id,draft_revision,position,block_type,text_content,attributes,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, block.BlockID, projectID, revision, block.Ordinal, block.NodeType, block.Text, attrs, block.UpdatedAt); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO article_blocks(block_id,project_id,draft_revision,position,block_type,text_content,attributes,content_fingerprint,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, block.BlockID, projectID, revision, block.Ordinal, block.NodeType, block.Text, attrs, block.ContentFingerprint, block.UpdatedAt); err != nil {
 			return 0, err
 		}
 	}
@@ -98,36 +98,61 @@ func (store PostgresStore) persistDraftInTransaction(ctx context.Context, tx tra
 	return revision, nil
 }
 
-func (store PostgresStore) ReviewBlock(ctx context.Context, projectID, blockID, actorID string) (Block, error) {
+func (store PostgresStore) ReviewBlock(ctx context.Context, projectID, blockID, expectedFingerprint, actorID string) (Block, error) {
 	var reviewed Block
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		var attrsJSON []byte
-		if err := tx.QueryRowContext(ctx, `SELECT block_type,position,text_content,attributes,updated_at FROM article_blocks WHERE project_id=$1 AND block_id=$2 FOR UPDATE`, projectID, blockID).Scan(&reviewed.NodeType, &reviewed.Ordinal, &reviewed.Text, &attrsJSON, &reviewed.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
+		if err := tx.QueryRowContext(ctx, `SELECT block_type,position,text_content,attributes,content_fingerprint,updated_at FROM article_blocks WHERE project_id=$1 AND block_id=$2 FOR UPDATE`, projectID, blockID).Scan(&reviewed.NodeType, &reviewed.Ordinal, &reviewed.Text, &attrsJSON, &reviewed.ContentFingerprint, &reviewed.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		} else if err != nil {
 			return err
 		}
+		if reviewed.ContentFingerprint == "" || reviewed.ContentFingerprint != expectedFingerprint {
+			return ErrBlockChanged
+		}
 		reviewed.BlockID = blockID
 		_ = json.Unmarshal(attrsJSON, &reviewed.Attrs)
 		now := store.now()
-		reviewed.Tag = "reviewed"
 		reviewed.UpdatedAt = now
 		reviewed.Provenance = object(reviewed.Attrs["provenance"])
-		reviewed.Provenance["reviewed_by"] = actorID
-		reviewed.Provenance["reviewed_at"] = now.UTC().Format(time.RFC3339Nano)
+		currentTag, _ := reviewed.Attrs["tag"].(string)
+		eventStatus := "reviewed"
+		if currentTag == "reviewed" {
+			reviewed.Tag = reviewSourceTag(reviewed.Provenance["reviewed_from_tag"])
+			delete(reviewed.Provenance, "reviewed_by")
+			delete(reviewed.Provenance, "reviewed_at")
+			delete(reviewed.Provenance, "reviewed_from_tag")
+			eventStatus = "unreviewed"
+		} else {
+			reviewed.Tag = reviewSourceTag(currentTag)
+			reviewed.Provenance["reviewed_from_tag"] = reviewed.Tag
+			reviewed.Tag = "reviewed"
+			reviewed.Provenance["reviewed_by"] = actorID
+			reviewed.Provenance["reviewed_at"] = now.UTC().Format(time.RFC3339Nano)
+		}
 		reviewed.Attrs["tag"] = reviewed.Tag
 		reviewed.Attrs["provenance"] = reviewed.Provenance
 		encoded, _ := json.Marshal(reviewed.Attrs)
 		if _, err := tx.ExecContext(ctx, `UPDATE article_blocks SET attributes=$3,updated_at=$4 WHERE project_id=$1 AND block_id=$2`, projectID, blockID, encoded, now); err != nil {
 			return err
 		}
-		return store.record(ctx, tx, "article.block.reviewed", projectID, actorID, "article_block", blockID, map[string]interface{}{"block_id": blockID, "status": "reviewed"})
+		return store.record(ctx, tx, "article.block.reviewed", projectID, actorID, "article_block", blockID, map[string]interface{}{"block_id": blockID, "status": eventStatus})
 	})
 	return reviewed, err
 }
 
+func reviewSourceTag(value interface{}) string {
+	tag, _ := value.(string)
+	switch tag {
+	case "ai_draft", "human_draft", "ai_revision", "human_revision":
+		return tag
+	default:
+		return "human_revision"
+	}
+}
+
 func (store PostgresStore) listBlocks(ctx context.Context, projectID string) ([]Block, error) {
-	rows, err := store.DB.QueryContext(ctx, `SELECT block_id,block_type,position,text_content,attributes,updated_at FROM article_blocks WHERE project_id=$1 ORDER BY position`, projectID)
+	rows, err := store.DB.QueryContext(ctx, `SELECT block_id,block_type,position,text_content,attributes,content_fingerprint,updated_at FROM article_blocks WHERE project_id=$1 ORDER BY position`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +161,7 @@ func (store PostgresStore) listBlocks(ctx context.Context, projectID string) ([]
 	for rows.Next() {
 		var item Block
 		var attrs []byte
-		if err := rows.Scan(&item.BlockID, &item.NodeType, &item.Ordinal, &item.Text, &attrs, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.BlockID, &item.NodeType, &item.Ordinal, &item.Text, &attrs, &item.ContentFingerprint, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(attrs, &item.Attrs)

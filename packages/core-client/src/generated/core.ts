@@ -3822,7 +3822,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Mark one stable Article block as human reviewed */
+    /** Review or withdraw review for one unchanged Article block */
     post: operations["article.blocks.review"];
     delete?: never;
     options?: never;
@@ -4514,6 +4514,9 @@ export interface components {
         [key: string]: unknown;
       };
     };
+    ReviewArticleBlockRequest: {
+      content_fingerprint: string;
+    };
     CreateArticlePatchRequest: {
       /** Format: int64 */
       base_revision: number;
@@ -4634,6 +4637,7 @@ export interface components {
     ArticleBlock: {
       /** Format: uuid */
       block_id: string;
+      content_fingerprint?: string;
       node_type: string;
       ordinal: number;
       text: string;
@@ -14671,9 +14675,13 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["ReviewArticleBlockRequest"];
+      };
+    };
     responses: {
-      /** @description Reviewed block with reviewer provenance. */
+      /** @description Block after review or review withdrawal. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -14683,6 +14691,7 @@ export interface operations {
         };
       };
       404: components["responses"]["Error"];
+      409: components["responses"]["Error"];
     };
   };
   "article.chapter_tags.list": {

@@ -72,7 +72,7 @@ func TestNormalizeDocumentCreatesStableBlocksAndCanonicalMarkdown(t *testing.T) 
 		t.Fatalf("stable block ids were not preserved/generated: %#v", blocks)
 	}
 	for _, block := range blocks {
-		if block.Tag != "ai_draft" || block.Provenance["agent_id"] != "agent-1" || !block.UpdatedAt.Equal(now) {
+		if block.Tag != "ai_draft" || block.Provenance["agent_id"] != "agent-1" || !block.UpdatedAt.Equal(now) || !shaPattern.MatchString(block.ContentFingerprint) {
 			t.Fatalf("block provenance/tag mismatch: %#v", block)
 		}
 	}

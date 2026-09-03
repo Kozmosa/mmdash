@@ -4,6 +4,7 @@ export const ARTICLE_RENDER_THEME_EVENT = "mmdash:article-render-theme";
 
 export type ArticleBlock = {
   block_id: string;
+  content_fingerprint?: string;
   node_type: string;
   ordinal: number;
   text: string;

@@ -1,11 +1,19 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ArticleTagPanel,
   groupArticleSections,
 } from "@/features/article/article-tag-panel";
 import type { ArticleBlock } from "@/features/article/types";
+
+afterEach(cleanup);
 
 const blocks: ArticleBlock[] = [
   {
@@ -46,5 +54,20 @@ describe("Article block and section tags", () => {
     await waitFor(() =>
       expect(review).toHaveBeenCalledWith(blocks[1]!.block_id),
     );
+  });
+
+  it("keeps the review action available for reviewed blocks", () => {
+    render(
+      <ArticleTagPanel
+        blocks={[blocks[0]!, { ...blocks[1]!, tag: "reviewed" }]}
+        canEdit
+        onReview={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "收起只显示颜色" }));
+    fireEvent.click(screen.getByRole("button", { name: "横向展开" }));
+    expect(
+      screen.getByRole("button", { name: "撤回审阅块 2" }),
+    ).not.toBeDisabled();
   });
 });
