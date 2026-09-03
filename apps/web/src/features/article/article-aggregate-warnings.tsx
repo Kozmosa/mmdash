@@ -5,6 +5,7 @@ const labels: Record<string, string> = {
   "chapter_tags.bootstrap": "章节 Tag 初始化",
   chapter_tags: "章节 Tag",
   commits: "Commit 记录",
+  commit_operations: "Commit 操作",
   references: "固定引用",
   releases: "Release 记录",
   templates: "论文模板",

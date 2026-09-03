@@ -19,6 +19,7 @@ import {
   type Schema,
 } from "@tiptap/pm/model";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
+import { TableMap } from "@tiptap/pm/tables";
 import UniqueID from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useQuery } from "@tanstack/react-query";
@@ -39,6 +40,7 @@ import {
   Sigma,
   Table2,
   Undo2,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -91,6 +93,7 @@ import {
   ArticleNodeMenu,
   type ArticleImageAlignment,
   type ArticleNodeMenuKind,
+  type TableAction,
 } from "./article-node-menu";
 import {
   articleImageGroupContext,
@@ -134,6 +137,70 @@ export const articleOutlineNavigateEvent = "mmdash:article-outline-navigate";
 export const articleOutlineActiveEvent = "mmdash:article-outline-active";
 export const articleInsertArtifactIntoGroupEvent =
   "mmdash:article-insert-artifact-into-group";
+
+type TableCellRecord = {
+  colspan: number;
+  node: ProseMirrorNode;
+  startCol: number;
+};
+
+const articleTableDefaultCellWidth = 100;
+const articleTableMinimumCellWidth = 25;
+
+function articleTableCellWidth(
+  cell: TableCellRecord,
+  offset: number,
+  fallback: number,
+) {
+  const width = cell.node.attrs.colwidth?.[offset];
+  return typeof width === "number" && Number.isFinite(width) && width > 0
+    ? width
+    : fallback;
+}
+
+export function equalizedArticleTableCellWidths(
+  table: ProseMirrorNode,
+): Map<number, number[]> {
+  const map = TableMap.get(table);
+  const cells = new Map<number, TableCellRecord>();
+  for (let row = 0; row < map.height; row += 1) {
+    for (let col = 0; col < map.width; col += 1) {
+      const position = map.map[row * map.width + col];
+      if (cells.has(position)) continue;
+      const node = table.nodeAt(position);
+      if (!node) continue;
+      cells.set(position, {
+        colspan: Math.max(1, Number(node.attrs.colspan ?? 1)),
+        node,
+        startCol: col,
+      });
+    }
+  }
+
+  if (map.width === 0 || map.height === 0 || cells.size === 0) return new Map();
+
+  const columnWidths = Array.from({ length: map.width }, (_, col) => {
+    const widths = [...cells.values()]
+      .filter(
+        (cell) => col >= cell.startCol && col < cell.startCol + cell.colspan,
+      )
+      .map((cell) => articleTableCellWidth(cell, col - cell.startCol, 0))
+      .filter((width) => width > 0);
+    return widths.length
+      ? widths.reduce((sum, width) => sum + width, 0) / widths.length
+      : articleTableDefaultCellWidth;
+  });
+  const result = new Map<number, number[]>();
+
+  const width = Math.max(
+    articleTableMinimumCellWidth,
+    Math.round(columnWidths.reduce((sum, value) => sum + value, 0) / map.width),
+  );
+  for (const [position, cell] of cells) {
+    result.set(position, Array(cell.colspan).fill(width));
+  }
+  return result;
+}
 export const articleUploadImageIntoGroupEvent =
   "mmdash:article-upload-image-into-group";
 
@@ -897,6 +964,11 @@ export function ArticleEditor({
     },
     [onInsertArtifact, openMathEditor, projectId, provider],
   );
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.commands.updateUser(collaborator);
+  }, [collaborator, editor]);
 
   function blockAt(position: number) {
     if (!editor) return;
@@ -2878,10 +2950,30 @@ export function ArticleEditor({
     setMenuOpen((value) => !value);
   };
 
-  const runTableCommand = (command: "toggleHeaderRow" | "deleteTable") => {
+  const runTableCommand = (command: TableAction) => {
     if (!hoverMenu || hoverMenu.kind !== "table") return;
     const located = findNode("table");
     if (!located) return;
+
+    if (command === "equalizeColumns") {
+      const cellWidths = equalizedArticleTableCellWidths(located.node);
+      if (cellWidths.size === 0) return;
+
+      let transaction = editor.state.tr;
+      for (const [relativePosition, colwidth] of cellWidths) {
+        const cell = located.node.nodeAt(relativePosition);
+        if (!cell) continue;
+        transaction = transaction.setNodeMarkup(
+          located.pos + 1 + relativePosition,
+          cell.type,
+          { ...cell.attrs, colwidth },
+        );
+      }
+      editor.view.dispatch(transaction);
+      setMenuOpen(false);
+      return;
+    }
+
     let cellTextPosition: number | undefined;
     located.node.descendants((node, relativePosition) => {
       if (cellTextPosition === undefined && node.isTextblock) {
@@ -3393,9 +3485,20 @@ export function ArticleEditor({
         </p>
       ) : null}
       {dropError ? (
-        <p className="border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
-          {dropError}
-        </p>
+        <div
+          className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive"
+          role="status"
+        >
+          <span className="min-w-0 flex-1">{dropError}</span>
+          <button
+            aria-label="关闭上传提示"
+            className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setDropError(undefined)}
+            type="button"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
       ) : null}
       <div className="relative min-h-0 flex-1">
         <div

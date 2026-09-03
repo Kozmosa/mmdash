@@ -1,6 +1,13 @@
 import { spawn } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import process from "node:process";
@@ -8,11 +15,17 @@ import process from "node:process";
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const host = "127.0.0.1";
 const pnpmVersion = "11.9.0";
+const workerBaseImage = "python:3.12.11-slim-bookworm";
+const workerBaseImageMirror =
+  "docker.1ms.run/library/python:3.12.11-slim-bookworm";
+const workerImage = "mmdash-worker:testenv";
+const workerTokenName = "mmdash-pixi-development-worker";
 
 export const serviceOrder = [
   "postgres",
   "minio",
   "core",
+  "worker",
   "web-bff",
   "mcp-gateway",
   "web",
@@ -39,6 +52,7 @@ export function createLayout(root = repositoryRoot) {
     postgresData: path.join(runtimeRoot, "data", "postgres"),
     postgresSocket: path.join(runtimeRoot, "run", "postgres"),
     pythonEnvironment: path.join(testenvRoot, "python"),
+    localRepositoryRoot: path.join(testenvRoot, "repositories"),
     repositoryRoot: root,
     runtimeBin: path.join(runtimeRoot, "bin"),
     runtimeRoot,
@@ -47,7 +61,47 @@ export function createLayout(root = repositoryRoot) {
     supervisorLock: path.join(runtimeRoot, "run", "supervisor.json"),
     testenvRoot,
     temporaryRoot: path.join(runtimeRoot, "tmp"),
+    webDownloads: path.join(root, "apps", "web", "public", "downloads", "dev"),
   };
+}
+
+export function parseDotEnv(contents) {
+  const environment = {};
+  for (const [index, originalLine] of contents.split(/\r?\n/u).entries()) {
+    const line = originalLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+    const normalized = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const separator = normalized.indexOf("=");
+    if (separator < 1) {
+      throw new Error(`Invalid .env entry on line ${index + 1}`);
+    }
+    const key = normalized.slice(0, separator).trim();
+    let value = normalized.slice(separator + 1).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key)) {
+      throw new Error(`Invalid .env key on line ${index + 1}: ${key}`);
+    }
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    environment[key] = value;
+  }
+  return environment;
+}
+
+export async function loadRepositoryEnvironment(
+  root = repositoryRoot,
+  environment = process.env,
+) {
+  const dotEnvPath = path.join(root, ".env");
+  const fileEnvironment = existsSync(dotEnvPath)
+    ? parseDotEnv(await readFile(dotEnvPath, "utf8"))
+    : {};
+  return { ...fileEnvironment, ...environment };
 }
 
 export function assertPathWithin(parent, candidate) {
@@ -141,6 +195,8 @@ export function createIsolatedEnvironment(
 export function createServiceConfiguration(
   ports = resolvePorts(),
   layout = createLayout(),
+  environment = process.env,
+  workerMode = "native",
 ) {
   const databaseUrl = `postgres://mmdash@${host}:${ports.postgres}/mmdash?sslmode=disable`;
   const coreUrl = `http://${host}:${ports.core}`;
@@ -148,20 +204,46 @@ export function createServiceConfiguration(
   const minioSecretKey = "local-minio-secret";
   const minioUrl = `http://${host}:${ports.minio}`;
   const webUrl = `http://${host}:${ports.web}`;
+  const publicUrl =
+    environment.MMDASH_TESTENV_PUBLIC_URL ??
+    environment.MMDASH_PUBLIC_URL ??
+    webUrl;
+  const mcpUrl = `http://${host}:${ports.mcp}/mcp`;
+  const containerAccessRequired = workerMode === "docker";
+  const coreBindHost = containerAccessRequired ? "0.0.0.0" : host;
+  const minioBindHost = containerAccessRequired ? "0.0.0.0" : host;
   const askPassBinary = `mmdash-git-askpass${
     process.platform === "win32" ? ".exe" : ""
   }`;
+  const cliBinary = `mmdash${process.platform === "win32" ? ".exe" : ""}`;
+  const boxBinary = `mmdash-box${process.platform === "win32" ? ".exe" : ""}`;
+  const mboxBinary = `mbox${process.platform === "win32" ? ".exe" : ""}`;
   return {
+    boxPath: path.join(layout.runtimeBin, boxBinary),
+    cliConfigDirectory: path.join(layout.runtimeRoot, "cli-config"),
+    cliLauncherPath: path.join(
+      layout.runtimeBin,
+      `mmdash-local${process.platform === "win32" ? ".cmd" : ".sh"}`,
+    ),
+    cliPath: path.join(layout.runtimeBin, cliBinary),
+    coreBindHost,
     databaseUrl,
     coreUrl,
+    mboxPath: path.join(layout.runtimeBin, mboxBinary),
+    mcpUrl,
+    minioBindHost,
     minioUrl,
     ports,
+    publicUrl,
     webUrl,
     environments: {
       core: {
         ARTIFACT_STORAGE_BACKEND: "minio",
-        ARTIFACT_WEB_ORIGIN: webUrl,
-        CORE_ADDR: `${host}:${ports.core}`,
+        AGENT_MCP_GATEWAY_URL: environment.AGENT_MCP_GATEWAY_URL ?? mcpUrl,
+        ARTIFACT_WEB_ORIGIN:
+          environment.MMDASH_TESTENV_ARTIFACT_WEB_ORIGIN ?? publicUrl,
+        CORE_ADDR: `${coreBindHost}:${ports.core}`,
+        CORE_INTERNAL_URL: coreUrl,
         CORE_OPENAPI_PATH: path.join(
           layout.repositoryRoot,
           "contracts",
@@ -169,6 +251,10 @@ export function createServiceConfiguration(
           "core.yaml",
         ),
         DATABASE_URL: databaseUrl,
+        MMDASH_PUBLIC_URL: publicUrl,
+        NOTION_OAUTH_REDIRECT_URI:
+          environment.NOTION_OAUTH_REDIRECT_URI ??
+          `${publicUrl.replace(/\/$/u, "")}/api/integrations/notion/oauth/callback`,
         NOTIFICATION_WEBHOOK_ALLOW_HTTP_LOOPBACK: "true",
         OBJECT_STORAGE_ACCESS_KEY: minioAccessKey,
         OBJECT_STORAGE_BUCKET: "mmdash",
@@ -177,9 +263,11 @@ export function createServiceConfiguration(
         OBJECT_STORAGE_REGION: "us-east-1",
         OBJECT_STORAGE_SECRET_KEY: minioSecretKey,
         REPO_ASKPASS_PATH: path.join(layout.runtimeBin, askPassBinary),
+        REPO_LOCAL_ALLOWED_ROOTS:
+          environment.REPO_LOCAL_ALLOWED_ROOTS ?? layout.localRepositoryRoot,
         REPO_GITHUB_NO_PROXY:
-          process.env.REPO_GITHUB_NO_PROXY ?? "localhost,127.0.0.1,::1",
-        REPO_GITHUB_PROXY_URL: process.env.REPO_GITHUB_PROXY_URL ?? "",
+          environment.REPO_GITHUB_NO_PROXY ?? "localhost,127.0.0.1,::1",
+        REPO_GITHUB_PROXY_URL: environment.REPO_GITHUB_PROXY_URL ?? "",
       },
       mcp: {
         CORE_BASE_URL: coreUrl,
@@ -210,6 +298,16 @@ export function createServiceConfiguration(
         BFF_PORT: String(ports.bff),
         CORE_BASE_URL: coreUrl,
       },
+      worker: {
+        MMDASH_CORE_URL: coreUrl,
+        MMDASH_PROGRESS_EVALUATOR_MODE:
+          environment.MMDASH_PROGRESS_EVALUATOR_MODE ?? "core_agent",
+        MMDASH_WORKER_ID: `mmdash-pixi-worker-${process.pid}`,
+        MMDASH_WORKER_LEASE_SECONDS:
+          environment.MMDASH_WORKER_LEASE_SECONDS ?? "60",
+        MMDASH_WORKER_POLL_SECONDS:
+          environment.MMDASH_WORKER_POLL_SECONDS ?? "2",
+      },
     },
   };
 }
@@ -219,6 +317,7 @@ async function ensureDirectories(layout) {
     layout.cacheRoot,
     layout.minioCerts,
     layout.minioData,
+    layout.localRepositoryRoot,
     layout.postgresSocket,
     layout.runtimeRoot,
     layout.runtimeBin,
@@ -229,6 +328,8 @@ async function ensureDirectories(layout) {
     assertPathWithin(layout.testenvRoot, directory);
     await mkdir(directory, { recursive: true });
   }
+  assertPathWithin(layout.repositoryRoot, layout.webDownloads);
+  await mkdir(layout.webDownloads, { recursive: true });
 }
 
 function commandInvocation(command, arguments_) {
@@ -307,6 +408,359 @@ async function installDependencies(layout, environment) {
   await execute("uv", ["sync", "--all-packages", "--frozen"], {
     environment,
   });
+}
+
+async function commandAvailable(command, arguments_, environment) {
+  try {
+    const result = await execute(command, arguments_, {
+      allowFailure: true,
+      capture: true,
+      environment,
+    });
+    return result.code === 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function resolveWorkerMode(
+  environment = process.env,
+  probe = async (command, arguments_) =>
+    await commandAvailable(command, arguments_, environment),
+) {
+  const configured = (
+    environment.MMDASH_TESTENV_WORKER_MODE ??
+    environment.MMDASH_DEV_WORKER_MODE ??
+    "auto"
+  )
+    .trim()
+    .toLowerCase();
+  if (!["auto", "native", "docker", "disabled"].includes(configured)) {
+    throw new Error(
+      "MMDASH_TESTENV_WORKER_MODE must be auto, native, docker, or disabled",
+    );
+  }
+  if (configured !== "auto") {
+    return configured;
+  }
+  for (const command of ["pandoc", "latexmk", "xelatex"]) {
+    if (!(await probe(command, ["--version"]))) {
+      return "docker";
+    }
+  }
+  return "native";
+}
+
+export function dockerAccessibleUrl(value) {
+  const url = new URL(value);
+  if (url.hostname === "localhost" || url.hostname === host) {
+    url.hostname = "host.docker.internal";
+  }
+  return url.toString().replace(/\/$/u, "");
+}
+
+function validatedHttpUrl(value, name) {
+  const url = new URL(value);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password
+  ) {
+    throw new Error(`${name} must be an HTTP(S) URL without credentials`);
+  }
+  return url;
+}
+
+async function prepareDockerWorkerImage(layout, environment) {
+  const dockerReady = await commandAvailable(
+    "docker",
+    ["version", "--format", "{{.Server.Version}}"],
+    environment,
+  );
+  if (!dockerReady) {
+    throw new Error(
+      "The complete Pixi environment needs either native pandoc/latexmk/xelatex or a running Docker daemon. Start Docker Desktop, set MMDASH_TESTENV_WORKER_MODE=native after installing the native toolchain, or explicitly use disabled for a base-only environment.",
+    );
+  }
+
+  const configuredBaseImage =
+    environment.MMDASH_TESTENV_WORKER_BASE_IMAGE ?? workerBaseImage;
+  const localBaseImage = await commandAvailable(
+    "docker",
+    ["image", "inspect", configuredBaseImage],
+    environment,
+  );
+  if (!localBaseImage) {
+    const officialPull = await execute(
+      "docker",
+      ["pull", configuredBaseImage],
+      {
+        allowFailure: true,
+        capture: true,
+        environment,
+      },
+    );
+    if (officialPull.code !== 0) {
+      if (configuredBaseImage !== workerBaseImage) {
+        throw new Error(
+          `Could not pull configured Worker base image ${configuredBaseImage}: ${officialPull.stderr.trim() || officialPull.stdout.trim()}`,
+        );
+      }
+      const mirror =
+        environment.MMDASH_TESTENV_WORKER_BASE_IMAGE_MIRROR ??
+        workerBaseImageMirror;
+      console.warn(
+        `Could not pull ${workerBaseImage}; retrying the pinned image through ${mirror}.`,
+      );
+      await execute("docker", ["pull", mirror], { environment });
+      await execute("docker", ["tag", mirror, workerBaseImage], {
+        environment,
+      });
+    }
+  }
+
+  const pythonIndexUrl = validatedHttpUrl(
+    environment.MMDASH_TESTENV_PYPI_INDEX_URL ??
+      environment.MMDASH_DEV_PYPI_INDEX_URL ??
+      "https://mirrors.aliyun.com/pypi/simple/",
+    "MMDASH_TESTENV_PYPI_INDEX_URL",
+  );
+  const debianMirror = validatedHttpUrl(
+    environment.MMDASH_TESTENV_DEBIAN_MIRROR ??
+      "https://mirrors.aliyun.com/debian",
+    "MMDASH_TESTENV_DEBIAN_MIRROR",
+  );
+  const debianSecurityMirror = validatedHttpUrl(
+    environment.MMDASH_TESTENV_DEBIAN_SECURITY_MIRROR ??
+      "https://mirrors.aliyun.com/debian-security",
+    "MMDASH_TESTENV_DEBIAN_SECURITY_MIRROR",
+  );
+  const configuredProxy = (
+    environment.MMDASH_TESTENV_DOCKER_PROXY_URL ?? ""
+  ).trim();
+  const proxyDisabled = configuredProxy.toLowerCase() === "none";
+  const proxyUrl = proxyDisabled
+    ? undefined
+    : configuredProxy
+      ? dockerAccessibleUrl(configuredProxy)
+      : undefined;
+  if (proxyUrl) {
+    validatedHttpUrl(proxyUrl, "MMDASH_TESTENV_DOCKER_PROXY_URL");
+  }
+
+  console.log(
+    `Preparing Docker Worker ${workerImage} (Debian mirror: ${debianMirror.href}, Python index: ${pythonIndexUrl.href}${proxyUrl ? `, proxy: ${proxyUrl}` : ""})`,
+  );
+  const arguments_ = ["build"];
+  if (proxyUrl) {
+    arguments_.push(
+      "--build-arg",
+      `HTTP_PROXY=${proxyUrl}`,
+      "--build-arg",
+      `HTTPS_PROXY=${proxyUrl}`,
+    );
+  }
+  arguments_.push(
+    "--build-arg",
+    `PYTHON_BASE_IMAGE=${configuredBaseImage}`,
+    "--build-arg",
+    `DEBIAN_MIRROR=${debianMirror.href.replace(/\/$/, "")}`,
+    "--build-arg",
+    `DEBIAN_SECURITY_MIRROR=${debianSecurityMirror.href.replace(/\/$/, "")}`,
+    "--build-arg",
+    `PYPI_INDEX_URL=${pythonIndexUrl.href}`,
+    "--tag",
+    workerImage,
+    "--file",
+    path.join(layout.repositoryRoot, "workers", "mmdash-worker", "Dockerfile"),
+    layout.repositoryRoot,
+  );
+  await execute("docker", arguments_, { environment });
+}
+
+async function writeDevelopmentCliLauncher(configuration) {
+  await mkdir(configuration.cliConfigDirectory, { recursive: true });
+  const cliEnvironment = {
+    MMDASH_CONFIG_DIR: configuration.cliConfigDirectory,
+    MMDASH_CORE_URL: configuration.coreUrl,
+    MMDASH_MCP_URL: configuration.mcpUrl,
+    MMDASH_URL: configuration.publicUrl,
+  };
+  if (process.platform === "win32") {
+    const lines = ["@echo off", "setlocal"];
+    for (const [name, value] of Object.entries(cliEnvironment)) {
+      lines.push(`set "${name}=${value}"`);
+    }
+    lines.push(`"${configuration.cliPath}" %*`, "exit /b %ERRORLEVEL%", "");
+    await writeFile(configuration.cliLauncherPath, lines.join("\r\n"), "utf8");
+    return;
+  }
+  const quote = (value) => `'${value.replaceAll("'", `'"'"'`)}'`;
+  const lines = ["#!/usr/bin/env sh"];
+  for (const [name, value] of Object.entries(cliEnvironment)) {
+    lines.push(`export ${name}=${quote(value)}`);
+  }
+  lines.push(`exec ${quote(configuration.cliPath)} "$@"`, "");
+  await writeFile(configuration.cliLauncherPath, lines.join("\n"), "utf8");
+  await chmod(configuration.cliLauncherPath, 0o755);
+}
+
+async function buildDevelopmentArtifacts(layout, configuration, environment) {
+  for (const target of [
+    configuration.cliPath,
+    configuration.boxPath,
+    configuration.mboxPath,
+    configuration.cliLauncherPath,
+  ]) {
+    assertPathWithin(layout.testenvRoot, target);
+  }
+  await execute(
+    "go",
+    [
+      "build",
+      "-trimpath",
+      "-ldflags",
+      "-X main.version=dev",
+      "-o",
+      configuration.cliPath,
+      "./clients/cli/cmd/mmdash",
+    ],
+    { environment },
+  );
+  await execute(
+    "go",
+    ["build", "-trimpath", "-o", configuration.boxPath, "./box/cmd/mmdash-box"],
+    { environment },
+  );
+  await copyFile(configuration.boxPath, configuration.mboxPath);
+  const suffix = `${process.platform}-${process.arch}${
+    process.platform === "win32" ? ".exe" : ""
+  }`;
+  await copyFile(
+    configuration.cliPath,
+    path.join(layout.webDownloads, `mmdash-cli-${suffix}`),
+  );
+  await copyFile(
+    configuration.boxPath,
+    path.join(layout.webDownloads, `mmdash-box-${suffix}`),
+  );
+  await writeDevelopmentCliLauncher(configuration);
+}
+
+async function fetchJson(url, options) {
+  const headers = { Accept: "application/json", ...options.headers };
+  let body;
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(options.body);
+  }
+  const response = await fetch(url, {
+    body,
+    headers,
+    method: options.method,
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await response.text();
+  let payload = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error(`${options.method} ${url} returned invalid JSON`);
+    }
+  }
+  if (!response.ok) {
+    if (response.status === 404 && options.ignoreNotFound) {
+      return {};
+    }
+    throw new Error(
+      `${options.method} ${url} returned HTTP ${response.status}: ${
+        payload.message || payload.code || response.statusText
+      }`,
+    );
+  }
+  return payload;
+}
+
+async function issueDevelopmentWorkerToken(configuration, environment) {
+  const email = environment.AUTH_BOOTSTRAP_EMAIL ?? "admin@mmdash.local";
+  const configuredPassword =
+    environment.AUTH_BOOTSTRAP_PASSWORD ?? "mmdash-local-admin";
+  const passwordCandidates = [
+    ...new Set([configuredPassword, "mmdash-local-admin"]),
+  ];
+  let accessToken;
+  let loginError;
+  for (const password of passwordCandidates) {
+    try {
+      const login = await fetchJson(`${configuration.coreUrl}/v1/auth/login`, {
+        body: { email, password },
+        method: "POST",
+      });
+      accessToken = login.access_token;
+      if (accessToken) {
+        break;
+      }
+    } catch (error) {
+      loginError = error;
+    }
+  }
+  if (!accessToken) {
+    throw new Error(
+      `Could not issue a Worker token for ${email}: ${loginError?.message ?? "login returned no access token"}. Set MMDASH_WORKER_API_TOKEN or fix the bootstrap credentials.`,
+    );
+  }
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const existing = await fetchJson(`${configuration.coreUrl}/v1/auth/tokens`, {
+    headers,
+    method: "GET",
+  });
+  for (const credential of existing.items ?? []) {
+    if (
+      credential.kind === "api" &&
+      credential.name === workerTokenName &&
+      !credential.revoked_at
+    ) {
+      await fetchJson(
+        `${configuration.coreUrl}/v1/auth/tokens/${encodeURIComponent(credential.id)}`,
+        { headers, ignoreNotFound: true, method: "DELETE" },
+      );
+    }
+  }
+  const issued = await fetchJson(`${configuration.coreUrl}/v1/auth/tokens`, {
+    body: { kind: "api", name: workerTokenName },
+    headers,
+    method: "POST",
+  });
+  if (!issued.token || !issued.credential?.id) {
+    throw new Error("Core returned an invalid Worker credential");
+  }
+  console.log("Issued a temporary API token for the Pixi Worker.");
+  return {
+    accessToken,
+    coreUrl: configuration.coreUrl,
+    credentialId: issued.credential.id,
+    token: issued.token,
+  };
+}
+
+async function revokeDevelopmentWorkerToken(credential) {
+  if (!credential) {
+    return;
+  }
+  try {
+    await fetchJson(
+      `${credential.coreUrl}/v1/auth/tokens/${encodeURIComponent(credential.credentialId)}`,
+      {
+        headers: { Authorization: `Bearer ${credential.accessToken}` },
+        ignoreNotFound: true,
+        method: "DELETE",
+      },
+    );
+    console.log("Revoked the temporary Pixi Worker token.");
+  } catch (error) {
+    console.error(`Could not revoke the Pixi Worker token: ${error.message}`);
+  }
 }
 
 async function isPortAvailable(port) {
@@ -436,6 +890,23 @@ async function waitForPostgres(port, service, shutdownRequested, environment) {
     service,
     shutdownRequested,
   );
+}
+
+async function waitForProcessStable(
+  service,
+  shutdownRequested,
+  timeoutMilliseconds = 1_500,
+) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    if (shutdownRequested()) {
+      throw new Error(`Interrupted while waiting for ${service.name}`);
+    }
+    if (service.child.exitCode !== null || service.child.signalCode !== null) {
+      throw new Error(`${service.name} exited during startup`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 async function initializePostgres(layout, environment) {
@@ -579,28 +1050,124 @@ async function stopProcessTree(service, environment) {
   }
 }
 
+async function stopService(service, layout, environment) {
+  if (service.name === "postgres") {
+    await execute(
+      "pg_ctl",
+      ["stop", "-D", layout.postgresData, "-m", "fast", "-w", "-t", "10"],
+      { allowFailure: true, capture: true, environment },
+    );
+    await waitForExit(service, 10_000);
+    return;
+  }
+  await stopProcessTree(service, environment);
+}
+
 async function stopServices(services, layout, environment) {
   for (const service of [...services].reverse()) {
-    if (service.name === "postgres") {
-      await execute(
-        "pg_ctl",
-        ["stop", "-D", layout.postgresData, "-m", "fast", "-w", "-t", "10"],
-        { allowFailure: true, capture: true, environment },
-      );
-      await waitForExit(service, 10_000);
-      continue;
-    }
-    await stopProcessTree(service, environment);
+    await stopService(service, layout, environment);
   }
 }
 
-async function startDevelopmentEnvironment(layout, environment, ports) {
+async function removeDockerWorkerContainer(name, environment) {
+  if (!name) {
+    return;
+  }
+  await execute("docker", ["rm", "--force", name], {
+    allowFailure: true,
+    capture: true,
+    environment,
+  });
+}
+
+function dockerWorkerEnvironment(configuration, environment, token, name) {
+  return {
+    ...environment,
+    ...configuration.environments.worker,
+    MMDASH_CORE_URL: dockerAccessibleUrl(configuration.coreUrl),
+    MMDASH_WORKER_API_TOKEN: token,
+    MMDASH_WORKER_ID: name,
+    MMDASH_WORKER_TRANSFER_ORIGIN_OVERRIDE: dockerAccessibleUrl(
+      configuration.coreUrl,
+    ),
+    SOURCE_DATE_EPOCH: "0",
+    TEXMFCONFIG: "/tmp/texmf-config",
+    TEXMFHOME: "/tmp/texmf-home",
+    TEXMFVAR: "/tmp/texmf-var",
+    TZ: "UTC",
+  };
+}
+
+function dockerWorkerArguments(layout, workerEnvironment, containerName) {
+  const forwardedNames = [
+    "MMDASH_CORE_URL",
+    "MMDASH_WORKER_API_TOKEN",
+    "MMDASH_WORKER_ID",
+    "MMDASH_WORKER_TRANSFER_ORIGIN_OVERRIDE",
+    "MMDASH_WORKER_LEASE_SECONDS",
+    "MMDASH_WORKER_POLL_SECONDS",
+    "MMDASH_WORKER_MODEL_EXPORT_TIMEOUT_SECONDS",
+    "MMDASH_WORKER_MODEL_COMPLETION_TIMEOUT_SECONDS",
+    "MMDASH_WORKER_PROGRESS_EVALUATION_TIMEOUT_SECONDS",
+    "MMDASH_WORKER_EXPERIMENT_RESULT_TIMEOUT_SECONDS",
+    "MMDASH_PROGRESS_EVALUATOR_MODE",
+    "MMDASH_PREVIEW_MAX_INPUT_BYTES",
+    "MMDASH_PREVIEW_MAX_IMAGE_PIXELS",
+    "MMDASH_PREVIEW_MAX_PDF_PAGES",
+    "MMDASH_PREVIEW_MAX_PDF_TEXT_PAGES",
+    "MMDASH_PREVIEW_MAX_CSV_ROWS",
+    "MMDASH_PREVIEW_MAX_CSV_COLUMNS",
+    "MMDASH_PREVIEW_MAX_SAMPLE_ROWS",
+    "MMDASH_PREVIEW_MAX_JSON_BYTES",
+    "MMDASH_PREVIEW_MAX_TEXT_BYTES",
+    "MMDASH_PREVIEW_MAX_TEXT_CHARS",
+    "MMDASH_PREVIEW_MAX_SUMMARY_BYTES",
+    "MMDASH_PREVIEW_MAX_THUMBNAIL_BYTES",
+    "MMDASH_PREVIEW_THUMBNAIL_DIMENSION",
+    "MMDASH_PREVIEW_TIMEOUT_SECONDS",
+    "SOURCE_DATE_EPOCH",
+    "TZ",
+    "TEXMFVAR",
+    "TEXMFCONFIG",
+    "TEXMFHOME",
+  ].filter((name) => workerEnvironment[name] !== undefined);
+  const arguments_ = [
+    "run",
+    "--rm",
+    "--name",
+    containerName,
+    "--add-host",
+    "host.docker.internal:host-gateway",
+    "--mount",
+    `type=bind,source=${path.join(layout.repositoryRoot, "workers", "mmdash-worker", "src")},target=/app/workers/mmdash-worker/src,readonly`,
+  ];
+  for (const name of forwardedNames) {
+    arguments_.push("--env", name);
+  }
+  arguments_.push(workerImage);
+  return arguments_;
+}
+
+async function startDevelopmentEnvironment(
+  layout,
+  environment,
+  ports,
+  { startupCheck = false } = {},
+) {
   await ensureDirectories(layout);
   await assertPortsAvailable(ports);
   await acquireSupervisorLock(layout);
 
-  const configuration = createServiceConfiguration(ports, layout);
+  const workerMode = await resolveWorkerMode(environment);
+  const configuration = createServiceConfiguration(
+    ports,
+    layout,
+    environment,
+    workerMode,
+  );
   const services = [];
+  let dockerWorkerContainer;
+  let workerCredential;
   let interrupted = false;
   const shutdownRequested = () => interrupted || existsSync(layout.stopRequest);
   const requestShutdown = () => {
@@ -610,6 +1177,11 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
   process.once("SIGTERM", requestShutdown);
 
   try {
+    if (workerMode === "docker") {
+      await prepareDockerWorkerImage(layout, environment);
+    }
+    await buildDevelopmentArtifacts(layout, configuration, environment);
+
     const askPassPath = configuration.environments.core.REPO_ASKPASS_PATH;
     if (!existsSync(askPassPath)) {
       await execute(
@@ -656,7 +1228,7 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
         "server",
         layout.minioData,
         "--address",
-        `${host}:${ports.minio}`,
+        `${configuration.minioBindHost}:${ports.minio}`,
         "--console-address",
         `${host}:${ports.minioConsole}`,
         "--certs-dir",
@@ -707,6 +1279,54 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
       core,
       shutdownRequested,
     );
+
+    if (workerMode !== "disabled") {
+      const configuredToken = environment.MMDASH_WORKER_API_TOKEN?.trim();
+      workerCredential = configuredToken
+        ? undefined
+        : await issueDevelopmentWorkerToken(configuration, environment);
+      const workerToken = configuredToken || workerCredential.token;
+      let worker;
+      if (workerMode === "docker") {
+        dockerWorkerContainer = `mmdash-pixi-worker-${process.pid}`;
+        const workerEnvironment = dockerWorkerEnvironment(
+          configuration,
+          environment,
+          workerToken,
+          dockerWorkerContainer,
+        );
+        worker = startManagedProcess(
+          "worker",
+          "docker",
+          dockerWorkerArguments(
+            layout,
+            workerEnvironment,
+            dockerWorkerContainer,
+          ),
+          { environment: workerEnvironment, layout },
+        );
+      } else {
+        worker = startManagedProcess(
+          "worker",
+          "uv",
+          ["run", "--offline", "--package", "mmdash-worker", "mmdash-worker"],
+          {
+            environment: {
+              ...environment,
+              ...configuration.environments.worker,
+              MMDASH_WORKER_API_TOKEN: workerToken,
+            },
+            layout,
+          },
+        );
+      }
+      services.push(worker);
+      await waitForProcessStable(worker, shutdownRequested);
+    } else {
+      console.warn(
+        "Worker is disabled; Article, preview, Model sync, Progress evaluation, semantic-description, and Experiment result Jobs will remain queued.",
+      );
+    }
 
     const webBff = startManagedProcess(
       "web-bff",
@@ -771,6 +1391,10 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
     console.log(
       `Isolated development environment is ready at ${configuration.webUrl}`,
     );
+    console.log(`Worker mode: ${workerMode}`);
+    console.log(`CLI launcher: ${configuration.cliLauncherPath}`);
+    console.log(`Box binary: ${configuration.boxPath}`);
+    console.log(`Downloads: ${layout.webDownloads}`);
     console.log(
       `Run the smoke check in another terminal with ${
         process.platform === "win32"
@@ -778,6 +1402,11 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
           : "./scripts/testenv.sh smoke"
       }`,
     );
+
+    if (startupCheck) {
+      console.log("Startup check passed; stopping the isolated environment.");
+      return;
+    }
 
     const signal = new Promise((resolve) => {
       const poll = setInterval(() => {
@@ -803,6 +1432,15 @@ async function startDevelopmentEnvironment(layout, environment, ports) {
   } finally {
     process.removeListener("SIGINT", requestShutdown);
     process.removeListener("SIGTERM", requestShutdown);
+    const workerIndex = services.findIndex(
+      (service) => service.name === "worker",
+    );
+    if (workerIndex >= 0) {
+      const [worker] = services.splice(workerIndex, 1);
+      await stopService(worker, layout, environment);
+    }
+    await removeDockerWorkerContainer(dockerWorkerContainer, environment);
+    await revokeDevelopmentWorkerToken(workerCredential);
     await stopServices(services, layout, environment);
     await releaseSupervisorLock(layout);
   }
@@ -847,6 +1485,21 @@ async function doctor(layout, environment, ports) {
     );
   }
   const lock = await readSupervisorLock(layout);
+  const workerMode = await resolveWorkerMode(environment);
+  console.log(`worker mode: ${workerMode}`);
+  if (workerMode === "docker") {
+    console.log(
+      `docker daemon: ${
+        (await commandAvailable(
+          "docker",
+          ["version", "--format", "{{.Server.Version}}"],
+          environment,
+        ))
+          ? "available"
+          : "unavailable"
+      }`,
+    );
+  }
   console.log(
     lock && isProcessAlive(lock.pid)
       ? `supervisor: running as PID ${lock.pid}`
@@ -912,7 +1565,8 @@ async function stopEnvironment(layout) {
 async function main() {
   const command = process.argv[2] ?? "doctor";
   const layout = createLayout();
-  const environment = createIsolatedEnvironment(layout);
+  const repositoryEnvironment = await loadRepositoryEnvironment();
+  const environment = createIsolatedEnvironment(layout, repositoryEnvironment);
   const ports = resolvePorts(environment);
   switch (command) {
     case "install":
@@ -929,6 +1583,11 @@ async function main() {
       break;
     case "dev":
       await startDevelopmentEnvironment(layout, environment, ports);
+      break;
+    case "dev-check":
+      await startDevelopmentEnvironment(layout, environment, ports, {
+        startupCheck: true,
+      });
       break;
     case "smoke":
       await execute("pnpm", ["smoke"], {
@@ -948,7 +1607,7 @@ async function main() {
       break;
     default:
       throw new Error(
-        `Unknown test environment command '${command}'. Expected install, test, check, doctor, dev, smoke, stop, or reset.`,
+        `Unknown test environment command '${command}'. Expected install, test, check, doctor, dev, dev-check, smoke, stop, or reset.`,
       );
   }
 }
