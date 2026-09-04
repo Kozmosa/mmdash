@@ -20,6 +20,7 @@ const workerBaseImageMirror =
   "docker.1ms.run/library/python:3.12.11-slim-bookworm";
 const workerImage = "mmdash-worker:testenv";
 const workerTokenName = "mmdash-pixi-development-worker";
+const cloudflareTunnelImage = "cloudflare/cloudflared:latest";
 
 export const serviceOrder = [
   "postgres",
@@ -275,7 +276,9 @@ export function createServiceConfiguration(
         MCP_AGENT_TOKEN: "local-agent-token-change-before-production",
         MCP_AGENT_TOOLS: "*",
         MCP_ALLOWED_HOSTS: `localhost,${host}`,
-        MCP_ALLOWED_ORIGINS: `${webUrl},http://${host}:${ports.mcp}`,
+        MCP_ALLOWED_ORIGINS: [
+          ...new Set([webUrl, publicUrl, `http://${host}:${ports.mcp}`]),
+        ].join(","),
         MCP_CLI_PROJECTS: "*",
         MCP_CLI_TOKEN: "local-cli-token-change-before-production",
         MCP_CLI_TOOLS: "*",
@@ -459,6 +462,32 @@ export function dockerAccessibleUrl(value) {
   return url.toString().replace(/\/$/u, "");
 }
 
+export function parseDevelopmentArguments(arguments_ = []) {
+  const unknown = arguments_.filter((argument) => argument !== "--cf");
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown development option '${unknown[0]}'. Expected --cf when starting a Cloudflare Quick Tunnel.`,
+    );
+  }
+  return { cloudflareTunnel: arguments_.includes("--cf") };
+}
+
+export function cloudflareTunnelArguments(containerName, webUrl) {
+  return [
+    "run",
+    "--rm",
+    "--name",
+    containerName,
+    "--add-host",
+    "host.docker.internal:host-gateway",
+    cloudflareTunnelImage,
+    "tunnel",
+    "--no-autoupdate",
+    "--url",
+    dockerAccessibleUrl(webUrl),
+  ];
+}
+
 function validatedHttpUrl(value, name) {
   const url = new URL(value);
   if (
@@ -576,6 +605,19 @@ async function prepareDockerWorkerImage(layout, environment) {
     layout.repositoryRoot,
   );
   await execute("docker", arguments_, { environment });
+}
+
+async function ensureCloudflareTunnelDocker(environment) {
+  const dockerReady = await commandAvailable(
+    "docker",
+    ["version", "--format", "{{.Server.Version}}"],
+    environment,
+  );
+  if (!dockerReady) {
+    throw new Error(
+      "The --cf development option requires a running Docker daemon. Start Docker Desktop and rerun '.\\scripts\\testenv.ps1 dev --cf'.",
+    );
+  }
 }
 
 async function writeDevelopmentCliLauncher(configuration) {
@@ -788,7 +830,7 @@ async function assertPortsAvailable(ports) {
   }
 }
 
-function pipeServiceOutput(name, stream, destination, log) {
+function pipeServiceOutput(name, stream, destination, log, onLine) {
   let pending = "";
   stream?.on("data", (chunk) => {
     const text = chunk.toString();
@@ -797,11 +839,13 @@ function pipeServiceOutput(name, stream, destination, log) {
     const lines = pending.split(/\r?\n/);
     pending = lines.pop() ?? "";
     for (const line of lines) {
+      onLine?.(line);
       destination.write(`[${name}] ${line}\n`);
     }
   });
   stream?.once("end", () => {
     if (pending) {
+      onLine?.(pending);
       destination.write(`[${name}] ${pending}\n`);
     }
   });
@@ -811,7 +855,7 @@ function startManagedProcess(
   name,
   command,
   arguments_,
-  { cwd = repositoryRoot, environment = process.env, layout },
+  { cwd = repositoryRoot, environment = process.env, layout, onLine },
 ) {
   const invocation = commandInvocation(command, arguments_);
   const log = createWriteStream(path.join(layout.serviceLogs, `${name}.log`), {
@@ -824,8 +868,8 @@ function startManagedProcess(
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
-  pipeServiceOutput(name, child.stdout, process.stdout, log);
-  pipeServiceOutput(name, child.stderr, process.stderr, log);
+  pipeServiceOutput(name, child.stdout, process.stdout, log, onLine);
+  pipeServiceOutput(name, child.stderr, process.stderr, log, onLine);
   const exited = new Promise((resolve) => {
     child.once("exit", (code, signal) => {
       log.end();
@@ -907,6 +951,21 @@ async function waitForProcessStable(
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+async function waitForCloudflareTunnelUrl(
+  service,
+  getUrl,
+  shutdownRequested,
+) {
+  await waitForCondition(
+    "the Cloudflare Quick Tunnel URL",
+    async () => Boolean(getUrl()),
+    service,
+    shutdownRequested,
+    60_000,
+  );
+  return getUrl();
 }
 
 async function initializePostgres(layout, environment) {
@@ -1069,7 +1128,7 @@ async function stopServices(services, layout, environment) {
   }
 }
 
-async function removeDockerWorkerContainer(name, environment) {
+async function removeDockerContainer(name, environment) {
   if (!name) {
     return;
   }
@@ -1152,21 +1211,15 @@ async function startDevelopmentEnvironment(
   layout,
   environment,
   ports,
-  { startupCheck = false } = {},
+  { cloudflareTunnel = false, startupCheck = false } = {},
 ) {
   await ensureDirectories(layout);
   await assertPortsAvailable(ports);
   await acquireSupervisorLock(layout);
 
-  const workerMode = await resolveWorkerMode(environment);
-  const configuration = createServiceConfiguration(
-    ports,
-    layout,
-    environment,
-    workerMode,
-  );
   const services = [];
   let dockerWorkerContainer;
+  let cloudflareTunnelContainer;
   let workerCredential;
   let interrupted = false;
   const shutdownRequested = () => interrupted || existsSync(layout.stopRequest);
@@ -1177,6 +1230,49 @@ async function startDevelopmentEnvironment(
   process.once("SIGTERM", requestShutdown);
 
   try {
+    if (cloudflareTunnel) {
+      await ensureCloudflareTunnelDocker(environment);
+      cloudflareTunnelContainer = `mmdash-pixi-cloudflared-${process.pid}`;
+      let discoveredTunnelUrl;
+      const tunnel = startManagedProcess(
+        "cloudflared",
+        "docker",
+        cloudflareTunnelArguments(
+          cloudflareTunnelContainer,
+          `http://${host}:${ports.web}`,
+        ),
+        {
+          environment,
+          layout,
+          onLine: (line) => {
+            discoveredTunnelUrl ??= line.match(
+              /https:\/\/[a-z0-9-]+\.trycloudflare\.com/iu,
+            )?.[0];
+          },
+        },
+      );
+      services.push(tunnel);
+      const publicUrl = await waitForCloudflareTunnelUrl(
+        tunnel,
+        () => discoveredTunnelUrl,
+        shutdownRequested,
+      );
+      environment = {
+        ...environment,
+        MMDASH_TESTENV_PUBLIC_URL: publicUrl,
+      };
+      console.log(
+        `Cloudflare Quick Tunnel is running at ${publicUrl}; using it as MMDASH_TESTENV_PUBLIC_URL.`,
+      );
+    }
+
+    const workerMode = await resolveWorkerMode(environment);
+    const configuration = createServiceConfiguration(
+      ports,
+      layout,
+      environment,
+      workerMode,
+    );
     if (workerMode === "docker") {
       await prepareDockerWorkerImage(layout, environment);
     }
@@ -1367,7 +1463,7 @@ async function startDevelopmentEnvironment(
       "next",
       "dev",
       "--hostname",
-      host,
+      cloudflareTunnel ? "0.0.0.0" : host,
       "--port",
       String(ports.web),
     ];
@@ -1432,6 +1528,14 @@ async function startDevelopmentEnvironment(
   } finally {
     process.removeListener("SIGINT", requestShutdown);
     process.removeListener("SIGTERM", requestShutdown);
+    const cloudflareTunnelIndex = services.findIndex(
+      (service) => service.name === "cloudflared",
+    );
+    if (cloudflareTunnelIndex >= 0) {
+      const [tunnel] = services.splice(cloudflareTunnelIndex, 1);
+      await stopService(tunnel, layout, environment);
+    }
+    await removeDockerContainer(cloudflareTunnelContainer, environment);
     const workerIndex = services.findIndex(
       (service) => service.name === "worker",
     );
@@ -1439,7 +1543,7 @@ async function startDevelopmentEnvironment(
       const [worker] = services.splice(workerIndex, 1);
       await stopService(worker, layout, environment);
     }
-    await removeDockerWorkerContainer(dockerWorkerContainer, environment);
+    await removeDockerContainer(dockerWorkerContainer, environment);
     await revokeDevelopmentWorkerToken(workerCredential);
     await stopServices(services, layout, environment);
     await releaseSupervisorLock(layout);
@@ -1564,6 +1668,7 @@ async function stopEnvironment(layout) {
 
 async function main() {
   const command = process.argv[2] ?? "doctor";
+  const commandArguments = process.argv.slice(3);
   const layout = createLayout();
   const repositoryEnvironment = await loadRepositoryEnvironment();
   const environment = createIsolatedEnvironment(layout, repositoryEnvironment);
@@ -1582,7 +1687,9 @@ async function main() {
       await doctor(layout, environment, ports);
       break;
     case "dev":
-      await startDevelopmentEnvironment(layout, environment, ports);
+      await startDevelopmentEnvironment(layout, environment, ports, {
+        ...parseDevelopmentArguments(commandArguments),
+      });
       break;
     case "dev-check":
       await startDevelopmentEnvironment(layout, environment, ports, {

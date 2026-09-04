@@ -195,6 +195,10 @@ For a source checkout deployment:
 
 ```bash
 "${prod_compose[@]}" build --pull
+# Recreate the one-shot migrator so new migrations run before Core starts.
+# Do not rely on an old exited migrate container satisfying depends_on.
+"${prod_compose[@]}" up -d --force-recreate migrate
+"${prod_compose[@]}" ps -a migrate
 "${prod_compose[@]}" up -d
 ```
 
@@ -202,11 +206,19 @@ For immutable prebuilt images, set all `MMDASH_*_IMAGE` variables and use:
 
 ```bash
 "${prod_compose[@]}" pull
+"${prod_compose[@]}" up -d --force-recreate migrate
+"${prod_compose[@]}" ps -a migrate
 "${prod_compose[@]}" up -d --no-build
 ```
 
-`migrate` and `minio-init` are idempotent one-shot services. They must exit
-with code 0 before Core starts. Inspect the result and recent logs:
+`migrate` and `minio-init` are idempotent one-shot services. The explicit
+`migrate` run above is required on every release: Compose can otherwise reuse
+an old exited container and let Core start against an older schema. Core also
+checks the Repo webhook schema at startup and readiness, so a missing
+`repo_webhook_deliveries` ledger or resilient-sync columns stops the stack with
+an actionable migration error instead of serving webhook 500 responses.
+Both one-shot services must exit with code 0 before Core starts. Inspect the
+result and recent logs:
 
 ```bash
 "${prod_compose[@]}" ps -a
@@ -281,6 +293,8 @@ immutable image references and run `build --pull` (source mode) or `pull`
 (prebuilt mode), followed by:
 
 ```bash
+"${prod_compose[@]}" up -d --force-recreate migrate
+"${prod_compose[@]}" ps -a migrate
 "${prod_compose[@]}" up -d
 "${prod_compose[@]}" ps -a
 "${prod_compose[@]}" logs --tail 200 migrate mihomo core web-bff web mcp-gateway worker caddy cloudflared
