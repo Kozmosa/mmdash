@@ -29,7 +29,8 @@ func (store PostgresStore) RecordWebhook(
 				status, received_at, processed_at
 			) VALUES (
 				'github', $1, $2, $3, $4, $5, $6, $7, $8, $9,
-				CASE WHEN $8 IN ('ignored', 'processed') THEN $9 ELSE NULL END
+				CASE WHEN $8 IN ('ignored', 'processed')
+				     THEN $9::timestamptz ELSE NULL END
 			)
 			ON CONFLICT (provider, delivery_id) DO NOTHING
 		`, delivery.DeliveryID, delivery.RepositoryID, delivery.Event,
