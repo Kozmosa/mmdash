@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
+const publicDevUrl = process.env.MMDASH_TESTENV_PUBLIC_URL?.trim();
+const publicDevOrigin = publicDevUrl
+  ? new URL(publicDevUrl).hostname
+  : undefined;
+
 const nextConfig: NextConfig = {
+  ...(publicDevOrigin ? { allowedDevOrigins: [publicDevOrigin] } : {}),
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
