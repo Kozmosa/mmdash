@@ -44,4 +44,20 @@ describe("local unified entrypoint rewrites", () => {
       },
     ]);
   });
+
+  it("allows the generated Cloudflare origin during development", async () => {
+    vi.stubEnv(
+      "MMDASH_TESTENV_PUBLIC_URL",
+      "https://closer-monitoring-housewives-belfast.trycloudflare.com",
+    );
+    vi.resetModules();
+
+    const { default: cloudflareNextConfig } = await import(
+      "../next.config"
+    );
+
+    expect(cloudflareNextConfig.allowedDevOrigins).toEqual([
+      "closer-monitoring-housewives-belfast.trycloudflare.com",
+    ]);
+  });
 });
