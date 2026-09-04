@@ -1,6 +1,17 @@
 package repo
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
+
+func TestWebhookSchemaCheckerRequiresDatabase(t *testing.T) {
+	err := (WebhookSchemaChecker{}).Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("unexpected schema checker error: %v", err)
+	}
+}
 
 func TestValidateGitVersion(t *testing.T) {
 	for _, fixture := range []struct {

@@ -105,6 +105,16 @@ describe("production deployment", () => {
     });
   });
 
+  it("recreates the migration service before starting Core", async () => {
+    const readme = await readFile("deploy/production/README.md", "utf8");
+
+    expect(readme).toContain(
+      '"${prod_compose[@]}" up -d --force-recreate migrate',
+    );
+    expect(readme).toContain("old exited migrate container");
+    expect(readme).toContain("repo_webhook_deliveries");
+  });
+
   it("keeps source-build registry mirrors scoped to Compose build arguments", async () => {
     const compose = yaml.load(await readFile(composePath, "utf8"));
     const services = compose.services;
