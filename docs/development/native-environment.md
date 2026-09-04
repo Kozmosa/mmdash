@@ -56,6 +56,26 @@ current-platform binaries to the development download center. Once it reports
 that the environment is ready, open
 `http://127.0.0.1:13000`.
 
+To expose the development Web service through a temporary Cloudflare Quick
+Tunnel, start Docker Desktop and append `--cf`:
+
+```powershell
+.\scripts\testenv.ps1 dev --cf
+```
+
+The supervisor starts the `cloudflare/cloudflared` container first, captures
+the generated `https://*.trycloudflare.com` URL, and injects it as
+`MMDASH_TESTENV_PUBLIC_URL` before starting the application services. The URL
+is also printed in the `[cloudflared]` log output. The tunnel is
+unauthenticated and public, and the container is removed automatically when
+`dev` stops. Next's development origin allowlist is updated for the generated
+hostname so HMR can connect through the tunnel. The same option works with
+the Bash wrapper:
+
+```bash
+./scripts/testenv.sh dev --cf
+```
+
 The launcher reads repository-root `.env` first and lets variables already set
 in the invoking shell take precedence. Required isolated service paths and
 ports still override incompatible deployment values. Core public, internal,
