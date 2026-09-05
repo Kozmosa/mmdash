@@ -131,6 +131,10 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	defer db.Close()
+	webhookSchemaChecker := repo.WebhookSchemaChecker{DB: db}
+	if err := webhookSchemaChecker.Check(startupContext); err != nil {
+		return fmt.Errorf("verify Repo webhook schema: %w", err)
+	}
 
 	storage, err := artifact.NewBlobStore(
 		processConfig.Artifact,
@@ -1032,6 +1036,7 @@ func run(logger *logging.Logger) error {
 		Health: health.Handler{
 			Checkers: []health.Checker{
 				database.Checker{DB: db},
+				webhookSchemaChecker,
 				storage,
 				repo.GitChecker{Client: gitClient, Directory: repoStorage.Root()},
 				repo.StorageChecker{Storage: repoStorage},
