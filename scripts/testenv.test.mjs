@@ -4,11 +4,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertPathWithin,
+  cloudflareTunnelArguments,
   createIsolatedEnvironment,
   createLayout,
   createServiceConfiguration,
   dockerAccessibleUrl,
   parseDotEnv,
+  parseDevelopmentArguments,
   resolvePorts,
   resolveWorkerMode,
   serviceOrder,
@@ -142,6 +144,57 @@ describe("isolated Pixi development environment", () => {
     expect(dockerAccessibleUrl(configuration.coreUrl)).toBe(
       "http://host.docker.internal:18080",
     );
+  });
+
+  it("injects the Cloudflare URL into public Core settings", () => {
+    const layout = createLayout(path.resolve("C:/workspace/mmdash"));
+    const publicUrl = "https://mmdash-dev.trycloudflare.com";
+    const configuration = createServiceConfiguration(
+      resolvePorts({}),
+      layout,
+      { MMDASH_TESTENV_PUBLIC_URL: publicUrl },
+    );
+
+    expect(configuration.publicUrl).toBe(publicUrl);
+    expect(configuration.environments.core).toMatchObject({
+      ARTIFACT_WEB_ORIGIN: publicUrl,
+      MMDASH_PUBLIC_URL: publicUrl,
+      NOTION_OAUTH_REDIRECT_URI: `${publicUrl}/api/integrations/notion/oauth/callback`,
+    });
+    expect(configuration.environments.mcp.MCP_ALLOWED_ORIGINS).toContain(
+      publicUrl,
+    );
+  });
+
+  it("parses the optional Cloudflare Quick Tunnel development flag", () => {
+    expect(parseDevelopmentArguments()).toEqual({ cloudflareTunnel: false });
+    expect(parseDevelopmentArguments(["--cf"])).toEqual({
+      cloudflareTunnel: true,
+    });
+    expect(() => parseDevelopmentArguments(["--unknown"])).toThrow(
+      "Expected --cf",
+    );
+  });
+
+  it("routes the Cloudflare container to the host Web port", () => {
+    expect(
+      cloudflareTunnelArguments(
+        "mmdash-pixi-cloudflared-123",
+        "http://127.0.0.1:13000",
+      ),
+    ).toEqual([
+      "run",
+      "--rm",
+      "--name",
+      "mmdash-pixi-cloudflared-123",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "cloudflare/cloudflared:latest",
+      "tunnel",
+      "--no-autoupdate",
+      "--url",
+      "http://host.docker.internal:13000",
+    ]);
   });
 
   it("loads dotenv syntax without overriding process-level values", () => {
