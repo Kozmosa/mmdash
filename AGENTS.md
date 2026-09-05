@@ -354,3 +354,11 @@ pnpm commit:check -- "feat(scope): concise summary"
 ```
 
 Remember to update handoff.md if you have just completed a module or completed a stage
+
+## 11. Agent authorship and collaborator metadata
+
+Codex and Claude are implementation tools, not project collaborators. Do not
+add Codex, Claude, or another agent identity as a Git co-author, co-committer,
+PR collaborator, or contributor entry. Before committing or pushing, remove
+agent-authored `Co-authored-by` trailers and equivalent collaborator metadata
+unless the user explicitly requests that metadata.
