@@ -1,4 +1,4 @@
-# mmdash Article Template Spec 1.0
+# mmdash Article Template Spec 1.0/1.1
 
 正式 Article 模板是一个不可变 Artifact Version 指向的 ZIP。普通 Overleaf ZIP 只能经导入向导转换、验证并完成测试构建后注册。
 
@@ -9,6 +9,14 @@
 - 可选的 `cls/`、`sty/`、`bst/`、`assets/`、`fonts/`
 
 manifest 必须符合 [`contracts/json-schema/article-template.schema.json`](../../contracts/json-schema/article-template.schema.json)，并声明 `schema_version`、`name`、`version`、`entrypoint`、`output`、`content_target`、`bibliography_target`、`engine` 和 `bibliography_tool`。`content_target` 与 `bibliography_target` 是系统生成文件的唯一写入位置，不能与 entrypoint 相同。
+
+### Manifest 1.1 扩展字段（全部可选，1.0 模板继续有效）
+
+- `abstract_target`：系统写入生成摘要块的 TeX 路径；摘要禁用时写入空文件，不产生空标题或占位。
+- `body_layout`：`single`（仅 `content_target`）或 `sections`（Worker 按稳定 heading Block ID 把 H1/H2 拆分为 `sections/*.tex` 并生成按序引用它们的 `sections/body.tex`，`content_target` 即 `sections/body.tex`）。
+- `field_profile`：`default`（通用字段）、`cumcm`（通用 + 国赛字段），或显式字段列表；未列入的字段不生成 TeX。
+- `figure_dir`：构建时转换后图片的落位目录，默认 `figures`。
+- `bibliography_mode`：`inline`（citeproc 把参考文献渲染进正文片段）或 `native`（保留模板自带 `\bibliography`/`\addbibresource` + `\printbibliography` 接线，系统只把 Zotero 文献写入 `bibliography_target`，Pandoc 输出 `\cite` 命令）。缺省 `inline`。
 
 ## 安全验证
 

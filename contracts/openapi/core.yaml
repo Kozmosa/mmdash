@@ -4606,6 +4606,67 @@ paths:
                 { schema: { $ref: "#/components/schemas/ArticleDraft" } },
             }
         "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/abstract/flush:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    post:
+      tags: [Article]
+      summary: Persist the independent abstract document with its own CAS revision
+      operationId: article.abstract.flush
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/PersistArticleAbstractRequest",
+                  },
+              },
+          }
+      responses:
+        "200":
+          description: Persisted draft including the abstract snapshot.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleDraft" } },
+            }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/projects/{projectId}/article/paper-info:
+    parameters: [{ $ref: "#/components/parameters/ProjectId" }]
+    get:
+      tags: [Article]
+      summary: Read the structured paper info document
+      operationId: article.paper-info.get
+      responses:
+        "200":
+          description: The paper info document and its revision.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticlePaperInfo" } },
+            }
+    put:
+      tags: [Article]
+      summary: Replace the structured paper info field selection and values
+      operationId: article.paper-info.update
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/ArticlePaperInfo" } },
+          }
+      responses:
+        "200":
+          description: Persisted draft including the paper info revision.
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/ArticleDraft" } },
+            }
+        "400": { $ref: "#/components/responses/Error" }
   /v1/projects/{projectId}/article/blocks/{blockId}/review:
     parameters:
       - { $ref: "#/components/parameters/ProjectId" }
@@ -6089,6 +6150,50 @@ components:
           { type: array, items: { $ref: "#/components/schemas/ArticleBlock" } }
         sync_status: { type: string, enum: [synced, syncing, offline, failed] }
         updated_at: { type: string, format: date-time }
+        abstract_markdown: { type: string }
+        abstract_revision: { type: integer, format: int64, minimum: 0 }
+        abstract_yjs_update: { type: string }
+        abstract_state_vector: { type: string }
+        abstract_tiptap_json: { type: object, additionalProperties: true }
+        paper_info: { type: object, additionalProperties: true }
+        paper_info_revision: { type: integer, format: int64, minimum: 0 }
+    PersistArticleAbstractRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, yjs_update, state_vector, tiptap_json]
+      properties:
+        expected_revision: { type: integer, format: int64, minimum: 0 }
+        yjs_update:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 16777216,
+            description: Base64-encoded Yjs update of the abstract document.,
+          }
+        state_vector:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 1048576,
+            description: Base64-encoded Yjs state vector of the abstract document.,
+          }
+        tiptap_json: { type: object, additionalProperties: true }
+        actor_kind: { type: string, enum: [human, ai, restore] }
+    ArticlePaperInfo:
+      type: object
+      additionalProperties: false
+      required: [schema_version, fields]
+      properties:
+        schema_version: { type: string, enum: ["1.0"] }
+        fields:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [enabled, value]
+            properties:
+              enabled: { type: boolean }
+              value: { type: string, maxLength: 2000 }
     ArticlePatch:
       type: object
       additionalProperties: false

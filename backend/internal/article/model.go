@@ -76,6 +76,17 @@ type Draft struct {
 	Manifest      map[string]interface{} `json:"-"`
 	ActorKind     string                 `json:"-"`
 	Provenance    map[string]interface{} `json:"-"`
+	// Abstract is an independent Markdown document with its own
+	// collaborative revision; it never mixes into the body Markdown.
+	AbstractMarkdown  string                 `json:"abstract_markdown"`
+	AbstractRevision  int64                  `json:"abstract_revision"`
+	AbstractStateVec  string                 `json:"abstract_state_vector"`
+	AbstractTiptapJSO map[string]interface{} `json:"abstract_tiptap_json"`
+	AbstractYjsUpdate string                 `json:"abstract_yjs_update"`
+	// PaperInfo holds the structured 论文信息 field selection and values
+	// frozen into commits through .mmdash/article.json.
+	PaperInfo         map[string]interface{} `json:"paper_info"`
+	PaperInfoRevision int64                  `json:"paper_info_revision"`
 }
 
 type PersistDraftInput struct {
@@ -131,6 +142,16 @@ type Commit struct {
 	ReferencesSHA256  string                 `json:"-"`
 	ManifestSHA256    string                 `json:"-"`
 	FrozenReferences  []Reference            `json:"-"`
+	// Abstract snapshot frozen with the same commit barrier.
+	AbstractMarkdown    string                 `json:"-"`
+	AbstractRevision    int64                  `json:"-"`
+	AbstractSHA256      string                 `json:"-"`
+	PaperInfoRevision   int64                  `json:"-"`
+	PaperInfoSHA256     string                 `json:"-"`
+	PaperInfoJSON       []byte                 `json:"-"`
+	AbstractTiptapJSON  map[string]interface{} `json:"-"`
+	AbstractStateVector string                 `json:"-"`
+	AbstractYjsUpdate   string                 `json:"-"`
 }
 
 type CommitOperation struct {
@@ -176,6 +197,16 @@ type CommitOperation struct {
 	TiptapJSON        map[string]interface{} `json:"-"`
 	Title             string                 `json:"-"`
 	YjsUpdate         string                 `json:"-"`
+	// Abstract and paper info ride the same durable commit operation.
+	AbstractMarkdown  string                 `json:"-"`
+	AbstractRevision  int64                  `json:"-"`
+	AbstractSHA256    string                 `json:"-"`
+	AbstractStateVec  string                 `json:"-"`
+	AbstractTiptapJSO map[string]interface{} `json:"-"`
+	AbstractYjsUpdate string                 `json:"-"`
+	PaperInfoJSON     []byte                 `json:"-"`
+	PaperInfoRevision int64                  `json:"-"`
+	PaperInfoSHA256   string                 `json:"-"`
 }
 
 type TemplateManifest struct {
@@ -188,6 +219,13 @@ type TemplateManifest struct {
 	Output             string `json:"output"`
 	SchemaVersion      string `json:"schema_version"`
 	Version            string `json:"version"`
+	// Manifest 1.1 optional extensions. 1.0 manifests keep serializing
+	// byte-identically because every field omits when empty.
+	AbstractTarget   string `json:"abstract_target,omitempty"`
+	BodyLayout       string `json:"body_layout,omitempty"`
+	FieldProfile     string `json:"field_profile,omitempty"`
+	FigureDir        string `json:"figure_dir,omitempty"`
+	BibliographyMode string `json:"bibliography_mode,omitempty"`
 }
 
 type Template struct {
@@ -350,4 +388,21 @@ type BuildJobInput struct {
 	Resources        []map[string]interface{} `json:"resources,omitempty"`
 	Template         map[string]interface{}   `json:"template"`
 	Toolchain        map[string]interface{}   `json:"toolchain"`
+	// Abstract Markdown frozen with the same commit barrier; the Worker
+	// renders it through Pandoc into the template abstract target.
+	Abstract string `json:"abstract,omitempty"`
+	// PaperInfo is the frozen 论文信息 document driving metadata.tex.
+	PaperInfo map[string]interface{} `json:"paper_info,omitempty"`
+	// Headings carries the stable block identity of every H1/H2 heading in
+	// document order so the Worker can split sections deterministically.
+	Headings []HeadingInfo `json:"headings,omitempty"`
+}
+
+// HeadingInfo anchors a generated section file to the collaborative block
+// that owns the heading.
+type HeadingInfo struct {
+	BlockID string `json:"block_id"`
+	Level   int    `json:"level"`
+	Ordinal int    `json:"ordinal"`
+	Text    string `json:"text"`
 }

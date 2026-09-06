@@ -3810,6 +3810,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{projectId}/article/abstract/flush": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Persist the independent abstract document with its own CAS revision */
+    post: operations["article.abstract.flush"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects/{projectId}/article/paper-info": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    /** Read the structured paper info document */
+    get: operations["article.paper-info.get"];
+    /** Replace the structured paper info field selection and values */
+    put: operations["article.paper-info.update"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{projectId}/article/blocks/{blockId}/review": {
     parameters: {
       query?: never;
@@ -4706,6 +4745,42 @@ export interface components {
       sync_status: "synced" | "syncing" | "offline" | "failed";
       /** Format: date-time */
       updated_at: string;
+      abstract_markdown?: string;
+      /** Format: int64 */
+      abstract_revision?: number;
+      abstract_yjs_update?: string;
+      abstract_state_vector?: string;
+      abstract_tiptap_json?: {
+        [key: string]: unknown;
+      };
+      paper_info?: {
+        [key: string]: unknown;
+      };
+      /** Format: int64 */
+      paper_info_revision?: number;
+    };
+    PersistArticleAbstractRequest: {
+      /** Format: int64 */
+      expected_revision: number;
+      /** @description Base64-encoded Yjs update of the abstract document. */
+      yjs_update: string;
+      /** @description Base64-encoded Yjs state vector of the abstract document. */
+      state_vector: string;
+      tiptap_json: {
+        [key: string]: unknown;
+      };
+      /** @enum {string} */
+      actor_kind?: "human" | "ai" | "restore";
+    };
+    ArticlePaperInfo: {
+      /** @enum {string} */
+      schema_version: "1.0";
+      fields: {
+        [key: string]: {
+          enabled: boolean;
+          value: string;
+        };
+      };
     };
     ArticlePatch: {
       /** Format: uuid */
@@ -14663,6 +14738,82 @@ export interface operations {
         };
       };
       409: components["responses"]["Error"];
+    };
+  };
+  "article.abstract.flush": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PersistArticleAbstractRequest"];
+      };
+    };
+    responses: {
+      /** @description Persisted draft including the abstract snapshot. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleDraft"];
+        };
+      };
+      409: components["responses"]["Error"];
+    };
+  };
+  "article.paper-info.get": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The paper info document and its revision. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticlePaperInfo"];
+        };
+      };
+    };
+  };
+  "article.paper-info.update": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        projectId: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ArticlePaperInfo"];
+      };
+    };
+    responses: {
+      /** @description Persisted draft including the paper info revision. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArticleDraft"];
+        };
+      };
+      400: components["responses"]["Error"];
     };
   };
   "article.blocks.review": {

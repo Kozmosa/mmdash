@@ -162,8 +162,9 @@ func TestCommitOperationCoordinatorCommitsFrozenSnapshotAndBindsResult(t *testin
 	if store.requestID != "article-operation:operation-1" {
 		t.Fatalf("background operation lost its audit request ID: %q", store.requestID)
 	}
-	if len(workspace.request.Changes) != 3 ||
+	if len(workspace.request.Changes) != 4 ||
 		string(workspace.request.Changes[0].Content) != "# Frozen\n" ||
+		workspace.request.Changes[1].Path != "abstract.md" ||
 		workspace.request.ExpectedHeadSHA != operation.ExpectedHeadSHA {
 		t.Fatalf("Repo did not receive the frozen snapshot: %#v", workspace.request)
 	}

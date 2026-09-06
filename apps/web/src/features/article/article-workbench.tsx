@@ -68,7 +68,12 @@ import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-client";
 
 import { articleApi } from "./api";
-import { registerArticleCollaborationProvider } from "./article-collaboration-sync";
+import {
+  registerArticleAbstractCollaborationProvider,
+  registerArticleCollaborationProvider,
+} from "./article-collaboration-sync";
+import { abstractEnabled, PaperInfoDialog } from "./article-paper-info-dialog";
+import { ArticleAbstractEditor } from "./article-abstract-editor";
 import { ArticleAggregateWarnings } from "./article-aggregate-warnings";
 import { ArticleReferencePanel } from "./article-reference-panel";
 import { visibleArticleOutline } from "./article-outline";
@@ -125,7 +130,7 @@ import {
   openArtifactLibraryEvent,
 } from "./slash-command";
 
-type WorkspaceTab = "write" | "history" | "templates";
+type WorkspaceTab = "write" | "abstract" | "history" | "templates";
 type ConnectionState =
   WebSocketStatus | "offline" | "syncing" | "synced" | "failed";
 type PresenceUser = { clientId: number; color: string; name: string };
@@ -148,6 +153,9 @@ export function ArticleWorkbench() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<WorkspaceTab>("write");
   const [provider, setProvider] = useState<HocuspocusProvider>();
+  const [abstractProvider, setAbstractProvider] =
+    useState<HocuspocusProvider>();
+  const [paperInfoOpen, setPaperInfoOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>(
     WebSocketStatus.Connecting,
   );
@@ -242,6 +250,16 @@ export function ArticleWorkbench() {
     });
     const unregisterCollaborationProvider =
       registerArticleCollaborationProvider(project.id, next);
+    const abstractDocument = new Y.Doc();
+    const abstractNext = new HocuspocusProvider({
+      document: abstractDocument,
+      flushDelay: 250,
+      name: `article-abstract:${project.id}`,
+      token: "browser-session",
+      url: `${protocol}//${window.location.host}/api/projects/${encodeURIComponent(project.id)}/article/collaboration`,
+    });
+    const unregisterAbstractProvider =
+      registerArticleAbstractCollaborationProvider(project.id, abstractNext);
     const offline = () => setConnection("offline");
     const online = () => {
       setConnection(WebSocketStatus.Connecting);
@@ -250,13 +268,18 @@ export function ArticleWorkbench() {
     window.addEventListener("offline", offline);
     window.addEventListener("online", online);
     setProvider(next);
+    setAbstractProvider(abstractNext);
     return () => {
       unregisterCollaborationProvider();
+      unregisterAbstractProvider();
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);
       next.destroy();
       document.destroy();
+      abstractNext.destroy();
+      abstractDocument.destroy();
       setProvider(undefined);
+      setAbstractProvider(undefined);
     };
   }, [project.id, queryClient]);
 
@@ -309,6 +332,13 @@ export function ArticleWorkbench() {
           </p>
         </div>
         <SyncBadge connection={connection} pending={unsyncedChanges} />
+        <Button
+          onClick={() => setPaperInfoOpen(true)}
+          size="sm"
+          variant="outline"
+        >
+          论文信息
+        </Button>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <Users className="size-4" />
           {presence.length || 1} 人在线
@@ -321,7 +351,8 @@ export function ArticleWorkbench() {
       >
         {(
           [
-            ["write", "写作"],
+            ["write", "正文"],
+            ["abstract", "摘要"],
             ["history", "版本历史"],
             ["templates", "模板"],
           ] as const
@@ -361,6 +392,32 @@ export function ArticleWorkbench() {
           onOpenTemplates={() => setTab("templates")}
           provider={provider}
           synced={synced}
+        />
+      ) : null}
+      {tab === "abstract" && abstractProvider ? (
+        <section className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge>
+              {abstractEnabled(data.draft.paper_info) ? "已启用" : "未启用"}
+            </Badge>
+            <p className="text-xs text-muted-foreground">
+              摘要是独立文档，构建时经模板摘要插槽输出；关闭输出不影响内容保存。
+            </p>
+          </div>
+          <ArticleAbstractEditor
+            canEdit={canEdit}
+            projectId={project.id}
+            provider={abstractProvider}
+          />
+        </section>
+      ) : null}
+      {paperInfoOpen ? (
+        <PaperInfoDialog
+          canEdit={canEdit}
+          info={data.draft.paper_info}
+          onClose={() => setPaperInfoOpen(false)}
+          projectId={project.id}
+          showCumcm
         />
       ) : null}
       {tab === "history" ? (

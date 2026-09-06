@@ -27,9 +27,15 @@ type Draft = {
   state_vector: string;
   tiptap_json: Record<string, unknown>;
   yjs_update: string;
+  abstract_revision?: number;
+  abstract_state_vector?: string;
+  abstract_tiptap_json?: Record<string, unknown>;
+  abstract_yjs_update?: string;
 };
 
 type ArticleBlockSnapshot = Record<string, unknown> & { block_id: string };
+
+type RoomKind = "body" | "abstract";
 
 export class ArticleCollaboration {
   private static readonly maxConnectionsPerProject = 32;
@@ -50,40 +56,45 @@ export class ArticleCollaboration {
       async onAuthenticate({ context, documentName, token }) {
         if (
           token !== "browser-session" ||
-          documentName !== roomName(context.projectId)
+          roomKind(documentName, context.projectId) === null
         ) {
           throw new Error("Article collaboration permission denied");
         }
         return context;
       },
       async onConnect({ connectionConfig, context, documentName }) {
-        if (documentName !== roomName(context.projectId)) {
+        if (roomKind(documentName, context.projectId) === null) {
           throw new Error("Article room does not match project context");
         }
         connectionConfig.readOnly = !context.canEdit;
         return context;
       },
       onLoadDocument: async ({ context, document, documentName }) => {
+        const kind = roomKind(documentName, context.projectId) ?? "body";
         const draft = await this.getDraft(context);
-        if (draft.yjs_update) {
-          Y.applyUpdate(
-            document,
-            Buffer.from(draft.yjs_update, "base64"),
-            "core-load",
-          );
-        } else if (hasDocumentContent(draft.tiptap_json)) {
+        const update =
+          kind === "body" ? draft.yjs_update : draft.abstract_yjs_update;
+        const tiptap =
+          kind === "body" ? draft.tiptap_json : draft.abstract_tiptap_json;
+        const revision =
+          kind === "body"
+            ? draft.draft_revision
+            : (draft.abstract_revision ?? 0);
+        if (update) {
+          Y.applyUpdate(document, Buffer.from(update, "base64"), "core-load");
+        } else if (tiptap && hasDocumentContent(tiptap)) {
           // v0.1 drafts created before collaboration was enabled may contain
           // authoritative Tiptap JSON but no Yjs update. Populate the room
           // before any browser can send an empty state and overwrite it.
           prosemirrorJSONToYXmlFragment(
             articleDocumentSchema,
-            draft.tiptap_json,
+            tiptap,
             document.getXmlFragment("default"),
           );
         }
         this.rooms.set(documentName, {
           ...context,
-          revision: draft.draft_revision,
+          revision,
         });
       },
       onStoreDocument: async ({ document, documentName, lastContext }) => {
@@ -141,13 +152,19 @@ export class ArticleCollaboration {
   }
 
   async flush(context: RoomContext): Promise<Draft> {
-    const name = roomName(context.projectId);
-    const connection = await this.hocuspocus.openDirectConnection(
-      name,
-      context,
-    );
-    await connection.disconnect();
-    await this.stores.get(name);
+    // The commit barrier must freeze BOTH collaborative documents: the body
+    // and the independent abstract, each through its own CAS revision.
+    for (const name of [
+      roomName(context.projectId),
+      abstractRoomName(context.projectId),
+    ]) {
+      const connection = await this.hocuspocus.openDirectConnection(
+        name,
+        context,
+      );
+      await connection.disconnect();
+      await this.stores.get(name);
+    }
     return this.getDraft(context);
   }
 
@@ -170,6 +187,7 @@ export class ArticleCollaboration {
     document: Document,
     context: RoomContext,
   ): Promise<void> {
+    const kind = roomKind(documentName, context.projectId) ?? "body";
     const state = this.rooms.get(documentName) ?? { ...context, revision: 0 };
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const update = Buffer.from(Y.encodeStateAsUpdate(document)).toString(
@@ -182,6 +200,27 @@ export class ArticleCollaboration {
       const fragment = document.getXmlFragment("default");
       if (fragment.length > 0) tiptap = yXmlFragmentToProsemirrorJSON(fragment);
       try {
+        if (kind === "abstract") {
+          const draft = await this.coreClient.request<Draft>(
+            `/v1/projects/${encodeURIComponent(context.projectId)}/article/abstract/flush`,
+            {
+              body: {
+                actor_kind: "human",
+                expected_revision: state.revision,
+                state_vector: vector,
+                tiptap_json: tiptap,
+                yjs_update: update,
+              },
+              method: "PUT",
+            },
+            coreContext(context),
+          );
+          this.rooms.set(documentName, {
+            ...context,
+            revision: draft.abstract_revision ?? state.revision + 1,
+          });
+          return;
+        }
         const draft = await this.coreClient.request<Draft>(
           `/v1/projects/${encodeURIComponent(context.projectId)}/article/draft/flush`,
           {
@@ -208,15 +247,20 @@ export class ArticleCollaboration {
       } catch (error) {
         if (attempt > 0) throw error;
         const latest = await this.getDraft(context);
-        state.revision = latest.draft_revision;
+        state.revision =
+          kind === "body"
+            ? latest.draft_revision
+            : (latest.abstract_revision ?? 0);
         this.rooms.set(documentName, {
           ...context,
-          revision: latest.draft_revision,
+          revision: state.revision,
         });
-        if (latest.yjs_update) {
+        const latestUpdate =
+          kind === "body" ? latest.yjs_update : latest.abstract_yjs_update;
+        if (latestUpdate) {
           Y.applyUpdate(
             document,
-            Buffer.from(latest.yjs_update, "base64"),
+            Buffer.from(latestUpdate, "base64"),
             "core-cas-merge",
           );
         }
@@ -350,6 +394,16 @@ function coreContext(context: RoomContext) {
 
 function roomName(projectId: string): string {
   return `article:${projectId}`;
+}
+
+function abstractRoomName(projectId: string): string {
+  return `article-abstract:${projectId}`;
+}
+
+function roomKind(documentName: string, projectId: string): RoomKind | null {
+  if (documentName === roomName(projectId)) return "body";
+  if (documentName === abstractRoomName(projectId)) return "abstract";
+  return null;
 }
 
 function toUint8Array(raw: RawData): Uint8Array {

@@ -260,8 +260,91 @@ func (service *Service) prepareProjectDraft(ctx context.Context, projectID strin
 	if err != nil {
 		return "", nil, nil, "", err
 	}
-	manifest := map[string]interface{}{"schema_version": "1.0", "draft_revision": input.ExpectedRevision + 1, "state_vector": input.StateVector, "format": "markdown", "editable_files": []string{"manuscript.md", "references.bib", ".mmdash/article.json"}}
+	manifest := map[string]interface{}{"schema_version": "1.0", "draft_revision": input.ExpectedRevision + 1, "state_vector": input.StateVector, "format": "markdown", "editable_files": []string{"manuscript.md", "abstract.md", "references.bib", ".mmdash/article.json"}}
 	return markdown, blocks, manifest, Bibliography(references), nil
+}
+
+// AbstractFlushInput is the collaborative snapshot of the independent
+// abstract document, flushed through the same Yjs barrier as the body.
+type AbstractFlushInput struct {
+	ExpectedRevision int64
+	StateVector      string
+	TiptapJSON       map[string]interface{}
+	YjsUpdate        string
+	Markdown         string
+	ActorKind        string
+}
+
+// FlushAbstract persists the abstract document with its own revision so it
+// can be frozen into commits and builds independently from the body. The
+// Markdown projection is derived from the Tiptap JSON exactly like the body.
+func (service *Service) FlushAbstract(ctx context.Context, caller auth.Identity, projectID string, input AbstractFlushInput) (Draft, error) {
+	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleEdit); err != nil {
+		return Draft{}, err
+	}
+	if strings.TrimSpace(input.YjsUpdate) == "" || strings.TrimSpace(input.StateVector) == "" || input.TiptapJSON == nil {
+		return Draft{}, ErrInvalid
+	}
+	markdown, _, err := NormalizeDocument(input.TiptapJSON, service.Generator, input.ActorKind, map[string]interface{}{}, service.now())
+	if err != nil {
+		return Draft{}, err
+	}
+	input.Markdown = markdown
+	return service.Store.PersistAbstract(ctx, projectID, caller.ActorID(), input)
+}
+
+// paperInfoFieldSet is the closed set of 论文信息 fields the product
+// supports. Unknown keys are rejected so frozen commits stay deterministic.
+var paperInfoFieldSet = map[string]bool{
+	"title": true, "author": true, "date": true, "abstract": true, "keywords": true,
+	"problem_number": true, "team_number": true, "school": true, "captain": true,
+	"member2": true, "member3": true, "supervisor": true, "submit_date": true,
+}
+
+// UpdatePaperInfo saves the structured 论文信息 selection and values with a
+// dedicated revision; unselected fields simply stay absent.
+func (service *Service) UpdatePaperInfo(ctx context.Context, caller auth.Identity, projectID string, input map[string]interface{}) (Draft, error) {
+	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleEdit); err != nil {
+		return Draft{}, err
+	}
+	normalized, err := normalizePaperInfo(input)
+	if err != nil {
+		return Draft{}, err
+	}
+	return service.Store.PersistPaperInfo(ctx, projectID, caller.ActorID(), normalized)
+}
+
+func normalizePaperInfo(input map[string]interface{}) (map[string]interface{}, error) {
+	if input == nil {
+		return map[string]interface{}{"schema_version": "1.0", "fields": map[string]interface{}{}}, nil
+	}
+	rawFields, _ := input["fields"].(map[string]interface{})
+	if input["fields"] != nil && rawFields == nil {
+		return nil, ErrInvalid
+	}
+	fields := map[string]interface{}{}
+	for key, value := range rawFields {
+		if !paperInfoFieldSet[key] {
+			return nil, ErrInvalid
+		}
+		entry, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, ErrInvalid
+		}
+		text, _ := entry["value"].(string)
+		if len(text) > 2000 {
+			return nil, ErrInvalid
+		}
+		enabled := false
+		if flag, exists := entry["enabled"]; exists {
+			enabled, ok = flag.(bool)
+			if !ok {
+				return nil, ErrInvalid
+			}
+		}
+		fields[key] = map[string]interface{}{"enabled": enabled, "value": text}
+	}
+	return map[string]interface{}{"schema_version": "1.0", "fields": fields}, nil
 }
 
 func (service *Service) ReviewBlock(ctx context.Context, caller auth.Identity, projectID, blockID, expectedFingerprint string) (Block, error) {
@@ -368,6 +451,8 @@ type articleCommitSnapshot struct {
 	Manifest       []byte
 	Manuscript     []byte
 	ReferencesBIB  []byte
+	Abstract       []byte
+	PaperInfo      []byte
 	RequestSHA256  string
 	TiptapSnapshot map[string]interface{}
 }
@@ -393,11 +478,18 @@ func (service *Service) prepareCommitSnapshot(
 		return articleCommitSnapshot{}, err
 	}
 	referencesBIB := []byte(Bibliography(references))
+	headings := headingInfos(draft.Blocks)
+	paperInfoDocument := draft.PaperInfo
+	if paperInfoDocument == nil {
+		paperInfoDocument = map[string]interface{}{"schema_version": "1.0", "fields": map[string]interface{}{}}
+	}
 	manifest, err := StableJSON(map[string]interface{}{
 		"schema_version": "1.0", "project_id": projectID,
 		"draft_revision": draft.DraftRevision, "state_vector": draft.StateVector,
 		"frozen_references": references,
-		"editable_files":    []string{"manuscript.md", "references.bib", ".mmdash/article.json"},
+		"editable_files":    []string{"manuscript.md", "abstract.md", "references.bib", ".mmdash/article.json"},
+		"abstract_revision": draft.AbstractRevision, "paper_info": paperInfoDocument,
+		"paper_info_revision": draft.PaperInfoRevision, "headings": headings,
 	})
 	if err != nil {
 		return articleCommitSnapshot{}, err
@@ -412,9 +504,16 @@ func (service *Service) prepareCommitSnapshot(
 		return articleCommitSnapshot{}, err
 	}
 	manuscript := []byte(draft.Markdown)
+	abstract := []byte(draft.AbstractMarkdown)
+	paperInfo, err := StableJSON(draft.PaperInfo)
+	if err != nil {
+		return articleCommitSnapshot{}, err
+	}
+	paperInfo = append(paperInfo, '\n')
 	digestInput, err := StableJSON(map[string]interface{}{
 		"draft_revision": draftRevision, "expected_head_sha": head.CommitSHA,
 		"manifest_sha256": hashBytes(manifest), "manuscript_sha256": hashBytes(manuscript),
+		"abstract_sha256": hashBytes(abstract), "paper_info_sha256": hashBytes(paperInfo),
 		"message": strings.TrimSpace(message), "references_sha256": hashBytes(referencesBIB),
 	})
 	if err != nil {
@@ -424,8 +523,29 @@ func (service *Service) prepareCommitSnapshot(
 		Draft: draft, ExpectedHead: head.CommitSHA,
 		Frozen: append([]Reference(nil), references...), Manifest: manifest,
 		Manuscript: manuscript, ReferencesBIB: referencesBIB,
+		Abstract: abstract, PaperInfo: paperInfo,
 		RequestSHA256: hashBytes(digestInput), TiptapSnapshot: tiptap,
 	}, nil
+}
+
+// headingInfos freezes the stable identity of every top-level H1/H2 heading
+// so the Worker can split section files deterministically for a fixed Commit.
+func headingInfos(blocks []Block) []map[string]interface{} {
+	headings := []map[string]interface{}{}
+	for _, block := range blocks {
+		if block.NodeType != "heading" || block.BlockID == "" {
+			continue
+		}
+		level, _ := block.Attrs["level"].(float64)
+		if level < 1 || level > 2 {
+			continue
+		}
+		headings = append(headings, map[string]interface{}{
+			"block_id": block.BlockID, "level": int(level), "ordinal": block.Ordinal,
+			"text": block.Text,
+		})
+	}
+	return headings
 }
 
 // QueueCommit freezes the exact collaborative draft and returns before Git
@@ -475,6 +595,17 @@ func (service *Service) QueueCommit(
 		ManifestSHA256:   hashBytes(snapshot.Manifest), Status: "queued", Stage: "queued",
 		MaxAttempts: 10, NextAttemptAt: now, CreatedBy: caller.ActorID(),
 		CreatedAt: now, UpdatedAt: now,
+		AbstractMarkdown:  string(snapshot.Abstract),
+		AbstractRevision:  snapshot.Draft.AbstractRevision,
+		AbstractSHA256:    hashBytes(snapshot.Abstract),
+		AbstractStateVec:  snapshot.Draft.AbstractStateVec,
+		AbstractYjsUpdate: snapshot.Draft.AbstractYjsUpdate,
+		PaperInfoJSON:     snapshot.PaperInfo,
+		PaperInfoRevision: snapshot.Draft.PaperInfoRevision,
+		PaperInfoSHA256:   hashBytes(snapshot.PaperInfo),
+	}
+	if snapshot.Draft.AbstractTiptapJSO != nil {
+		operation.AbstractTiptapJSO = cloneObject(snapshot.Draft.AbstractTiptapJSO)
 	}
 	created, _, err := service.Store.CreateCommitOperation(ctx, operation)
 	return created, err
@@ -557,6 +688,17 @@ func (service *Service) QueuePublication(
 		ManifestSHA256:   hashBytes(snapshot.Manifest), Status: "queued", Stage: "queued",
 		MaxAttempts: 10, NextAttemptAt: now, CreatedBy: caller.ActorID(),
 		CreatedAt: now, UpdatedAt: now,
+		AbstractMarkdown:  string(snapshot.Abstract),
+		AbstractRevision:  snapshot.Draft.AbstractRevision,
+		AbstractSHA256:    hashBytes(snapshot.Abstract),
+		AbstractStateVec:  snapshot.Draft.AbstractStateVec,
+		AbstractYjsUpdate: snapshot.Draft.AbstractYjsUpdate,
+		PaperInfoJSON:     snapshot.PaperInfo,
+		PaperInfoRevision: snapshot.Draft.PaperInfoRevision,
+		PaperInfoSHA256:   hashBytes(snapshot.PaperInfo),
+	}
+	if snapshot.Draft.AbstractTiptapJSO != nil {
+		operation.AbstractTiptapJSO = cloneObject(snapshot.Draft.AbstractTiptapJSO)
 	}
 	created, _, err := service.Store.CreateCommitOperation(ctx, operation)
 	return created, err
@@ -617,24 +759,34 @@ func (service *Service) Commit(ctx context.Context, caller auth.Identity, projec
 		return Commit{}, err
 	}
 	referencesBIB := Bibliography(references)
-	manifest := map[string]interface{}{"schema_version": "1.0", "project_id": projectID, "draft_revision": draft.DraftRevision, "state_vector": draft.StateVector, "frozen_references": references, "editable_files": []string{"manuscript.md", "references.bib", ".mmdash/article.json"}}
+	paperInfoForManifest := draft.PaperInfo
+	if paperInfoForManifest == nil {
+		paperInfoForManifest = map[string]interface{}{"schema_version": "1.0", "fields": map[string]interface{}{}}
+	}
+	manifest := map[string]interface{}{"schema_version": "1.0", "project_id": projectID, "draft_revision": draft.DraftRevision, "state_vector": draft.StateVector, "frozen_references": references, "editable_files": []string{"manuscript.md", "abstract.md", "references.bib", ".mmdash/article.json"}, "abstract_revision": draft.AbstractRevision, "paper_info": paperInfoForManifest, "paper_info_revision": draft.PaperInfoRevision, "headings": headingInfos(draft.Blocks)}
 	manifestBytes, err := StableJSON(manifest)
 	if err != nil {
 		return Commit{}, err
 	}
 	manifestBytes = append(manifestBytes, '\n')
 	manuscript := []byte(draft.Markdown)
+	abstract := []byte(draft.AbstractMarkdown)
+	paperInfoBytes, err := StableJSON(draft.PaperInfo)
+	if err != nil {
+		return Commit{}, err
+	}
+	paperInfoBytes = append(paperInfoBytes, '\n')
 	bibliography := []byte(referencesBIB)
 	head, err := service.Workspace.ResolveHead(ctx, projectID)
 	if err != nil {
 		return Commit{}, err
 	}
-	requestDigest := hashBytes(append(append(append([]byte{}, manuscript...), bibliography...), manifestBytes...))
+	requestDigest := hashBytes(append(append(append(append(append([]byte{}, manuscript...), abstract...), bibliography...), manifestBytes...), paperInfoBytes...))
 	commitID, err := service.Generator.New()
 	if err != nil {
 		return Commit{}, err
 	}
-	result, err := service.Workspace.Commit(ctx, repo.WorkspaceCommitRequest{ActorEmail: caller.User.Email, ActorID: caller.ActorID(), ActorName: displayName(caller), Changes: []repo.FileChange{{Path: "manuscript.md", Operation: "put", Content: manuscript}, {Path: "references.bib", Operation: "put", Content: bibliography}, {Path: ".mmdash/article.json", Operation: "put", Content: manifestBytes}}, ExpectedHeadSHA: head.CommitSHA, IdempotencyKey: "article-commit:" + projectID + ":" + fmt.Sprint(draftRevision) + ":" + requestDigest, Message: strings.TrimSpace(message), ProjectID: projectID, RequestSHA256: requestDigest})
+	result, err := service.Workspace.Commit(ctx, repo.WorkspaceCommitRequest{ActorEmail: caller.User.Email, ActorID: caller.ActorID(), ActorName: displayName(caller), Changes: []repo.FileChange{{Path: "manuscript.md", Operation: "put", Content: manuscript}, {Path: "abstract.md", Operation: "put", Content: abstract}, {Path: "references.bib", Operation: "put", Content: bibliography}, {Path: ".mmdash/article.json", Operation: "put", Content: manifestBytes}}, ExpectedHeadSHA: head.CommitSHA, IdempotencyKey: "article-commit:" + projectID + ":" + fmt.Sprint(draftRevision) + ":" + requestDigest, Message: strings.TrimSpace(message), ProjectID: projectID, RequestSHA256: requestDigest})
 	if err != nil {
 		return Commit{}, err
 	}
@@ -642,7 +794,10 @@ func (service *Service) Commit(ctx context.Context, caller auth.Identity, projec
 	if err != nil {
 		return Commit{}, err
 	}
-	item := Commit{CommitID: commitID, ProjectID: projectID, DraftRevision: draftRevision, StateVector: draft.StateVector, TiptapJSON: tiptapSnapshot, YjsUpdate: draft.YjsUpdate, CommitSHA: result.CommitSHA, PreviousCommitSHA: result.PreviousCommitSHA, Message: message, ManuscriptSHA256: hashBytes(manuscript), ReferencesSHA256: hashBytes(bibliography), ManifestSHA256: hashBytes(manifestBytes), FrozenReferences: append([]Reference(nil), references...), CreatedBy: caller.ActorID(), CreatedAt: service.now()}
+	item := Commit{CommitID: commitID, ProjectID: projectID, DraftRevision: draftRevision, StateVector: draft.StateVector, TiptapJSON: tiptapSnapshot, YjsUpdate: draft.YjsUpdate, CommitSHA: result.CommitSHA, PreviousCommitSHA: result.PreviousCommitSHA, Message: message, ManuscriptSHA256: hashBytes(manuscript), ReferencesSHA256: hashBytes(bibliography), ManifestSHA256: hashBytes(manifestBytes), FrozenReferences: append([]Reference(nil), references...), CreatedBy: caller.ActorID(), CreatedAt: service.now(), AbstractMarkdown: string(abstract), AbstractRevision: draft.AbstractRevision, AbstractSHA256: hashBytes(abstract), PaperInfoJSON: paperInfoBytes, PaperInfoRevision: draft.PaperInfoRevision, PaperInfoSHA256: hashBytes(paperInfoBytes)}
+	if draft.AbstractTiptapJSO != nil {
+		item.AbstractTiptapJSON = cloneObject(draft.AbstractTiptapJSO)
+	}
 	created, _, err := service.Store.CreateCommit(ctx, item)
 	return created, err
 }
@@ -702,6 +857,10 @@ type previewBuildSnapshot struct {
 	ReferencesBIB      string                 `json:"references_bib"`
 	ResourceReferences []Reference            `json:"resource_references"`
 	SchemaVersion      string                 `json:"schema_version"`
+	Abstract           string                 `json:"abstract,omitempty"`
+	AbstractRevision   int64                  `json:"abstract_revision,omitempty"`
+	PaperInfo          map[string]interface{} `json:"paper_info,omitempty"`
+	PaperInfoRevision  int64                  `json:"paper_info_revision,omitempty"`
 }
 
 func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity, projectID string, draftRevision int64, templateID, engine, bibliographyTool string) (Build, bool, error) {
@@ -753,6 +912,10 @@ func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity,
 		ReferencesBIB:      Bibliography(references),
 		ResourceReferences: resourceReferences,
 		SchemaVersion:      "1.0",
+		Abstract:           draft.AbstractMarkdown,
+		AbstractRevision:   draft.AbstractRevision,
+		PaperInfo:          cloneObject(draft.PaperInfo),
+		PaperInfoRevision:  draft.PaperInfoRevision,
 	}
 	return service.Store.CreateBuild(ctx, item, jobInput, service.JobWriter)
 }
@@ -1027,7 +1190,9 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 	if build.Status == BuildSuperseded {
 		return BuildJobInput{}, ErrSuperseded
 	}
-	var manuscript, referencesBIB string
+	var manuscript, referencesBIB, abstract string
+	var paperInfo map[string]interface{}
+	var headings []HeadingInfo
 	var frozenReferences []Reference
 	manifest := map[string]interface{}{}
 	switch build.BuildKind {
@@ -1037,14 +1202,20 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			return BuildJobInput{}, err
 		}
 		frozenReferences = commit.FrozenReferences
-		for _, filename := range []string{"manuscript.md", "references.bib", ".mmdash/article.json"} {
+		for _, filename := range []string{"manuscript.md", "abstract.md", "references.bib", ".mmdash/article.json"} {
 			file, err := service.Workspace.ReadFile(ctx, job.ProjectID, commit.CommitSHA, filename)
 			if err != nil || file.Content == nil {
+				if filename == "abstract.md" {
+					// Commits created before the abstract existed stay buildable.
+					continue
+				}
 				return BuildJobInput{}, ErrNotReady
 			}
 			switch filename {
 			case "manuscript.md":
 				manuscript = *file.Content
+			case "abstract.md":
+				abstract = *file.Content
 			case "references.bib":
 				referencesBIB = *file.Content
 			default:
@@ -1053,6 +1224,8 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 				}
 			}
 		}
+		paperInfo = commitPaperInfo(manifest)
+		headings = headingsFromManifest(manifest)
 	case BuildPreview:
 		snapshot, frozen, snapshotErr := previewSnapshotFromJob(job, build)
 		if snapshotErr != nil {
@@ -1063,6 +1236,8 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			referencesBIB = snapshot.ReferencesBIB
 			manifest = snapshot.ArticleManifest
 			frozenReferences = snapshot.ResourceReferences
+			abstract = snapshot.Abstract
+			paperInfo = snapshot.PaperInfo
 		} else {
 			// Rolling-deploy compatibility for Preview jobs queued by an older
 			// Core before immutable job snapshots were introduced.
@@ -1078,6 +1253,8 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			if err != nil {
 				return BuildJobInput{}, err
 			}
+			abstract = draft.AbstractMarkdown
+			paperInfo = draft.PaperInfo
 		}
 	case BuildTemplateTest:
 		manuscript = "# Template validation\n\nAn equation: $x^2$.\n"
@@ -1120,7 +1297,39 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 		})
 		seen[key] = struct{}{}
 	}
-	return BuildJobInput{BuildID: build.BuildID, ProjectID: job.ProjectID, BuildKind: build.BuildKind, Manuscript: manuscript, ReferencesBIB: referencesBIB, ArticleManifest: manifest, Template: map[string]interface{}{"artifact_id": template.ArtifactID, "version_id": template.VersionID, "manifest": template.Manifest, "transfer": grant}, Engine: build.Engine, BibliographyTool: build.BibliographyTool, Limits: map[string]interface{}{"timeout_seconds": 600, "memory_bytes": 1073741824, "disk_bytes": int64(2 * 1024 * 1024 * 1024), "output_bytes": maxOutputBytes, "network": "none"}, Toolchain: map[string]interface{}{"pandoc": "pandoc 2.17.1.1", "latexmk": "Version 4.79", "texlive": "TeX Live 2022/Debian"}, Resources: resources}, nil
+	return BuildJobInput{BuildID: build.BuildID, ProjectID: job.ProjectID, BuildKind: build.BuildKind, Manuscript: manuscript, Abstract: abstract, PaperInfo: paperInfo, Headings: headings, ReferencesBIB: referencesBIB, ArticleManifest: manifest, Template: map[string]interface{}{"artifact_id": template.ArtifactID, "version_id": template.VersionID, "manifest": template.Manifest, "transfer": grant}, Engine: build.Engine, BibliographyTool: build.BibliographyTool, Limits: map[string]interface{}{"timeout_seconds": 600, "memory_bytes": 1073741824, "disk_bytes": int64(2 * 1024 * 1024 * 1024), "output_bytes": maxOutputBytes, "network": "none"}, Toolchain: map[string]interface{}{"pandoc": "pandoc 2.17.1.1", "latexmk": "Version 4.79", "texlive": "TeX Live 2022/Debian"}, Resources: resources}, nil
+}
+
+// headingsFromManifest restores the frozen heading identity recorded in
+// .mmdash/article.json at commit time.
+func headingsFromManifest(manifest map[string]interface{}) []HeadingInfo {
+	raw, _ := manifest["headings"].([]interface{})
+	headings := []HeadingInfo{}
+	for _, item := range raw {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		blockID, _ := entry["block_id"].(string)
+		level, _ := entry["level"].(float64)
+		ordinal, _ := entry["ordinal"].(float64)
+		text, _ := entry["text"].(string)
+		if blockID == "" || level < 1 {
+			continue
+		}
+		headings = append(headings, HeadingInfo{BlockID: blockID, Level: int(level), Ordinal: int(ordinal), Text: text})
+	}
+	return headings
+}
+
+// commitPaperInfo extracts the frozen paper info document recorded in
+// .mmdash/article.json at commit time.
+func commitPaperInfo(manifest map[string]interface{}) map[string]interface{} {
+	info, _ := manifest["paper_info"].(map[string]interface{})
+	if info == nil {
+		return map[string]interface{}{"schema_version": "1.0", "fields": map[string]interface{}{}}
+	}
+	return info
 }
 func (service *Service) WorkerOutput(ctx context.Context, caller auth.Identity, jobID, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (BuildOutput, error) {
 	job, build, _, err := service.workerBuild(ctx, caller, jobID)
@@ -1505,10 +1714,34 @@ func decodeManifest(raw map[string]interface{}) (TemplateManifest, error) {
 	if json.Unmarshal(encoded, &manifest) != nil {
 		return TemplateManifest{}, ErrInvalid
 	}
-	if manifest.SchemaVersion != "1.0" || manifest.Name == "" || manifest.Version == "" || !safeTemplatePath(manifest.Entrypoint, ".tex") || !safeTemplatePath(manifest.ContentTarget, ".tex") || !safeTemplatePath(manifest.BibliographyTarget, ".bib") || !safeTemplatePath(manifest.Output, ".pdf") || !validEngine(manifest.Engine) || !validBibliographyTool(manifest.BibliographyTool) {
+	if (manifest.SchemaVersion != "1.0" && manifest.SchemaVersion != "1.1") || manifest.Name == "" || manifest.Version == "" || !safeTemplatePath(manifest.Entrypoint, ".tex") || !safeTemplatePath(manifest.ContentTarget, ".tex") || !safeTemplatePath(manifest.BibliographyTarget, ".bib") || !safeTemplatePath(manifest.Output, ".pdf") || !validEngine(manifest.Engine) || !validBibliographyTool(manifest.BibliographyTool) {
+		return TemplateManifest{}, ErrInvalid
+	}
+	if manifest.SchemaVersion == "1.0" && (manifest.AbstractTarget != "" || manifest.BodyLayout != "" || manifest.FieldProfile != "" || manifest.FigureDir != "" || manifest.BibliographyMode != "") {
+		return TemplateManifest{}, ErrInvalid
+	}
+	if manifest.AbstractTarget != "" && !safeTemplatePath(manifest.AbstractTarget, ".tex") || manifest.FigureDir != "" && !safeTemplateDir(manifest.FigureDir) {
+		return TemplateManifest{}, ErrInvalid
+	}
+	switch manifest.BodyLayout {
+	case "", "single", "sections":
+	default:
+		return TemplateManifest{}, ErrInvalid
+	}
+	switch manifest.FieldProfile {
+	case "", "default", "cumcm":
+	default:
+		return TemplateManifest{}, ErrInvalid
+	}
+	switch manifest.BibliographyMode {
+	case "", "inline", "native":
+	default:
 		return TemplateManifest{}, ErrInvalid
 	}
 	return manifest, nil
+}
+func safeTemplateDir(value string) bool {
+	return value != "" && len(value) <= 120 && !strings.HasPrefix(value, "/") && !strings.Contains(value, "\\") && path.Clean(value) == value && !strings.HasPrefix(value, "../")
 }
 func safeTemplatePath(value, suffix string) bool {
 	return value != "" && len(value) <= 255 && !strings.HasPrefix(value, "/") && !strings.Contains(value, "\\") && path.Clean(value) == value && !strings.HasPrefix(value, "../") && strings.HasSuffix(strings.ToLower(value), suffix)

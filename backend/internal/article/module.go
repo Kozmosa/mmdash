@@ -256,6 +256,39 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
+	if len(tail) == 2 && tail[0] == "abstract" && tail[1] == "flush" && r.Method == http.MethodPut {
+		var body contract.PersistArticleAbstractRequest
+		if !decode(w, r, &body) {
+			return
+		}
+		actorKind := "human"
+		if body.ActorKind != nil && *body.ActorKind != "" {
+			actorKind = *body.ActorKind
+		}
+		value, err := module.Service.FlushAbstract(r.Context(), caller, projectID, AbstractFlushInput{ExpectedRevision: body.ExpectedRevision, YjsUpdate: body.YjsUpdate, StateVector: body.StateVector, TiptapJSON: body.TiptapJson, ActorKind: actorKind})
+		writeResult(w, r, http.StatusOK, value, err)
+		return
+	}
+	if len(tail) == 1 && tail[0] == "paper-info" {
+		switch r.Method {
+		case http.MethodGet:
+			draft, err := module.Service.Draft(r.Context(), caller, projectID)
+			if err != nil {
+				writeResult(w, r, http.StatusInternalServerError, nil, err)
+				return
+			}
+			writeResult(w, r, http.StatusOK, draft.PaperInfo, nil)
+			return
+		case http.MethodPut:
+			var body contract.ArticlePaperInfo
+			if !decode(w, r, &body) {
+				return
+			}
+			value, err := module.Service.UpdatePaperInfo(r.Context(), caller, projectID, map[string]interface{}{"schema_version": body.SchemaVersion, "fields": body.Fields})
+			writeResult(w, r, http.StatusOK, value, err)
+			return
+		}
+	}
 	if len(tail) == 2 && tail[0] == "chapter-tags" {
 		switch r.Method {
 		case http.MethodGet:

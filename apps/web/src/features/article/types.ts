@@ -29,6 +29,16 @@ export type ArticleChapterTag = {
   reviewed_at?: string;
 };
 
+export type ArticlePaperInfoField = {
+  enabled: boolean;
+  value: string;
+};
+
+export type ArticlePaperInfo = {
+  schema_version: "1.0";
+  fields: Record<string, ArticlePaperInfoField>;
+};
+
 export type ArticleDraft = {
   project_id: string;
   draft_revision: number;
@@ -39,6 +49,13 @@ export type ArticleDraft = {
   blocks: ArticleBlock[];
   sync_status: "synced" | "syncing" | "offline" | "failed";
   updated_at: string;
+  abstract_markdown?: string;
+  abstract_revision?: number;
+  abstract_yjs_update?: string;
+  abstract_state_vector?: string;
+  abstract_tiptap_json?: Record<string, unknown>;
+  paper_info?: ArticlePaperInfo;
+  paper_info_revision?: number;
 };
 
 export type ArticleReference = {
@@ -167,7 +184,7 @@ export type ArticlePublication = {
 };
 
 export type ArticleTemplateManifest = {
-  schema_version: "1.0";
+  schema_version: "1.0" | "1.1";
   name: string;
   version: string;
   entrypoint: string;
@@ -176,6 +193,11 @@ export type ArticleTemplateManifest = {
   bibliography_target: string;
   engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
   bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+  abstract_target?: string;
+  body_layout?: "single" | "sections";
+  field_profile?: "default" | "cumcm";
+  figure_dir?: string;
+  bibliography_mode?: "inline" | "native";
 };
 
 export type ArticleTemplate = {

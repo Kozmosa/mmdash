@@ -31,21 +31,82 @@ type PostgresStore struct {
 }
 
 func (store PostgresStore) GetDraft(ctx context.Context, projectID string) (Draft, error) {
-	row := store.DB.QueryRowContext(ctx, `SELECT revision,yjs_update,state_vector,tiptap_json,manuscript_markdown,references_bib,manifest,actor_kind,provenance,updated_at FROM article_drafts WHERE project_id=$1`, projectID)
+	row := store.DB.QueryRowContext(ctx, `SELECT revision,yjs_update,state_vector,tiptap_json,manuscript_markdown,references_bib,manifest,actor_kind,provenance,updated_at,abstract_markdown,abstract_revision,abstract_yjs_update,abstract_state_vector,abstract_tiptap_json,paper_info,paper_info_revision FROM article_drafts WHERE project_id=$1`, projectID)
 	var draft Draft
-	var tiptap, manifest, provenance []byte
+	var tiptap, manifest, provenance, abstractTiptap, paperInfo []byte
 	draft.ProjectID = projectID
-	if err := row.Scan(&draft.DraftRevision, &draft.YjsUpdate, &draft.StateVector, &tiptap, &draft.Markdown, &draft.ReferencesBIB, &manifest, &draft.ActorKind, &provenance, &draft.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
-		return Draft{ProjectID: projectID, DraftRevision: 0, TiptapJSON: map[string]interface{}{"type": "doc", "content": []interface{}{}}, Blocks: []Block{}, SyncStatus: "synced", UpdatedAt: store.now()}, nil
+	if err := row.Scan(&draft.DraftRevision, &draft.YjsUpdate, &draft.StateVector, &tiptap, &draft.Markdown, &draft.ReferencesBIB, &manifest, &draft.ActorKind, &provenance, &draft.UpdatedAt, &draft.AbstractMarkdown, &draft.AbstractRevision, &draft.AbstractYjsUpdate, &draft.AbstractStateVec, &abstractTiptap, &paperInfo, &draft.PaperInfoRevision); errors.Is(err, sql.ErrNoRows) {
+		return Draft{ProjectID: projectID, DraftRevision: 0, TiptapJSON: map[string]interface{}{"type": "doc", "content": []interface{}{}}, Blocks: []Block{}, SyncStatus: "synced", UpdatedAt: store.now(), AbstractTiptapJSO: map[string]interface{}{"type": "doc", "content": []interface{}{}}, PaperInfo: map[string]interface{}{"schema_version": "1.0", "fields": map[string]interface{}{}}}, nil
 	} else if err != nil {
 		return Draft{}, err
 	}
-	if json.Unmarshal(tiptap, &draft.TiptapJSON) != nil || json.Unmarshal(manifest, &draft.Manifest) != nil || json.Unmarshal(provenance, &draft.Provenance) != nil {
+	if json.Unmarshal(tiptap, &draft.TiptapJSON) != nil || json.Unmarshal(manifest, &draft.Manifest) != nil || json.Unmarshal(provenance, &draft.Provenance) != nil || json.Unmarshal(abstractTiptap, &draft.AbstractTiptapJSO) != nil || json.Unmarshal(paperInfo, &draft.PaperInfo) != nil {
 		return Draft{}, ErrInvalid
 	}
 	draft.Blocks, _ = store.listBlocks(ctx, projectID)
 	draft.SyncStatus = "synced"
 	return draft, nil
+}
+
+// PersistAbstract updates the independent abstract document and bumps its
+// dedicated revision; body revision and content are untouched.
+func (store PostgresStore) PersistAbstract(ctx context.Context, projectID, actorID string, input AbstractFlushInput) (Draft, error) {
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var current int64
+		err := tx.QueryRowContext(ctx, `SELECT abstract_revision FROM article_drafts WHERE project_id=$1 FOR UPDATE`, projectID).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			current = 0
+		} else if err != nil {
+			return err
+		}
+		if current != input.ExpectedRevision {
+			return ErrConflict
+		}
+		revision := current + 1
+		encodedAbstract, _ := json.Marshal(input.TiptapJSON)
+		result, err := tx.ExecContext(ctx, `UPDATE article_drafts SET abstract_markdown=$3,abstract_tiptap_json=$4,abstract_yjs_update=$5,abstract_state_vector=$6,abstract_revision=$7,updated_at=$8 WHERE project_id=$1 AND abstract_revision=$2`, projectID, input.ExpectedRevision, input.Markdown, encodedAbstract, input.YjsUpdate, input.StateVector, revision, store.now())
+		if err != nil {
+			return err
+		}
+		if err := requireArticleAffected(result, err); err != nil {
+			return err
+		}
+		return store.record(ctx, tx, "article.draft.flushed", projectID, actorID, "abstract", projectID, map[string]interface{}{"abstract_revision": revision, "status": "synced"})
+	})
+	if err != nil {
+		return Draft{}, err
+	}
+	return store.GetDraft(ctx, projectID)
+}
+
+// PersistPaperInfo saves the structured 论文信息 document with a dedicated
+// revision so commits and builds can freeze it like any other input.
+func (store PostgresStore) PersistPaperInfo(ctx context.Context, projectID, actorID string, paperInfo map[string]interface{}) (Draft, error) {
+	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		var current int64
+		err := tx.QueryRowContext(ctx, `SELECT paper_info_revision FROM article_drafts WHERE project_id=$1 FOR UPDATE`, projectID).Scan(&current)
+		if errors.Is(err, sql.ErrNoRows) {
+			current = 0
+		} else if err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(paperInfo)
+		if err != nil {
+			return ErrInvalid
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE article_drafts SET paper_info=$3,paper_info_revision=$4,updated_at=$5 WHERE project_id=$1 AND paper_info_revision=$2`, projectID, current, encoded, current+1, store.now())
+		if err != nil {
+			return err
+		}
+		if err := requireArticleAffected(result, err); err != nil {
+			return err
+		}
+		return store.record(ctx, tx, "article.draft.flushed", projectID, actorID, "paper_info", projectID, map[string]interface{}{"paper_info_revision": current + 1, "status": "synced"})
+	})
+	if err != nil {
+		return Draft{}, err
+	}
+	return store.GetDraft(ctx, projectID)
 }
 
 func (store PostgresStore) PersistDraft(ctx context.Context, projectID, actorID string, input PersistDraftInput, markdown string, blocks []Block, manifest map[string]interface{}, referencesBIB string) (Draft, error) {
@@ -350,9 +411,14 @@ func (store PostgresStore) DeleteReference(ctx context.Context, projectID, id, a
 func (store PostgresStore) CreateCommit(ctx context.Context, item Commit) (Commit, bool, error) {
 	frozen, _ := json.Marshal(item.FrozenReferences)
 	tiptap, _ := json.Marshal(item.TiptapJSON)
+	abstractTiptap, _ := json.Marshal(item.AbstractTiptapJSON)
+	paperInfo := item.PaperInfoJSON
+	if paperInfo == nil {
+		paperInfo = []byte(`{"schema_version":"1.0","fields":{}}`)
+	}
 	created := false
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
-		result, err := tx.ExecContext(ctx, `INSERT INTO article_commits(commit_id,project_id,draft_revision,state_vector,yjs_update,tiptap_json,git_commit_sha,previous_git_commit_sha,message,manuscript_sha256,references_sha256,manifest_sha256,frozen_references,created_by,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(project_id,git_commit_sha) DO NOTHING`, item.CommitID, item.ProjectID, item.DraftRevision, item.StateVector, item.YjsUpdate, tiptap, item.CommitSHA, item.PreviousCommitSHA, item.Message, item.ManuscriptSHA256, item.ReferencesSHA256, item.ManifestSHA256, frozen, item.CreatedBy, item.CreatedAt)
+		result, err := tx.ExecContext(ctx, `INSERT INTO article_commits(commit_id,project_id,draft_revision,state_vector,yjs_update,tiptap_json,git_commit_sha,previous_git_commit_sha,message,manuscript_sha256,references_sha256,manifest_sha256,frozen_references,created_by,created_at,abstract_markdown,abstract_revision,abstract_sha256,abstract_tiptap_json,abstract_state_vector,abstract_yjs_update,paper_info,paper_info_revision,paper_info_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) ON CONFLICT(project_id,git_commit_sha) DO NOTHING`, item.CommitID, item.ProjectID, item.DraftRevision, item.StateVector, item.YjsUpdate, tiptap, item.CommitSHA, item.PreviousCommitSHA, item.Message, item.ManuscriptSHA256, item.ReferencesSHA256, item.ManifestSHA256, frozen, item.CreatedBy, item.CreatedAt, item.AbstractMarkdown, item.AbstractRevision, item.AbstractSHA256, abstractTiptap, item.AbstractStateVector, item.AbstractYjsUpdate, paperInfo, item.PaperInfoRevision, item.PaperInfoSHA256)
 		if err != nil {
 			return err
 		}
@@ -423,12 +489,12 @@ func (store PostgresStore) ListCommitOperations(ctx context.Context, projectID s
 	return items, rows.Err()
 }
 
-const commitSelect = `SELECT c.commit_id,c.project_id,c.git_commit_sha,c.draft_revision,c.state_vector,c.manuscript_sha256,c.message,c.created_by,c.created_at,c.previous_git_commit_sha,c.references_sha256,c.manifest_sha256,c.frozen_references,c.yjs_update,c.tiptap_json FROM article_commits c`
+const commitSelect = `SELECT c.commit_id,c.project_id,c.git_commit_sha,c.draft_revision,c.state_vector,c.manuscript_sha256,c.message,c.created_by,c.created_at,c.previous_git_commit_sha,c.references_sha256,c.manifest_sha256,c.frozen_references,c.yjs_update,c.tiptap_json,c.abstract_markdown,c.abstract_revision,c.abstract_state_vector,c.abstract_yjs_update,c.abstract_tiptap_json,c.paper_info,c.paper_info_revision FROM article_commits c`
 
 func scanCommit(scan func(...interface{}) error) (Commit, error) {
 	var item Commit
-	var frozen, tiptap []byte
-	if err := scan(&item.CommitID, &item.ProjectID, &item.CommitSHA, &item.DraftRevision, &item.StateVector, &item.ManuscriptSHA256, &item.Message, &item.CreatedBy, &item.CreatedAt, &item.PreviousCommitSHA, &item.ReferencesSHA256, &item.ManifestSHA256, &frozen, &item.YjsUpdate, &tiptap); err != nil {
+	var frozen, tiptap, abstractTiptap, paperInfo []byte
+	if err := scan(&item.CommitID, &item.ProjectID, &item.CommitSHA, &item.DraftRevision, &item.StateVector, &item.ManuscriptSHA256, &item.Message, &item.CreatedBy, &item.CreatedAt, &item.PreviousCommitSHA, &item.ReferencesSHA256, &item.ManifestSHA256, &frozen, &item.YjsUpdate, &tiptap, &item.AbstractMarkdown, &item.AbstractRevision, &item.AbstractStateVector, &item.AbstractYjsUpdate, &abstractTiptap, &paperInfo, &item.PaperInfoRevision); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Commit{}, ErrNotFound
 		}
@@ -436,6 +502,8 @@ func scanCommit(scan func(...interface{}) error) (Commit, error) {
 	}
 	_ = json.Unmarshal(frozen, &item.FrozenReferences)
 	_ = json.Unmarshal(tiptap, &item.TiptapJSON)
+	_ = json.Unmarshal(abstractTiptap, &item.AbstractTiptapJSON)
+	_ = json.Unmarshal(paperInfo, &item.PaperInfoJSON)
 	return item, nil
 }
 

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -163,7 +164,8 @@ class ArticleBuildHandler:
                 encoding="utf-8",
                 newline="\n",
             )
-            resources = template_root / "figures"
+            figure_dir = str(manifest.get("figure_dir", "figures") or "figures")
+            resources = template_root / figure_dir
             resources.mkdir(parents=True, exist_ok=True)
             manuscript_text = manuscript.read_text(encoding="utf-8")
             for index, raw_resource in enumerate(build.get("resources", []), start=1):
@@ -189,6 +191,7 @@ class ArticleBuildHandler:
                     artifact_id,
                     version_id,
                     filename,
+                    figure_dir,
                 )
             manuscript.write_text(manuscript_text, encoding="utf-8", newline="\n")
             self.client.update_article_build_progress(context.job_id, 35, "converting")
@@ -201,22 +204,64 @@ class ArticleBuildHandler:
             content_target.parent.mkdir(parents=True, exist_ok=True)
             bibliography_target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(bibliography, bibliography_target)
-            pandoc = [
-                "pandoc",
-                str(manuscript),
-                # Pandoc's GFM reader explicitly disables table_captions; the
-                # default Markdown reader keeps GFM-compatible pipe tables and
-                # supports the `Table:` captions emitted by Core.
-                "--from=markdown+tex_math_dollars+raw_tex+table_captions",
-                "--to=latex",
-                "--wrap=none",
-                "--resource-path",
-                str(template_root),
-                "--output",
-                str(content_target),
-            ]
-            if bibliography.stat().st_size:
-                pandoc.extend(["--citeproc", "--bibliography", str(bibliography)])
+            raw_abstract = str(build.get("abstract", ""))
+            raw_paper_fields = _raw_paper_fields(build)
+            if "abstract" in raw_paper_fields:
+                abstract_enabled = raw_paper_fields["abstract"].get("enabled") is True
+            else:
+                abstract_enabled = bool(raw_abstract.strip())
+            _write_metadata_blocks(template_root, manifest, _paper_fields(build), abstract_enabled)
+            body_layout = str(manifest.get("body_layout", "single"))
+            bibliography_mode = str(manifest.get("bibliography_mode", "inline"))
+            if body_layout == "sections" and bibliography_mode == "inline":
+                # citeproc must render the reference list once per document;
+                # a per-section split would duplicate or lose it. Sections are
+                # therefore only split for native-bibliography templates.
+                body_layout = "single"
+            _inject_bibliography_block(
+                template_root,
+                manifest,
+                entrypoint.read_text(encoding="utf-8", errors="replace"),
+                bibliography_target,
+            )
+            pandoc_runs: list[tuple[str, Path]] = []
+            if body_layout == "sections":
+                chunks = _split_markdown_sections(
+                    manuscript_text, [_mapping(h) for h in build.get("headings", [])]
+                )
+                input_lines: list[str] = []
+                front_chunks: list[str] = []
+                for block_id, chunk in chunks:
+                    if not block_id:
+                        front_chunks.append(chunk)
+                        continue
+                    section_path = content_target.parent / f"{_section_filename(block_id)}.tex"
+                    if section_path == content_target:
+                        front_chunks.append(chunk)
+                        continue
+                    pandoc_runs.append((chunk, section_path))
+                    input_lines.append(
+                        "\\input{{{}}}".format(
+                            section_path.relative_to(template_root).with_suffix("").as_posix()
+                        )
+                    )
+                if front_chunks or not input_lines:
+                    pandoc_runs.append(("\n\n".join(front_chunks), content_target))
+                content_target.write_text(
+                    "\n".join(input_lines) + "\n", encoding="utf-8", newline="\n"
+                )
+            else:
+                pandoc_runs.append((manuscript_text, content_target))
+            abstract_declared = manifest.get("abstract_target")
+            if abstract_declared and abstract_enabled and raw_abstract.strip():
+                abstract_path = _safe_child(template_root, str(abstract_declared))
+                abstract_path.parent.mkdir(parents=True, exist_ok=True)
+                pandoc_runs.append((raw_abstract, abstract_path))
+            elif abstract_declared:
+                abstract_path = _safe_child(template_root, str(abstract_declared))
+                abstract_path.parent.mkdir(parents=True, exist_ok=True)
+                abstract_path.write_text("", encoding="utf-8", newline="\n")
+
             log_parts: list[str] = []
             engine = _engine(build, manifest)
             _verify_toolchain(build, engine)
@@ -237,15 +282,43 @@ class ArticleBuildHandler:
             if str(build["bibliography_tool"]) == "none":
                 latexmk.insert(-1, "-bibtex-")
             try:
-                log_parts.append(
-                    _run_command(
-                        pandoc,
-                        root,
-                        timeout=min(300, limits["timeout_seconds"]),
-                        limits=limits,
+                for run_index, (source_text, output_path) in enumerate(pandoc_runs):
+                    source_file = root / f"chunk-{run_index:04d}.md"
+                    source_file.write_text(source_text, encoding="utf-8", newline="\n")
+                    command = [
+                        "pandoc",
+                        str(source_file),
+                        # Pandoc's GFM reader explicitly disables table_captions; the
+                        # default Markdown reader keeps GFM-compatible pipe tables and
+                        # supports the `Table:` captions emitted by Core.
+                        "--from=markdown+tex_math_dollars+raw_tex+table_captions",
+                        "--to=latex",
+                        "--wrap=none",
+                        "--resource-path",
+                        str(template_root),
+                        "--output",
+                        str(output_path),
+                    ]
+                    is_body_output = output_path == content_target
+                    if (
+                        is_body_output
+                        and bibliography.stat().st_size
+                        and bibliography_mode != "native"
+                    ):
+                        command.extend(["--citeproc", "--bibliography", str(bibliography)])
+                    log_parts.append(
+                        _run_command(
+                            command,
+                            root,
+                            timeout=min(300, limits["timeout_seconds"]),
+                            limits=limits,
+                        )
                     )
-                )
-                if bibliography.stat().st_size:
+                if (
+                    bibliography.stat().st_size
+                    and bibliography_mode != "native"
+                    and any(path == content_target for _, path in pandoc_runs)
+                ):
                     _inject_pandoc_citeproc_compatibility(content_target)
                 _check_disk(root, limits["disk_bytes"])
                 self.client.update_article_build_progress(context.job_id, 55, "compiling")
@@ -368,6 +441,13 @@ def _validate_input(value: Mapping[str, Any]) -> None:
         value.get("template"), Mapping
     ):
         raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article build manifest is invalid")
+    if not isinstance(value.get("abstract", ""), str):
+        raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article build input is invalid")
+    if value.get("paper_info") is not None and not isinstance(value.get("paper_info"), Mapping):
+        raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article paper info is invalid")
+    headings = value.get("headings", [])
+    if not isinstance(headings, list) or len(headings) > 2000:
+        raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article headings are invalid")
     resources = value.get("resources", [])
     if not isinstance(resources, list) or len(resources) > 500:
         raise HandlerError("ARTICLE_BUILD_INVALID_INPUT", "Article resources are invalid")
@@ -424,8 +504,10 @@ def _replace_resource_references(
     artifact_id: str,
     version_id: str,
     filename: str,
+    figure_dir: str = "figures",
 ) -> str:
-    replacement = f"figures/{filename}"
+    prefix = f"{figure_dir.strip('/')}/"
+    replacement = f"{prefix}{filename}"
     references = {
         f"mmdash://artifact/{artifact_id}/versions/{version_id}",
     }
@@ -543,7 +625,7 @@ def _validate_template(root: Path, registered: Mapping[str, Any]) -> None:
         "bibliography_tool",
     ):
         _required(registered, key)
-    if registered["schema_version"] != "1.0":
+    if registered["schema_version"] not in {"1.0", "1.1"}:
         raise HandlerError(
             "ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template schema version is invalid"
         )
@@ -551,17 +633,21 @@ def _validate_template(root: Path, registered: Mapping[str, Any]) -> None:
         raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template engine is invalid")
     if registered["bibliography_tool"] not in {"auto", "bibtex", "biber", "none"}:
         raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Bibliography tool is invalid")
+    _validate_manifest_11(root, registered)
     entrypoint = _safe_child(root, str(registered["entrypoint"]))
     content = _safe_child(root, str(registered["content_target"]))
     bibliography = _safe_child(root, str(registered["bibliography_target"]))
     _safe_child(root, str(registered["output"]))
+    abstract_target = registered.get("abstract_target")
+    abstract = _safe_child(root, str(abstract_target)) if abstract_target else None
     if (
         not entrypoint.is_file()
         or content in {entrypoint, bibliography}
         or bibliography == entrypoint
+        or (abstract is not None and abstract in {entrypoint, content, bibliography})
     ):
         raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template targets are invalid")
-    if content.exists() or bibliography.exists():
+    if content.exists() or bibliography.exists() or (abstract is not None and abstract.exists()):
         raise HandlerError(
             "ARTICLE_TEMPLATE_TARGET_EXISTS", "Generated template target already exists"
         )
@@ -580,6 +666,237 @@ def _validate_template(root: Path, registered: Mapping[str, Any]) -> None:
             raise HandlerError(
                 "ARTICLE_TEMPLATE_SCRIPT_FORBIDDEN", "Template contains an executable file"
             )
+
+
+def _validate_manifest_11(root: Path, registered: Mapping[str, Any]) -> None:
+    """Validate the optional manifest 1.1 extensions; 1.0 manifests skip this.
+
+    Field semantics follow docs/article/template-spec.md: the fields declare
+    what the normalized template supports, never what the article selected.
+    """
+    schema_version = str(registered.get("schema_version", "1.0"))
+    if schema_version != "1.1":
+        return
+    abstract_target = registered.get("abstract_target")
+    if abstract_target is not None:
+        if not isinstance(abstract_target, str) or not abstract_target:
+            raise HandlerError(
+                "ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template abstract target is invalid"
+            )
+        _safe_child(root, abstract_target)
+    if str(registered.get("body_layout", "single")) not in {"single", "sections"}:
+        raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template body layout is invalid")
+    if str(registered.get("field_profile", "default")) not in {"default", "cumcm"}:
+        raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template field profile is invalid")
+    figure_dir = str(registered.get("figure_dir", "figures"))
+    relative = PurePosixPath(figure_dir)
+    if (
+        not figure_dir
+        or len(figure_dir) > 120
+        or relative.is_absolute()
+        or ".." in relative.parts
+        or "\\" in figure_dir
+    ):
+        raise HandlerError("ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template figure dir is invalid")
+    if str(registered.get("bibliography_mode", "inline")) not in {"inline", "native"}:
+        raise HandlerError(
+            "ARTICLE_TEMPLATE_MANIFEST_INVALID", "Template bibliography mode is invalid"
+        )
+
+
+def _raw_paper_fields(build: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Return every declared paper info field including disabled entries."""
+    paper_info = build.get("paper_info")
+    if not isinstance(paper_info, Mapping):
+        return {}
+    raw_fields = paper_info.get("fields")
+    if not isinstance(raw_fields, Mapping):
+        return {}
+    result: dict[str, Mapping[str, Any]] = {}
+    for key, value in raw_fields.items():
+        if isinstance(key, str) and isinstance(value, Mapping):
+            result[key] = value
+    return result
+
+
+def _paper_fields(build: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return the enabled-only paper info fields from the frozen document."""
+    paper_info = build.get("paper_info")
+    if not isinstance(paper_info, Mapping):
+        return {}
+    raw_fields = paper_info.get("fields")
+    if not isinstance(raw_fields, Mapping):
+        return {}
+    fields: dict[str, dict[str, Any]] = {}
+    for key, value in raw_fields.items():
+        if not isinstance(key, str) or not isinstance(value, Mapping):
+            continue
+        if value.get("enabled") is not True:
+            continue
+        text = value.get("value")
+        fields[key] = {"value": text if isinstance(text, str) else ""}
+    return fields
+
+
+LATEX_SPECIALS = str.maketrans(
+    {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+)
+
+
+def _latex_escape(value: str) -> str:
+    """Escape plain-text paper info values for LaTeX.
+
+    Backslash must be emitted last for the specials that produce their own
+    braces, so translate in two passes: escape everything except the
+    backslash placeholder, then restore the command form.
+    """
+    replaced = value.replace("\\", "\x00")
+    replaced = replaced.translate(LATEX_SPECIALS)
+    return replaced.replace("\x00", r"\textbackslash{}")
+
+
+CUMCM_FIELD_COMMANDS = {
+    "team_number": "baominghao",
+    "captain": "membera",
+    "member2": "memberb",
+    "member3": "memberc",
+    "supervisor": "supervisor",
+    "problem_number": "tihao",
+    "school": "schoolname",
+    "submit_date": "nianyue",
+}
+
+
+def _write_metadata_blocks(
+    template_root: Path,
+    manifest: Mapping[str, Any],
+    fields: Mapping[str, Mapping[str, Any]],
+    abstract_enabled: bool,
+) -> None:
+    """Emit the generated metadata, title, and keyword TeX blocks.
+
+    Only fields compatible with the template profile are emitted; unknown or
+    incompatible selections are skipped silently because the product already
+    warned the user at save time.
+    """
+    generated = template_root / ".mmdash"
+    generated.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "\\newif\\ifmmdashabstract",
+        "\\mmdashabstracttrue" if abstract_enabled else "\\mmdashabstractfalse",
+    ]
+    profile = str(manifest.get("field_profile", "default"))
+    if "title" in fields:
+        lines.append(f"\\title{{{_latex_escape(fields['title']['value'])}}}")
+    if "author" in fields:
+        lines.append(f"\\author{{{_latex_escape(fields['author']['value'])}}}")
+    if "date" in fields:
+        lines.append(f"\\date{{{_latex_escape(fields['date']['value'])}}}")
+    if profile == "cumcm":
+        for key, command in CUMCM_FIELD_COMMANDS.items():
+            if key in fields:
+                lines.append(f"\\{command}{{{_latex_escape(fields[key]['value'])}}}")
+    (generated / "metadata.tex").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    title_block = "\\maketitle\n" if {"title", "author", "date"} & fields.keys() else ""
+    (generated / "title-block.tex").write_text(title_block, encoding="utf-8", newline="\n")
+    keywords_line = ""
+    if "keywords" in fields:
+        keywords_line = (
+            f"\\noindent\\textbf{{关键词：}}{_latex_escape(fields['keywords']['value'])}\n"
+        )
+    (generated / "keywords-block.tex").write_text(keywords_line, encoding="utf-8", newline="\n")
+
+
+def _split_markdown_sections(
+    manuscript: str, headings: list[Mapping[str, Any]]
+) -> list[tuple[str, str]]:
+    """Split the Markdown body into per-H1/H2 chunks keyed by block ID.
+
+    Fenced code blocks are tracked so a `#` line inside them can never start
+    a new section. Content before the first frozen heading becomes the
+    front-matter chunk with an empty block ID.
+    """
+    expected = [heading for heading in headings if heading.get("block_id")]
+    chunks: list[tuple[str, str]] = []
+    current_id = ""
+    current_lines: list[str] = []
+    fence = ""
+    index = 0
+    for line in manuscript.splitlines():
+        stripped = line.lstrip()
+        if fence:
+            if stripped.startswith(fence):
+                fence = ""
+        elif stripped.startswith(("```", "~~~")):
+            fence = stripped[:3]
+        else:
+            if index < len(expected) and stripped.startswith("#"):
+                heading = expected[index]
+                level = int(heading.get("level", 1) or 1)
+                marker = "#" * level
+                text = str(heading.get("text", "")).strip()
+                candidate = stripped[len(marker) :].strip()
+                if stripped.startswith(marker + " ") and candidate == text and text:
+                    if current_lines or current_id:
+                        chunks.append((current_id, "\n".join(current_lines)))
+                    current_id = str(heading.get("block_id", ""))
+                    current_lines = [line]
+                    index += 1
+                    continue
+        current_lines.append(line)
+    if current_lines or current_id:
+        chunks.append((current_id, "\n".join(current_lines)))
+    if not chunks:
+        chunks.append(("", manuscript))
+    return chunks
+
+
+def _section_filename(block_id: str) -> str:
+    safe = [
+        character if character.isalnum() or character in "-_" else "-" for character in block_id
+    ]
+    return "".join(safe)[:120] or "section"
+
+
+def _inject_bibliography_block(
+    template_root: Path,
+    manifest: Mapping[str, Any],
+    entrypoint_text: str,
+    bibliography_target: Path,
+) -> None:
+    """Emit the generated bibliography block.
+
+    Inline mode keeps citeproc rendering inside the content fragment, so the
+    block stays empty. Native mode trusts the template's own wiring; only a
+    template without any bibliography command receives the GB/T 7714 numeric
+    fallback pointing at the generated .bib file.
+    """
+    generated = template_root / ".mmdash"
+    generated.mkdir(parents=True, exist_ok=True)
+    body = ""
+    if str(manifest.get("bibliography_mode", "inline")) == "native":
+        wiring = _BIBLIOGRAPHY_WIRING.search(entrypoint_text)
+        if wiring is None:
+            stem = bibliography_target.with_suffix("").name
+            body = f"\\bibliographystyle{{gbt7714-numerical}}\n\\bibliography{{{stem}}}\n"
+    (generated / "bibliography-block.tex").write_text(body, encoding="utf-8", newline="\n")
+
+
+_BIBLIOGRAPHY_WIRING = re.compile(
+    r"^[^%\n]*\\(?:bibliography|bibliographystyle|addbibresource|printbibliography)\b",
+    re.MULTILINE,
+)
 
 
 def _create_source_zip(

@@ -1,3 +1,77 @@
+# mmdash v0.1 Article abstract, paper info, and template manifest 1.1
+
+- Updated: 2026-09-06
+- Branch: `main` (uncommitted working tree on top of `8d2dfaa`)
+- Scope: implement
+  `docs/article/abstract-template-bibliography-plan.md` — the abstract becomes
+  an independent collaborative Markdown document, a structured 论文信息
+  document (generic + CUMCM fields) drives generated TeX metadata, and the
+  template manifest gains backward-compatible 1.1 extensions
+  (`abstract_target`, `body_layout`, `field_profile`, `figure_dir`,
+  `bibliography_mode`).
+- Contracts: `article-template.schema.json` accepts schema_version 1.0/1.1
+  (all new fields optional; 1.0 stays valid). Core OpenAPI adds
+  `article.abstract.flush` (POST via BFF, PUT to Core),
+  `article.paper-info.get`, `article.paper-info.update`, extends
+  `ArticleDraft` with abstract/paper-info fields, and generated clients were
+  regenerated (`pnpm contracts:generate`); API catalog now covers 544
+  operations.
+- Migration `000055_article_abstract_paper_info`: article_drafts gains
+  abstract_markdown/abstract_tiptap_json/abstract_yjs_update/
+  abstract_state_vector/abstract_revision and paper_info/paper_info_revision;
+  article_commits and article_commit_operations gain the frozen equivalents
+  plus sha256 columns.
+- Core: `FlushAbstract` derives the Markdown projection from Tiptap JSON with
+  a dedicated CAS revision; `UpdatePaperInfo` normalizes a closed field set
+  (title/author/date/abstract/keywords + CUMCM
+  problem_number/team_number/school/captain/member2/member3/supervisor/
+  submit_date; unknown fields rejected, disabled fields kept but unrendered).
+  `prepareCommitSnapshot` freezes abstract, paper info, and heading identity
+  (H1/H2 block IDs) into `.mmdash/article.json`; commits write four files
+  (manuscript.md, abstract.md, references.bib, .mmdash/article.json) through
+  both the legacy Commit path and the durable CommitOperation coordinator;
+  WorkerInput carries Abstract/PaperInfo/Headings for formal and preview
+  builds.
+- Worker: emits `.mmdash/metadata.tex` (`\newif\ifmmdashabstract` +
+  `\title`/`\author`/`\date` for enabled generic fields, `\baominghao`/
+  `\membera`/`\memberb`/`\memberc`/`\supervisor`/`\tihao`/`\schoolname`/
+  `\nianyue` only for `field_profile: cumcm`), `.mmdash/title-block.tex`
+  (`\maketitle` only when title/author/date selected), `.mmdash/
+  keywords-block.tex`, `.mmdash/abstract-block.tex` (Pandoc-rendered abstract
+  content, empty when disabled), and `.mmdash/bibliography-block.tex`
+  (empty for inline mode; native mode trusts template wiring and falls back to
+  `\bibliographystyle{gbt7714-numerical}` + `\bibliography` only when the
+  entrypoint has no wiring). `body_layout: sections` splits the Markdown at
+  frozen H1/H2 headings into `sections/<block_id>.tex` files referenced by
+  `content_target` and only runs for native-bibliography templates (citeproc
+  must render one list per document, so sections+inline degrades to single).
+  `figure_dir` replaces the hardcoded `figures/` prefix.
+- Default template upgraded to manifest 1.1.0 (idempotency key
+  `article-default-template:1.1.0`): main.tex inputs metadata/title/abstract/
+  keywords/bibliography blocks; the abstract environment is wrapped in
+  `\ifmmdashabstract` so a disabled abstract produces no empty heading.
+  Projects with the old 1.0.2 default keep it as a regular template.
+- Web: new 摘要 tab (dedicated Tiptap/Collaboration editor, no block review),
+  已启用/未启用 badge, and a 论文信息 dialog (generic + CUMCM field
+  checkboxes and values). The BFF runs a second collaboration room
+  `article-abstract:<projectId>` with its own CAS revision and the flush
+  barrier now freezes both rooms before commit/publication operations.
+- Known limitations: abstract citations in `inline` mode render as plain
+  `\cite` (citeproc runs on the body only); preview builds fall back to
+  single-file layout when headings are absent; CUMCM command coverage against
+  the real `cumcmthesis.cls` needs the user-provided regression templates;
+  Docker smoke (`pnpm smoke:article-worker`) and `caddy:check` remain blocked
+  on this Windows host.
+- Verification: `go build ./...`, `go test ./internal/article/` (includes new
+  FlushAbstract/UpdatePaperInfo/headingInfos/formal-input tests),
+  `go test ./internal/contract/`; worker pytest 67/67 (new
+  `test_article_manifest11.py` covering 1.1 validation, CUMCM mapping,
+  bibliography modes, section splitting, LaTeX escaping); web vitest 14/14
+  and BFF vitest 76/76 (dual-room flush barrier); eslint whole repo,
+  prettier, gofmt, ruff, contract checks, 544-operation API catalog; full TS
+  build (`next build` included), Go build, and `uv build --package
+  mmdash-worker` all pass.
+
 # mmdash v0.1 Article template import auto-detection (template fix 2 of 3)
 
 - Updated: 2026-09-06
