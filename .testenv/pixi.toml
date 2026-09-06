@@ -20,4 +20,5 @@ stop = "node ../scripts/testenv.mjs stop"
 test = { cmd = "node ../scripts/testenv.mjs test", depends-on = ["install"] }
 check = { cmd = "node ../scripts/testenv.mjs check", depends-on = ["install"] }
 dev = { cmd = "node ../scripts/testenv.mjs dev", depends-on = ["install"] }
+dev-check = { cmd = "node ../scripts/testenv.mjs dev-check", depends-on = ["install"] }
 smoke = { cmd = "node ../scripts/testenv.mjs smoke", depends-on = ["install"] }

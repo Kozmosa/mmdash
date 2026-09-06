@@ -68,6 +68,7 @@ type Service struct {
 	WriteLease            time.Duration
 	Writer                *WorkspaceWriter
 	Webhooks              WebhookStore
+	WebhookError          func(context.Context, error)
 }
 
 func (service Service) Capabilities(
@@ -107,6 +108,8 @@ type ConnectionTestResult struct {
 	CheckedAt     time.Time                  `json:"checked_at"`
 	Checks        []settings.ConnectionCheck `json:"checks"`
 	DefaultBranch string                     `json:"default_branch"`
+	ErrorCode     *string                    `json:"error_code"`
+	Retryable     bool                       `json:"retryable"`
 	Status        string                     `json:"status"`
 }
 
@@ -394,10 +397,23 @@ func (service Service) commitTrusted(
 	if claim.AlreadySucceeded {
 		return result, nil
 	}
+	operationContext, cancelOperation := context.WithCancel(ctx)
+	leaseDone := make(chan struct{})
+	go service.renewCommitLease(
+		operationContext, cancelOperation, claim, lease, leaseDone,
+	)
+	defer func() {
+		cancelOperation()
+		<-leaseDone
+	}()
 	fail := func(operationErr error, action string) {
 		code, _ := safeCommitFailure(operationErr)
+		cleanupContext, cancelCleanup := context.WithTimeout(
+			context.WithoutCancel(ctx), 5*time.Second,
+		)
+		defer cancelCleanup()
 		_ = service.Commits.FailCommit(
-			ctx, claim, code, service.Clock.Now().UTC(),
+			cleanupContext, claim, code, service.Clock.Now().UTC(),
 		)
 		service.record(
 			ctx, action, request.ProjectID,
@@ -405,7 +421,7 @@ func (service Service) commitTrusted(
 		)
 	}
 	resolved, err := service.Settings.Resolve(
-		ctx, settings.ScopeProject, request.ProjectID, SettingType,
+		operationContext, settings.ScopeProject, request.ProjectID, SettingType,
 	)
 	if err != nil {
 		fail(err, "repo.commit.failed")
@@ -416,7 +432,7 @@ func (service Service) commitTrusted(
 		fail(err, "repo.commit.failed")
 		return CommitResult{}, err
 	}
-	connection, err := service.Providers.Test(ctx, config)
+	connection, err := service.Providers.Resolve(operationContext, config)
 	if err != nil {
 		fail(err, "repo.commit.failed")
 		return CommitResult{}, err
@@ -424,7 +440,7 @@ func (service Service) commitTrusted(
 	prepared := claim.PreparedCommitSHA
 	if prepared == "" {
 		commit, prepareErr := service.Writer.Prepare(
-			ctx, claim, connection, request,
+			operationContext, claim, connection, request,
 		)
 		if prepareErr != nil {
 			fail(prepareErr, "repo.commit.failed")
@@ -432,7 +448,7 @@ func (service Service) commitTrusted(
 		}
 		prepared = commit.CommitSHA
 		if err := service.Commits.SavePreparedCommit(
-			ctx, claim, prepared, service.Clock.Now().UTC(),
+			operationContext, claim, prepared, service.Clock.Now().UTC(),
 		); err != nil {
 			fail(err, "repo.commit.failed")
 			return CommitResult{}, err
@@ -440,15 +456,19 @@ func (service Service) commitTrusted(
 		claim.PreparedCommitSHA = prepared
 	}
 	commit, err := service.Writer.PushPrepared(
-		ctx, claim, connection, prepared,
+		operationContext, claim, connection, prepared,
 	)
 	if err != nil {
 		fail(err, "repo.push.failed")
 		return CommitResult{}, err
 	}
 	result.CommitSHA = commit.CommitSHA
+	finalizeContext, cancelFinalize := context.WithTimeout(
+		context.WithoutCancel(ctx), 5*time.Second,
+	)
+	defer cancelFinalize()
 	if err := service.Commits.CompleteCommit(
-		ctx, claim, commit, result, service.Clock.Now().UTC(),
+		finalizeContext, claim, commit, result, service.Clock.Now().UTC(),
 	); err != nil {
 		fail(err, "repo.commit.failed")
 		return CommitResult{}, err
@@ -458,6 +478,36 @@ func (service Service) commitTrusted(
 		commit.CommitSHA, "success", "",
 	)
 	return result, nil
+}
+
+func (service Service) renewCommitLease(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	claim CommitClaim,
+	lease time.Duration,
+	done chan<- struct{},
+) {
+	defer close(done)
+	interval := lease / 3
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			expiresAt := service.Clock.Now().UTC().Add(lease)
+			if err := service.Commits.RenewCommitLease(
+				ctx, claim, expiresAt,
+			); err != nil {
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 func (service Service) validateCommitRequest(
@@ -544,11 +594,14 @@ func (service Service) TestConnection(
 		return ConnectionTestResult{}, err
 	}
 	connection, err := service.Providers.Test(ctx, config)
+	providerFailure := classifyProviderFailure(err)
 	checks := []settings.ConnectionCheck{}
 	status := "failed"
+	var errorCode *string
 	if err != nil {
+		errorCode = &providerFailure.Code
 		checks = append(checks, settings.ConnectionCheck{
-			Message: safeProviderMessage(err), Name: "provider", Status: "failed",
+			Message: providerFailure.Message, Name: "provider", Status: "failed",
 		})
 	} else {
 		status = "passed"
@@ -569,7 +622,8 @@ func (service Service) TestConnection(
 	}
 	result := ConnectionTestResult{
 		Branches: connection.BranchNames(), CheckedAt: checkedAt,
-		Checks: checks, DefaultBranch: connection.DefaultBranch, Status: status,
+		Checks: checks, DefaultBranch: connection.DefaultBranch,
+		ErrorCode: errorCode, Retryable: providerFailure.Retryable, Status: status,
 	}
 	service.record(ctx, "repo.connection.tested", projectID, "", status, safeProviderCode(err))
 	return result, nil
@@ -845,6 +899,9 @@ func (service Service) decorate(
 		repository.Webhook.PublicURL = strings.TrimSuffix(service.PublicURL, "/") +
 			"/api/webhooks/github/" + repository.Webhook.HookID
 	}
+	if repository.LastErrorCode != nil {
+		repository.LastErrorRetryable = retryableFailureCode(*repository.LastErrorCode)
+	}
 	resolved, err := service.Settings.Resolve(
 		ctx, settings.ScopeProject, repository.ProjectID, SettingType,
 	)
@@ -902,22 +959,7 @@ func newWebhookSecret() (string, error) {
 }
 
 func safeProviderCode(err error) string {
-	switch {
-	case err == nil:
-		return ""
-	case errors.Is(err, provider.ErrAuthentication):
-		return "REPO_AUTH_FAILED"
-	case errors.Is(err, provider.ErrBranchMissing):
-		return "REPO_BRANCH_NOT_FOUND"
-	case errors.Is(err, provider.ErrRemoteNotFound):
-		return "REPO_REMOTE_NOT_FOUND"
-	case errors.Is(err, provider.ErrUnavailable):
-		return "REPO_PROVIDER_UNAVAILABLE"
-	case errors.Is(err, provider.ErrUnsupported):
-		return "REPO_PROVIDER_UNSUPPORTED"
-	default:
-		return "REPO_CONNECTION_FAILED"
-	}
+	return classifyProviderFailure(err).Code
 }
 
 func mappingsFromRepository(repository Repository) WorkspaceMappings {

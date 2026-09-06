@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 describe("Article browser routes", () => {
-  it("flushes the collaborative draft before creating a commit", async () => {
+  it("flushes the collaborative draft before queueing a commit operation", async () => {
     let revision = 4;
     const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
@@ -38,10 +38,16 @@ describe("Article browser routes", () => {
         revision = 5;
         return Response.json(draft(revision));
       }
-      if (url.endsWith("/article/commits") && init?.method === "POST") {
+      if (
+        url.endsWith("/article/commit-operations") &&
+        init?.method === "POST"
+      ) {
         const body = JSON.parse(String(init.body));
         expect(body).toEqual({ draft_revision: 5, message: "checkpoint" });
-        return Response.json({ commit_id: "commit-1" }, { status: 201 });
+        return Response.json(
+          { operation_id: "00000000-0000-4000-8000-000000000010" },
+          { status: 202 },
+        );
       }
       throw new Error(`unexpected Core request: ${init?.method} ${url}`);
     });
@@ -57,22 +63,93 @@ describe("Article browser routes", () => {
       headers: { cookie },
       method: "POST",
       payload: { draft_revision: 1, message: "checkpoint" },
-      url: `/api/projects/${projectId}/article/commits`,
+      url: `/api/projects/${projectId}/article/commit-operations`,
     });
 
-    expect(response.statusCode, response.body).toBe(201);
+    expect(
+      response.statusCode,
+      `${response.body}\n${fetchImplementation.mock.calls
+        .map(([url, init]) => `${init?.method} ${String(url)}`)
+        .join("\n")}`,
+    ).toBe(202);
     expect(fetchImplementation.mock.calls.map(([url]) => String(url))).toEqual([
       `http://core.test/v1/projects/${projectId}/permissions`,
       `http://core.test/v1/projects/${projectId}/article/draft`,
       `http://core.test/v1/projects/${projectId}/article/draft/flush`,
       `http://core.test/v1/projects/${projectId}/article/draft`,
-      `http://core.test/v1/projects/${projectId}/article/commits`,
+      `http://core.test/v1/projects/${projectId}/article/commit-operations`,
     ]);
+  });
+
+  it("flushes before queueing a durable publication operation", async () => {
+    let revision = 2;
+    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/permissions"))
+        return Response.json({
+          permissions: [
+            "project.article.read",
+            "project.article.edit",
+            "project.article.release",
+          ],
+          project_id: projectId,
+          role: "editor",
+        });
+      if (url.endsWith("/article/draft") && init?.method === "GET")
+        return Response.json(draft(revision));
+      if (url.endsWith("/article/draft/flush") && init?.method === "PUT") {
+        revision = 3;
+        return Response.json(draft(revision));
+      }
+      if (
+        url.endsWith("/article/publication-operations") &&
+        init?.method === "POST"
+      ) {
+        const body = JSON.parse(String(init.body));
+        expect(body.draft_revision).toBe(3);
+        expect(body.idempotency_key).toBe("publish-1");
+        return Response.json(
+          { operation_id: "00000000-0000-4000-8000-000000000011" },
+          { status: 202 },
+        );
+      }
+      throw new Error(`unexpected Core request: ${init?.method} ${url}`);
+    });
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+    const response = await app.inject({
+      headers: { cookie },
+      method: "POST",
+      payload: {
+        bibliography_tool: "auto",
+        draft_revision: 1,
+        engine: "auto",
+        idempotency_key: "publish-1",
+        message: "publish",
+        notes: "",
+        tag: "v1",
+        template_id: "00000000-0000-4000-8000-000000000020",
+        title: "Paper",
+      },
+      url: `/api/projects/${projectId}/article/publication-operations`,
+    });
+    expect(
+      response.statusCode,
+      `${response.body}\n${fetchImplementation.mock.calls
+        .map(([url, init]) => `${init?.method} ${String(url)}`)
+        .join("\n")}`,
+    ).toBe(202);
   });
 
   it("proxies block review and preserves actionable repository conflicts", async () => {
     const blockId = "00000000-0000-4000-8000-000000000002";
-    const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
+    const fingerprint = "a".repeat(64);
+    const fetchImplementation = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url.endsWith("/permissions"))
         return Response.json({
@@ -80,8 +157,12 @@ describe("Article browser routes", () => {
           project_id: projectId,
           role: "editor",
         });
-      if (url.endsWith(`/article/blocks/${blockId}/review`))
+      if (url.endsWith(`/article/blocks/${blockId}/review`)) {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          content_fingerprint: fingerprint,
+        });
         return Response.json({ block_id: blockId, tag: "reviewed" });
+      }
       if (url.endsWith("/article/draft")) return Response.json(draft(1));
       if (url.endsWith("/article/draft/flush")) return Response.json(draft(2));
       if (url.endsWith("/article/commits"))
@@ -106,6 +187,7 @@ describe("Article browser routes", () => {
     const review = await app.inject({
       headers: { cookie },
       method: "POST",
+      payload: { content_fingerprint: fingerprint },
       url: `/api/projects/${projectId}/article/blocks/${blockId}/review`,
     });
     expect(review.statusCode, review.body).toBe(200);

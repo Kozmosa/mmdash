@@ -3,6 +3,7 @@ package article
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/jobs"
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
@@ -11,7 +12,7 @@ import (
 type Store interface {
 	GetDraft(context.Context, string) (Draft, error)
 	PersistDraft(context.Context, string, string, PersistDraftInput, string, []Block, map[string]interface{}, string) (Draft, error)
-	ReviewBlock(context.Context, string, string, string) (Block, error)
+	ReviewBlock(context.Context, string, string, string, string) (Block, error)
 	CreateChapterTag(context.Context, ChapterTag) (ChapterTag, bool, error)
 	GetChapterTag(context.Context, string, string) (ChapterTag, error)
 	ListChapterTags(context.Context, string) ([]ChapterTag, error)
@@ -26,6 +27,14 @@ type Store interface {
 	ListReferences(context.Context, string) ([]Reference, error)
 	DeleteReference(context.Context, string, string, string) error
 	CreateCommit(context.Context, Commit) (Commit, bool, error)
+	CreateCommitOperation(context.Context, CommitOperation) (CommitOperation, bool, error)
+	ClaimCommitOperations(context.Context, string, time.Time, time.Duration, int) ([]CommitOperation, error)
+	ListCommitOperations(context.Context, string) ([]CommitOperation, error)
+	BindCommitOperation(context.Context, CommitOperation, Commit, time.Time) (Commit, error)
+	CompleteCommitOperation(context.Context, CommitOperation, time.Time) error
+	FailCommitOperation(context.Context, CommitOperation, string, bool, time.Time, time.Time) error
+	GetCommitOperation(context.Context, string, string) (CommitOperation, error)
+	RenewCommitOperationLease(context.Context, string, string, time.Time) error
 	GetCommit(context.Context, string, string) (Commit, error)
 	ListCommits(context.Context, string) ([]Commit, error)
 	CreateTemplate(context.Context, Template) (Template, bool, error)
@@ -59,5 +68,5 @@ type ArtifactAccess interface {
 	ArticleTemplateGrant(context.Context, string, string, string) (map[string]interface{}, error)
 	ArticleResourceGrant(context.Context, string, string, string) (map[string]interface{}, error)
 	ArchiveArticleTemplate(context.Context, string, string, string, string, string, int64, io.Reader) (string, string, error)
-	ArchiveArticleBuildOutput(context.Context, string, string, string, string, string, string, string, int64, io.Reader) (string, string, error)
+	ArchiveArticleBuildOutput(context.Context, string, string, string, []string, string, string, string, string, int64, io.Reader) (string, string, error)
 }

@@ -30,6 +30,7 @@ type articleTemplateStore struct {
 	uploads       map[string]UploadSession
 	details       map[string]Detail
 	blobs         map[string]Blob
+	folders       map[string]Folder
 	createFirst   int
 	finalizeCount int
 }
@@ -39,7 +40,31 @@ func newArticleTemplateStore() *articleTemplateStore {
 		uploads: make(map[string]UploadSession),
 		details: make(map[string]Detail),
 		blobs:   make(map[string]Blob),
+		folders: make(map[string]Folder),
 	}
+}
+
+func (store *articleTemplateStore) EnsureFolderPath(
+	_ context.Context, projectID string, segments []string,
+) (Folder, error) {
+	var parentID *string
+	var leaf Folder
+	for index, segment := range segments {
+		key := projectID + "\x00" + strings.Join(segments[:index+1], "/")
+		folder, exists := store.folders[key]
+		if !exists {
+			folder = Folder{
+				ID:        "managed-folder-" + strconv.Itoa(len(store.folders)+1),
+				ProjectID: projectID, ParentFolderID: parentID, Name: segment,
+				Children: []Folder{},
+			}
+			store.folders[key] = folder
+		}
+		leaf = folder
+		parent := folder.ID
+		parentID = &parent
+	}
+	return leaf, nil
 }
 
 func articleTemplateUploadKey(projectID, idempotencyKey string) string {
@@ -63,6 +88,29 @@ func (store *articleTemplateStore) GetDetail(
 	if !ok {
 		return Detail{}, ErrNotFound
 	}
+	return detail, nil
+}
+
+func (store *articleTemplateStore) GetArtifact(
+	_ context.Context, projectID, artifactID string,
+) (Artifact, error) {
+	detail, ok := store.details[artifactIDKey(projectID, artifactID)]
+	if !ok {
+		return Artifact{}, ErrNotFound
+	}
+	return detail.Artifact, nil
+}
+
+func (store *articleTemplateStore) MoveArtifact(
+	_ context.Context, projectID, artifactID string, folderID *string, _ time.Time,
+) (Detail, error) {
+	key := artifactIDKey(projectID, artifactID)
+	detail, ok := store.details[key]
+	if !ok {
+		return Detail{}, ErrNotFound
+	}
+	detail.Artifact.FolderID = folderID
+	store.details[key] = detail
 	return detail, nil
 }
 
@@ -417,15 +465,16 @@ func TestArchiveArticleBuildOutputSupportsBlobDeduplicationAndIdempotentRetry(t 
 		Store:              store,
 	}
 	sha := articleTemplateSHA(contents)
+	folderPath := []string{"article", "build", "commit_timestamp"}
 	firstArtifactID, firstVersionID, err := service.ArchiveArticleBuildOutput(
-		context.Background(), projectID, "build-one", "system", "pdf",
+		context.Background(), projectID, "build-one", "system", folderPath, "pdf",
 		"main.pdf", "application/pdf", sha, int64(len(contents)), bytes.NewReader(contents),
 	)
 	if err != nil {
 		t.Fatalf("archive first build output: %v", err)
 	}
 	secondArtifactID, secondVersionID, err := service.ArchiveArticleBuildOutput(
-		context.Background(), projectID, "build-one", "system", "tex_source",
+		context.Background(), projectID, "build-one", "system", folderPath, "tex_source",
 		"main.tex", "application/x-tex", sha, int64(len(contents)), bytes.NewReader(contents),
 	)
 	if err != nil {
@@ -437,8 +486,12 @@ func TestArchiveArticleBuildOutputSupportsBlobDeduplicationAndIdempotentRetry(t 
 	if store.createFirst != 2 || store.finalizeCount != 1 {
 		t.Fatalf("unexpected persistence counts: create=%d finalize=%d", store.createFirst, store.finalizeCount)
 	}
+	legacyKey := artifactIDKey(projectID, secondArtifactID)
+	legacyDetail := store.details[legacyKey]
+	legacyDetail.Artifact.FolderID = nil
+	store.details[legacyKey] = legacyDetail
 	retryArtifactID, retryVersionID, err := service.ArchiveArticleBuildOutput(
-		context.Background(), projectID, "build-one", "system", "tex_source",
+		context.Background(), projectID, "build-one", "system", folderPath, "tex_source",
 		"main.tex", "application/x-tex", sha, int64(len(contents)), failingReader{},
 	)
 	if err != nil {
@@ -449,6 +502,15 @@ func TestArchiveArticleBuildOutputSupportsBlobDeduplicationAndIdempotentRetry(t 
 		t.Fatalf("retry created a duplicate: first=(%s,%s) retry=(%s,%s) create=%d finalize=%d ids=%d",
 			secondArtifactID, secondVersionID, retryArtifactID, retryVersionID,
 			store.createFirst, store.finalizeCount, ids.next)
+	}
+	if len(store.folders) != 3 {
+		t.Fatalf("build outputs did not reuse one managed folder path: %#v", store.folders)
+	}
+	for _, artifactID := range []string{firstArtifactID, secondArtifactID} {
+		detail := store.details[artifactIDKey(projectID, artifactID)]
+		if detail.Artifact.FolderID == nil || *detail.Artifact.FolderID != "managed-folder-3" {
+			t.Fatalf("build output was not assigned to the managed leaf: %#v", detail.Artifact)
+		}
 	}
 }
 

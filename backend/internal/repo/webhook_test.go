@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,12 +20,16 @@ import (
 
 type webhookStoreStub struct {
 	deliveries []WebhookDelivery
+	err        error
 }
 
 func (store *webhookStoreStub) RecordWebhook(
 	_ context.Context,
 	delivery WebhookDelivery,
 ) (bool, error) {
+	if store.err != nil {
+		return false, store.err
+	}
 	for _, existing := range store.deliveries {
 		if existing.DeliveryID == delivery.DeliveryID {
 			return true, nil
@@ -80,7 +85,8 @@ func TestServiceAcceptsSignedMappedWebhookAndDeduplicates(t *testing.T) {
 	delivery := store.deliveries[0]
 	if !delivery.RequestSync || delivery.Status != "accepted" ||
 		delivery.Ref == nil || *delivery.Ref != "refs/heads/main" ||
-		delivery.BeforeSHA == nil || delivery.AfterSHA == nil {
+		delivery.BeforeSHA == nil || delivery.AfterSHA == nil ||
+		delivery.Workspace == nil || *delivery.Workspace != WorkspaceCode {
 		t.Fatalf("mapped push metadata is incomplete: %#v", delivery)
 	}
 	replayed, err := service.AcceptGitHubWebhook(
@@ -124,6 +130,39 @@ func TestServiceRejectsBadWebhookSignatureBeforePersistence(t *testing.T) {
 	}
 	if len(store.deliveries) != 0 {
 		t.Fatalf("rejected webhook was persisted: %#v", store.deliveries)
+	}
+}
+
+func TestServiceReportsWebhookPersistenceFailure(t *testing.T) {
+	const secret = "webhook-test-secret"
+	body := []byte(`{"zen":"safe"}`)
+	repository := Repository{
+		ID:        "00000000-0000-4000-8000-000000000011",
+		ProjectID: "00000000-0000-4000-8000-000000000010",
+		Provider:  ProviderGitHub,
+		Webhook: Webhook{
+			HookID: "00000000-0000-4000-8000-000000000012",
+		},
+	}
+	expected := errors.New("webhook persistence unavailable")
+	store := &webhookStoreStub{err: expected}
+	var observed error
+	service := Service{
+		Clock: clock.Fixed{Time: time.Now()},
+		Settings: &serviceSettings{resolved: settings.ResolvedSetting{
+			Values: map[string]interface{}{"webhook_secret": secret},
+		}},
+		Store: &serviceStore{value: repository}, Webhooks: store,
+		WebhookError: func(_ context.Context, err error) {
+			observed = err
+		},
+	}
+	_, err := service.AcceptGitHubWebhook(context.Background(), WebhookRequest{
+		Body: body, DeliveryID: "delivery-1", Event: "ping",
+		HookID: repository.Webhook.HookID, Signature: webhookTestSignature(secret, body),
+	})
+	if !errors.Is(err, expected) || !errors.Is(observed, expected) {
+		t.Fatalf("persistence failure err=%v observed=%v", err, observed)
 	}
 }
 

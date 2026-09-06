@@ -101,6 +101,9 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 	commits, _ := aggregateList("commits", func() ([]Commit, error) {
 		return service.Store.ListCommits(ctx, projectID)
 	}, &warnings)
+	commitOperations, _ := aggregateList("commit_operations", func() ([]CommitOperation, error) {
+		return service.Store.ListCommitOperations(ctx, projectID)
+	}, &warnings)
 	builds, _ := aggregateList("builds", func() ([]Build, error) {
 		return service.Store.ListBuilds(ctx, projectID, "")
 	}, &warnings)
@@ -144,7 +147,7 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 	if len(draft.Blocks) > 0 {
 		completion = float64(completed) / float64(len(draft.Blocks))
 	}
-	return Aggregate{Draft: draft, References: references, Commits: commits, Builds: builds, Releases: releases, Templates: templates, ChapterTags: chapterTags, UnreviewedBlocks: unreviewed, SectionCompletion: completion, Warnings: warnings}, nil
+	return Aggregate{Draft: draft, References: references, Commits: commits, CommitOperations: commitOperations, Builds: builds, Releases: releases, Templates: templates, ChapterTags: chapterTags, UnreviewedBlocks: unreviewed, SectionCompletion: completion, Warnings: warnings}, nil
 }
 
 func aggregateList[T any](component string, load func() ([]T, error), warnings *[]AggregateWarning) ([]T, bool) {
@@ -261,14 +264,14 @@ func (service *Service) prepareProjectDraft(ctx context.Context, projectID strin
 	return markdown, blocks, manifest, Bibliography(references), nil
 }
 
-func (service *Service) ReviewBlock(ctx context.Context, caller auth.Identity, projectID, blockID string) (Block, error) {
+func (service *Service) ReviewBlock(ctx context.Context, caller auth.Identity, projectID, blockID, expectedFingerprint string) (Block, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleEdit); err != nil {
 		return Block{}, err
 	}
-	if strings.TrimSpace(blockID) == "" {
+	if strings.TrimSpace(blockID) == "" || !shaPattern.MatchString(expectedFingerprint) {
 		return Block{}, ErrInvalid
 	}
-	return service.Store.ReviewBlock(ctx, projectID, blockID, caller.ActorID())
+	return service.Store.ReviewBlock(ctx, projectID, blockID, expectedFingerprint, caller.ActorID())
 }
 
 func (service *Service) ListPatches(ctx context.Context, caller auth.Identity, projectID, status string) ([]Patch, error) {
@@ -357,6 +360,247 @@ func (service *Service) ListCommits(ctx context.Context, caller auth.Identity, p
 	}
 	return service.Store.ListCommits(ctx, projectID)
 }
+
+type articleCommitSnapshot struct {
+	Draft          Draft
+	ExpectedHead   string
+	Frozen         []Reference
+	Manifest       []byte
+	Manuscript     []byte
+	ReferencesBIB  []byte
+	RequestSHA256  string
+	TiptapSnapshot map[string]interface{}
+}
+
+func (service *Service) prepareCommitSnapshot(
+	ctx context.Context,
+	projectID string,
+	draftRevision int64,
+	message string,
+) (articleCommitSnapshot, error) {
+	if draftRevision < 1 || strings.TrimSpace(message) == "" || len(message) > 500 {
+		return articleCommitSnapshot{}, ErrInvalid
+	}
+	draft, err := service.Store.GetDraft(ctx, projectID)
+	if err != nil {
+		return articleCommitSnapshot{}, err
+	}
+	if draft.DraftRevision != draftRevision {
+		return articleCommitSnapshot{}, ErrConflict
+	}
+	references, err := service.Store.ListReferences(ctx, projectID)
+	if err != nil {
+		return articleCommitSnapshot{}, err
+	}
+	referencesBIB := []byte(Bibliography(references))
+	manifest, err := StableJSON(map[string]interface{}{
+		"schema_version": "1.0", "project_id": projectID,
+		"draft_revision": draft.DraftRevision, "state_vector": draft.StateVector,
+		"frozen_references": references,
+		"editable_files":    []string{"manuscript.md", "references.bib", ".mmdash/article.json"},
+	})
+	if err != nil {
+		return articleCommitSnapshot{}, err
+	}
+	manifest = append(manifest, '\n')
+	head, err := service.Workspace.ResolveHead(ctx, projectID)
+	if err != nil {
+		return articleCommitSnapshot{}, err
+	}
+	tiptap, err := cloneDocument(draft.TiptapJSON)
+	if err != nil {
+		return articleCommitSnapshot{}, err
+	}
+	manuscript := []byte(draft.Markdown)
+	digestInput, err := StableJSON(map[string]interface{}{
+		"draft_revision": draftRevision, "expected_head_sha": head.CommitSHA,
+		"manifest_sha256": hashBytes(manifest), "manuscript_sha256": hashBytes(manuscript),
+		"message": strings.TrimSpace(message), "references_sha256": hashBytes(referencesBIB),
+	})
+	if err != nil {
+		return articleCommitSnapshot{}, err
+	}
+	return articleCommitSnapshot{
+		Draft: draft, ExpectedHead: head.CommitSHA,
+		Frozen: append([]Reference(nil), references...), Manifest: manifest,
+		Manuscript: manuscript, ReferencesBIB: referencesBIB,
+		RequestSHA256: hashBytes(digestInput), TiptapSnapshot: tiptap,
+	}, nil
+}
+
+// QueueCommit freezes the exact collaborative draft and returns before Git
+// network I/O starts. The durable operation can be reclaimed after a crash.
+func (service *Service) QueueCommit(
+	ctx context.Context,
+	caller auth.Identity,
+	projectID string,
+	draftRevision int64,
+	message string,
+	idempotencyKey string,
+) (CommitOperation, error) {
+	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleEdit); err != nil {
+		return CommitOperation{}, err
+	}
+	snapshot, err := service.prepareCommitSnapshot(ctx, projectID, draftRevision, message)
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = "article-commit:" + projectID + ":" + fmt.Sprint(draftRevision) + ":" + snapshot.RequestSHA256
+	}
+	if len(idempotencyKey) > 200 {
+		return CommitOperation{}, ErrInvalid
+	}
+	operationID, err := service.Generator.New()
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	commitID, err := service.Generator.New()
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	now := service.now()
+	operation := CommitOperation{
+		OperationID: operationID, CommitID: commitID, ProjectID: projectID,
+		OperationKind:  "commit",
+		IdempotencyKey: idempotencyKey, RequestSHA256: snapshot.RequestSHA256,
+		DraftRevision: draftRevision, ExpectedHeadSHA: snapshot.ExpectedHead,
+		StateVector: snapshot.Draft.StateVector, YjsUpdate: snapshot.Draft.YjsUpdate,
+		TiptapJSON: snapshot.TiptapSnapshot, Manuscript: string(snapshot.Manuscript),
+		ReferencesBIB: string(snapshot.ReferencesBIB), ManifestBytes: snapshot.Manifest,
+		FrozenReferences: snapshot.Frozen, Message: strings.TrimSpace(message),
+		ManuscriptSHA256: hashBytes(snapshot.Manuscript),
+		ReferencesSHA256: hashBytes(snapshot.ReferencesBIB),
+		ManifestSHA256:   hashBytes(snapshot.Manifest), Status: "queued", Stage: "queued",
+		MaxAttempts: 10, NextAttemptAt: now, CreatedBy: caller.ActorID(),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	created, _, err := service.Store.CreateCommitOperation(ctx, operation)
+	return created, err
+}
+
+// QueuePublication freezes the commit input and publication parameters before
+// any Git or build work starts. The same durable operation resumes both steps.
+func (service *Service) QueuePublication(
+	ctx context.Context,
+	caller auth.Identity,
+	projectID string,
+	input PublicationInput,
+) (CommitOperation, error) {
+	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleRelease); err != nil {
+		return CommitOperation{}, err
+	}
+	input.Message = strings.TrimSpace(input.Message)
+	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+	input.Tag = strings.TrimSpace(input.Tag)
+	input.Title = strings.TrimSpace(input.Title)
+	if !tagPattern.MatchString(input.Tag) || input.Title == "" || input.Message == "" ||
+		input.IdempotencyKey == "" || len(input.IdempotencyKey) > 180 {
+		return CommitOperation{}, ErrInvalid
+	}
+	template, err := service.Store.GetTemplate(ctx, projectID, input.TemplateID)
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	if template.Status != "ready" {
+		return CommitOperation{}, ErrNotReady
+	}
+	if _, err = service.Store.GetPublication(ctx, projectID, input.IdempotencyKey); err == nil {
+		return CommitOperation{}, ErrConflict
+	} else if !errors.Is(err, ErrNotFound) {
+		return CommitOperation{}, err
+	}
+	snapshot, err := service.prepareCommitSnapshot(
+		ctx, projectID, input.DraftRevision, input.Message,
+	)
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	digest, err := StableJSON(map[string]interface{}{
+		"bibliography_tool":     input.BibliographyTool,
+		"commit_request_sha256": snapshot.RequestSHA256,
+		"engine":                input.Engine, "notes": input.Notes,
+		"publication_key": input.IdempotencyKey, "tag": input.Tag,
+		"template_id": input.TemplateID, "title": input.Title,
+	})
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	operationID, err := service.Generator.New()
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	commitID, err := service.Generator.New()
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	publicationID, err := service.Generator.New()
+	if err != nil {
+		return CommitOperation{}, err
+	}
+	now := service.now()
+	operation := CommitOperation{
+		OperationID: operationID, CommitID: commitID, ProjectID: projectID,
+		OperationKind: "publication", IdempotencyKey: "publication:" + input.IdempotencyKey,
+		PublicationID: publicationID, PublicationKey: input.IdempotencyKey,
+		TemplateID: input.TemplateID, Engine: input.Engine,
+		BibliographyTool: input.BibliographyTool, Tag: input.Tag,
+		Title: input.Title, Notes: input.Notes, RequestSHA256: hashBytes(digest),
+		DraftRevision: input.DraftRevision, ExpectedHeadSHA: snapshot.ExpectedHead,
+		StateVector: snapshot.Draft.StateVector, YjsUpdate: snapshot.Draft.YjsUpdate,
+		TiptapJSON: snapshot.TiptapSnapshot, Manuscript: string(snapshot.Manuscript),
+		ReferencesBIB: string(snapshot.ReferencesBIB), ManifestBytes: snapshot.Manifest,
+		FrozenReferences: snapshot.Frozen, Message: input.Message,
+		ManuscriptSHA256: hashBytes(snapshot.Manuscript),
+		ReferencesSHA256: hashBytes(snapshot.ReferencesBIB),
+		ManifestSHA256:   hashBytes(snapshot.Manifest), Status: "queued", Stage: "queued",
+		MaxAttempts: 10, NextAttemptAt: now, CreatedBy: caller.ActorID(),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	created, _, err := service.Store.CreateCommitOperation(ctx, operation)
+	return created, err
+}
+
+func (service *Service) createPublicationFromOperation(
+	ctx context.Context,
+	operation CommitOperation,
+	commit Commit,
+) error {
+	build, jobInput, err := service.prepareBuild(
+		ctx, operation.CreatedBy, operation.ProjectID, BuildFormal,
+		commit.CommitID, nil, operation.TemplateID, operation.Engine,
+		operation.BibliographyTool, "publication:"+operation.PublicationKey,
+	)
+	if err != nil {
+		return err
+	}
+	now := service.now()
+	publication := Publication{
+		PublicationID: operation.PublicationID, ProjectID: operation.ProjectID,
+		CommitID: commit.CommitID, BuildID: build.BuildID, Status: "building",
+		Tag: operation.Tag, Title: operation.Title, Notes: operation.Notes,
+		CreatedBy: operation.CreatedBy, CreatedAt: now, UpdatedAt: now,
+		IdempotencyKey: operation.PublicationKey,
+	}
+	_, _, err = service.Store.CreatePublicationBuild(
+		ctx, publication, build, jobInput, service.JobWriter,
+	)
+	return err
+}
+
+func (service *Service) GetCommitOperation(
+	ctx context.Context,
+	caller auth.Identity,
+	projectID string,
+	id string,
+) (CommitOperation, error) {
+	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleRead); err != nil {
+		return CommitOperation{}, err
+	}
+	return service.Store.GetCommitOperation(ctx, projectID, id)
+}
+
 func (service *Service) Commit(ctx context.Context, caller auth.Identity, projectID string, draftRevision int64, message string) (Commit, error) {
 	if err := service.authorize(ctx, caller, projectID, project.PermissionArticleEdit); err != nil {
 		return Commit{}, err
@@ -892,7 +1136,7 @@ func (service *Service) WorkerOutput(ctx context.Context, caller auth.Identity, 
 	if !rolePattern.MatchString(role) || !shaPattern.MatchString(strings.ToLower(expectedSHA)) || expectedSize < 1 || expectedSize > maxOutputBytes || !safeFilename(filename) {
 		return BuildOutput{}, ErrInvalid
 	}
-	artifactID, versionID, err := service.Artifacts.ArchiveArticleBuildOutput(ctx, job.ProjectID, build.BuildID, build.CreatedBy, role, filename, mimeType, expectedSHA, expectedSize, input)
+	artifactID, versionID, err := service.Artifacts.ArchiveArticleBuildOutput(ctx, job.ProjectID, build.BuildID, build.CreatedBy, articleBuildArtifactFolder(build), role, filename, mimeType, expectedSHA, expectedSize, input)
 	if err != nil {
 		return BuildOutput{}, err
 	}

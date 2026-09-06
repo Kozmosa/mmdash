@@ -45,6 +45,7 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/progress"
 	"github.com/mmdash/mmdash/backend/internal/project"
 	"github.com/mmdash/mmdash/backend/internal/repo"
+	"github.com/mmdash/mmdash/backend/internal/repo/egress"
 	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
 	"github.com/mmdash/mmdash/backend/internal/repo/provider"
 	"github.com/mmdash/mmdash/backend/internal/settings"
@@ -130,6 +131,10 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	defer db.Close()
+	webhookSchemaChecker := repo.WebhookSchemaChecker{DB: db}
+	if err := webhookSchemaChecker.Check(startupContext); err != nil {
+		return fmt.Errorf("verify Repo webhook schema: %w", err)
+	}
 
 	storage, err := artifact.NewBlobStore(
 		processConfig.Artifact,
@@ -430,6 +435,13 @@ func run(logger *logging.Logger) error {
 	if err != nil {
 		return fmt.Errorf("initialize Repo storage: %w", err)
 	}
+	repoEgress, err := egress.Parse(
+		processConfig.Repo.GitHubProxyURL,
+		processConfig.Repo.GitHubNoProxy,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Repo GitHub egress: %w", err)
+	}
 	gitOutputBytes := int(processConfig.Repo.MaxTextBytes)
 	if gitOutputBytes < 16*1024*1024 {
 		gitOutputBytes = 16 * 1024 * 1024
@@ -449,6 +461,7 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := repoProviders.Register("github", provider.GitHub{
+		Client: repoEgress.HTTPClient(), Egress: repoEgress,
 		Git: gitClient, RuntimeRoot: repoStorage.Root(),
 		UserAgent: "mmdash-core/" + processConfig.Version,
 	}); err != nil {
@@ -571,6 +584,7 @@ func run(logger *logging.Logger) error {
 	repoRuntime := repo.Runtime{
 		Clock: systemClock, CloneTimeout: processConfig.Repo.CloneTimeout,
 		Git: gitClient, Storage: repoStorage,
+		WriteTimeout: processConfig.Repo.WriteTimeout,
 	}
 	repoWriter := &repo.WorkspaceWriter{
 		Clock: systemClock, Git: gitClient,
@@ -593,8 +607,15 @@ func run(logger *logging.Logger) error {
 		},
 		Settings: settingsService,
 		Storage:  repoStorage,
-		Store:    repoStore, WriteLease: processConfig.Repo.SyncLease,
-		Webhooks: repoStore, Writer: repoWriter,
+		Store:    repoStore, WriteLease: processConfig.Repo.CommitLease,
+		Webhooks: repoStore,
+		WebhookError: func(ctx context.Context, webhookErr error) {
+			logger.Error("repo.webhook.persist.failed", map[string]interface{}{
+				"error":      webhookErr.Error(),
+				"request_id": requestctx.RequestID(ctx),
+			})
+		},
+		Writer: repoWriter,
 	}
 	syncOwnerID, err := idGenerator.New()
 	if err != nil {
@@ -606,16 +627,29 @@ func run(logger *logging.Logger) error {
 		Lease:     processConfig.Repo.SyncLease,
 		Metrics:   metricRegistry,
 		OnError: func(syncErr error) {
+			var failure *repo.SyncFailureError
+			if errors.As(syncErr, &failure) {
+				logger.Error("repo.sync.failed", map[string]interface{}{
+					"duration_ms":   failure.Duration.Milliseconds(),
+					"error_code":    failure.Code,
+					"operation":     "sync",
+					"provider":      string(failure.Provider),
+					"repository_id": failure.RepositoryID,
+					"retryable":     failure.Retryable,
+				})
+				return
+			}
 			logger.Error("repo.sync.failed", map[string]interface{}{
 				"error": syncErr.Error(),
 			})
 		},
-		Owner:     "core-" + syncOwnerID,
-		Poll:      processConfig.Repo.SyncPollInterval,
-		Providers: repoProviders,
-		Runtime:   repoRuntime,
-		Settings:  settingsService,
-		Store:     repoStore,
+		Owner:             "core-" + syncOwnerID,
+		Poll:              processConfig.Repo.SyncPollInterval,
+		ReconcileInterval: processConfig.Repo.ReconcileInterval,
+		Providers:         repoProviders,
+		Runtime:           repoRuntime,
+		Settings:          settingsService,
+		Store:             repoStore,
 	}
 	artifactService.Git = artifact.RepoGitContentReader{Service: &repoService}
 	artifactModule.Service = artifactService
@@ -630,6 +664,21 @@ func run(logger *logging.Logger) error {
 		Generator: idGenerator, HTTPClient: zoteroHTTPClient, JobAccess: jobService,
 		JobWriter: jobStore, Settings: &settingsService, Store: articleStore,
 		Workspace: repo.ArticleWorkspaceService{Reader: repoService.Reads, Repositories: repoStore, Service: &repoService},
+	}
+	articleCommitOwnerID, err := idGenerator.New()
+	if err != nil {
+		return fmt.Errorf("create Article commit operation owner identity: %w", err)
+	}
+	articleCommitCoordinator := article.CommitOperationCoordinator{
+		Clock: systemClock, Lease: processConfig.Repo.CommitLease,
+		Limit: processConfig.Repo.MaxConcurrentGit,
+		OnError: func(commitErr error) {
+			logger.Error("article.commit.operation.failed", map[string]interface{}{
+				"error": commitErr.Error(),
+			})
+		},
+		Owner: "core-article-commit-" + articleCommitOwnerID,
+		Poll:  time.Second, Service: articleService, Store: articleStore,
 	}
 	jobStore.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService, articleService}
 	jobService.Hooks = []jobs.LifecycleHook{artifactService, *modelService, *progressService, articleService}
@@ -987,6 +1036,7 @@ func run(logger *logging.Logger) error {
 		Health: health.Handler{
 			Checkers: []health.Checker{
 				database.Checker{DB: db},
+				webhookSchemaChecker,
 				storage,
 				repo.GitChecker{Client: gitClient, Directory: repoStorage.Root()},
 				repo.StorageChecker{Storage: repoStorage},
@@ -1081,6 +1131,7 @@ func run(logger *logging.Logger) error {
 		return fmt.Errorf("reconcile Repo worktrees: %w", err)
 	}
 	go repoCoordinator.Run(ctx)
+	go articleCommitCoordinator.Run(ctx)
 	go (repo.CheckoutReaper{
 		Clock: systemClock, Interval: time.Minute, Limit: 50,
 		OnError: func(checkoutErr error) {

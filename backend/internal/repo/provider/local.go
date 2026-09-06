@@ -14,13 +14,11 @@ type ServerExisting struct {
 }
 
 func (provider ServerExisting) Test(ctx context.Context, config Config) (Connection, error) {
-	if len(provider.AllowedRoots) == 0 {
-		return Connection{}, ErrUnavailable
-	}
-	source, err := gitcli.ResolveLocalSource(config.RemoteURL, provider.AllowedRoots)
+	connection, err := provider.Resolve(ctx, config)
 	if err != nil {
-		return Connection{}, ErrInvalidConfig
+		return Connection{}, err
 	}
+	source := connection.FetchURL
 	defaultResult, err := provider.Git.Run(ctx, gitcli.Command{
 		Args:      []string{"symbolic-ref", "--quiet", "--short", "HEAD"},
 		Directory: source,
@@ -51,10 +49,26 @@ func (provider ServerExisting) Test(ctx context.Context, config Config) (Connect
 	if err != nil {
 		return Connection{}, ErrRemoteNotFound
 	}
+	connection.Branches = branches
+	connection.DefaultBranch = defaultBranch
+	return connection, nil
+}
+
+func (provider ServerExisting) Resolve(
+	_ context.Context,
+	config Config,
+) (Connection, error) {
+	if len(provider.AllowedRoots) == 0 {
+		return Connection{}, ErrUnavailable
+	}
+	source, err := gitcli.ResolveLocalSource(config.RemoteURL, provider.AllowedRoots)
+	if err != nil {
+		return Connection{}, ErrInvalidConfig
+	}
 	return Connection{
-		Branches: branches, CanonicalRemoteURL: source,
-		DefaultBranch: defaultBranch, DisplayName: "Server repository",
-		FetchURL: source, Provider: "server_existing",
+		Branches: map[string]string{}, CanonicalRemoteURL: source,
+		DisplayName: "Server repository",
+		FetchURL:    source, Provider: "server_existing",
 	}, nil
 }
 

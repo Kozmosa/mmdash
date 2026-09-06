@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,8 @@ type articleTestStore struct {
 	createdCommit Commit
 	draft         Draft
 	outputs       []BuildOutput
+	operation     CommitOperation
+	operations    []CommitOperation
 	persisted     PersistDraftInput
 	publications  []Publication
 	references    []Reference
@@ -67,6 +70,9 @@ func (store *aggregateTestStore) ListReferences(context.Context, string) ([]Refe
 func (store *aggregateTestStore) ListCommits(context.Context, string) ([]Commit, error) {
 	return store.commits, store.listErrors["commits"]
 }
+func (store *aggregateTestStore) ListCommitOperations(context.Context, string) ([]CommitOperation, error) {
+	return store.operations, store.listErrors["commit_operations"]
+}
 func (store *aggregateTestStore) ListBuilds(context.Context, string, string) ([]Build, error) {
 	return store.builds, store.listErrors["builds"]
 }
@@ -91,11 +97,25 @@ func (store *articleTestStore) PersistDraft(_ context.Context, projectID, _ stri
 	store.draft = Draft{ProjectID: projectID, DraftRevision: input.ExpectedRevision + 1, StateVector: input.StateVector, YjsUpdate: input.YjsUpdate, TiptapJSON: input.TiptapJSON, Markdown: markdown, Blocks: blocks, Manifest: manifest, ReferencesBIB: references}
 	return store.draft, nil
 }
-func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID, actorID string) (Block, error) {
+func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID, expectedFingerprint, actorID string) (Block, error) {
 	for index := range store.draft.Blocks {
 		if store.draft.Blocks[index].BlockID == blockID {
-			store.draft.Blocks[index].Tag = "reviewed"
-			store.draft.Blocks[index].Provenance = map[string]interface{}{"reviewed_by": actorID}
+			if store.draft.Blocks[index].ContentFingerprint != expectedFingerprint {
+				return Block{}, ErrBlockChanged
+			}
+			block := &store.draft.Blocks[index]
+			if block.Tag == "reviewed" {
+				block.Tag = reviewSourceTag(block.Provenance["reviewed_from_tag"])
+				delete(block.Provenance, "reviewed_by")
+				delete(block.Provenance, "reviewed_from_tag")
+			} else {
+				if block.Provenance == nil {
+					block.Provenance = map[string]interface{}{}
+				}
+				block.Provenance["reviewed_from_tag"] = reviewSourceTag(block.Tag)
+				block.Tag = "reviewed"
+				block.Provenance["reviewed_by"] = actorID
+			}
 			return store.draft.Blocks[index], nil
 		}
 	}
@@ -105,6 +125,13 @@ func (store *articleTestStore) CreateCommit(_ context.Context, item Commit) (Com
 	store.createdCommit = item
 	store.commit = item
 	return item, true, nil
+}
+func (store *articleTestStore) CreateCommitOperation(_ context.Context, item CommitOperation) (CommitOperation, bool, error) {
+	store.operation = item
+	return item, true, nil
+}
+func (store *articleTestStore) ListCommitOperations(context.Context, string) ([]CommitOperation, error) {
+	return store.operations, nil
 }
 func (store *articleTestStore) GetCommit(context.Context, string, string) (Commit, error) {
 	if store.commit.CommitID == "" {
@@ -237,6 +264,7 @@ func (access articleTestJobAccess) ClaimedWorkerJob(context.Context, auth.Identi
 
 type articleTestArtifacts struct {
 	archived      []BuildOutput
+	folderPaths   [][]string
 	resourceCalls [][2]string
 }
 
@@ -257,7 +285,7 @@ func (artifacts *articleTestArtifacts) ArticleResourceGrant(_ context.Context, _
 	artifacts.resourceCalls = append(artifacts.resourceCalls, [2]string{artifactID, versionID})
 	return map[string]interface{}{"method": "GET", "url": "https://grant.test/resource", "headers": map[string]string{"x-job": "scoped"}, "expires_at": "2026-08-13T01:00:00Z", "filename": "figure.png", "mime_type": "image/png", "size_bytes": int64(12), "sha256": strings.Repeat("a", 64)}, nil
 }
-func (artifacts *articleTestArtifacts) ArchiveArticleBuildOutput(_ context.Context, _, buildID, _, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+func (artifacts *articleTestArtifacts) ArchiveArticleBuildOutput(_ context.Context, _, buildID, _ string, folderPath []string, role, filename, mimeType, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
 	contents, err := io.ReadAll(input)
 	if err != nil {
 		return "", "", err
@@ -265,6 +293,7 @@ func (artifacts *articleTestArtifacts) ArchiveArticleBuildOutput(_ context.Conte
 	if int64(len(contents)) != expectedSize || hashBytes(contents) != expectedSHA {
 		return "", "", errors.New("output integrity mismatch")
 	}
+	artifacts.folderPaths = append(artifacts.folderPaths, append([]string(nil), folderPath...))
 	artifacts.archived = append(artifacts.archived, BuildOutput{Role: role, Filename: filename, MIMEType: mimeType, SHA256: expectedSHA, SizeBytes: expectedSize})
 	return "artifact-" + buildID + "-" + role, "version-" + role, nil
 }
@@ -303,6 +332,71 @@ func TestCommitPinsOneDraftRevisionAndOnlyThreeEditableFiles(t *testing.T) {
 	}
 }
 
+func TestQueueCommitFreezesDraftWithoutGitNetworkIO(t *testing.T) {
+	store := &articleTestStore{
+		draft: draftAt(4),
+		references: []Reference{{
+			CitationKey: "ref", ReferenceType: "model_snapshot",
+			SourceObjectID: "model", SourceVersionID: "v3", Title: "Model",
+		}},
+	}
+	workspace := &articleTestWorkspace{}
+	service := testService(store, workspace)
+
+	operation, err := service.QueueCommit(
+		context.Background(), human(), "project-1", 4, "checkpoint", "request-1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspace.commits) != 0 {
+		t.Fatal("queueing performed Git network I/O")
+	}
+	if operation.Status != "queued" || operation.Stage != "queued" ||
+		operation.IdempotencyKey != "request-1" || operation.MaxAttempts != 10 ||
+		operation.ExpectedHeadSHA != strings.Repeat("a", 40) {
+		t.Fatalf("unexpected operation: %#v", operation)
+	}
+	if operation.Manuscript != "# Paper\n" || len(operation.FrozenReferences) != 1 ||
+		len(operation.ManifestBytes) == 0 || operation.RequestSHA256 == "" {
+		t.Fatalf("operation did not freeze the draft: %#v", operation)
+	}
+	store.draft.TiptapJSON["type"] = "changed-after-queue"
+	if store.operation.TiptapJSON["type"] == "changed-after-queue" {
+		t.Fatal("queued operation aliases the mutable draft")
+	}
+}
+
+func TestQueuePublicationFreezesCommitAndBuildIntentWithoutGitNetworkIO(t *testing.T) {
+	store := &articleTestStore{
+		draft: draftAt(4),
+		template: Template{
+			TemplateID: "template-1", VersionID: "version-1",
+			ArtifactID: "artifact-1", Status: "ready",
+		},
+	}
+	workspace := &articleTestWorkspace{}
+	service := testService(store, workspace)
+	operation, err := service.QueuePublication(
+		context.Background(), human(), "project-1", PublicationInput{
+			DraftRevision: 4, Message: "publish", TemplateID: "template-1",
+			Engine: "auto", BibliographyTool: "auto", Tag: "v1.0.0",
+			Title: "Paper", Notes: "accepted", IdempotencyKey: "publish-1",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspace.commits) != 0 || len(store.builds) != 0 {
+		t.Fatalf("queueing performed Git or build work: %#v %#v", workspace.commits, store.builds)
+	}
+	if operation.OperationKind != "publication" || operation.PublicationID == "" ||
+		operation.PublicationKey != "publish-1" || operation.TemplateID != "template-1" ||
+		operation.Tag != "v1.0.0" || operation.Status != "queued" {
+		t.Fatalf("publication intent was not frozen: %#v", operation)
+	}
+}
+
 func TestRestoreCommitCreatesNewDraftFromFrozenYjsSnapshot(t *testing.T) {
 	snapshot := draftAt(2)
 	store := &articleTestStore{draft: draftAt(9), commit: Commit{CommitID: "commit-1", CommitSHA: strings.Repeat("c", 40), StateVector: snapshot.StateVector, TiptapJSON: snapshot.TiptapJSON, YjsUpdate: snapshot.YjsUpdate}}
@@ -332,14 +426,19 @@ func TestAcceptedPatchPersistsDraftAndReviewAtomicallyThroughStore(t *testing.T)
 }
 
 func TestReviewBlockIsExplicitAndPermissionChecked(t *testing.T) {
-	store := &articleTestStore{draft: Draft{Blocks: []Block{{BlockID: "block-1", Tag: "human_draft"}}}}
+	fingerprint := strings.Repeat("a", 64)
+	store := &articleTestStore{draft: Draft{Blocks: []Block{{BlockID: "block-1", ContentFingerprint: fingerprint, Tag: "human_draft"}}}}
 	service := testService(store, &articleTestWorkspace{})
-	block, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1")
+	block, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint)
 	if err != nil || block.Tag != "reviewed" || block.Provenance["reviewed_by"] != "user-1" {
 		t.Fatalf("review was not persisted with actor provenance: %#v %v", block, err)
 	}
+	block, err = service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint)
+	if err != nil || block.Tag != "human_draft" || block.Provenance["reviewed_by"] != nil {
+		t.Fatalf("review withdrawal did not restore the previous tag: %#v %v", block, err)
+	}
 	service.Access = articleTestAccess{denied: project.PermissionArticleEdit}
-	if _, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1"); !errors.Is(err, ErrForbidden) {
+	if _, err := service.ReviewBlock(context.Background(), human(), "project-1", "block-1", fingerprint); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("review bypassed article edit permission: %v", err)
 	}
 }
@@ -447,7 +546,9 @@ func TestArticlePermissionsAndWorkerOutputBoundary(t *testing.T) {
 
 	contents := []byte("%PDF-1.7\n")
 	digest := hashBytes(contents)
-	store.builds = []Build{{BuildID: "build-1", ProjectID: "project-1", BuildKind: BuildFormal, Status: BuildRunning, JobID: "job-1", TemplateID: "template-1", CreatedBy: "user-1"}}
+	commitSHA := strings.Repeat("c", 40)
+	createdAt := time.Date(2026, time.August, 13, 1, 2, 3, 456789000, time.UTC)
+	store.builds = []Build{{BuildID: "build-1", ProjectID: "project-1", BuildKind: BuildFormal, Status: BuildRunning, JobID: "job-1", TemplateID: "template-1", CreatedBy: "user-1", CommitSHA: commitSHA, CreatedAt: createdAt}}
 	artifacts := &articleTestArtifacts{}
 	service.Artifacts = artifacts
 	service.JobAccess = articleTestJobAccess{job: jobs.Job{ID: "job-1", JobType: JobTypeBuild, ProjectID: "project-1", Payload: map[string]interface{}{"build_id": "build-1"}}}
@@ -467,6 +568,10 @@ func TestArticlePermissionsAndWorkerOutputBoundary(t *testing.T) {
 	}
 	if output.ArtifactID == "" || output.VersionID == "" || len(artifacts.archived) != 1 || len(store.outputs) != 1 {
 		t.Fatalf("Worker output bypassed immutable Artifact registration: %#v %#v", output, artifacts.archived)
+	}
+	wantFolder := []string{"article", "build", commitSHA + "_20260813T010203.456789Z"}
+	if len(artifacts.folderPaths) != 1 || !reflect.DeepEqual(artifacts.folderPaths[0], wantFolder) {
+		t.Fatalf("Worker output used the wrong Artifact folder: %#v", artifacts.folderPaths)
 	}
 	if _, err = service.WorkerOutput(context.Background(), human(), "job-1", "pdf", "../paper.pdf", "application/pdf", digest, int64(len(contents)), bytes.NewReader(contents)); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unsafe Worker output filename was accepted: %v", err)
@@ -584,17 +689,42 @@ func TestEnsureDefaultTemplateReplacesLegacyBrowserCopiesInAggregate(t *testing.
 	}
 }
 
+func TestAggregateIncludesCommitOperationStatus(t *testing.T) {
+	store := &aggregateTestStore{
+		articleTestStore: &articleTestStore{
+			draft: draftAt(3),
+			operations: []CommitOperation{{
+				OperationID: "operation-1", ProjectID: "project-1",
+				OperationKind: "publication", DraftRevision: 3,
+				Status: "running", Stage: "committing",
+			}},
+		},
+		listErrors: map[string]error{
+			"chapter_tags": errors.New("chapter tags unavailable"),
+			"templates":    errors.New("templates unavailable"),
+		},
+	}
+	aggregate, err := testService(store, &articleTestWorkspace{}).Aggregate(context.Background(), human(), "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aggregate.CommitOperations) != 1 || aggregate.CommitOperations[0].OperationID != "operation-1" || aggregate.CommitOperations[0].Stage != "committing" {
+		t.Fatalf("commit operation status was not included in aggregate: %#v", aggregate.CommitOperations)
+	}
+}
+
 func TestAggregateKeepsDraftAvailableWhenSecondaryComponentsFail(t *testing.T) {
 	internal := errors.New("database connection detail must stay private")
 	store := &aggregateTestStore{
 		articleTestStore: &articleTestStore{draft: draftAt(3)},
 		listErrors: map[string]error{
-			"builds":       internal,
-			"chapter_tags": internal,
-			"commits":      internal,
-			"references":   internal,
-			"releases":     internal,
-			"templates":    internal,
+			"builds":            internal,
+			"chapter_tags":      internal,
+			"commits":           internal,
+			"commit_operations": internal,
+			"references":        internal,
+			"releases":          internal,
+			"templates":         internal,
 		},
 	}
 	service := testService(store, &articleTestWorkspace{})
@@ -606,10 +736,10 @@ func TestAggregateKeepsDraftAvailableWhenSecondaryComponentsFail(t *testing.T) {
 	if aggregate.Draft.DraftRevision != 3 {
 		t.Fatalf("usable draft was not returned: %#v", aggregate.Draft)
 	}
-	if aggregate.References == nil || aggregate.Commits == nil || aggregate.Builds == nil || aggregate.Releases == nil || aggregate.Templates == nil || aggregate.ChapterTags == nil {
+	if aggregate.References == nil || aggregate.Commits == nil || aggregate.CommitOperations == nil || aggregate.Builds == nil || aggregate.Releases == nil || aggregate.Templates == nil || aggregate.ChapterTags == nil {
 		t.Fatalf("degraded lists must serialize as arrays: %#v", aggregate)
 	}
-	wantComponents := []string{"references", "commits", "builds", "releases", "templates", "chapter_tags"}
+	wantComponents := []string{"references", "commits", "commit_operations", "builds", "releases", "templates", "chapter_tags"}
 	if len(aggregate.Warnings) != len(wantComponents) {
 		t.Fatalf("unexpected aggregate warnings: %#v", aggregate.Warnings)
 	}

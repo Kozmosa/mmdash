@@ -158,7 +158,7 @@ func (store *serviceStore) Disconnect(
 }
 
 func (*serviceStore) FailSync(
-	context.Context, string, string, string, string, time.Time, time.Time,
+	context.Context, string, SyncClaim, SyncFailure, time.Time, time.Time,
 ) error {
 	return nil
 }
@@ -234,6 +234,22 @@ func (store *serviceStore) ReleaseReplacement(
 
 func (*serviceStore) RenewSyncLease(context.Context, string, string, time.Time) error {
 	return nil
+}
+
+func (*serviceStore) RequestPeriodicSyncs(
+	context.Context, time.Time, time.Duration, int,
+) (int, error) {
+	return 0, nil
+}
+
+func (store *serviceStore) RequestWorkspaceSyncSource(
+	_ context.Context,
+	_ string,
+	_ WorkspaceKind,
+	_ time.Time,
+	_ string,
+) (Repository, error) {
+	return store.value, nil
 }
 
 func (store *serviceStore) RequestSync(

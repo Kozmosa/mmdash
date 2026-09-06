@@ -19,6 +19,7 @@ import {
   type Schema,
 } from "@tiptap/pm/model";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
+import { TableMap } from "@tiptap/pm/tables";
 import UniqueID from "@tiptap/extension-unique-id";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useQuery } from "@tanstack/react-query";
@@ -39,6 +40,7 @@ import {
   Sigma,
   Table2,
   Undo2,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -91,6 +93,7 @@ import {
   ArticleNodeMenu,
   type ArticleImageAlignment,
   type ArticleNodeMenuKind,
+  type TableAction,
 } from "./article-node-menu";
 import {
   articleImageGroupContext,
@@ -104,6 +107,7 @@ import {
   ungroupArticleImages,
   type ArticleImageGroupAction,
 } from "./article-image-group";
+import { articleBlockContentFingerprint } from "./article-block-fingerprint";
 import {
   ArticleTableEdgeControls,
   type ArticleTableEdgeAction,
@@ -134,6 +138,70 @@ export const articleOutlineNavigateEvent = "mmdash:article-outline-navigate";
 export const articleOutlineActiveEvent = "mmdash:article-outline-active";
 export const articleInsertArtifactIntoGroupEvent =
   "mmdash:article-insert-artifact-into-group";
+
+type TableCellRecord = {
+  colspan: number;
+  node: ProseMirrorNode;
+  startCol: number;
+};
+
+const articleTableDefaultCellWidth = 100;
+const articleTableMinimumCellWidth = 25;
+
+function articleTableCellWidth(
+  cell: TableCellRecord,
+  offset: number,
+  fallback: number,
+) {
+  const width = cell.node.attrs.colwidth?.[offset];
+  return typeof width === "number" && Number.isFinite(width) && width > 0
+    ? width
+    : fallback;
+}
+
+export function equalizedArticleTableCellWidths(
+  table: ProseMirrorNode,
+): Map<number, number[]> {
+  const map = TableMap.get(table);
+  const cells = new Map<number, TableCellRecord>();
+  for (let row = 0; row < map.height; row += 1) {
+    for (let col = 0; col < map.width; col += 1) {
+      const position = map.map[row * map.width + col];
+      if (cells.has(position)) continue;
+      const node = table.nodeAt(position);
+      if (!node) continue;
+      cells.set(position, {
+        colspan: Math.max(1, Number(node.attrs.colspan ?? 1)),
+        node,
+        startCol: col,
+      });
+    }
+  }
+
+  if (map.width === 0 || map.height === 0 || cells.size === 0) return new Map();
+
+  const columnWidths = Array.from({ length: map.width }, (_, col) => {
+    const widths = [...cells.values()]
+      .filter(
+        (cell) => col >= cell.startCol && col < cell.startCol + cell.colspan,
+      )
+      .map((cell) => articleTableCellWidth(cell, col - cell.startCol, 0))
+      .filter((width) => width > 0);
+    return widths.length
+      ? widths.reduce((sum, width) => sum + width, 0) / widths.length
+      : articleTableDefaultCellWidth;
+  });
+  const result = new Map<number, number[]>();
+
+  const width = Math.max(
+    articleTableMinimumCellWidth,
+    Math.round(columnWidths.reduce((sum, value) => sum + value, 0) / map.width),
+  );
+  for (const [position, cell] of cells) {
+    result.set(position, Array(cell.colspan).fill(width));
+  }
+  return result;
+}
 export const articleUploadImageIntoGroupEvent =
   "mmdash:article-upload-image-into-group";
 
@@ -287,6 +355,22 @@ export function parseArticleArtifactDrop(raw: string): ArticleArtifactDrop {
     throw new Error("Artifact 拖拽数据不完整");
   }
   return value as ArticleArtifactDrop;
+}
+
+export function droppedLocalImage(
+  dataTransfer: Pick<DataTransfer, "files" | "types">,
+): File | undefined {
+  const types = Array.from(dataTransfer.types);
+  if (
+    types.includes(articleArtifactMime) ||
+    types.includes(articleZoteroMime) ||
+    types.includes("application/vnd.mmdash.image-group-item")
+  ) {
+    return undefined;
+  }
+  return Array.from(dataTransfer.files).find((item) =>
+    item.type.startsWith("image/"),
+  );
 }
 
 export type ArticleZoteroDrop = {
@@ -534,7 +618,7 @@ export function ArticleEditor({
   ) => Promise<{ reference_id: string }>;
   onOpenCommit?: () => void;
   onOutlineChange: (items: ArticleOutlineItem[]) => void;
-  onReviewBlock: (blockId: string) => Promise<void>;
+  onReviewBlock: (blockId: string, contentFingerprint: string) => Promise<void>;
   onReviewChapter: (chapterTagId: string) => Promise<void>;
   onToggleImmersive?: () => void;
   projectId: string;
@@ -881,6 +965,11 @@ export function ArticleEditor({
     },
     [onInsertArtifact, openMathEditor, projectId, provider],
   );
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.commands.updateUser(collaborator);
+  }, [collaborator, editor]);
 
   function blockAt(position: number) {
     if (!editor) return;
@@ -1673,14 +1762,17 @@ export function ArticleEditor({
           projectId,
           "article",
         );
-        const uploadDetail = await new MultipartUploadTask({
+        const uploadTask = new MultipartUploadTask({
           file: detail.file,
           folderId: articleFolder.folder_id,
           kind: "attachment",
           name: detail.file.name,
           projectId,
           tags: ["article-image"],
-        }).start();
+        });
+        const uploadDetail = await uploadTask.start();
+        const placementMessage =
+          uploadTask.getSnapshot().placementError?.message;
         const version = uploadDetail.current_version;
         if (!version || version.status !== "available") {
           throw new Error("图片上传完成，但不可变版本尚不可用");
@@ -1714,7 +1806,9 @@ export function ArticleEditor({
             node,
           );
           if (inserted) {
-            setDropError(`图片 ${detail.file.name} 已加入图片组合`);
+            setDropError(
+              placementMessage ?? `图片 ${detail.file.name} 已加入图片组合`,
+            );
             return;
           }
         }
@@ -1740,7 +1834,9 @@ export function ArticleEditor({
                 ),
               );
               editor.view.focus();
-              setDropError(`已创建图片组合并加入 ${detail.file.name}`);
+              setDropError(
+                placementMessage ?? `已创建图片组合并加入 ${detail.file.name}`,
+              );
               return;
             }
           }
@@ -2063,14 +2159,16 @@ export function ArticleEditor({
         projectId,
         "article",
       );
-      const detail = await new MultipartUploadTask({
+      const uploadTask = new MultipartUploadTask({
         file,
         folderId: articleFolder.folder_id,
         kind: "attachment",
         name: file.name,
         projectId,
         tags: ["article-image"],
-      }).start();
+      });
+      const detail = await uploadTask.start();
+      const placementMessage = uploadTask.getSnapshot().placementError?.message;
       const version = detail.current_version;
       if (!version || version.status !== "available") {
         throw new Error("图片上传完成，但不可变版本尚不可用");
@@ -2084,10 +2182,12 @@ export function ArticleEditor({
       } satisfies ArticleArtifactDrop;
       if (replacementTarget) {
         await replaceImageWithArtifact(payload, replacementTarget);
-        setDropError(`图片 ${file.name} 已上传并替换原图片块`);
+        setDropError(
+          placementMessage ?? `图片 ${file.name} 已上传并替换原图片块`,
+        );
       } else {
         await insertArtifactNode(payload, insertionPosition);
-        setDropError(`图片 ${file.name} 已上传并插入`);
+        setDropError(placementMessage ?? `图片 ${file.name} 已上传并插入`);
       }
     } catch (error) {
       setDropError(error instanceof Error ? error.message : "图片上传失败");
@@ -2296,13 +2396,25 @@ export function ArticleEditor({
       .catch(() => setDropError("无法访问系统剪贴板，未删除该块"));
   };
 
+  const reviewCurrentBlock = async (blockId: string) => {
+    let current: ProseMirrorNode | undefined;
+    editor.state.doc.forEach((node) => {
+      if (String(node.attrs.id ?? "") === blockId) current = node;
+    });
+    if (!current) throw new Error("该块已经变化，请重新选择后审阅");
+    await onReviewBlock(
+      blockId,
+      await articleBlockContentFingerprint(current.toJSON()),
+    );
+  };
+
   const reviewBlockFromMenu = () => {
     const position = blockMenuAnchor?.pos;
     const id =
       position === undefined ? "" : String(blockAt(position)?.attrs.id ?? "");
     if (!id) return;
     closeBlockMenu();
-    void onReviewBlock(id).catch((error: unknown) => {
+    void reviewCurrentBlock(id).catch((error: unknown) => {
       setDropError(error instanceof Error ? error.message : "审阅失败");
     });
   };
@@ -2851,10 +2963,30 @@ export function ArticleEditor({
     setMenuOpen((value) => !value);
   };
 
-  const runTableCommand = (command: "toggleHeaderRow" | "deleteTable") => {
+  const runTableCommand = (command: TableAction) => {
     if (!hoverMenu || hoverMenu.kind !== "table") return;
     const located = findNode("table");
     if (!located) return;
+
+    if (command === "equalizeColumns") {
+      const cellWidths = equalizedArticleTableCellWidths(located.node);
+      if (cellWidths.size === 0) return;
+
+      let transaction = editor.state.tr;
+      for (const [relativePosition, colwidth] of cellWidths) {
+        const cell = located.node.nodeAt(relativePosition);
+        if (!cell) continue;
+        transaction = transaction.setNodeMarkup(
+          located.pos + 1 + relativePosition,
+          cell.type,
+          { ...cell.attrs, colwidth },
+        );
+      }
+      editor.view.dispatch(transaction);
+      setMenuOpen(false);
+      return;
+    }
+
     let cellTextPosition: number | undefined;
     located.node.descendants((node, relativePosition) => {
       if (cellTextPosition === undefined && node.isTextblock) {
@@ -3230,9 +3362,7 @@ export function ArticleEditor({
         const insertionPosition = dropIndicatorRef.current?.position;
         const inlinePosition = inlineDropIndicatorRef.current?.pos;
         clearDropIndicator();
-        const localImage = Array.from(event.dataTransfer?.files ?? []).find(
-          (item) => item.type.startsWith("image/"),
-        );
+        const localImage = droppedLocalImage(event.dataTransfer);
         if (localImage) {
           event.preventDefault();
           void uploadImage(localImage, undefined, insertionPosition);
@@ -3368,9 +3498,20 @@ export function ArticleEditor({
         </p>
       ) : null}
       {dropError ? (
-        <p className="border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
-          {dropError}
-        </p>
+        <div
+          className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive"
+          role="status"
+        >
+          <span className="min-w-0 flex-1">{dropError}</span>
+          <button
+            aria-label="关闭上传提示"
+            className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setDropError(undefined)}
+            type="button"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
       ) : null}
       <div className="relative min-h-0 flex-1">
         <div
@@ -3514,13 +3655,14 @@ export function ArticleEditor({
                       blockMenuIndex < editor.state.doc.childCount - 1
                     }
                     canMoveUp={blockMenuIndex > 0}
-                    canReview={blockMenuMetadata?.tag !== "reviewed"}
+                    canReview={Boolean(blockMenuMetadata)}
                     onAction={runBlockAction}
                     onClose={closeBlockMenu}
                     onCopyId={copyBlockId}
                     onCut={cutBlock}
                     onDelete={deleteBlockFromMenu}
                     onReview={reviewBlockFromMenu}
+                    reviewed={blockMenuMetadata?.tag === "reviewed"}
                     updatedAt={blockMenuMetadata?.updated_at}
                   />
                 </div>,
@@ -3644,7 +3786,7 @@ export function ArticleEditor({
           canEdit={canEdit}
           chapterTags={chapterTags}
           onLocate={locateBlock}
-          onReview={onReviewBlock}
+          onReview={reviewCurrentBlock}
           onReviewChapter={onReviewChapter}
           positions={tagPositions}
         />

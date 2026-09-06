@@ -35,7 +35,13 @@ export function registerArticleRoutes(
           let body: Record<string, unknown> | undefined;
           if (
             method === "POST" &&
-            ["commits", "preview-builds", "publications"].includes(name)
+            [
+              "commit-operations",
+              "commits",
+              "preview-builds",
+              "publications",
+              "publication-operations",
+            ].includes(name)
           ) {
             const draft = await collaboration.flush(
               await roomContext(coreClient, request),
@@ -72,9 +78,11 @@ export function registerArticleRoutes(
   collection("patches", ["GET", "POST"]);
   collection("references", ["GET", "POST"]);
   collection("commits", ["GET", "POST"]);
+  collection("commit-operations", ["POST"]);
   collection("builds", ["GET", "POST"]);
   collection("preview-builds", ["POST"]);
   collection("publications", ["POST"]);
+  collection("publication-operations", ["POST"]);
   collection("releases", ["GET", "POST"]);
   collection("templates", ["GET", "POST"]);
   collection("zotero", ["GET", "PUT", "DELETE"]);
@@ -86,6 +94,7 @@ export function registerArticleRoutes(
     ["chapter-tags", "", ["GET", "PATCH", "DELETE"]],
     ["chapter-tags", "review", ["POST"]],
     ["patches", "review", ["POST"]],
+    ["commit-operations", "", ["GET"]],
     ["commits", "", ["GET"]],
     ["commits", "restore", ["POST"]],
     ["builds", "", ["GET"]],
@@ -101,7 +110,7 @@ export function registerArticleRoutes(
         url: `/api/projects/:projectId/article/${name}/:resourceId${suffix ? `/${suffix}` : ""}`,
         handler: async (request, reply) => {
           const parsed = resource.parse(request.params);
-          return proxy(
+          const value = await proxy(
             coreClient,
             request,
             reply,
@@ -109,10 +118,29 @@ export function registerArticleRoutes(
             `/${name}/${encodeURIComponent(parsed.resourceId)}${suffix ? `/${suffix}` : ""}`,
             method,
           );
+          if (
+            name === "blocks" &&
+            suffix === "review" &&
+            method === "POST" &&
+            isArticleBlock(value)
+          ) {
+            collaboration.broadcastBlockReviewed(parsed.projectId, value);
+          }
+          return value;
         },
       });
     }
   }
+}
+
+function isArticleBlock(
+  value: unknown,
+): value is Record<string, unknown> & { block_id: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).block_id === "string"
+  );
 }
 
 async function proxy(
@@ -154,9 +182,14 @@ async function proxy(
   if (method === "DELETE") return reply.code(204).send();
   if (
     method === "POST" &&
-    ["/builds", "/preview-builds", "/publications", "/templates"].includes(
-      suffix,
-    )
+    [
+      "/builds",
+      "/commit-operations",
+      "/preview-builds",
+      "/publication-operations",
+      "/publications",
+      "/templates",
+    ].includes(suffix)
   ) {
     return reply.code(202).send(value);
   }

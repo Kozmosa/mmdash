@@ -2,49 +2,84 @@ package repo
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"sync"
 	"time"
 
-	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
 	"github.com/mmdash/mmdash/backend/internal/repo/provider"
 	"github.com/mmdash/mmdash/backend/internal/settings"
 )
+
+// SyncFailure is the bounded persistence record for one synchronization
+// failure. Retryability controls automatic backoff; explicit manual or webhook
+// requests may enqueue a new attempt after a terminal failure.
+type SyncFailure struct {
+	Code      string
+	Message   string
+	Retryable bool
+}
+
+// SyncFailureError carries safe structured observability while retaining the
+// internal cause chain without serializing provider output or credentials.
+type SyncFailureError struct {
+	Cause        error
+	Code         string
+	Duration     time.Duration
+	Provider     Provider
+	RepositoryID string
+	Retryable    bool
+}
+
+func (err *SyncFailureError) Error() string {
+	return fmt.Sprintf("%s: repository synchronization failed", err.Code)
+}
+
+func (err *SyncFailureError) Unwrap() error {
+	return err.Cause
+}
 
 // SyncStore is the lease and completion surface used by the coordinator.
 type SyncStore interface {
 	ClaimSync(context.Context, string, time.Time, time.Duration, int) ([]SyncClaim, error)
 	CompleteSync(context.Context, string, SyncClaim, SyncResult, time.Time) error
-	FailSync(context.Context, string, string, string, string, time.Time, time.Time) error
+	FailSync(context.Context, string, SyncClaim, SyncFailure, time.Time, time.Time) error
 	RenewSyncLease(context.Context, string, string, time.Time) error
+	RequestPeriodicSyncs(context.Context, time.Time, time.Duration, int) (int, error)
 }
 
 // Synchronizer performs Git I/O outside the database transaction.
 type Synchronizer interface {
-	Synchronize(context.Context, Repository, provider.Connection, string) (SyncResult, error)
+	Synchronize(
+		context.Context, Repository, provider.Connection, []WorkspaceKind, string,
+	) (SyncResult, error)
 }
 
 // Coordinator owns bounded, leased synchronization inside Core.
 type Coordinator struct {
-	BatchSize  int
-	Clock      interface{ Now() time.Time }
-	Lease      time.Duration
-	Metrics    MetricSink
-	OnError    func(error)
-	Owner      string
-	Poll       time.Duration
-	Providers  *provider.Registry
-	Runtime    Synchronizer
-	Settings   SettingsResolver
-	Store      SyncStore
-	RetryBase  time.Duration
-	RetryLimit time.Duration
+	BatchSize          int
+	Clock              interface{ Now() time.Time }
+	Lease              time.Duration
+	Metrics            MetricSink
+	OnError            func(error)
+	Owner              string
+	Poll               time.Duration
+	Providers          *provider.Registry
+	Runtime            Synchronizer
+	Settings           SettingsResolver
+	Store              SyncStore
+	RetryBase          time.Duration
+	RetryLimit         time.Duration
+	ReconcileInterval  time.Duration
+	ReconcileBatchSize int
 }
 
 type projectSyncStore interface {
 	SyncStore
 	GetByProject(context.Context, string) (Repository, error)
 	RequestSyncSource(context.Context, string, time.Time, string) (Repository, error)
+	RequestWorkspaceSyncSource(
+		context.Context, string, WorkspaceKind, time.Time, string,
+	) (Repository, error)
 }
 
 // SyncProject requests and waits for one authoritative remote fetch. The same
@@ -62,6 +97,36 @@ func (coordinator Coordinator) SyncProject(
 	if _, err := store.RequestSyncSource(ctx, projectID, requestedAt, "manual"); err != nil {
 		return Repository{}, err
 	}
+	return coordinator.waitForProjectSync(ctx, store, projectID, requestedAt)
+}
+
+// SyncProjectWorkspace requests and waits for exactly one logical branch. It
+// is used by domain modules that already know which workspace owns the data.
+func (coordinator Coordinator) SyncProjectWorkspace(
+	ctx context.Context,
+	projectID string,
+	workspace WorkspaceKind,
+) (Repository, error) {
+	store, ok := coordinator.Store.(projectSyncStore)
+	if !ok || coordinator.Clock == nil || projectID == "" ||
+		!validWorkspaceKind(workspace) {
+		return Repository{}, ErrInvalid
+	}
+	requestedAt := coordinator.Clock.Now().UTC()
+	if _, err := store.RequestWorkspaceSyncSource(
+		ctx, projectID, workspace, requestedAt, "manual",
+	); err != nil {
+		return Repository{}, err
+	}
+	return coordinator.waitForProjectSync(ctx, store, projectID, requestedAt)
+}
+
+func (coordinator Coordinator) waitForProjectSync(
+	ctx context.Context,
+	store projectSyncStore,
+	projectID string,
+	requestedAt time.Time,
+) (Repository, error) {
 	for {
 		// It is safe if the background loop wins the claim; the durable state
 		// check below observes either coordinator's completion.
@@ -75,8 +140,16 @@ func (coordinator Coordinator) SyncProject(
 			return repository, nil
 		}
 		if repository.SyncLockedBy == nil && repository.LastErrorCode != nil &&
-			repository.NextSyncAt != nil && repository.NextSyncAt.After(coordinator.Clock.Now().UTC()) {
-			return Repository{}, ErrNotReady
+			(repository.SyncRequestedAt == nil || repository.NextSyncAt == nil ||
+				repository.NextSyncAt.After(coordinator.Clock.Now().UTC())) {
+			message := "Repository synchronization failed"
+			if repository.LastErrorMessage != nil {
+				message = *repository.LastErrorMessage
+			}
+			return Repository{}, &SafeError{
+				Code: *repository.LastErrorCode, Message: message,
+				Retryable: retryableFailureCode(*repository.LastErrorCode),
+			}
 		}
 		timer := time.NewTimer(100 * time.Millisecond)
 		select {
@@ -102,6 +175,20 @@ func (coordinator Coordinator) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+			reconcileInterval := coordinator.ReconcileInterval
+			if reconcileInterval <= 0 {
+				reconcileInterval = 15 * time.Minute
+			}
+			reconcileBatchSize := coordinator.ReconcileBatchSize
+			if reconcileBatchSize < 1 {
+				reconcileBatchSize = 50
+			}
+			if _, err := coordinator.Store.RequestPeriodicSyncs(
+				ctx, coordinator.Clock.Now().UTC(), reconcileInterval,
+				reconcileBatchSize,
+			); err != nil {
+				coordinator.report(err)
+			}
 			if err := coordinator.RunOnce(ctx); err != nil {
 				coordinator.report(err)
 			}
@@ -179,7 +266,7 @@ func (coordinator Coordinator) process(ctx context.Context, claim SyncClaim) err
 		config, err = providerConfig(resolved)
 		if err == nil {
 			var connection provider.Connection
-			connection, err = coordinator.Providers.Test(syncContext, config)
+			connection, err = coordinator.Providers.Resolve(syncContext, config)
 			if err == nil {
 				source := claim.Source
 				if !validSyncSource(source) {
@@ -188,7 +275,8 @@ func (coordinator Coordinator) process(ctx context.Context, claim SyncClaim) err
 				}
 				var result SyncResult
 				result, err = coordinator.Runtime.Synchronize(
-					syncContext, claim.Repository, connection, source,
+					syncContext, claim.Repository, connection,
+					claim.Workspaces, source,
 				)
 				if err == nil {
 					result.Source = source
@@ -208,16 +296,25 @@ func (coordinator Coordinator) process(ctx context.Context, claim SyncClaim) err
 	}
 	cancel()
 	<-leaseDone
-	code, message := safeSyncFailure(err)
+	failure := classifySyncFailure(err)
+	outcome = failure.Outcome
 	now := coordinator.Clock.Now().UTC()
 	retryAt := now.Add(coordinator.retryDelay(claim.Repository.SyncAttempts))
 	if persistErr := coordinator.Store.FailSync(
-		ctx, claim.Repository.ID, coordinator.Owner,
-		code, message, retryAt, now,
+		ctx, coordinator.Owner, claim,
+		SyncFailure{
+			Code: failure.Code, Message: failure.Message,
+			Retryable: failure.Retryable,
+		},
+		retryAt, now,
 	); persistErr != nil {
 		return persistErr
 	}
-	coordinator.report(err)
+	coordinator.report(&SyncFailureError{
+		Cause: err, Code: failure.Code, Duration: time.Since(startedAt),
+		Provider:     claim.Repository.Provider,
+		RepositoryID: claim.Repository.ID, Retryable: failure.Retryable,
+	})
 	return nil
 }
 
@@ -276,45 +373,6 @@ func (coordinator Coordinator) retryDelay(attempts int) time.Duration {
 func (coordinator Coordinator) report(err error) {
 	if err != nil && coordinator.OnError != nil {
 		coordinator.OnError(err)
-	}
-}
-
-func safeSyncFailure(err error) (string, string) {
-	var safeError *SafeError
-	switch {
-	case errors.As(err, &safeError):
-		return safeError.Code, safeError.Message
-	case errors.Is(err, provider.ErrAuthentication),
-		errors.Is(err, gitcli.ErrAuthentication):
-		return "REPO_AUTH_FAILED", "Repository authentication failed"
-	case errors.Is(err, provider.ErrBranchMissing):
-		return "REPO_BRANCH_NOT_FOUND", "A mapped repository branch was not found"
-	case errors.Is(err, provider.ErrRemoteNotFound):
-		return "REPO_REMOTE_NOT_FOUND", "Repository was not found"
-	case errors.Is(err, provider.ErrWritePermission):
-		return "REPO_WRITE_PERMISSION_REQUIRED", "Repository write permission is required"
-	case errors.Is(err, provider.ErrUnsupported):
-		return "REPO_PROVIDER_UNSUPPORTED", "Repository provider is unsupported"
-	case errors.Is(err, provider.ErrUnavailable):
-		return "REPO_PROVIDER_UNAVAILABLE", "Repository provider is not enabled for this deployment"
-	case errors.Is(err, settings.ErrNotFound),
-		errors.Is(err, settings.ErrTypeNotFound):
-		return "REPO_SETTINGS_NOT_FOUND", "Repository settings are incomplete"
-	case errors.Is(err, settings.ErrInvalid),
-		errors.Is(err, provider.ErrInvalidConfig):
-		return "REPO_SETTINGS_INVALID", "Repository settings are invalid"
-	case errors.Is(err, gitcli.ErrTimeout),
-		errors.Is(err, context.DeadlineExceeded):
-		return "REPO_GIT_TIMEOUT", "Repository operation timed out"
-	case errors.Is(err, gitcli.ErrOutputLimit):
-		return "REPO_GIT_OUTPUT_LIMIT", "Repository command output exceeded its limit"
-	case errors.Is(err, gitcli.ErrPathInvalid),
-		errors.Is(err, gitcli.ErrStorageEscape):
-		return "REPO_STORAGE_INVALID", "Repository storage failed a safety check"
-	case errors.Is(err, ErrWorktreeDirty):
-		return "REPO_WORKTREE_DIRTY", "A managed repository worktree contains changes"
-	default:
-		return "REPO_SYNC_FAILED", "Repository synchronization failed"
 	}
 }
 

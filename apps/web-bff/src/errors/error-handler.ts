@@ -53,6 +53,15 @@ function mapError(error: unknown): {
     return error;
   }
   if (error instanceof CoreClientError) {
+    const code = error.body.code ?? "CORE_REQUEST_FAILED";
+    if (safeRepoTransientCodes.has(code)) {
+      return {
+        code,
+        details: error.body.details,
+        message: safeCoreMessage(error.body.message),
+        status: error.status,
+      };
+    }
     if (error.status >= 500) {
       return {
         code: "CORE_UNAVAILABLE",
@@ -61,7 +70,8 @@ function mapError(error: unknown): {
       };
     }
     return {
-      code: error.body.code ?? "CORE_REQUEST_FAILED",
+      code,
+      details: error.body.details,
       message: safeCoreMessage(error.body.message),
       status: error.status,
     };
@@ -102,6 +112,13 @@ function mapError(error: unknown): {
     status: 500,
   };
 }
+
+const safeRepoTransientCodes = new Set([
+  "REPO_GIT_TIMEOUT",
+  "REPO_NETWORK_UNAVAILABLE",
+  "REPO_PROVIDER_TEMPORARILY_UNAVAILABLE",
+  "REPO_PROVIDER_RESPONSE_INVALID",
+]);
 
 const sensitiveMessagePattern =
   /(?:api[_ -]?key|authorization|bearer|cloudflare|credential|dashboard[_ -]?(?:session[_ -]?)?token|hermes[_ -]?api[_ -]?key|refresh[_ -]?token|secret|token[_ -]?hash)/i;

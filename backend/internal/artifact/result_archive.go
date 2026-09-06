@@ -17,11 +17,41 @@ import (
 // Artifact storage and immutable-version boundary used by browser uploads.
 // The caller owns the input stream; this method never buffers the complete
 // result in memory or exposes provider handles.
-func (service Service) ArchiveExperimentResult(ctx context.Context, projectID, experimentID, createdBy, expectedSHA string, expectedSize int64, input io.Reader) (Detail, error) {
-	if projectID == "" || experimentID == "" || createdBy == "" || expectedSize < 1 || expectedSize > service.MaxUploadBytes || !sha256Pattern.MatchString(strings.ToLower(expectedSHA)) {
+func (service Service) ArchiveExperimentResult(ctx context.Context, projectID, experimentID, createdBy string, folderPath []string, expectedSHA string, expectedSize int64, input io.Reader) (Detail, error) {
+	expectedSHA = strings.ToLower(strings.TrimSpace(expectedSHA))
+	idempotencyKey := "experiment-result:" + experimentID
+	if projectID == "" || experimentID == "" || createdBy == "" || input == nil || expectedSize < 1 || expectedSize > service.MaxUploadBytes || !sha256Pattern.MatchString(expectedSHA) {
 		return Detail{}, ErrInvalid
 	}
-	temporary, err := stageResultInput(input, expectedSize, strings.ToLower(expectedSHA))
+	folderID, err := service.ensureManagedFolder(ctx, projectID, folderPath)
+	if err != nil {
+		return Detail{}, err
+	}
+	initial := InitializeUploadInput{
+		Filename: "execution-bundle.zip", SizeBytes: expectedSize,
+		SHA256: expectedSHA, MIMEType: "application/zip",
+		Kind: KindExperimentResult, FolderID: folderID,
+		IdempotencyKey: idempotencyKey,
+	}
+	if existing, lookupErr := service.Store.GetUploadByIdempotency(
+		ctx, projectID, idempotencyKey,
+	); lookupErr == nil {
+		if !matchesInitial(existing, createdBy, initial) {
+			return Detail{}, ErrUploadConflict
+		}
+		if existing.Status != UploadCompleted {
+			return Detail{}, ErrUploadConflict
+		}
+		if err := service.ensureManagedArtifactPlacement(
+			ctx, projectID, existing.ArtifactID, folderID,
+		); err != nil {
+			return Detail{}, err
+		}
+		return service.Store.GetDetail(ctx, projectID, existing.ArtifactID, false)
+	} else if !errors.Is(lookupErr, ErrNotFound) {
+		return Detail{}, lookupErr
+	}
+	temporary, err := stageResultInput(input, expectedSize, expectedSHA)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -52,17 +82,38 @@ func (service Service) ArchiveExperimentResult(ctx context.Context, projectID, e
 	}
 	now := service.now()
 	sourceID := experimentID
-	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindExperimentResult, Source: SourceExperiment, SourceObjectID: &sourceID, Tags: []string{"experiment-result", "execution-bundle"}, Name: "execution-bundle.zip", RecommendedUsage: []string{"result", "evidence"}, CurrentVersionID: &versionID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
-	version := Version{ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1, StorageClass: "object", Filename: "execution-bundle.zip", SHA256: strings.ToLower(expectedSHA), MIMEType: "application/zip", SizeBytes: expectedSize, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now}
-	upload, _, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, "execution-bundle.zip", "application/zip", strings.ToLower(expectedSHA), expectedSize, "experiment-result:"+experimentID, plan)
+	artifact := Artifact{ID: artifactID, ProjectID: projectID, Kind: KindExperimentResult, Source: SourceExperiment, SourceObjectID: &sourceID, Tags: []string{"experiment-result", "execution-bundle"}, Name: "execution-bundle.zip", RecommendedUsage: []string{"result", "evidence"}, CurrentVersionID: &versionID, FolderID: folderID, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now}
+	version := Version{ID: versionID, ArtifactID: artifactID, ProjectID: projectID, VersionNo: 1, StorageClass: "object", Filename: "execution-bundle.zip", SHA256: expectedSHA, MIMEType: "application/zip", SizeBytes: expectedSize, Status: StatusPendingUpload, CreatedBy: createdBy, CreatedAt: now}
+	upload, providerUpload, err := service.prepareUpload(ctx, projectID, artifactID, versionID, uploadID, createdBy, "execution-bundle.zip", "application/zip", expectedSHA, expectedSize, idempotencyKey, plan)
 	if err != nil {
 		return Detail{}, err
 	}
 	if upload.Status == UploadCompleted {
-		return service.Store.GetDetail(ctx, projectID, artifactID, false)
+		artifact.Status = StatusAvailable
+		version.Status = StatusAvailable
+		version.BlobID = strings.TrimPrefix(upload.ProviderUploadID, "deduplicated:")
+		version.AvailableAt = upload.CompletedAt
 	}
 	if err := service.Store.CreateFirst(ctx, artifact, version, upload); err != nil {
+		service.abortPrepared(ctx, providerUpload)
+		if errors.Is(err, ErrUploadConflict) {
+			existing, findErr := service.Store.GetUploadByIdempotency(
+				ctx, projectID, idempotencyKey,
+			)
+			if findErr == nil && matchesInitial(existing, createdBy, initial) &&
+				existing.Status == UploadCompleted {
+				if placeErr := service.ensureManagedArtifactPlacement(
+					ctx, projectID, existing.ArtifactID, folderID,
+				); placeErr != nil {
+					return Detail{}, placeErr
+				}
+				return service.Store.GetDetail(ctx, projectID, existing.ArtifactID, false)
+			}
+		}
 		return Detail{}, err
+	}
+	if upload.Status == UploadCompleted {
+		return service.Store.GetDetail(ctx, projectID, artifactID, false)
 	}
 	provider := providerHandle(upload)
 	parts := make([]CompletedPart, 0, plan.PartCount)
@@ -95,8 +146,8 @@ func (service Service) ArchiveExperimentResult(ctx context.Context, projectID, e
 	if err := service.Store.SetUploadStatus(ctx, upload.ID, UploadVerifying, "", now); err != nil {
 		return Detail{}, err
 	}
-	contentKey := ContentObjectKey(projectID, strings.ToLower(expectedSHA))
-	if err := service.verifyObject(ctx, upload.StagingKey, expectedSize, strings.ToLower(expectedSHA)); err != nil {
+	contentKey := ContentObjectKey(projectID, expectedSHA)
+	if err := service.verifyObject(ctx, upload.StagingKey, expectedSize, expectedSHA); err != nil {
 		return Detail{}, err
 	}
 	if err := service.promoteVerified(ctx, upload, contentKey); err != nil {
@@ -106,7 +157,7 @@ func (service Service) ArchiveExperimentResult(ctx context.Context, projectID, e
 	if err != nil {
 		return Detail{}, err
 	}
-	return service.Store.FinalizeUpload(ctx, upload, Blob{ID: blobID, ProjectID: projectID, SHA256: strings.ToLower(expectedSHA), SizeBytes: expectedSize, Backend: service.Storage.Backend(), ObjectKey: contentKey}, service.now())
+	return service.Store.FinalizeUpload(ctx, upload, Blob{ID: blobID, ProjectID: projectID, SHA256: expectedSHA, SizeBytes: expectedSize, Backend: service.Storage.Backend(), ObjectKey: contentKey}, service.now())
 }
 
 func stageResultInput(input io.Reader, expectedSize int64, expectedSHA string) (string, error) {

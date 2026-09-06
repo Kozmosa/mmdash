@@ -50,7 +50,7 @@ type JobAccess interface {
 type ResultArtifactAccess interface {
 	ExperimentResultGrant(context.Context, string, string, string, string) (map[string]interface{}, error)
 	OpenExperimentResult(context.Context, string, string, string, string) (io.ReadCloser, artifact.Version, error)
-	ArchiveExperimentFile(context.Context, string, string, string, string, string, string, int64, io.Reader) (artifact.Detail, error)
+	ArchiveExperimentFile(context.Context, string, string, string, []string, string, string, string, int64, io.Reader) (artifact.Detail, error)
 }
 
 type ResultRepoAccess interface {
@@ -77,7 +77,7 @@ type Service struct {
 }
 
 type ArtifactArchiver interface {
-	ArchiveExperimentResult(context.Context, string, string, string, string, int64, io.Reader) (artifact.Detail, error)
+	ArchiveExperimentResult(context.Context, string, string, string, []string, string, int64, io.Reader) (artifact.Detail, error)
 }
 
 func (service Service) Authenticate(ctx context.Context, authorization string) (auth.Identity, error) {
@@ -486,7 +486,7 @@ func (service *Service) ArchiveArtifact(
 	}
 	detail, err := service.Artifacts.ArchiveExperimentResult(
 		ctx, task.ProjectID, task.ExperimentID, item.CreatedBy,
-		expectedSHA, expectedSize, input,
+		experimentArtifactFolder(item), expectedSHA, expectedSize, input,
 	)
 	if err != nil {
 		return nil, err

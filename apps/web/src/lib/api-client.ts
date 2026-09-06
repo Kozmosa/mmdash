@@ -1,16 +1,20 @@
 export type ApiErrorBody = {
   code?: string;
+  details?: unknown;
   message?: string;
   request_id?: string;
 };
 
 export class ApiError extends Error {
   readonly code: string;
+  readonly details?: unknown;
   readonly requestId?: string;
+  readonly retryable: boolean;
   readonly status: number;
 
   constructor(options: {
     code?: string;
+    details?: unknown;
     message: string;
     requestId?: string;
     status: number;
@@ -18,7 +22,9 @@ export class ApiError extends Error {
     super(options.message);
     this.name = "ApiError";
     this.code = options.code ?? "HTTP_ERROR";
+    this.details = options.details;
     this.requestId = options.requestId;
+    this.retryable = retryableDetail(options.details);
     this.status = options.status;
   }
 }
@@ -103,6 +109,7 @@ export class ApiClient {
       }
       throw new ApiError({
         code: error.code,
+        details: error.details,
         message: error.message ?? `Request failed with HTTP ${response.status}`,
         requestId:
           error.request_id ?? response.headers.get("x-request-id") ?? undefined,
@@ -136,6 +143,15 @@ export class ApiClient {
     const queryString = search.toString();
     return queryString ? `${url}?${queryString}` : url;
   }
+}
+
+function retryableDetail(details: unknown): boolean {
+  return (
+    typeof details === "object" &&
+    details !== null &&
+    "retryable" in details &&
+    details.retryable === true
+  );
 }
 
 async function parseErrorBody(response: Response): Promise<ApiErrorBody> {

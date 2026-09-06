@@ -2,6 +2,11 @@
 
 Stage 9 Article operations:
 
+`article.blocks.review` and its BFF proxy accept the reviewed block's
+`content_fingerprint`; a mismatch returns `ARTICLE_BLOCK_CHANGED` (409) so the
+browser can synchronize before retrying. Repeating the operation for an
+already-reviewed block withdraws the review and restores its previous tag.
+
 - Core collaborative source and review: `article.get`, `article.draft.get`,
   `article.draft.flush`, `article.blocks.review`, `article.patches.list`, `article.patches.create`,
   `article.chapter_tags.list`, `article.chapter_tags.create`, `article.chapter_tags.get`,
@@ -9,12 +14,15 @@ Stage 9 Article operations:
   `article.patches.review`, `article.references.list`,
   `article.references.create`, and `article.references.delete`.
 - Core immutable history: `article.commits.list`, `article.commits.create`,
-  `article.commits.get`, `article.commits.restore`, `article.builds.list`,
+  `article.commit-operations.create`, `article.commit-operations.get`,
+  `article.commits.get`,
+  `article.commits.restore`, `article.builds.list`,
   `article.builds.create`, `article.preview_builds.create`,
   `article.builds.get`, `article.builds.retry`, `article.releases.list`,
   `article.releases.create`, and `article.releases.get`.
 - Core publication, templates, Zotero, and Worker boundary:
-  `article.publications.create`, `article.publications.retry`,
+  `article.publications.create`, `article.publication-operations.create`,
+  `article.publications.retry`,
   `article.templates.list`, `article.templates.create`, `article.zotero.get`,
   `article.zotero.update`, `article.zotero.delete`, `article.zotero.search`,
   `article.zotero.collections`, `article.zotero.items`,
@@ -30,10 +38,13 @@ Stage 9 Article operations:
   `bff.article.patches.review`, `bff.article.references.list`,
   `bff.article.references.create`, `bff.article.references.delete`,
   `bff.article.commits.list`, `bff.article.commits.create`,
-  `bff.article.commits.get`, `bff.article.commits.restore`,
+  `bff.article.commit-operations.create`,
+  `bff.article.commit-operations.get`, `bff.article.commits.get`,
+  `bff.article.commits.restore`,
   `bff.article.builds.list`, `bff.article.builds.create`,
   `bff.article.preview_builds.create`, `bff.article.builds.get`,
   `bff.article.builds.retry`, `bff.article.publications.create`,
+  `bff.article.publication-operations.create`,
   `bff.article.publications.retry`, `bff.article.releases.list`,
   `bff.article.releases.create`, `bff.article.releases.get`,
   `bff.article.templates.list`, `bff.article.templates.create`,

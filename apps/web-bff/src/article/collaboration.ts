@@ -29,6 +29,8 @@ type Draft = {
   yjs_update: string;
 };
 
+type ArticleBlockSnapshot = Record<string, unknown> & { block_id: string };
+
 export class ArticleCollaboration {
   private static readonly maxConnectionsPerProject = 32;
   private readonly connectionCounts = new Map<string, number>();
@@ -147,6 +149,14 @@ export class ArticleCollaboration {
     await connection.disconnect();
     await this.stores.get(name);
     return this.getDraft(context);
+  }
+
+  broadcastBlockReviewed(projectId: string, block: ArticleBlockSnapshot): void {
+    this.hocuspocus.documents
+      .get(roomName(projectId))
+      ?.broadcastStateless(
+        JSON.stringify({ block, type: "article.block.reviewed" }),
+      );
   }
 
   async destroy(): Promise<void> {

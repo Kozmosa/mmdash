@@ -21,6 +21,18 @@ legacy server path usable while the Settings HTTP projection returns only the
 redaction marker. The next actual path edit moves it into encrypted secret
 storage.
 
+Migration `000051_repo_webhook_deliveries_repair` idempotently restores the
+webhook delivery ledger for an older database that recorded the Repo baseline
+without retaining that relation. It preserves repositories, Git data, and any
+existing webhook delivery history.
+
+Migration `000052_repo_resilient_sync` records the exact logical workspaces
+coalesced into each sync request and the next periodic reconciliation time.
+Migration `000053_article_commit_operations` stores frozen Article commit
+inputs in a leased queue; it is Article-owned because Result inputs may be
+multi-gigabyte staged files, while both executors still use Repo's common
+workspace commit state machine.
+
 Apply it with the normal migrator:
 
 ```bash
@@ -53,12 +65,39 @@ approved.
 | `REPO_MAX_CONCURRENT_GIT`  | `4`                     | Process Git concurrency                                 |
 | `REPO_COMMAND_TIMEOUT`     | `2m`                    | Ordinary command timeout                                |
 | `REPO_CLONE_TIMEOUT`       | `15m`                   | Clone/fetch timeout                                     |
+| `REPO_WRITE_TIMEOUT`       | `45s`                   | One write-path fetch, push, or confirmation timeout     |
 | `REPO_SYNC_POLL_INTERVAL`  | `2s`                    | Idle sync coordinator delay                             |
 | `REPO_SYNC_LEASE`          | `20m`                   | Recoverable sync lease                                  |
+| `REPO_COMMIT_LEASE`        | `90s`                   | Renewable write/commit-operation lease                  |
+| `REPO_RECONCILE_INTERVAL`  | `15m`                   | Remote reconciliation safety-net interval               |
 | `REPO_CHECKOUT_TTL`        | `1h`                    | Default detached checkout lease                         |
 | `REPO_MAX_TEXT_BYTES`      | `1048576`               | Read/write text ceiling                                 |
 | `REPO_DISCONNECT_GRACE`    | `24h`                   | Delayed managed cleanup                                 |
 | `REPO_ASKPASS_PATH`        | `mmdash-git-askpass`    | Static credential helper                                |
+| `REPO_GITHUB_PROXY_URL`    | empty                   | Repo-only HTTP(S) proxy for GitHub API and Git HTTPS    |
+| `REPO_GITHUB_NO_PROXY`     | loopback addresses      | Explicit internal/loopback proxy bypasses               |
+
+`REPO_GITHUB_PROXY_URL` is deployment configuration, not a Project Setting.
+It accepts only an `http://` or `https://` origin, optionally with userinfo;
+path, query, fragment, malformed host/port, and SOCKS URLs are rejected. Treat
+the complete value as a secret when it contains credentials. The dedicated
+GitHub client never reads process-wide proxy variables. Git commands receive
+only the validated `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` values plus
+their lowercase libcurl-compatible aliases for the single subprocess;
+`ALL_PROXY` and arbitrary Core environment variables remain unavailable.
+
+`REPO_GITHUB_NO_PROXY` accepts loopback/private IPs and CIDRs, single-label
+internal service names, and `.local`, `.localhost`, or `.internal` names. Public
+targets such as `github.com` and wildcard bypasses are rejected so a configured
+proxy fails closed instead of silently returning to direct egress. With no Repo
+proxy URL, both GitHub metadata and Git operations remain direct and still do
+not inherit a process-wide proxy.
+
+Production runs mihomo as a non-root Compose service on the dedicated Repo
+egress network. Core uses `http://mihomo:17890`; the proxy publishes no host
+port, mounts its provider from an external mode-`0600` directory, has a
+read-only root filesystem, and drops all capabilities. See
+`deploy/production/README.md` for the pinned binary and image build procedure.
 
 Server-existing roots are colon-separated on Linux/macOS and semicolon-separated on
 Windows. An empty allowlist disables this provider. Core canonicalizes the source
@@ -87,6 +126,47 @@ Every Git subprocess receives the stable internal maintenance identity
 name resolution. Authenticated workspace commits override both author and
 committer with the requesting user's validated identity.
 
+## Branch-scoped synchronization and writes
+
+Callers select a logical workspace (`code`, `article`, or `result`); they never
+pass an arbitrary refspec. Repo resolves the configured remote branch and
+fetches only:
+
+```text
++refs/heads/<mapped-branch>:refs/remotes/origin/<mapped-branch>
+```
+
+The GitHub API and `git ls-remote --heads` are used when a connection or branch
+mapping is explicitly tested, not before every runtime sync or commit. Runtime
+operations normalize the already-tested setting and go directly to the scoped
+refspec.
+
+Article commits therefore do not fetch code or result, Result verification
+fetches only result, and a mapped GitHub push queues only the workspace for the
+changed branch. Manual synchronization and periodic reconciliation intentionally
+queue all three mapped workspaces. Initial connection also fetches all three so
+the repository cannot become ready with a partial mapping.
+
+Every write is idempotent by `(repository, workspace, idempotency key)`. A
+short renewable lease makes a crashed writer reclaimable. After every push,
+including a push that returned success, Repo fetches only the target branch and
+compares its remote head with the prepared commit SHA. A timeout followed by a
+matching SHA is success; a different new SHA is a branch conflict; an
+unobservable result remains retryable instead of being reported as committed.
+
+GitHub Webhooks must use `Content-Type: application/json` (not
+`application/x-www-form-urlencoded`), the `push` event, and the generated
+webhook secret. The signed raw JSON body is deduplicated by
+`X-GitHub-Delivery`. Webhooks are the low-latency signal; reconciliation polls
+GitHub and server-existing providers every `REPO_RECONCILE_INTERVAL` so a lost
+or delayed delivery cannot leave durable heads stale forever.
+
+The browser-facing Article commit endpoint freezes the exact draft and returns
+a durable Commit Operation with HTTP 202 before Git network I/O. Result
+processing is already an asynchronous Experiment job and keeps large inputs in
+its bounded staging area; it calls the same Repo result-workspace commit path
+and only binds success after Repo confirms the remote SHA.
+
 ## Readiness, logs, and metrics
 
 `GET /health/ready` verifies PostgreSQL, object storage, Git availability and
@@ -103,8 +183,26 @@ mmdash_repo_storage_bytes
 ```
 
 Structured Repo logs may contain operation, provider, safe error code,
-duration, repository ID, and request ID. They must not contain PATs, webhook
+retryable, duration, repository ID, and request ID. They must not contain PATs, webhook
 secrets, AskPass variables, file content, remote provider bodies, or paths.
+
+GitHub failures use stable retry semantics:
+
+| Condition                                      | Code                                    | Automatic retry |
+| ---------------------------------------------- | --------------------------------------- | --------------- |
+| DNS, connect, TLS, or proxy connection failure | `REPO_NETWORK_UNAVAILABLE`              | yes             |
+| Git or metadata request timeout                | `REPO_GIT_TIMEOUT`                      | yes             |
+| GitHub 429 or 5xx                              | `REPO_PROVIDER_TEMPORARILY_UNAVAILABLE` | yes             |
+| GitHub/Git authentication failure              | `REPO_AUTH_FAILED`                      | no              |
+| Authenticated GitHub 404                       | `REPO_REMOTE_NOT_FOUND`                 | no              |
+| Missing mapped branch                          | `REPO_BRANCH_NOT_FOUND`                 | no              |
+| Missing contents write permission              | `REPO_WRITE_PERMISSION_REQUIRED`        | no              |
+
+Retryable failures keep the current bounded exponential backoff. Terminal
+failures clear the automatic request but can be retried explicitly after a
+configuration, permission, or remote-state change. Existing fetched objects
+and worktrees remain available for immutable reads while synchronization is in
+an error state.
 
 ## Native checks
 
@@ -121,6 +219,11 @@ pnpm --filter @mmdash/web test
 pnpm --filter @mmdash/mcp-gateway test
 pnpm check
 ```
+
+Focused proxy tests use a fake HTTP proxy for GitHub metadata and a real local
+Git dumb-HTTP repository for `git ls-remote`. They also prove that proxy/PAT
+credentials are absent from command results and errors and that unreviewed Core
+proxy variables are not inherited.
 
 Real Git tests create temporary bare remotes. On Windows, run them in an
 environment permitted to create symbolic links so the Local-root and cleanup

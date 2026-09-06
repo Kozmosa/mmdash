@@ -156,6 +156,16 @@ summary, logs, figures, tables, data, and models. This raw evidence is an
 Artifact retained until the Project recycle period expires. It is not the
 result-branch representation.
 
+The raw bundle and every oversized result file are archived under the same
+system-managed Artifact leaf:
+`experiment/<source_commit>_<experiment_created_at_utc>`. The timestamp uses
+UTC with microsecond precision (`yyyyMMddTHHmmss.ffffffZ`). The frozen source
+commit and Experiment creation time make retries converge on one directory;
+the result commit is intentionally not used because it does not exist when the
+raw bundle is accepted. Core ensures the folder tree concurrently, assigns the
+leaf while creating each Artifact, and repairs a matching legacy idempotent
+result that is still at the Project root.
+
 The server-side path is:
 
 ```text

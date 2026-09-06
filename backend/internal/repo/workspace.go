@@ -110,8 +110,8 @@ func (writer WorkspaceWriter) Prepare(
 	if err != nil {
 		return Commit{}, err
 	}
-	if err := writer.Runtime.fetch(
-		ctx, layout, connection, writer.Runtime.CloneTimeout,
+	if err := writer.Runtime.fetchWorkspace(
+		ctx, layout, connection, claim.Workspace, writer.Runtime.WriteTimeout,
 	); err != nil {
 		return Commit{}, err
 	}
@@ -216,27 +216,15 @@ func (writer WorkspaceWriter) PushPrepared(
 	); err != nil {
 		return Commit{}, ErrObjectNotFound
 	}
-	if err := writer.Runtime.fetch(
-		ctx, layout, connection, writer.Runtime.CloneTimeout,
-	); err != nil {
-		return Commit{}, err
-	}
 	remoteRef := "refs/remotes/origin/" + claim.Workspace.RemoteBranch
-	remoteHead, err := writer.Runtime.resolve(ctx, layout, remoteRef+"^{commit}")
-	if err != nil {
-		return Commit{}, ErrObjectNotFound
-	}
 	worktree := layout.Worktrees[string(claim.Workspace.Workspace)]
+	expected := ""
+	if claim.Workspace.HeadCommitSHA != nil {
+		expected = *claim.Workspace.HeadCommitSHA
+	}
+	remoteHead := expected
 	if remoteHead != preparedSHA {
-		expected := ""
-		if claim.Workspace.HeadCommitSHA != nil {
-			expected = *claim.Workspace.HeadCommitSHA
-		}
-		if remoteHead != expected {
-			_ = writer.recover(ctx, layout, worktree, remoteRef)
-			return Commit{}, ErrHeadChanged
-		}
-		pushResult, pushErr := writer.Git.Run(ctx, gitcli.Command{
+		_, pushErr := writer.Git.Run(ctx, gitcli.Command{
 			Args: []string{
 				"--git-dir=" + layout.Bare,
 				"push", "origin",
@@ -245,30 +233,45 @@ func (writer WorkspaceWriter) PushPrepared(
 			Credentials: connection.Credentials,
 			Directory:   layout.Repository,
 			Operation:   "repo.commit.push",
+			Timeout:     writer.Runtime.WriteTimeout,
 		})
-		_ = pushResult
-		if pushErr != nil {
-			if fetchErr := writer.Runtime.fetch(
-				ctx, layout, connection, writer.Runtime.CloneTimeout,
-			); fetchErr == nil {
-				observed, resolveErr := writer.Runtime.resolve(
-					ctx, layout, remoteRef+"^{commit}",
-				)
-				if resolveErr == nil && observed == preparedSHA {
+		// A transport success is not the authority: the remote-tracking ref is
+		// fetched again and must resolve to the prepared commit. This also turns
+		// a timeout-after-success into a confirmed success.
+		fetchErr := writer.Runtime.fetchWorkspace(
+			ctx, layout, connection, claim.Workspace,
+			writer.Runtime.WriteTimeout,
+		)
+		if fetchErr == nil {
+			observed, resolveErr := writer.Runtime.resolve(
+				ctx, layout, remoteRef+"^{commit}",
+			)
+			if resolveErr == nil {
+				switch {
+				case observed == preparedSHA:
 					pushErr = nil
-				} else if resolveErr == nil && observed != expected {
+				case observed != expected:
 					pushErr = ErrHeadChanged
+				default:
+					pushErr = safe(
+						"REPO_PUSH_UNCONFIRMED",
+						"Repository push could not be confirmed",
+					)
 				}
+			} else if pushErr == nil {
+				pushErr = resolveErr
 			}
-			if pushErr != nil {
-				_ = writer.recover(ctx, layout, worktree, remoteRef)
-				if errors.Is(pushErr, ErrHeadChanged) {
-					return Commit{}, pushErr
-				}
-				return Commit{}, safe(
-					"REPO_PUSH_FAILED", "Repository push failed",
-				)
+		} else if pushErr == nil {
+			pushErr = fetchErr
+		}
+		if pushErr != nil {
+			_ = writer.recover(ctx, layout, worktree, remoteRef)
+			if errors.Is(pushErr, ErrHeadChanged) {
+				return Commit{}, pushErr
 			}
+			return Commit{}, safe(
+				"REPO_PUSH_UNCONFIRMED", "Repository push could not be confirmed",
+			)
 		}
 	}
 	if _, err := writer.Git.Run(ctx, gitcli.Command{

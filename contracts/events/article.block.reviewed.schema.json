@@ -7,6 +7,6 @@
   "required": ["block_id", "status"],
   "properties": {
     "block_id": { "type": "string", "format": "uuid" },
-    "status": { "const": "reviewed" }
+    "status": { "enum": ["reviewed", "unreviewed"] }
   }
 }

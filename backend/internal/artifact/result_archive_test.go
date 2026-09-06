@@ -3,6 +3,7 @@ package artifact
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,82 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestArchiveExperimentResultAssignsAndRepairsManagedFolder(t *testing.T) {
+	experimentID := "00000000-0000-4000-8000-000000000001"
+	resultContents := []byte("summary")
+	manifest := map[string]interface{}{
+		"schema_version": "2", "experiment_id": experimentID, "status": "succeeded",
+		"files": []map[string]interface{}{{
+			"path": "summary.md", "sha256": articleTemplateSHA(resultContents),
+			"size_bytes": len(resultContents), "kind": "summary",
+		}},
+	}
+	archivePath := writeZip(t, manifest, map[string][]byte{"summary.md": resultContents})
+	contents, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatalf("read result archive: %v", err)
+	}
+	store := newArticleTemplateStore()
+	storage, err := NewLocalBlobStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create local storage: %v", err)
+	}
+	service := Service{
+		Generator: &articleTemplateIDs{}, MaxUploadBytes: 20 * 1024 * 1024,
+		MultipartPartBytes: MultipartMinPartBytes, Storage: storage, Store: store,
+	}
+	folderPath := []string{"experiment", strings.Repeat("a", 40) + "_20260902T010203.000000Z"}
+	sha := articleTemplateSHA(contents)
+	first, err := service.ArchiveExperimentResult(
+		context.Background(), "project-result", experimentID, "system", folderPath,
+		sha, int64(len(contents)), bytes.NewReader(contents),
+	)
+	if err != nil || first.CurrentVersion == nil || first.Artifact.FolderID == nil {
+		t.Fatalf("archive result: %#v %v", first, err)
+	}
+	leafID := *first.Artifact.FolderID
+	legacyKey := artifactIDKey("project-result", first.Artifact.ID)
+	legacy := store.details[legacyKey]
+	legacy.Artifact.FolderID = nil
+	store.details[legacyKey] = legacy
+
+	retried, err := service.ArchiveExperimentResult(
+		context.Background(), "project-result", experimentID, "system", folderPath,
+		sha, int64(len(contents)), failingReader{},
+	)
+	if err != nil || retried.Artifact.ID != first.Artifact.ID ||
+		retried.Artifact.FolderID == nil || *retried.Artifact.FolderID != leafID {
+		t.Fatalf("idempotent folder repair: %#v %v", retried, err)
+	}
+}
+
+func TestArchiveExperimentFileUsesTheExperimentManagedFolder(t *testing.T) {
+	contents := []byte("oversized result")
+	store := newArticleTemplateStore()
+	storage, err := NewLocalBlobStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("create local storage: %v", err)
+	}
+	service := Service{
+		Generator: &articleTemplateIDs{}, MaxUploadBytes: 20 * 1024 * 1024,
+		MultipartPartBytes: MultipartMinPartBytes, Storage: storage, Store: store,
+	}
+	folderPath := []string{"experiment", strings.Repeat("b", 40) + "_20260902T010203.000000Z"}
+	detail, err := service.ArchiveExperimentFile(
+		context.Background(), "project-result", "experiment-1", "system", folderPath,
+		"data/large.bin", "application/octet-stream", articleTemplateSHA(contents),
+		int64(len(contents)), bytes.NewReader(contents),
+	)
+	if err != nil || detail.Artifact.FolderID == nil ||
+		detail.CurrentVersion == nil || detail.CurrentVersion.Filename != "large.bin" {
+		t.Fatalf("archive large result: %#v %v", detail, err)
+	}
+	wantLeaf := "managed-folder-2"
+	if *detail.Artifact.FolderID != wantLeaf {
+		t.Fatalf("large result used folder %q, want %q", *detail.Artifact.FolderID, wantLeaf)
+	}
+}
 
 func TestValidateArtifactZipChecksManifestHashesAndPaths(t *testing.T) {
 	experimentID := "00000000-0000-4000-8000-000000000001"

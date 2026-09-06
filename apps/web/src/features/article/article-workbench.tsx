@@ -7,6 +7,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
 } from "@tanstack/react-query";
 import { gunzipSync, strFromU8, unzipSync } from "fflate";
 import {
@@ -16,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  CircleX,
   Clock3,
   Copy,
   Download,
@@ -42,8 +44,10 @@ import {
   type DragEvent,
 } from "react";
 import * as Y from "yjs";
+import { toast } from "sonner";
 
 import { useCurrentProject } from "@/components/providers/project-provider";
+import { useCurrentUser } from "@/components/providers/user-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,8 +110,11 @@ import {
 } from "./synctex";
 import type {
   ArticleAggregate,
+  ArticleBlock,
   ArticleBuild,
   ArticleBuildOutput,
+  ArticleCommitOperation,
+  ArticleDraft,
   ArticleRelease,
   ArticleTemplateManifest,
   ZoteroCollection,
@@ -137,6 +144,7 @@ const templateDefaults: ArticleTemplateManifest = {
 
 export function ArticleWorkbench() {
   const project = useCurrentProject();
+  const currentUser = useCurrentUser();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<WorkspaceTab>("write");
   const [provider, setProvider] = useState<HocuspocusProvider>();
@@ -151,12 +159,19 @@ export function ArticleWorkbench() {
   const aggregate = useQuery({
     queryFn: () => articleApi.aggregate(project.id),
     queryKey: ["article", project.id],
-    refetchInterval: (query) =>
-      query.state.data?.builds.some((build) =>
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const hasActiveOperation = data?.commit_operations?.some(
+        (operation) =>
+          operation.status === "queued" ||
+          operation.status === "running" ||
+          operation.status === "retry_wait",
+      );
+      const hasActiveBuild = data?.builds.some((build) =>
         ["queued", "running"].includes(build.status),
-      )
-        ? 2_000
-        : 15_000,
+      );
+      return hasActiveOperation || hasActiveBuild ? 2_000 : 15_000;
+    },
   });
   const permissions = useQuery({
     queryFn: () =>
@@ -176,10 +191,12 @@ export function ArticleWorkbench() {
     false;
   const collaborator = useMemo(
     () => ({
-      color: colorFor(project.id),
-      name: project.role ? `${project.role} · 当前用户` : "当前用户",
+      color: colorFor(
+        `${project.id}:${provider?.document.clientID ?? "pending"}`,
+      ),
+      name: currentUser?.displayName || currentUser?.email || "当前用户",
     }),
-    [project.id, project.role],
+    [currentUser?.displayName, currentUser?.email, project.id, provider],
   );
 
   useEffect(() => {
@@ -205,6 +222,10 @@ export function ArticleWorkbench() {
               typeof state.user?.name === "string" ? state.user.name : "协作者",
           })),
         );
+      },
+      onStateless: ({ payload }) => {
+        const block = articleBlockFromCollaborationEvent(payload);
+        if (block) updateArticleBlockCache(queryClient, project.id, block);
       },
       onStatus: ({ status }) => setConnection(status),
       onSynced: ({ state }) => {
@@ -237,7 +258,7 @@ export function ArticleWorkbench() {
       document.destroy();
       setProvider(undefined);
     };
-  }, [project.id]);
+  }, [project.id, queryClient]);
 
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["article", project.id] });
@@ -370,7 +391,6 @@ export function WritingWorkspace({
   collaborator,
   data,
   onFlush,
-  onOpenHistory,
   onOpenTemplates,
   onRefresh,
   provider,
@@ -388,6 +408,7 @@ export function WritingWorkspace({
   provider?: HocuspocusProvider;
   synced: boolean;
 }>) {
+  const queryClient = useQueryClient();
   const [panel, setPanel] = useState<
     "reference" | "artifact" | "zotero" | "pdf"
   >("reference");
@@ -495,12 +516,38 @@ export function WritingWorkspace({
     [onRefresh, projectId],
   );
   const reviewBlock = useCallback(
-    async (blockId: string) => {
-      await articleApi.flush(projectId);
-      await articleApi.reviewBlock(projectId, blockId);
-      await onRefresh();
+    async (blockId: string, contentFingerprint: string) => {
+      let reviewed: ArticleBlock;
+      try {
+        reviewed = await articleApi.reviewBlock(
+          projectId,
+          blockId,
+          contentFingerprint,
+        );
+      } catch (error) {
+        if (
+          !(error instanceof ApiError) ||
+          error.code !== "ARTICLE_BLOCK_CHANGED"
+        ) {
+          throw error;
+        }
+        const draft = await articleApi.flush(projectId);
+        updateArticleDraftCache(queryClient, projectId, draft);
+        const refreshedBlock = draft.blocks.find(
+          (block) => block.block_id === blockId,
+        );
+        if (!refreshedBlock?.content_fingerprint) {
+          throw new Error("同步后找不到该块，请重新选择后审阅");
+        }
+        reviewed = await articleApi.reviewBlock(
+          projectId,
+          blockId,
+          refreshedBlock.content_fingerprint,
+        );
+      }
+      updateArticleBlockCache(queryClient, projectId, reviewed);
     },
-    [onRefresh, projectId],
+    [projectId, queryClient],
   );
   const reviewChapter = useCallback(
     async (chapterTagId: string) => {
@@ -789,7 +836,6 @@ export function WritingWorkspace({
           canRelease={canRelease}
           data={data}
           onClose={() => setCommitOpen(false)}
-          onOpenHistory={onOpenHistory}
           onOpenTemplates={() => {
             setCommitOpen(false);
             onOpenTemplates();
@@ -1078,6 +1124,7 @@ function ArticleArtifactCard({
           <Image
             alt={item.artifact.name}
             className="object-contain p-2"
+            draggable={false}
             fill
             sizes="320px"
             src={download.data.transfer.url}
@@ -1477,12 +1524,194 @@ export function articleActionMessage(error: Error): string {
   return `${error.message}${error.requestId ? `（请求 ${error.requestId}）` : ""}`;
 }
 
+function operationStateLabel(status: ArticleCommitOperation["status"]): string {
+  return {
+    failed: "失败",
+    queued: "排队中",
+    retry_wait: "等待重试",
+    running: "执行中",
+    succeeded: "已完成",
+  }[status];
+}
+
+function operationStageLabel(operation: ArticleCommitOperation): string {
+  if (operation.status === "failed" || operation.stage === "failed") {
+    return "操作失败";
+  }
+  if (operation.operation_kind === "publication") {
+    return {
+      committing: "固定 Commit 中",
+      completed: "Commit 已确认，Build/Release 排队中",
+      failed: "操作失败",
+      publishing: "Commit 已确认，Build/Release 排队中",
+      queued: "等待固定 Commit",
+    }[operation.stage];
+  }
+  return {
+    committing: "固定 Commit 中",
+    completed: "远端 Commit 已确认",
+    failed: "操作失败",
+    publishing: "处理 Commit 结果",
+    queued: "等待固定 Commit",
+  }[operation.stage];
+}
+
+export function ArticleOperationStatus({
+  operations,
+}: Readonly<{
+  operations: ArticleCommitOperation[];
+}>) {
+  const [open, setOpen] = useState(false);
+  const active = operations.some((operation) =>
+    ["queued", "running", "retry_wait"].includes(operation.status),
+  );
+  const latest = operations[0];
+  const state = active
+    ? "active"
+    : latest?.status === "failed"
+      ? "failed"
+      : latest?.status === "succeeded"
+        ? "succeeded"
+        : "idle";
+  const label = {
+    active: "有 Commit / Release 操作正在执行",
+    failed: "最近的 Commit / Release 操作失败",
+    idle: "暂无 Commit / Release 操作",
+    succeeded: "最近的 Commit / Release 操作已完成",
+  }[state];
+  return (
+    <>
+      <Button
+        aria-label={label}
+        className="rounded-full"
+        onClick={() => setOpen(true)}
+        size="icon"
+        title={label}
+        variant="outline"
+      >
+        {state === "active" ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : state === "failed" ? (
+          <CircleX className="size-4 text-destructive" />
+        ) : state === "succeeded" ? (
+          <CheckCircle2 className="size-4 text-emerald-600" />
+        ) : (
+          <Clock3 className="size-4 text-muted-foreground" />
+        )}
+      </Button>
+      {open ? (
+        <ArticleOperationQueueDialog
+          onClose={() => setOpen(false)}
+          operations={operations}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ArticleOperationQueueDialog({
+  onClose,
+  operations,
+}: Readonly<{
+  onClose: () => void;
+  operations: ArticleCommitOperation[];
+}>) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <Card
+        aria-labelledby="article-operation-queue-title"
+        aria-modal="true"
+        className="flex max-h-[min(46rem,calc(100vh-2rem))] w-full max-w-3xl flex-col"
+        role="dialog"
+      >
+        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle id="article-operation-queue-title">
+              Commit / Release 队列
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              最近 {operations.length} 条后台操作
+            </p>
+          </div>
+          <Button onClick={onClose} size="sm" variant="ghost">
+            关闭
+          </Button>
+        </CardHeader>
+        <CardContent className="min-h-0 space-y-2 overflow-y-auto">
+          {operations.map((operation) => (
+            <div
+              className="rounded-lg border bg-muted/20 p-3 text-sm"
+              key={operation.operation_id}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                {["queued", "running", "retry_wait"].includes(
+                  operation.status,
+                ) ? (
+                  <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+                ) : operation.status === "succeeded" ? (
+                  <CheckCircle2 className="size-4 text-emerald-600" />
+                ) : (
+                  <CircleX className="size-4 text-destructive" />
+                )}
+                <span className="font-medium">
+                  {operation.operation_kind === "publication"
+                    ? "提交并发布"
+                    : "论文 Commit"}
+                </span>
+                <Badge>{operationStateLabel(operation.status)}</Badge>
+                <span className="text-xs text-muted-foreground">
+                  {operationStageLabel(operation)} · 草稿 r
+                  {operation.draft_revision}
+                </span>
+                <time className="ml-auto text-xs text-muted-foreground">
+                  {new Date(operation.updated_at).toLocaleString()}
+                </time>
+              </div>
+              {operation.commit_sha ? (
+                <p className="mt-2 font-mono text-xs text-muted-foreground">
+                  Commit {operation.commit_sha}
+                </p>
+              ) : null}
+              {operation.status === "failed" ? (
+                <details className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                  <summary className="cursor-pointer font-medium text-destructive">
+                    查看失败日志
+                  </summary>
+                  <dl className="mt-2 grid gap-1 font-mono text-muted-foreground sm:grid-cols-[7rem_minmax(0,1fr)]">
+                    <dt>error_code</dt>
+                    <dd className="break-all">
+                      {operation.error_code ?? "ARTICLE_OPERATION_FAILED"}
+                    </dd>
+                    <dt>operation_id</dt>
+                    <dd className="break-all">{operation.operation_id}</dd>
+                    <dt>attempts</dt>
+                    <dd>
+                      {operation.attempts} / {operation.max_attempts}
+                    </dd>
+                    <dt>updated_at</dt>
+                    <dd>{operation.updated_at}</dd>
+                  </dl>
+                </details>
+              ) : null}
+            </div>
+          ))}
+          {!operations.length ? <Empty label="暂无后台操作" /> : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function CommitDialog({
   canBuild,
   canRelease,
   data,
   onClose,
-  onOpenHistory,
   onOpenTemplates,
   onRefresh,
 }: Readonly<{
@@ -1490,7 +1719,6 @@ export function CommitDialog({
   canRelease: boolean;
   data: ArticleAggregate;
   onClose: () => void;
-  onOpenHistory: () => void;
   onOpenTemplates: () => void;
   onRefresh: () => Promise<void>;
 }>) {
@@ -1512,9 +1740,9 @@ export function CommitDialog({
       );
     },
     onSuccess: async () => {
-      await onRefresh();
       onClose();
-      onOpenHistory();
+      toast.info("论文 Commit 已进入后台队列，可以继续编辑");
+      await onRefresh();
     },
   });
   const publish = useMutation({
@@ -1533,9 +1761,9 @@ export function CommitDialog({
       });
     },
     onSuccess: async () => {
-      await onRefresh();
       onClose();
-      onOpenHistory();
+      toast.info("提交并发布已进入后台队列，可以继续编辑");
+      await onRefresh();
     },
   });
   const error = commit.error ?? publish.error;
@@ -1666,19 +1894,24 @@ function VersionHistoryWorkspace(
   const [tab, setTab] = useState<"commits" | "releases">("commits");
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <Button
-          onClick={() => setTab("commits")}
-          variant={tab === "commits" ? "default" : "outline"}
-        >
-          Commits
-        </Button>
-        <Button
-          onClick={() => setTab("releases")}
-          variant={tab === "releases" ? "default" : "outline"}
-        >
-          Releases
-        </Button>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setTab("commits")}
+            variant={tab === "commits" ? "default" : "outline"}
+          >
+            Commits
+          </Button>
+          <Button
+            onClick={() => setTab("releases")}
+            variant={tab === "releases" ? "default" : "outline"}
+          >
+            Releases
+          </Button>
+        </div>
+        <ArticleOperationStatus
+          operations={props.data.commit_operations ?? []}
+        />
       </div>
       {tab === "commits" ? (
         <BuildWorkspace
@@ -2891,6 +3124,84 @@ export function outputLabel(role: ArticleBuildOutput["role"]): string {
   if (role === "synctex") return "SyncTeX 映射";
   return "构建日志";
 }
+
+function articleBlockFromCollaborationEvent(
+  payload: string,
+): ArticleBlock | undefined {
+  try {
+    const event = JSON.parse(payload) as Record<string, unknown>;
+    if (event.type !== "article.block.reviewed") return;
+    const block = event.block as Record<string, unknown> | undefined;
+    if (
+      !block ||
+      typeof block.block_id !== "string" ||
+      typeof block.content_fingerprint !== "string" ||
+      ![
+        "ai_draft",
+        "human_draft",
+        "ai_revision",
+        "human_revision",
+        "reviewed",
+      ].includes(block.tag as ArticleBlock["tag"]) ||
+      typeof block.node_type !== "string" ||
+      typeof block.ordinal !== "number" ||
+      typeof block.text !== "string" ||
+      typeof block.attrs !== "object" ||
+      block.attrs === null ||
+      typeof block.provenance !== "object" ||
+      block.provenance === null ||
+      typeof block.updated_at !== "string"
+    ) {
+      return;
+    }
+    return block as ArticleBlock;
+  } catch {
+    return;
+  }
+}
+
+function updateArticleDraftCache(
+  queryClient: QueryClient,
+  projectId: string,
+  draft: ArticleDraft,
+) {
+  queryClient.setQueryData<ArticleAggregate>(
+    ["article", projectId],
+    (current) =>
+      current
+        ? {
+            ...current,
+            draft,
+            unreviewed_blocks: draft.blocks.filter(
+              (block) => block.tag !== "reviewed",
+            ).length,
+          }
+        : current,
+  );
+}
+
+function updateArticleBlockCache(
+  queryClient: QueryClient,
+  projectId: string,
+  reviewed: ArticleBlock,
+) {
+  queryClient.setQueryData<ArticleAggregate>(
+    ["article", projectId],
+    (current) => {
+      if (!current) return current;
+      const blocks = current.draft.blocks.map((block) =>
+        block.block_id === reviewed.block_id ? reviewed : block,
+      );
+      return {
+        ...current,
+        draft: { ...current.draft, blocks },
+        unreviewed_blocks: blocks.filter((block) => block.tag !== "reviewed")
+          .length,
+      };
+    },
+  );
+}
+
 function Empty({ label }: Readonly<{ label: string }>) {
   return (
     <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
@@ -2915,11 +3226,10 @@ function ErrorState({ message }: Readonly<{ message: string }>) {
   );
 }
 function colorFor(value: string) {
-  const colors = ["#2563eb", "#7c3aed", "#059669", "#dc2626", "#d97706"];
   let hash = 0;
   for (const char of value)
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-  return colors[Math.abs(hash) % colors.length];
+  return `hsl(${Math.abs(hash) % 360} 72% 42%)`;
 }
 function formatBytes(value: number) {
   return value < 1024 * 1024

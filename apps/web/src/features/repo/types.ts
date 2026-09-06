@@ -17,6 +17,7 @@ export type Repository = {
   display_name: string;
   last_error_code: string | null;
   last_error_message: string | null;
+  last_error_retryable: boolean;
   last_synced_at: string | null;
   project_id: string;
   provider: RepoProvider;
@@ -58,6 +59,8 @@ export type RepoConnectionTestResult = {
     status: "passed" | "failed";
   }[];
   default_branch: string;
+  error_code: string | null;
+  retryable: boolean;
   status: "passed" | "failed";
 };
 

@@ -80,9 +80,14 @@ export function ArtifactUploader({
     try {
       const detail = await task.start();
       onComplete(detail);
-      toast.success(
-        artifactId ? "新版本已上传并验证" : "文件已上传并完成完整性验证",
-      );
+      const placementError = task.getSnapshot().placementError;
+      if (placementError) {
+        toast.warning(placementError.message);
+      } else {
+        toast.success(
+          artifactId ? "新版本已上传并验证" : "文件已上传并完成完整性验证",
+        );
+      }
     } catch (error) {
       if (task.getSnapshot().status !== "cancelled") {
         toast.error(error instanceof Error ? error.message : "文件上传失败");

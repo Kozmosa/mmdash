@@ -28,8 +28,9 @@ var (
 
 // SafeError carries a stable public code while retaining no provider details.
 type SafeError struct {
-	Code    string
-	Message string
+	Code      string
+	Message   string
+	Retryable bool
 }
 
 func (err *SafeError) Error() string {
@@ -38,6 +39,10 @@ func (err *SafeError) Error() string {
 
 func safe(code, message string) error {
 	return &SafeError{Code: code, Message: message}
+}
+
+func safeRetryable(code, message string) error {
+	return &SafeError{Code: code, Message: message, Retryable: true}
 }
 
 func wrap(operation string, err error) error {

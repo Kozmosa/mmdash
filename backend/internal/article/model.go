@@ -8,13 +8,14 @@ import (
 )
 
 var (
-	ErrConflict    = errors.New("article state conflict")
-	ErrForbidden   = errors.New("article access forbidden")
-	ErrInvalid     = errors.New("invalid article request")
-	ErrNotFound    = errors.New("article object not found")
-	ErrNotReady    = errors.New("article object is not ready")
-	ErrSuperseded  = errors.New("article preview was superseded")
-	ErrUnavailable = errors.New("article integration unavailable")
+	ErrBlockChanged = errors.New("article block content changed")
+	ErrConflict     = errors.New("article state conflict")
+	ErrForbidden    = errors.New("article access forbidden")
+	ErrInvalid      = errors.New("invalid article request")
+	ErrNotFound     = errors.New("article object not found")
+	ErrNotReady     = errors.New("article object is not ready")
+	ErrSuperseded   = errors.New("article preview was superseded")
+	ErrUnavailable  = errors.New("article integration unavailable")
 )
 
 const (
@@ -33,14 +34,15 @@ const (
 )
 
 type Block struct {
-	Attrs      map[string]interface{} `json:"attrs"`
-	BlockID    string                 `json:"block_id"`
-	NodeType   string                 `json:"node_type"`
-	Ordinal    int                    `json:"ordinal"`
-	Provenance map[string]interface{} `json:"provenance"`
-	Tag        string                 `json:"tag"`
-	Text       string                 `json:"text"`
-	UpdatedAt  time.Time              `json:"updated_at"`
+	Attrs              map[string]interface{} `json:"attrs"`
+	BlockID            string                 `json:"block_id"`
+	ContentFingerprint string                 `json:"content_fingerprint"`
+	NodeType           string                 `json:"node_type"`
+	Ordinal            int                    `json:"ordinal"`
+	Provenance         map[string]interface{} `json:"provenance"`
+	Tag                string                 `json:"tag"`
+	Text               string                 `json:"text"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
 // ChapterTag is independent from the tag carried by an Article block. It is
@@ -129,6 +131,51 @@ type Commit struct {
 	ReferencesSHA256  string                 `json:"-"`
 	ManifestSHA256    string                 `json:"-"`
 	FrozenReferences  []Reference            `json:"-"`
+}
+
+type CommitOperation struct {
+	Attempts       int        `json:"attempts"`
+	CommitID       string     `json:"commit_id,omitempty"`
+	CommitSHA      string     `json:"commit_sha,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	DraftRevision  int64      `json:"draft_revision"`
+	ErrorCode      string     `json:"error_code,omitempty"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	IdempotencyKey string     `json:"-"`
+	MaxAttempts    int        `json:"max_attempts"`
+	NextAttemptAt  time.Time  `json:"next_attempt_at"`
+	OperationKind  string     `json:"operation_kind"`
+	OperationID    string     `json:"operation_id"`
+	ProjectID      string     `json:"project_id"`
+	PublicationID  string     `json:"publication_id,omitempty"`
+	Stage          string     `json:"stage"`
+	Status         string     `json:"status"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+
+	BibliographyTool  string                 `json:"-"`
+	CreatedBy         string                 `json:"-"`
+	Engine            string                 `json:"-"`
+	ExpectedHeadSHA   string                 `json:"-"`
+	FrozenReferences  []Reference            `json:"-"`
+	LeaseExpiresAt    *time.Time             `json:"-"`
+	LockedBy          string                 `json:"-"`
+	ManifestBytes     []byte                 `json:"-"`
+	ManifestSHA256    string                 `json:"-"`
+	Manuscript        string                 `json:"-"`
+	ManuscriptSHA256  string                 `json:"-"`
+	Message           string                 `json:"-"`
+	Notes             string                 `json:"-"`
+	PreviousCommitSHA string                 `json:"-"`
+	PublicationKey    string                 `json:"-"`
+	ReferencesBIB     string                 `json:"-"`
+	ReferencesSHA256  string                 `json:"-"`
+	RequestSHA256     string                 `json:"-"`
+	StateVector       string                 `json:"-"`
+	Tag               string                 `json:"-"`
+	TemplateID        string                 `json:"-"`
+	TiptapJSON        map[string]interface{} `json:"-"`
+	Title             string                 `json:"-"`
+	YjsUpdate         string                 `json:"-"`
 }
 
 type TemplateManifest struct {
@@ -261,6 +308,7 @@ type Aggregate struct {
 	Builds            []Build            `json:"builds"`
 	ChapterTags       []ChapterTag       `json:"chapter_tags"`
 	Commits           []Commit           `json:"commits"`
+	CommitOperations  []CommitOperation  `json:"commit_operations"`
 	Draft             Draft              `json:"draft"`
 	References        []Reference        `json:"references"`
 	Releases          []Release          `json:"releases"`

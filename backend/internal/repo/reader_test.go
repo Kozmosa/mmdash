@@ -292,7 +292,7 @@ func readerFixture(t *testing.T) (Reader, Repository, string) {
 			CanonicalRemoteURL: source, DefaultBranch: "main",
 			DisplayName: "server", FetchURL: source, Provider: "server_existing",
 		},
-		"manual",
+		nil, "manual",
 	)
 	if err != nil {
 		t.Fatalf("synchronize reader fixture: %v", err)

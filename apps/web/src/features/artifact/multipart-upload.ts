@@ -1,3 +1,5 @@
+import { ApiError } from "@/lib/api-client";
+
 import { artifactApi } from "./artifact-api";
 import { hashFile } from "./sha256";
 import type {
@@ -43,6 +45,7 @@ export type UploadTaskSnapshot = {
   error?: Error;
   fileName: string;
   progress: number;
+  placementError?: Error;
   session?: UploadSession;
   status: UploadTaskStatus;
   totalBytes: number;
@@ -113,18 +116,11 @@ export class MultipartUploadTask {
         this.session.upload_mode === "deduplicated" ||
         this.session.status === "completed"
       ) {
-        removeStoredUpload(this.options.projectId, this.session.upload_id);
         const detail = await artifactApi.get(
           this.options.projectId,
           this.session.artifact_id,
         );
-        const placed = await this.placeInFolder(detail);
-        this.update({
-          completedBytes: this.file.size,
-          progress: 1,
-          status: "completed",
-        });
-        return placed;
+        return this.complete(detail);
       }
       persistStoredUpload(this.toStored(sha256));
       const parts = await this.uploadParts(this.session);
@@ -135,13 +131,7 @@ export class MultipartUploadTask {
         this.session.upload_id,
         parts,
       );
-      removeStoredUpload(this.options.projectId, this.session.upload_id);
-      this.update({
-        completedBytes: this.file.size,
-        progress: 1,
-        status: "completed",
-      });
-      return this.placeInFolder(detail);
+      return this.complete(detail);
     } catch (error) {
       if (this.cancelled) {
         this.setStatus("cancelled");
@@ -235,6 +225,7 @@ export class MultipartUploadTask {
     return artifactApi.initializeUpload(this.options.projectId, {
       ...input,
       description: this.options.description,
+      folder_id: this.options.folderId ?? undefined,
       kind: this.options.kind ?? "attachment",
       name: this.options.name || this.file.name,
       tags: this.options.tags ?? [],
@@ -396,15 +387,67 @@ export class MultipartUploadTask {
     };
   }
 
-  private async placeInFolder(detail: ArtifactDetail): Promise<ArtifactDetail> {
-    if (this.options.artifactId) return detail;
+  private async complete(detail: ArtifactDetail): Promise<ArtifactDetail> {
+    const placement = await this.placeInFolder(detail);
+    if (!placement.error) {
+      removeStoredUpload(this.options.projectId, this.session!.upload_id);
+    }
+    this.update({
+      completedBytes: this.file.size,
+      placementError: placement.error,
+      progress: 1,
+      status: "completed",
+    });
+    return placement.detail;
+  }
+
+  private async placeInFolder(
+    detail: ArtifactDetail,
+  ): Promise<{ detail: ArtifactDetail; error?: Error }> {
+    if (this.options.artifactId) return { detail };
     const folderId = this.options.folderId ?? this.options.stored?.folderId;
-    if (!folderId || detail.artifact.folder_id === folderId) return detail;
-    return artifactApi.moveArtifact(
-      this.options.projectId,
-      detail.artifact.artifact_id,
-      folderId,
-    );
+    if (!folderId || detail.artifact.folder_id === folderId) return { detail };
+
+    let current = detail;
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt < this.retryLimit; attempt += 1) {
+      try {
+        const moved = await artifactApi.moveArtifact(
+          this.options.projectId,
+          detail.artifact.artifact_id,
+          folderId,
+          { attempt: attempt + 1, uploadId: this.session!.upload_id },
+        );
+        return { detail: moved };
+      } catch (error) {
+        lastError =
+          error instanceof Error ? error : new Error("Artifact 目录归档失败");
+        try {
+          current = await artifactApi.get(
+            this.options.projectId,
+            detail.artifact.artifact_id,
+          );
+          if (current.artifact.folder_id === folderId) {
+            return { detail: current };
+          }
+        } catch {
+          // Reconciliation is best effort; the confirmed Artifact remains valid.
+        }
+        if (
+          attempt + 1 >= this.retryLimit ||
+          !isRetryablePlacementError(error)
+        ) {
+          break;
+        }
+        await delay(250 * 2 ** attempt);
+      }
+    }
+    return {
+      detail: current,
+      error: new Error(
+        `文件已上传，但暂未归档到目标文件夹：${lastError?.message ?? "未知错误"}`,
+      ),
+    };
   }
 
   private validateResumeFile(file: File): void {
@@ -440,6 +483,14 @@ export class MultipartUploadTask {
       listener(this.getSnapshot());
     }
   }
+}
+
+function isRetryablePlacementError(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    (error instanceof ApiError &&
+      (error.retryable || [502, 503, 504].includes(error.status)))
+  );
 }
 
 export function listStoredUploads(projectId: string): StoredArtifactUpload[] {

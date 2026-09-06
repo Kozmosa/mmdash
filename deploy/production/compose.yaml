@@ -16,6 +16,52 @@ x-logging: &default-logging
     max-size: ${MMDASH_LOG_MAX_SIZE:-10m}
 
 services:
+  mihomo:
+    image: ${MMDASH_MIHOMO_IMAGE:?set MMDASH_MIHOMO_IMAGE to the reviewed local image or immutable digest}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "${MMDASH_MIHOMO_UID:?set MMDASH_MIHOMO_UID}:${MMDASH_MIHOMO_GID:?set MMDASH_MIHOMO_GID}"
+    logging: *default-logging
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - -d
+      - /state
+      - -f
+      - /config.yaml
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/local/bin/mihomo",
+          "-t",
+          "-d",
+          "/state",
+          "-f",
+          "/config.yaml",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 30s
+    volumes:
+      - type: bind
+        source: ${MMDASH_MIHOMO_CONFIG_PATH:?set MMDASH_MIHOMO_CONFIG_PATH}
+        target: /config.yaml
+        read_only: true
+      - type: bind
+        source: ${MMDASH_MIHOMO_PROVIDER_DIR:?set MMDASH_MIHOMO_PROVIDER_DIR}
+        target: /state/providers
+        read_only: true
+    tmpfs:
+      - /state:rw,noexec,nosuid,size=64m,uid=${MMDASH_MIHOMO_UID:?set MMDASH_MIHOMO_UID},gid=${MMDASH_MIHOMO_GID:?set MMDASH_MIHOMO_GID}
+    networks:
+      - egress
+
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
@@ -148,6 +194,8 @@ services:
       REPO_MAX_TEXT_BYTES: ${REPO_MAX_TEXT_BYTES:-1048576}
       REPO_DISCONNECT_GRACE: ${REPO_DISCONNECT_GRACE:-24h}
       REPO_ASKPASS_PATH: /usr/local/bin/mmdash-git-askpass
+      REPO_GITHUB_PROXY_URL: ${REPO_GITHUB_PROXY_URL:?set REPO_GITHUB_PROXY_URL}
+      REPO_GITHUB_NO_PROXY: ${REPO_GITHUB_NO_PROXY:-localhost,127.0.0.1,::1}
       MMDASH_BOX_RELEASE_PROJECT_ID: ${MMDASH_BOX_RELEASE_PROJECT_ID:-00000000-0000-4000-8000-000000000900}
       AGENT_MCP_GATEWAY_URL: ${MMDASH_PUBLIC_URL:-https://prod.mmdash.moe}/mcp
       AGENT_RUNTIME_ALLOW_LOOPBACK: "false"
@@ -159,6 +207,8 @@ services:
       NOTION_OAUTH_REDIRECT_URI: ${NOTION_OAUTH_REDIRECT_URI:-https://prod.mmdash.moe/api/integrations/notion/oauth/callback}
       MMDASH_PROGRESS_EVALUATOR_MODE: core_agent
     depends_on:
+      mihomo:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       minio-init:
@@ -385,6 +435,8 @@ networks:
   data:
     internal: true
   egress:
+    name: mmdash-prod-egress
+    driver: bridge
   tunnel-egress:
 
 volumes:

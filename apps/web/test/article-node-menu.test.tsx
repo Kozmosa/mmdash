@@ -115,11 +115,13 @@ describe("Article node menus", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "保存表注" }));
     fireEvent.click(screen.getByRole("button", { name: "切换首行为表头" }));
+    fireEvent.click(screen.getByRole("button", { name: "列等宽" }));
     fireEvent.click(screen.getByRole("button", { name: "删除表格" }));
 
     expect(onApplyCaption).toHaveBeenCalledOnce();
     expect(onTableAction.mock.calls.map(([action]) => action)).toEqual([
       "toggleHeaderRow",
+      "equalizeColumns",
       "deleteTable",
     ]);
     expect(screen.queryByRole("button", { name: "上方插入行" })).toBeNull();

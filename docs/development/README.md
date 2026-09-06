@@ -68,9 +68,12 @@ before advertising either hosted or self-hosted E2B.
 
 ## Isolated native environment
 
-Run the complete baseline on Windows or Linux without Docker with the
-[native environment guide](native-environment.md). It uses Pixi as the sole
-global prerequisite and keeps service data and toolchains under `.testenv`.
+Run the complete local workbench on Windows or Linux with the
+[native environment guide](native-environment.md). Pixi isolates service data
+and toolchains under `.testenv`; the Worker automatically uses its pinned
+Docker image when a compatible native Pandoc/LaTeX toolchain is unavailable.
+Set `MMDASH_TESTENV_WORKER_MODE=disabled` only for an explicitly base-only,
+Docker-free environment.
 
 The production-shaped public entry is defined only in the repository-root
 `Caddyfile`, using `mmdash.moe`. Browser traffic uses `/api`, the native CLI

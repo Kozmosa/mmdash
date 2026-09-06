@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/mmdash/mmdash/backend/internal/repo/egress"
 	"github.com/mmdash/mmdash/backend/internal/repo/gitcli"
 )
 
@@ -21,43 +22,70 @@ type CommandRunner interface {
 type GitHub struct {
 	APIBase     string
 	Client      *http.Client
+	Egress      egress.Config
 	Git         CommandRunner
 	RuntimeRoot string
 	UserAgent   string
 }
 
 func (provider GitHub) Test(ctx context.Context, config Config) (Connection, error) {
-	remote, err := gitcli.NormalizeGitHubURL(config.RemoteURL)
-	if err != nil || config.AccessToken == "" {
-		return Connection{}, ErrInvalidConfig
-	}
-	metadata, err := provider.metadata(ctx, remote.DisplayName, config.AccessToken)
+	connection, err := provider.Resolve(ctx, config)
 	if err != nil {
 		return Connection{}, err
 	}
-	credentials := &gitcli.Credentials{
-		Token: config.AccessToken, Username: "x-access-token",
+	metadata, err := provider.metadata(
+		ctx, connection.DisplayName, config.AccessToken,
+	)
+	if err != nil {
+		return Connection{}, err
 	}
 	result, err := provider.Git.Run(ctx, gitcli.Command{
-		Args:        []string{"ls-remote", "--heads", remote.FetchURL},
-		Credentials: credentials,
+		Args:        []string{"ls-remote", "--heads", connection.FetchURL},
+		Credentials: connection.Credentials,
 		Directory:   provider.RuntimeRoot,
 		Operation:   "provider.github.ls-remote",
 		Sensitive:   []string{config.RemoteURL},
 	})
 	if err != nil {
-		if errors.Is(err, gitcli.ErrAuthentication) {
-			return Connection{}, ErrAuthentication
+		switch {
+		case errors.Is(err, gitcli.ErrAuthentication):
+			return Connection{}, classify(ErrAuthentication, err)
+		case errors.Is(err, gitcli.ErrTimeout):
+			return Connection{}, classify(ErrTimeout, err)
+		case errors.Is(err, gitcli.ErrNetworkUnavailable):
+			return Connection{}, classify(ErrNetworkUnavailable, err)
+		case errors.Is(err, gitcli.ErrProviderUnavailable):
+			return Connection{}, classify(ErrTemporarilyUnavailable, err)
+		case errors.Is(err, gitcli.ErrRemoteNotFound):
+			return Connection{}, classify(ErrRemoteNotFound, err)
+		case errors.Is(err, gitcli.ErrBranchNotFound):
+			return Connection{}, classify(ErrBranchMissing, err)
+		default:
+			return Connection{}, classify(ErrTemporarilyUnavailable, err)
 		}
-		return Connection{}, ErrRemoteNotFound
 	}
 	branches, err := parseRemoteHeads(result.Stdout)
 	if err != nil {
-		return Connection{}, ErrRemoteNotFound
+		return Connection{}, classify(ErrInvalidResponse, err)
+	}
+	connection.Branches = branches
+	connection.DefaultBranch = metadata.DefaultBranch
+	return connection, nil
+}
+
+func (provider GitHub) Resolve(
+	_ context.Context,
+	config Config,
+) (Connection, error) {
+	remote, err := gitcli.NormalizeGitHubURL(config.RemoteURL)
+	if err != nil || config.AccessToken == "" {
+		return Connection{}, ErrInvalidConfig
 	}
 	return Connection{
-		Branches: branches, CanonicalRemoteURL: remote.CanonicalURL,
-		Credentials: credentials, DefaultBranch: metadata.DefaultBranch,
+		Branches: map[string]string{}, CanonicalRemoteURL: remote.CanonicalURL,
+		Credentials: &gitcli.Credentials{
+			Proxy: provider.Egress, Token: config.AccessToken, Username: "x-access-token",
+		},
 		DisplayName: remote.DisplayName, FetchURL: remote.FetchURL,
 		Provider: "github",
 	}, nil
@@ -102,7 +130,10 @@ func (provider GitHub) metadata(
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return githubMetadata{}, ErrRemoteNotFound
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return githubMetadata{}, classify(ErrTimeout, err)
+		}
+		return githubMetadata{}, classify(ErrNetworkUnavailable, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusUnauthorized ||
@@ -112,16 +143,20 @@ func (provider GitHub) metadata(
 	if response.StatusCode == http.StatusNotFound {
 		return githubMetadata{}, ErrRemoteNotFound
 	}
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return githubMetadata{}, ErrTemporarilyUnavailable
+	}
 	if response.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-		return githubMetadata{}, ErrRemoteNotFound
+		return githubMetadata{}, ErrInvalidResponse
 	}
 	var metadata githubMetadata
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 1024*1024))
 	if err := decoder.Decode(&metadata); err != nil ||
 		metadata.DefaultBranch == "" ||
 		gitcli.ValidateBranch(metadata.DefaultBranch) != nil {
-		return githubMetadata{}, ErrRemoteNotFound
+		return githubMetadata{}, ErrInvalidResponse
 	}
 	if !metadata.Permissions.Push {
 		return githubMetadata{}, ErrWritePermission

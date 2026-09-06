@@ -154,6 +154,7 @@ export type ArtifactListFilters = {
 export type InitializeArtifactUpload = {
   description?: string;
   filename: string;
+  folder_id?: string;
   idempotency_key: string;
   kind: PublicArtifactKind;
   mime_type?: string;

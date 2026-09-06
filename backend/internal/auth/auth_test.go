@@ -529,11 +529,12 @@ func TestSessionLoginAuthenticationAndRevocation(t *testing.T) {
 	now := time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
 	store := newMemoryStore()
 	service := Service{
-		Clock:      clock.Fixed{Time: now},
-		Generator:  identity.Generator{Reader: bytes.NewReader(make([]byte, 64))},
-		JWTSecret:  []byte("test-jwt-secret-with-at-least-32-characters"),
-		SessionTTL: time.Hour,
-		Store:      store,
+		AccessTokenTTL: 15 * time.Minute,
+		Clock:          clock.Fixed{Time: now},
+		Generator:      identity.Generator{Reader: bytes.NewReader(make([]byte, 64))},
+		JWTSecret:      []byte("test-jwt-secret-with-at-least-32-characters"),
+		SessionTTL:     time.Hour,
+		Store:          store,
 	}
 	ctx := context.Background()
 	if err := service.EnsureBootstrapUser(ctx, "ADMIN@example.com", "Admin", "correct-password"); err != nil {
@@ -542,6 +543,10 @@ func TestSessionLoginAuthenticationAndRevocation(t *testing.T) {
 	result, err := service.Login(ctx, "admin@example.com", "correct-password")
 	if err != nil {
 		t.Fatalf("login: %v", err)
+	}
+	if !result.ExpiresAt.Equal(now.Add(15*time.Minute)) ||
+		!result.SessionExpiresAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("unexpected access/session expiry: %#v", result)
 	}
 	authenticated, err := service.Authenticate(ctx, "Bearer "+result.AccessToken)
 	if err != nil {

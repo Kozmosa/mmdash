@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +44,7 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	viewerID := generator.MustNew()
 	projectID := generator.MustNew()
 	agentInstanceID := generator.MustNew()
+	folderID := generator.MustNew()
 	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO auth_users(
@@ -60,6 +62,13 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		) VALUES($1,'Artifact integration',$2,$3,$3)
 	`, projectID, userID, now); err != nil {
 		t.Fatalf("insert project: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO artifact_folders(
+			folder_id,project_id,name,position,created_at,updated_at
+		) VALUES($1,$2,'Article',0,$3,$3)
+	`, folderID, projectID, now); err != nil {
+		t.Fatalf("insert Artifact folder: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO project_members(
@@ -155,12 +164,53 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	service := newLocalTestService(t, store, projectService, now)
 	resultExperimentID := generator.MustNew()
 	resultBytes := makeResultArchive(t, resultExperimentID, []byte("summary"))
-	resultDetail, err := service.ArchiveExperimentResult(ctx, projectID, resultExperimentID, userID, digest(resultBytes), int64(len(resultBytes)), bytes.NewReader(resultBytes))
-	if err != nil || resultDetail.CurrentVersion == nil || resultDetail.CurrentVersion.Filename != "artifact.zip" || resultDetail.Artifact.Kind != KindExperimentResult {
+	resultFolderPath := []string{"experiment", strings.Repeat("a", 40) + "_20260730T100000.000000Z"}
+	const folderWorkers = 8
+	folderIDs := make(chan string, folderWorkers)
+	folderErrors := make(chan error, folderWorkers)
+	var folderGroup sync.WaitGroup
+	for range folderWorkers {
+		folderGroup.Add(1)
+		go func() {
+			defer folderGroup.Done()
+			leaf, ensureErr := store.EnsureFolderPath(ctx, projectID, resultFolderPath)
+			if ensureErr != nil {
+				folderErrors <- ensureErr
+				return
+			}
+			folderIDs <- leaf.ID
+		}()
+	}
+	folderGroup.Wait()
+	close(folderIDs)
+	close(folderErrors)
+	for ensureErr := range folderErrors {
+		t.Fatalf("concurrent managed folder ensure: %v", ensureErr)
+	}
+	var managedLeafID string
+	for folderID := range folderIDs {
+		if managedLeafID == "" {
+			managedLeafID = folderID
+		} else if folderID != managedLeafID {
+			t.Fatalf("concurrent folder creation returned different leaves: %s and %s", managedLeafID, folderID)
+		}
+	}
+	resultDetail, err := service.ArchiveExperimentResult(ctx, projectID, resultExperimentID, userID, resultFolderPath, digest(resultBytes), int64(len(resultBytes)), bytes.NewReader(resultBytes))
+	if err != nil || resultDetail.CurrentVersion == nil || resultDetail.CurrentVersion.Filename != "execution-bundle.zip" || resultDetail.Artifact.Kind != KindExperimentResult {
 		t.Fatalf("archive experiment result: %#v, %v", resultDetail, err)
 	}
 	if resultDetail.Artifact.SourceObjectID == nil || *resultDetail.Artifact.SourceObjectID != resultExperimentID {
 		t.Fatalf("archive experiment result source relation: %#v", resultDetail.Artifact.SourceObjectID)
+	}
+	if resultDetail.Artifact.FolderID == nil {
+		t.Fatalf("archive experiment result was left at the Artifact root: %#v", resultDetail.Artifact)
+	}
+	folderTree, err := store.GetFolderTree(ctx, projectID)
+	if err != nil || len(folderTree.Items) != 1 || folderTree.Items[0].Name != "experiment" ||
+		len(folderTree.Items[0].Children) != 1 || folderTree.Items[0].Children[0].Name != resultFolderPath[1] ||
+		folderTree.Items[0].Children[0].ID != managedLeafID ||
+		managedLeafID != *resultDetail.Artifact.FolderID {
+		t.Fatalf("unexpected managed Experiment folder tree: %#v, %v", folderTree, err)
 	}
 	owner := auth.Identity{
 		Kind: "session", User: auth.User{ID: userID},
@@ -185,7 +235,8 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 		Filename: "dataset.bin", Name: "Dataset",
 		SizeBytes: int64(len(contents)), SHA256: digest(contents),
 		MIMEType: "application/octet-stream", Kind: KindAttachment,
-		Tags: []string{"raw"}, IdempotencyKey: "multipart-1",
+		Tags: []string{"raw"}, FolderID: &folderID,
+		IdempotencyKey: "multipart-1",
 	}
 	if _, err := service.Initialize(ctx, viewer, projectID, input); !errors.Is(
 		err, ErrForbidden,
@@ -196,9 +247,19 @@ func TestPostgresLocalMultipartLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initialize multipart: %v", err)
 	}
+	initializedArtifact, err := store.GetArtifact(ctx, projectID, upload.ArtifactID)
+	if err != nil || initializedArtifact.FolderID == nil ||
+		*initializedArtifact.FolderID != folderID {
+		t.Fatalf("initialize did not assign folder atomically: %#v, %v", initializedArtifact, err)
+	}
 	repeated, err := service.Initialize(ctx, owner, projectID, input)
 	if err != nil || repeated.UploadID != upload.UploadID {
 		t.Fatalf("idempotent initialize: %#v, %v", repeated, err)
+	}
+	differentPlacement := input
+	differentPlacement.FolderID = nil
+	if _, err := service.Initialize(ctx, owner, projectID, differentPlacement); !errors.Is(err, ErrUploadConflict) {
+		t.Fatalf("idempotency key accepted a different folder: %v", err)
 	}
 	grants, err := service.SignParts(
 		ctx, owner, projectID, upload.UploadID, []int{2, 1},

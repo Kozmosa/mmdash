@@ -179,18 +179,12 @@ func providerConfig(resolved settings.ResolvedSetting) (provider.Config, error) 
 }
 
 func safeProviderMessage(err error) string {
-	switch {
-	case errors.Is(err, provider.ErrAuthentication):
-		return "Repository authentication failed"
-	case errors.Is(err, provider.ErrBranchMissing):
+	failure := classifyProviderFailure(err)
+	if errors.Is(err, provider.ErrBranchMissing) {
 		return "One or more mapped branches do not exist"
-	case errors.Is(err, provider.ErrWritePermission):
-		return "Repository contents write permission is required"
-	case errors.Is(err, provider.ErrRemoteNotFound):
-		return "Repository was not found"
-	case errors.Is(err, provider.ErrUnavailable):
-		return "Server repository access is not enabled for this deployment"
-	default:
-		return "Repository connection test failed"
 	}
+	if errors.Is(err, provider.ErrUnavailable) {
+		return "Server repository access is not enabled for this deployment"
+	}
+	return failure.Message
 }

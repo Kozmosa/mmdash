@@ -134,4 +134,39 @@ describe("BFF application", () => {
     });
     expect(response.body).not.toContain("secret-host");
   });
+
+  it("preserves reviewed retryable Repo failures", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "REPO_NETWORK_UNAVAILABLE",
+          details: { retryable: true },
+          message: "External repository network is temporarily unavailable",
+        }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 503,
+        },
+      ),
+    );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+    const cookie = await signedSessionCookie(app);
+
+    const response = await app.inject({
+      headers: { cookie },
+      method: "GET",
+      url: "/api/projects/project-1/repository",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      code: "REPO_NETWORK_UNAVAILABLE",
+      details: { retryable: true },
+    });
+  });
 });

@@ -29,7 +29,8 @@ func (store PostgresStore) RecordWebhook(
 				status, received_at, processed_at
 			) VALUES (
 				'github', $1, $2, $3, $4, $5, $6, $7, $8, $9,
-				CASE WHEN $8 IN ('ignored', 'processed') THEN $9 ELSE NULL END
+				CASE WHEN $8 IN ('ignored', 'processed')
+				     THEN $9::timestamptz ELSE NULL END
 			)
 			ON CONFLICT (provider, delivery_id) DO NOTHING
 		`, delivery.DeliveryID, delivery.RepositoryID, delivery.Event,
@@ -66,14 +67,25 @@ func (store PostgresStore) RecordWebhook(
 		if !delivery.RequestSync {
 			return nil
 		}
+		if delivery.Workspace == nil || !validWorkspaceKind(*delivery.Workspace) {
+			return ErrInvalid
+		}
 		result, err = tx.ExecContext(ctx, `
 			UPDATE repo_repositories
-			SET sync_requested_at = $2,
+			SET sync_workspace_kinds = CASE
+			      WHEN sync_requested_at IS NULL THEN ARRAY[$3]::TEXT[]
+			      ELSE ARRAY(
+			        SELECT DISTINCT value
+			        FROM unnest(sync_workspace_kinds || ARRAY[$3]::TEXT[]) AS value
+			        ORDER BY value
+			      )
+			    END,
+			    sync_requested_at = $2,
 			    sync_source = 'webhook',
 			    next_sync_at = LEAST(COALESCE(next_sync_at, $2), $2),
 			    updated_at = $2
 			WHERE repository_id = $1 AND status <> 'disconnected'
-		`, delivery.RepositoryID, delivery.ReceivedAt.UTC())
+		`, delivery.RepositoryID, delivery.ReceivedAt.UTC(), *delivery.Workspace)
 		if err := requireAffected(result, err); err != nil {
 			return err
 		}

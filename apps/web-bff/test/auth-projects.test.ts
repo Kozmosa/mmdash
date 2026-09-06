@@ -11,6 +11,42 @@ afterEach(async () => {
 });
 
 describe("auth and collaborative project routes", () => {
+  it("accepts signed browser sessions created before persistent cookie expiry was added", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        kind: "session",
+        session_id: "session-1",
+        user: {
+          created_at: "2026-07-28T00:00:00Z",
+          display_name: "Test User",
+          email: "test@example.com",
+          id: "user-1",
+          status: "active",
+          system_role: "admin",
+        },
+      }),
+    );
+    const app = buildApp({
+      config: testConfig,
+      fetchImplementation,
+      logger: false,
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      headers: {
+        cookie: await signedSessionCookie(app, {
+          session_expires_at: undefined,
+        }),
+      },
+      method: "GET",
+      url: "/api/auth/me",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().user.id).toBe("user-1");
+  });
+
   it("requires a browser session and forwards CLI device approval to Core", async () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()
@@ -53,6 +89,9 @@ describe("auth and collaborative project routes", () => {
       access_token: "new-core-session-token",
       expires_at: new Date(Date.now() + 3_600_000).toISOString(),
       refresh_token: "new-refresh-token-that-is-at-least-32-characters",
+      session_expires_at: new Date(
+        Date.now() + 30 * 24 * 3_600_000,
+      ).toISOString(),
       session_id: "session-new",
       user: {
         created_at: "2026-07-29T08:00:00Z",
@@ -104,6 +143,9 @@ describe("auth and collaborative project routes", () => {
       access_token: "core-session-token",
       expires_at: new Date(Date.now() + 3_600_000).toISOString(),
       refresh_token: "login-refresh-token-that-is-at-least-32-characters",
+      session_expires_at: new Date(
+        Date.now() + 30 * 24 * 3_600_000,
+      ).toISOString(),
       session_id: "session-1",
       user: {
         created_at: "2026-07-28T08:00:00+08:00",
@@ -141,6 +183,7 @@ describe("auth and collaborative project routes", () => {
     expect(response.headers["set-cookie"]).toContain(`${sessionCookieName}=`);
     expect(response.headers["set-cookie"]).toContain("HttpOnly");
     expect(response.headers["set-cookie"]).toContain("SameSite=Lax");
+    expect(response.headers["set-cookie"]).toContain("Expires=");
     const cookie = String(response.headers["set-cookie"]).split(";", 1)[0]!;
     const identity = await app.inject({
       headers: { cookie },
@@ -164,6 +207,9 @@ describe("auth and collaborative project routes", () => {
       access_token: "rotated-access-token",
       expires_at: new Date(Date.now() + 3_600_000).toISOString(),
       refresh_token: "rotated-refresh-token-that-is-at-least-32-characters",
+      session_expires_at: new Date(
+        Date.now() + 30 * 24 * 3_600_000,
+      ).toISOString(),
       session_id: "session-refreshed",
       user: {
         created_at: "2026-07-28T08:00:00Z",

@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ArticleTagRail } from "@/features/article/article-tag-rail";
 import type { ArticleBlock, ArticleChapterTag } from "@/features/article/types";
+
+afterEach(cleanup);
 
 const blocks: ArticleBlock[] = [
   {
@@ -72,5 +80,30 @@ describe("Article tag rail", () => {
       expect(reviewChapter).toHaveBeenCalledWith("chapter-tag-1");
       expect(reviewBlock).toHaveBeenCalledWith("paragraph-1");
     });
+  });
+
+  it("allows a reviewed block to withdraw its review", async () => {
+    const reviewBlock = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ArticleTagRail
+        blocks={[{ ...blocks[1]!, tag: "reviewed" }]}
+        canEdit
+        chapterTags={[]}
+        onLocate={vi.fn()}
+        onReview={reviewBlock}
+        onReviewChapter={vi.fn()}
+        positions={{ "paragraph-1": 120 }}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "横向展开章节与块 tags" }),
+    );
+    const withdraw = screen.getByRole("button", { name: "撤回审阅块 2" });
+    expect(withdraw).not.toBeDisabled();
+    fireEvent.click(withdraw);
+    await waitFor(() =>
+      expect(reviewBlock).toHaveBeenCalledWith("paragraph-1"),
+    );
   });
 });

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ArticleBlockMenu } from "@/features/article/article-block-menu";
+
+afterEach(cleanup);
 
 describe("Article block menu", () => {
   it("exposes block identity, insertion, duplication, review, and delete actions", () => {
@@ -44,5 +46,28 @@ describe("Article block menu", () => {
     expect(onCut).toHaveBeenCalledOnce();
     expect(onReview).toHaveBeenCalledOnce();
     expect(onDelete).toHaveBeenCalledOnce();
+  });
+
+  it("labels the review action as withdrawal for a reviewed block", () => {
+    render(
+      <ArticleBlockMenu
+        author="Human"
+        blockId="block-1"
+        canMoveDown
+        canMoveUp
+        canReview
+        onAction={vi.fn()}
+        onClose={vi.fn()}
+        onCopyId={vi.fn()}
+        onCut={vi.fn()}
+        onDelete={vi.fn()}
+        onReview={vi.fn()}
+        reviewed
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "撤回审阅" }),
+    ).toBeInTheDocument();
   });
 });

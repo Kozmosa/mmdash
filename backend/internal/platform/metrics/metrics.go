@@ -354,12 +354,19 @@ func (registry *Registry) ObserveRepoOperation(
 		),
 		Outcome: boundedLabel(
 			outcome,
-			map[string]bool{"success": true, "error": true},
+			map[string]bool{
+				"auth": true, "error": true, "network": true,
+				"not_found": true, "provider_5xx": true,
+				"success": true, "timeout": true,
+			},
 			"error",
 		),
 		Provider: boundedLabel(
 			provider,
-			map[string]bool{"github": true, "local": true},
+			map[string]bool{
+				"github": true, "local": true, "managed": true,
+				"server_existing": true,
+			},
 			"unknown",
 		),
 	}

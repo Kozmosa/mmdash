@@ -114,8 +114,28 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 				if !decode(w, r, &body) {
 					return
 				}
-				value, err := module.Service.Commit(r.Context(), caller, projectID, body.DraftRevision, body.Message)
+				value, err := module.Service.Commit(
+					r.Context(), caller, projectID,
+					body.DraftRevision, body.Message,
+				)
 				writeResult(w, r, http.StatusCreated, value, err)
+				return
+			}
+		case "commit-operations":
+			if r.Method == http.MethodPost {
+				var body contract.CreateArticleCommitRequest
+				if !decode(w, r, &body) {
+					return
+				}
+				idempotency := ""
+				if body.IdempotencyKey != nil {
+					idempotency = *body.IdempotencyKey
+				}
+				value, err := module.Service.QueueCommit(
+					r.Context(), caller, projectID, body.DraftRevision,
+					body.Message, idempotency,
+				)
+				writeResult(w, r, http.StatusAccepted, value, err)
 				return
 			}
 		case "builds":
@@ -154,7 +174,7 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 				if !decode(w, r, &body) {
 					return
 				}
-				value, _, err := module.Service.CreateRelease(r.Context(), caller, projectID, body.CommitID, body.BuildID, body.Tag, body.Title, body.Notes)
+				value, _, err := module.Service.CreateRelease(r.Context(), caller, projectID, body.CommitID, body.BuildID, body.Tag, body.Title, optionalString(body.Notes))
 				writeResult(w, r, http.StatusCreated, value, err)
 				return
 			}
@@ -179,7 +199,26 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 				if !decode(w, r, &body) {
 					return
 				}
-				value, _, err := module.Service.Publish(r.Context(), caller, projectID, PublicationInput{DraftRevision: body.DraftRevision, Message: body.Message, TemplateID: body.TemplateID, Engine: body.Engine, BibliographyTool: body.BibliographyTool, Tag: body.Tag, Title: body.Title, Notes: body.Notes, IdempotencyKey: body.IdempotencyKey})
+				value, _, err := module.Service.Publish(r.Context(), caller, projectID, PublicationInput{DraftRevision: body.DraftRevision, Message: body.Message, TemplateID: body.TemplateID, Engine: body.Engine, BibliographyTool: body.BibliographyTool, Tag: body.Tag, Title: body.Title, Notes: optionalString(body.Notes), IdempotencyKey: body.IdempotencyKey})
+				writeResult(w, r, http.StatusAccepted, value, err)
+				return
+			}
+		case "publication-operations":
+			if r.Method == http.MethodPost {
+				var body contract.CreateArticlePublicationRequest
+				if !decode(w, r, &body) {
+					return
+				}
+				value, err := module.Service.QueuePublication(
+					r.Context(), caller, projectID,
+					PublicationInput{
+						DraftRevision: body.DraftRevision, Message: body.Message,
+						TemplateID: body.TemplateID, Engine: body.Engine,
+						BibliographyTool: body.BibliographyTool, Tag: body.Tag,
+						Title: body.Title, Notes: optionalString(body.Notes),
+						IdempotencyKey: body.IdempotencyKey,
+					},
+				)
 				writeResult(w, r, http.StatusAccepted, value, err)
 				return
 			}
@@ -252,13 +291,24 @@ func (module Module) handleProject(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
+	if len(tail) == 2 && tail[0] == "commit-operations" && r.Method == http.MethodGet {
+		value, err := module.Service.GetCommitOperation(
+			r.Context(), caller, projectID, tail[1],
+		)
+		writeResult(w, r, http.StatusOK, value, err)
+		return
+	}
 	if len(tail) == 3 && tail[0] == "commits" && tail[2] == "restore" && r.Method == http.MethodPost {
 		value, err := module.Service.RestoreCommit(r.Context(), caller, projectID, tail[1])
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
 	if len(tail) == 3 && tail[0] == "blocks" && tail[2] == "review" && r.Method == http.MethodPost {
-		value, err := module.Service.ReviewBlock(r.Context(), caller, projectID, tail[1])
+		var body contract.ReviewArticleBlockRequest
+		if !decode(w, r, &body) {
+			return
+		}
+		value, err := module.Service.ReviewBlock(r.Context(), caller, projectID, tail[1], body.ContentFingerprint)
 		writeResult(w, r, http.StatusOK, value, err)
 		return
 	}
@@ -350,6 +400,13 @@ func (module Module) handleWorker(w http.ResponseWriter, r *http.Request) {
 
 type validatable interface{ Validate() error }
 
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 func decode[T validatable](w http.ResponseWriter, r *http.Request, body T) bool {
 	if !httpx.DecodeJSON(w, r, body) {
 		return false
@@ -380,6 +437,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusForbidden, "FORBIDDEN", "Article access forbidden"
 	case errors.Is(err, ErrNotFound):
 		status, code, message = http.StatusNotFound, "ARTICLE_NOT_FOUND", "Article object not found"
+	case errors.Is(err, ErrBlockChanged):
+		status, code, message = http.StatusConflict, "ARTICLE_BLOCK_CHANGED", "Article block content changed; synchronize and retry"
 	case errors.Is(err, ErrConflict), errors.Is(err, ErrSuperseded):
 		status, code, message = http.StatusConflict, "ARTICLE_CONFLICT", "Article state changed; refresh and retry"
 	case errors.Is(err, ErrNotReady):

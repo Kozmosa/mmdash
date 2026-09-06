@@ -4,6 +4,7 @@ export const ARTICLE_RENDER_THEME_EVENT = "mmdash:article-render-theme";
 
 export type ArticleBlock = {
   block_id: string;
+  content_fingerprint?: string;
   node_type: string;
   ordinal: number;
   text: string;
@@ -64,6 +65,25 @@ export type ArticleCommit = {
   message: string;
   created_by: string;
   created_at: string;
+};
+
+export type ArticleCommitOperation = {
+  operation_id: string;
+  commit_id: string;
+  project_id: string;
+  operation_kind: "commit" | "publication";
+  publication_id?: string;
+  draft_revision: number;
+  status: "queued" | "running" | "retry_wait" | "succeeded" | "failed";
+  stage: "queued" | "committing" | "publishing" | "completed" | "failed";
+  commit_sha?: string;
+  error_code?: string;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string;
+  created_at: string;
+  updated_at: string;
+  finished_at?: string;
 };
 
 export type ArticleBuildOutput = {
@@ -176,6 +196,7 @@ export type ArticleAggregate = {
   chapter_tags: ArticleChapterTag[];
   references: ArticleReference[];
   commits: ArticleCommit[];
+  commit_operations?: ArticleCommitOperation[];
   builds: ArticleBuild[];
   releases: ArticleRelease[];
   templates: ArticleTemplate[];
@@ -186,6 +207,7 @@ export type ArticleAggregate = {
     component:
       | "references"
       | "commits"
+      | "commit_operations"
       | "builds"
       | "releases"
       | "templates"

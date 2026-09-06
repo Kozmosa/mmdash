@@ -27,6 +27,7 @@ const tagsSchema = z.array(z.string().max(64)).max(32);
 const uploadInputSchema = z.object({
   description: z.string().max(20_000).optional(),
   filename: z.string().trim().min(1).max(255),
+  folder_id: idSchema.optional(),
   idempotency_key: z.string().trim().min(1).max(200),
   kind: publicArtifactKindSchema,
   mime_type: z.string().trim().min(1).max(255).optional(),
@@ -316,14 +317,39 @@ export function registerArtifactRoutes(
     { config: { auth: "required", project: "required" } },
     async (request) => {
       const { artifactId } = projectArtifactParamsSchema.parse(request.params);
-      return coreClient.request<components["schemas"]["ArtifactDetail"]>(
-        `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/${encodeURIComponent(artifactId)}/folder`,
-        {
-          body: artifactFolderInputSchema.parse(request.body),
-          method: "PUT",
-        },
-        coreContext(request),
+      const input = artifactFolderInputSchema.parse(request.body);
+      const placementAttempt = z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(5)
+        .safeParse(request.headers["x-mmdash-placement-attempt"]);
+      const uploadId = idSchema.safeParse(
+        request.headers["x-mmdash-upload-id"],
       );
+      try {
+        return await coreClient.request<
+          components["schemas"]["ArtifactDetail"]
+        >(
+          `/v1/projects/${encodeURIComponent(request.currentProjectId!)}/artifacts/${encodeURIComponent(artifactId)}/folder`,
+          { body: input, method: "PUT" },
+          coreContext(request),
+        );
+      } catch (error) {
+        request.log.warn(
+          {
+            artifact_id: artifactId,
+            folder_id: input.folder_id,
+            placement_attempt: placementAttempt.success
+              ? placementAttempt.data
+              : undefined,
+            project_id: request.currentProjectId,
+            upload_id: uploadId.success ? uploadId.data : undefined,
+          },
+          "Artifact folder assignment failed",
+        );
+        throw error;
+      }
     },
   );
 
