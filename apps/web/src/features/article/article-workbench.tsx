@@ -93,7 +93,11 @@ import {
   type ArticleOutlineItem,
   type ArticleZoteroDrop,
 } from "./article-editor";
-import { convertOverleafZip, inspectOverleafZip } from "./overleaf-import";
+import {
+  convertOverleafZip,
+  inspectOverleafZip,
+  type OverleafTemplateProfile,
+} from "./overleaf-import";
 import {
   forwardSyncPoint,
   parseSyncTex,
@@ -2399,6 +2403,17 @@ function TemplateWorkspace({
   const [candidates, setCandidates] = useState<string[]>([]);
   const [entrypoint, setEntrypoint] = useState("");
   const [inspection, setInspection] = useState("");
+  const [profiles, setProfiles] = useState<
+    Record<string, OverleafTemplateProfile>
+  >({});
+  const applyProfile = (profile?: OverleafTemplateProfile) => {
+    if (!profile) return;
+    setManifest((current) => ({
+      ...current,
+      engine: profile.engine,
+      bibliography_tool: profile.bibliography_tool,
+    }));
+  };
   const register = useMutation({
     mutationFn: () =>
       articleApi.registerTemplate(
@@ -2466,11 +2481,14 @@ function TemplateWorkspace({
     setCandidates([]);
     setEntrypoint("");
     setInspection("");
+    setProfiles({});
     if (!file) return;
     try {
       const value = await inspectOverleafZip(file);
       setCandidates(value.candidates);
       setEntrypoint(value.candidates[0] ?? "");
+      setProfiles(value.profiles);
+      applyProfile(value.profiles[value.candidates[0] ?? ""]);
       setInspection(
         `${value.fileCount} 个文件 · 解压 ${formatBytes(value.expandedBytes)}`,
       );
@@ -2478,6 +2496,49 @@ function TemplateWorkspace({
       setInspection(error instanceof Error ? error.message : "ZIP 检查失败");
     }
   };
+  const engineFields = (
+    <div className="grid grid-cols-2 gap-2">
+      <label className="space-y-1">
+        <span className="text-xs text-muted-foreground">编译器</span>
+        <select
+          aria-label="编译引擎"
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          onChange={(event) =>
+            setManifest((current) => ({
+              ...current,
+              engine: event.target.value as ArticleTemplateManifest["engine"],
+            }))
+          }
+          value={manifest.engine}
+        >
+          <option value="auto">自动</option>
+          <option value="pdflatex">pdfLaTeX</option>
+          <option value="xelatex">XeLaTeX</option>
+          <option value="lualatex">LuaLaTeX</option>
+        </select>
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-muted-foreground">参考文献工具</span>
+        <select
+          aria-label="参考文献工具"
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          onChange={(event) =>
+            setManifest((current) => ({
+              ...current,
+              bibliography_tool: event.target
+                .value as ArticleTemplateManifest["bibliography_tool"],
+            }))
+          }
+          value={manifest.bibliography_tool}
+        >
+          <option value="auto">自动</option>
+          <option value="bibtex">BibTeX</option>
+          <option value="biber">Biber</option>
+          <option value="none">无</option>
+        </select>
+      </label>
+    </div>
+  );
   return (
     <div className="grid gap-5 xl:grid-cols-[25rem_minmax(0,1fr)]">
       <Card>
@@ -2538,6 +2599,7 @@ function TemplateWorkspace({
                   }
                 />
               ))}
+              {engineFields}
               <Button
                 className="w-full"
                 disabled={
@@ -2577,7 +2639,10 @@ function TemplateWorkspace({
                 <select
                   aria-label="TeX 主文件"
                   className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                  onChange={(event) => setEntrypoint(event.target.value)}
+                  onChange={(event) => {
+                    setEntrypoint(event.target.value);
+                    applyProfile(profiles[event.target.value]);
+                  }}
                   value={entrypoint}
                 >
                   {candidates.map((item) => (
@@ -2607,6 +2672,12 @@ function TemplateWorkspace({
                 placeholder="版本"
                 value={manifest.version}
               />
+              {engineFields}
+              {candidates.length ? (
+                <p className="text-xs text-muted-foreground">
+                  编译器与参考文献工具已按模板内容自动识别，可手动修改；不匹配的组合会在注册前的测试构建中报错。
+                </p>
+              ) : null}
               <Button
                 className="w-full"
                 disabled={

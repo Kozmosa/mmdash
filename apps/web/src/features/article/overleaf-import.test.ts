@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { strFromU8, unzipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
 import { convertOverleafBytes, inspectOverleafBytes } from "./overleaf-import";
@@ -53,7 +53,105 @@ describe("Overleaf template import", () => {
       "不安全",
     );
   });
+
+  it("infers XeLaTeX with biber for a ctex + biblatex template", () => {
+    const source = templateZip({
+      "main.tex": latexDocument(
+        "\\documentclass{ctexart}\n\\usepackage[backend=biber]{biblatex}\n\\addbibresource{refs.bib}",
+        "\\section{标题}\n正文\n\\printbibliography",
+      ),
+    });
+    expect(
+      inspectOverleafBytes("overleaf.zip", source).profiles["main.tex"],
+    ).toEqual({
+      engine: "xelatex",
+      bibliography_tool: "biber",
+    });
+  });
+
+  it("infers LuaLaTeX when the template loads luatexja", () => {
+    const source = templateZip({
+      "main.tex": latexDocument(
+        "\\documentclass{article}\n\\usepackage{luatexja}",
+        "Body",
+      ),
+    });
+    expect(
+      inspectOverleafBytes("overleaf.zip", source).profiles["main.tex"],
+    ).toEqual({ engine: "lualatex", bibliography_tool: "none" });
+  });
+
+  it("infers pdfLaTeX with bibtex for a plain article with a bst style", () => {
+    const source = templateZip({
+      "main.tex": latexDocument(
+        "\\documentclass[12pt]{article}\n\\usepackage{graphicx}",
+        "Body\n\\bibliographystyle{plain}\n\\bibliography{refs}",
+      ),
+    });
+    expect(
+      inspectOverleafBytes("overleaf.zip", source).profiles["main.tex"],
+    ).toEqual({ engine: "pdflatex", bibliography_tool: "bibtex" });
+  });
+
+  it("prefers bibtex when biblatex declares backend=bibtex", () => {
+    const source = templateZip({
+      "main.tex": latexDocument(
+        "\\documentclass{article}\n\\usepackage[backend=bibtex]{biblatex}",
+        "Body",
+      ),
+    });
+    expect(
+      inspectOverleafBytes("overleaf.zip", source).profiles["main.tex"],
+    ).toEqual({ engine: "pdflatex", bibliography_tool: "bibtex" });
+  });
+
+  it("falls back to pdfLaTeX with no bibliography tool", () => {
+    const source = templateZip({
+      "main.tex": latexDocument("\\documentclass{article}", "Body"),
+    });
+    expect(
+      inspectOverleafBytes("overleaf.zip", source).profiles["main.tex"],
+    ).toEqual({ engine: "pdflatex", bibliography_tool: "none" });
+  });
+
+  it("ignores commented-out packages when inferring", () => {
+    const source = templateZip({
+      "main.tex": latexDocument(
+        "% \\usepackage{fontspec}\n\\documentclass{article}",
+        "Body",
+      ),
+    });
+    expect(
+      inspectOverleafBytes("overleaf.zip", source).profiles["main.tex"],
+    ).toEqual({ engine: "pdflatex", bibliography_tool: "none" });
+  });
+
+  it("scans cls and sty files for engine hints", () => {
+    const source = templateZip({
+      "main.tex": latexDocument("\\documentclass{myschool}", "Body"),
+      "myschool.cls": "\\RequirePackage{xeCJK}\n",
+      "extra.sty": "\\RequirePackage{tcolorbox}\n",
+    });
+    expect(
+      inspectOverleafBytes("overleaf.zip", source).profiles["main.tex"],
+    ).toEqual({ engine: "xelatex", bibliography_tool: "none" });
+  });
 });
+
+function templateZip(files: Record<string, string>): Uint8Array {
+  return zipSync(
+    Object.fromEntries(
+      Object.entries(files).map(([path, contents]) => [
+        path,
+        strToU8(contents),
+      ]),
+    ),
+  );
+}
+
+function latexDocument(preamble: string, body: string): string {
+  return `${preamble}\n\\begin{document}\n${body}\n\\end{document}\n`;
+}
 
 function bytes(value: string) {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));

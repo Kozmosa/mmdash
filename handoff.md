@@ -1,3 +1,67 @@
+# mmdash v0.1 Article template import auto-detection (template fix part 2 of 3)
+
+- Updated: 2026-09-02
+- Branch: `main` (changes uncommitted in the working tree, alongside a
+  pre-existing user `.gitignore` edit)
+- Scope: the first of three planned Article template fixes ("毛病二"): the
+  Overleaf import wizard no longer requires the user to know the TeX engine
+  and bibliography tool. The wizard now infers both from the template
+  content, pre-fills editable selects, and the registration test build
+  actually exercises the bibliography chain so a wrong combination fails at
+  registration instead of at the user's first real build.
+- Web inference (`apps/web/src/features/article/overleaf-import.ts`):
+  `inspectOverleafBytes` now returns per-entrypoint `profiles`. Engine
+  inference: `luatexja`/`luacode`/`luaotfload`/`luamplib`/`\directlua` →
+  lualatex; `ctex` document class or package, `xeCJK`, `fontspec`,
+  `polyglossia`, `unicode-math`, or `\setCJKmainfont` → xelatex; otherwise
+  pdflatex. Bibliography tool inference: `biblatex` (with `backend=bibtex`
+  checked) → biber/bibtex; `\bibliographystyle`/`\bibliography` → bibtex;
+  otherwise none. The scan covers the entrypoint plus every `.cls`/`.sty`
+  file (matching both `\usepackage` and `\RequirePackage`) and ignores
+  whole-line `%` comments.
+- Web form (`article-workbench.tsx`): the Overleaf wizard pre-fills
+  engine/bibliography_tool after ZIP inspection and re-infers when the
+  entrypoint changes; the two selects are now rendered in BOTH the Overleaf
+  wizard and the standard registration form (previously these manifest
+  fields had no input at all and were always the hidden `auto` default);
+  a hint explains that a mismatched combination fails the registration test
+  build.
+- Core (`backend/internal/article/service.go`): the `template_test` build
+  input now embeds one citation `[@mmdash-template-test]` plus a dummy
+  `@misc` BibTeX entry whenever the registered `bibliography_tool` is not
+  `none`. This exercises the citation chain (currently the pandoc citeproc
+  path) during template validation.
+- Tests: 7 new vitest cases in `overleaf-import.test.ts` (ctex+biblatex →
+  xelatex/biber, luatexja → lualatex, `\bibliographystyle` → pdflatex/bibtex,
+  `backend=bibtex` → bibtex, no wiring → none, commented packages ignored,
+  `.cls` scanning); new Go test
+  `TestTemplateTestWorkerInputExercisesBibliographyChain` (auto/bibtex/biber
+  include the citation, `none` stays citation-free).
+- Verification: targeted vitest (26 article tests pass), `go test
+  ./internal/article/`, eslint (whole repo), prettier, gofmt/vet,
+  `check-contracts` (2 OpenAPI docs), API catalog (535 operations), ruff,
+  and the full build phase (`pnpm -r --if-present build` including
+  `next build`, plus `go build` and `uv build --package mmdash-worker`) all
+  pass. Full `pnpm test` was run through the Pixi toolchain: the TS phase
+  passed and the Go phase passed except one flaky
+  `TestManagedRuntimeInitializesAndCommitsAllWorkspaces` failure under
+  parallel Windows load that passes standalone and on package rerun
+  (unrelated to this change); Python 59/59 passed.
+- Environment notes: `caddy:check` requires a Docker daemon and is blocked
+  on this Windows workstation (documented limitation; Caddyfile untouched).
+  `tsc -p tsconfig.json` in apps/web reports 7 pre-existing type errors in
+  `apps/web/test/*.test.tsx` (untouched by this change) that do not affect
+  the build gate. The real-container `pnpm smoke:article-worker` acceptance
+  for the new template-test citation input remains pending on the Linux
+  server, consistent with the existing handoff practice.
+- Remaining template fixes: "毛病一" (native bibliography wiring — rewrite
+  `\bibliography`/`\addbibresource`/`\printbibliography` to the generated
+  `.mmdash/references.bib` at import, add `bibliography_mode` to the
+  manifest schema, and let the Worker emit `\cite` commands instead of
+  citeproc rendering) and "毛病三" (article title/author metadata injection
+  into `\title`/`\author`). The template-test citation introduced here
+  becomes a native bibtex/biber chain test once 毛病一 lands.
+
 # mmdash v0.1 Repo provider paths and production deployment (issue #60)
 
 - Updated: 2026-08-31

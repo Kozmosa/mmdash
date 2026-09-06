@@ -505,6 +505,37 @@ func TestFormalWorkerInputUsesCommitFrozenArtifactVersion(t *testing.T) {
 	}
 }
 
+func TestTemplateTestWorkerInputExercisesBibliographyChain(t *testing.T) {
+	newService := func(tool string) *Service {
+		store := &articleTestStore{
+			builds:   []Build{{BuildID: "build-1", ProjectID: "project-1", BuildKind: BuildTemplateTest, JobID: "job-1", TemplateID: "template-1", Engine: "auto", BibliographyTool: tool}},
+			template: Template{TemplateID: "template-1", ArtifactID: "template-artifact", VersionID: "template-version", Manifest: TemplateManifest{Name: "Template"}},
+		}
+		service := testService(store, &articleTestWorkspace{})
+		service.Artifacts = &articleTestArtifacts{}
+		service.JobAccess = articleTestJobAccess{job: jobs.Job{ID: "job-1", JobType: JobTypeBuild, ProjectID: "project-1", Payload: map[string]interface{}{"build_id": "build-1"}}}
+		return service
+	}
+
+	for _, tool := range []string{"auto", "bibtex", "biber"} {
+		input, err := newService(tool).WorkerInput(context.Background(), human(), "job-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(input.Manuscript, "[@"+templateTestCitationKey+"]") || !strings.Contains(input.ReferencesBIB, templateTestCitationKey+",") {
+			t.Fatalf("template test with tool %q did not exercise the bibliography chain: %q %q", tool, input.Manuscript, input.ReferencesBIB)
+		}
+	}
+
+	input, err := newService("none").WorkerInput(context.Background(), human(), "job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(input.Manuscript, "[@") || input.ReferencesBIB != "" {
+		t.Fatalf("citation-free template test received bibliography input: %q %q", input.Manuscript, input.ReferencesBIB)
+	}
+}
+
 func TestEnsureDefaultTemplateIsProjectIdempotentAndQueuesValidation(t *testing.T) {
 	store := &articleTestStore{}
 	service := testService(store, &articleTestWorkspace{})

@@ -30,6 +30,9 @@ const (
 	JobTypeBuild      = "article.build"
 	SettingTypeZotero = "article.zotero"
 	maxOutputBytes    = 512 * 1024 * 1024
+
+	templateTestCitationKey = "mmdash-template-test"
+	templateTestReference   = "@misc{" + templateTestCitationKey + ",\n  author = {{mmdash}},\n  title = {mmdash Template Validation},\n  year = {2026},\n}\n"
 )
 
 var (
@@ -833,8 +836,15 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			}
 		}
 	case BuildTemplateTest:
-		manuscript = "# Template validation\n\nA citation-free equation: $x^2$.\n"
+		manuscript = "# Template validation\n\nAn equation: $x^2$.\n"
 		referencesBIB = ""
+		if build.BibliographyTool != "none" {
+			// The citation must exercise the full bibliography chain during
+			// registration so a mismatched tool choice fails the template
+			// test build instead of the user's first real build.
+			manuscript += "\nAnd a citation: [@" + templateTestCitationKey + "].\n"
+			referencesBIB = templateTestReference
+		}
 		manifest = map[string]interface{}{"schema_version": "1.0", "template_test": true}
 	default:
 		return BuildJobInput{}, ErrInvalid
