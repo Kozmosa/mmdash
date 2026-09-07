@@ -141,6 +141,21 @@ the Progress UI can attach a read-only live Session view before the evaluation
 finishes. Runtime configuration rejections are returned as non-retryable
 `PROGRESS_EVALUATOR_CONFIGURATION_INVALID`; transient runtime failures remain
 `PROGRESS_EVALUATOR_UNAVAILABLE` and may be retried by the Job Queue.
+
+The evaluation Run is unattended, so the Core poll loop keeps it alive through
+expected remote friction instead of failing early. A `waiting_for_approval`
+state is answered automatically with a bounded denial so one gated tool call
+never strands the evaluation; only a runtime that cannot accept approval
+responses fails the Run as `approval_required`, and repeated gating ends as
+`approval_exhausted`. Transient status-poll failures are tolerated within a
+bounded consecutive-error budget before the Run is stopped and failed. Before
+starting a Run, Core refuses to repost input that the remote Session
+transcript already contains (`run_start_unresolved`), because a StartRun that
+times out client-side may still have been accepted remotely. The run-start
+request uses a dedicated, wider transport window
+(`AGENT_RUNTIME_RUN_START_TIMEOUT`, default `75s`), and the evaluation job
+budget is 30 minutes, aligned with the Worker execute timeout.
+
 The deterministic ID includes the evaluator prompt version. Because Hermes
 does not patch a Session system prompt after creation, bumping that version
 creates one new Progress Session and prevents an active Session from silently

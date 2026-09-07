@@ -77,15 +77,23 @@ func RunTaskRunner(args []string, stdout, stderr io.Writer) error {
 	// A cancel request that arrived before the runner started is still a
 	// cancellation; the execution is never launched in that case.
 	if _, err := os.Stat(cancelSentinelPath(taskDir)); err == nil {
+		if record.RunnerPID == 0 {
+			record.RunnerPID = os.Getpid()
+		}
 		return persistTerminal(recordPath, record, *taskID, taskStateCanceled, nil)
 	}
 
 	startedAt := time.Now().UTC()
-	if err := saveTaskRecord(recordPath, taskRecord{
+	// The in-memory record must mirror exactly what this write persists: the
+	// running and terminal updates below extend it. Extending the loaded
+	// Gateway snapshot instead would republish runner_pid=0 and silently
+	// disable the supervisor-loss detection that depends on it.
+	record = taskRecord{
 		SchemaVersion: taskStateSchemaVersion, TaskID: *taskID,
 		ExecutionEpoch: job.ExecutionEpoch, BootID: bootID(),
 		RunnerPID: os.Getpid(), State: taskStateStarting, StartedAt: startedAt,
-	}); err != nil {
+	}
+	if err := saveTaskRecord(recordPath, record); err != nil {
 		return fmt.Errorf("persist task record: %w", err)
 	}
 

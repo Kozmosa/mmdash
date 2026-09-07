@@ -613,7 +613,11 @@ func (store PostgresStore) FinalizeRequest(ctx context.Context, claim RequestCla
 		job, _, err := store.Jobs.CreateInTransaction(ctx, tx, claim.ActorID, jobs.CreateInput{
 			ProjectID: claim.ProjectID, JobType: EvaluationJobType,
 			Payload: map[string]interface{}{"evaluation_id": evaluationID}, Priority: 10,
-			IdempotencyKey: "progress-evaluation:" + evaluationID, MaxAttempts: 3, TimeoutSeconds: 900,
+			// The budget must cover slow model runs and remote MCP gateways that
+			// only reconnect minutes after a run starts. The worker execute
+			// timeout stays aligned through
+			// MMDASH_WORKER_PROGRESS_EVALUATION_TIMEOUT_SECONDS.
+			IdempotencyKey: "progress-evaluation:" + evaluationID, MaxAttempts: 3, TimeoutSeconds: 1800,
 		})
 		if err != nil {
 			return err

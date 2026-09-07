@@ -51,6 +51,9 @@ type Service struct {
 	Projects   ProjectAccess
 	Settings   *settings.Service
 	Store      Store
+	// ProgressRun bounds the unattended Progress evaluation poll loop. The
+	// zero value selects the deployment defaults.
+	ProgressRun ProgressRunTuning
 }
 
 func (service Service) Authenticate(ctx context.Context, authorization string) (auth.Identity, error) {

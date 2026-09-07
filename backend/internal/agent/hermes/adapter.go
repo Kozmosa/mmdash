@@ -19,6 +19,12 @@ type Adapter struct {
 	instanceID string
 	profile    string
 	runtime    *apiClient
+
+	// runStart carries the dedicated POST /v1/runs transport. Run submission is
+	// the only Hermes operation whose acceptance can legitimately outlast the
+	// general response-header window, so it gets its own bounded client.
+	runStart *apiClient
+
 	management *managementClient
 }
 
@@ -50,16 +56,20 @@ func New(config Config) (*Adapter, error) {
 	if err != nil {
 		return nil, err
 	}
+	runStartPolicy := config.RuntimePolicy
+	if config.RunStartTimeout > 0 {
+		runStartPolicy.RequestTimeout = config.RunStartTimeout
+		runStartPolicy.ResponseHeaderTimeout = config.RunStartTimeout
+	}
+	runStartConnector, err := newConnector(config.RuntimeURL, runStartPolicy)
+	if err != nil {
+		return nil, err
+	}
 	result := &Adapter{
 		instanceID: strings.TrimSpace(config.InstanceID),
 		profile:    profile,
-		runtime: &apiClient{
-			connector:              runtimeConnector,
-			bearerToken:            config.APIKey,
-			profile:                profile,
-			cloudflareClientID:     config.CloudflareClientID,
-			cloudflareClientSecret: config.CloudflareClientSecret,
-		},
+		runtime:    newAPIClient(runtimeConnector, config),
+		runStart:   newAPIClient(runStartConnector, config),
 	}
 	if config.Management != nil && strings.TrimSpace(config.Management.URL) != "" && config.Management.DashboardSessionToken != "" {
 		managementConnector, connectorErr := newConnector(config.Management.URL, config.ManagementPolicy)
@@ -74,6 +84,16 @@ func New(config Config) (*Adapter, error) {
 		)
 	}
 	return result, nil
+}
+
+func newAPIClient(connector *connector, config Config) *apiClient {
+	return &apiClient{
+		connector:              connector,
+		bearerToken:            config.APIKey,
+		profile:                config.Profile,
+		cloudflareClientID:     config.CloudflareClientID,
+		cloudflareClientSecret: config.CloudflareClientSecret,
+	}
 }
 
 func (adapter *Adapter) Probe(ctx context.Context) (agent.ProbeResult, error) {
@@ -501,7 +521,7 @@ func (adapter *Adapter) StartRun(ctx context.Context, request agent.StartRunRequ
 		RunID  string `json:"run_id"`
 		Status string `json:"status"`
 	}
-	if err := adapter.runtime.doJSON(ctx, "hermes.runs.start", http.MethodPost, "/v1/runs", nil, body, &response, http.StatusAccepted); err != nil {
+	if err := adapter.runStart.doJSON(ctx, "hermes.runs.start", http.MethodPost, "/v1/runs", nil, body, &response, http.StatusAccepted); err != nil {
 		return agent.Run{}, err
 	}
 	return agent.Run{RemoteID: response.RunID, SessionRemoteID: request.SessionRemoteID, Status: normalizeRunStatus(response.Status)}, nil

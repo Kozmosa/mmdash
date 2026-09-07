@@ -52,7 +52,7 @@ def main() -> None:
             os.environ.get("MMDASH_WORKER_MODEL_COMPLETION_TIMEOUT_SECONDS", "300")
         ),
         progress_evaluation_timeout_seconds=float(
-            os.environ.get("MMDASH_WORKER_PROGRESS_EVALUATION_TIMEOUT_SECONDS", "900")
+            os.environ.get("MMDASH_WORKER_PROGRESS_EVALUATION_TIMEOUT_SECONDS", "1800")
         ),
         experiment_result_timeout_seconds=float(
             os.environ.get("MMDASH_WORKER_EXPERIMENT_RESULT_TIMEOUT_SECONDS", "3600")

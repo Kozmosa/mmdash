@@ -1,3 +1,62 @@
+# mmdash v0.1 Progress evaluation unattended-run resilience
+
+- Updated: 2026-09-07
+- Branch: `main` (uncommitted working tree)
+- Scope: four repairs for automatic Progress evaluation failing within seconds
+  while the remote Hermes Session kept working (diagnosed from the 2026-09-07
+  11:21 incident: one run failed `approval_required` at 11:22:05, ten later
+  StartRun attempts failed as 10-second client timeouts with `pending:` remote
+  IDs, and the local Session record froze at 11:21:50 while Hermes ran to
+  11:35:46).
+- Approval handling (`backend/internal/agent/progress_automation.go`): the
+  unattended poll loop now answers `waiting_for_approval` with an automatic
+  bounded denial (`ApprovalDeny` + `resolve_all`, at most
+  `progressRunMaxApprovalDenials` per run) instead of stopping the Run and
+  failing the evaluation as a configuration error. Only a runtime that cannot
+  accept approval responses (`unsupported`/`not_found`) still stops the Run as
+  `approval_required`; exhausted denials end as `approval_exhausted`. The run
+  instructions gained an `UNATTENDED RUN CONTRACT` paragraph telling the
+  evaluator never to call approval-gated tools and to retry MCP calls after
+  the runtime retry window instead of sleeping through other tools.
+- Poll resilience: transient `GetRun` failures are tolerated within a bounded
+  consecutive-error budget (`progressRunPollErrorTolerance`, ~2 minutes at the
+  500 ms poll interval); every abandoned-loop exit (context end, exhausted
+  tolerance, exhausted/unsupported approvals, provenance failure) now goes
+  through `stopProgressRun`, whose failure is observable via
+  `agent.progress_run.stop` metrics instead of a discarded error.
+- Run-start handling (`backend/internal/agent/hermes/`): `POST /v1/runs` uses
+  a dedicated apiClient whose request and response-header windows are
+  `AGENT_RUNTIME_RUN_START_TIMEOUT` (new, default `75s`, validated 1s–10m in
+  `platform/config`); the general runtime policy is unchanged. Before
+  StartRun, Core refuses to repost input the remote Session transcript already
+  contains (`run_start_unresolved`, non-retryable), so a client-side StartRun
+  timeout can no longer fork the evaluation conversation with duplicate
+  prompts or orphan `pending:` runs.
+- Budget: the `progress.evaluate` job timeout is 1800 s (was 900) and the
+  Worker execute timeout default
+  `MMDASH_WORKER_PROGRESS_EVALUATION_TIMEOUT_SECONDS` is 1800 s to match, so
+  slow remote MCP reconnects (the incident needed ~9 minutes) fit inside one
+  attempt.
+- Tests: new agent tests cover denial continuation, exhausted denials,
+  unsupported approvals, transient poll tolerance, exhausted tolerance with
+  stop, duplicate-prompt refusal, and context-end stop; a hermes test pins the
+  run-start transport window; the evaluator-instruction rubric asserts the new
+  unattended contract. Full backend `go test`, Worker pytest (59), TS/Go
+  lint and tests, production builds, contract compatibility, API catalog
+  (541 operations), and Caddyfile validation pass. Gate notes: the first full
+  run hit the documented Windows `local-process` child-handle flake (passed
+  immediately in isolation) and `box` module downloads needed
+  `GOPROXY=https://goproxy.cn,direct` from `.env`; the Python suite passed
+  only with `--basetemp=.testenv/pytest-workspace-run` because the local
+  `.testenv/pytest-workspace` directory carries a deny-all ACL that even
+  elevated-ineligible `takeown` cannot reset — one elevated
+  `rd /s /q .testenv\pytest-workspace` restores the default path. No
+  OpenAPI/event/schema contract changed, so no migration or generated-client
+  change was required. Live acceptance against the real Hermes instance is
+  still pending: the local pixi dev stack was stopped during this session, so
+  the next `testenv dev` run should verify one real event-triggered evaluation
+  reaches `succeeded` end to end.
+
 # mmdash v0.1 managed Article and Experiment Artifact output folders
 
 ## 2026-09-02 Issue #71 output placement repair

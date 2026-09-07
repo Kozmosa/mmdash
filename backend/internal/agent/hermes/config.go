@@ -71,12 +71,19 @@ type Config struct {
 	RuntimePolicy             NetworkPolicy
 	ManagementPolicy          NetworkPolicy
 	ManagementMinimumInterval time.Duration
+	// RunStartTimeout bounds one POST /v1/runs attempt. Hermes sits behind
+	// proxies and serializes Runs per Session, so a busy runtime can exceed the
+	// general response-header window while still accepting the Run. When zero,
+	// the runtime policy is reused unchanged.
+	RunStartTimeout time.Duration
 }
 
 type FactoryOptions struct {
 	RuntimePolicy             NetworkPolicy
 	ManagementPolicy          NetworkPolicy
 	ManagementMinimumInterval time.Duration
+	// RunStartTimeout bounds the run-start transport window (see Config).
+	RunStartTimeout time.Duration
 }
 
 func Descriptor() agent.Descriptor {
@@ -128,6 +135,7 @@ func NewFactory(options FactoryOptions) agent.Factory {
 			RuntimePolicy:             runtimePolicy,
 			ManagementPolicy:          managementPolicy,
 			ManagementMinimumInterval: options.ManagementMinimumInterval,
+			RunStartTimeout:           options.RunStartTimeout,
 		}
 		if managementURL := strings.TrimSpace(values[ConfigManagementURL]); managementURL != "" {
 			config.Management = &ManagementConfig{

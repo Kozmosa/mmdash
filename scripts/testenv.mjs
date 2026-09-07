@@ -99,10 +99,14 @@ export async function loadRepositoryEnvironment(
   environment = process.env,
 ) {
   const dotEnvPath = path.join(root, ".env");
+  const localDotEnvPath = path.join(root, ".env.local");
   const fileEnvironment = existsSync(dotEnvPath)
     ? parseDotEnv(await readFile(dotEnvPath, "utf8"))
     : {};
-  return { ...fileEnvironment, ...environment };
+  const localFileEnvironment = existsSync(localDotEnvPath)
+    ? parseDotEnv(await readFile(localDotEnvPath, "utf8"))
+    : {};
+  return { ...fileEnvironment, ...localFileEnvironment, ...environment };
 }
 
 export function assertPathWithin(parent, candidate) {
@@ -491,6 +495,53 @@ export function cloudflareTunnelArguments(containerName, webUrl) {
     "--url",
     dockerAccessibleUrl(webUrl),
   ];
+}
+
+export function cloudflareNamedTunnelArguments(containerName) {
+  return [
+    "run",
+    "--rm",
+    "--name",
+    containerName,
+    "--add-host",
+    "host.docker.internal:host-gateway",
+    "--env",
+    "TUNNEL_TOKEN",
+    cloudflareTunnelImage,
+    "tunnel",
+    "--no-autoupdate",
+    "run",
+  ];
+}
+
+export function resolveCloudflareNamedTunnel(environment = process.env) {
+  const publicUrl =
+    environment.MMDASH_TESTENV_CLOUDFLARE_TUNNEL_URL?.trim() ?? "";
+  const token =
+    environment.MMDASH_TESTENV_CLOUDFLARE_TUNNEL_TOKEN?.trim() ?? "";
+  if (!publicUrl && !token) {
+    return null;
+  }
+  if (!publicUrl || !token) {
+    throw new Error(
+      "MMDASH_TESTENV_CLOUDFLARE_TUNNEL_URL and MMDASH_TESTENV_CLOUDFLARE_TUNNEL_TOKEN must be provided together",
+    );
+  }
+  const parsed = validatedHttpUrl(
+    publicUrl,
+    "MMDASH_TESTENV_CLOUDFLARE_TUNNEL_URL",
+  );
+  if (parsed.protocol !== "https:") {
+    throw new Error(
+      "MMDASH_TESTENV_CLOUDFLARE_TUNNEL_URL must use HTTPS",
+    );
+  }
+  if (parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error(
+      "MMDASH_TESTENV_CLOUDFLARE_TUNNEL_URL must be an origin without a path, query, or fragment",
+    );
+  }
+  return { publicUrl: parsed.origin, token };
 }
 
 function validatedHttpUrl(value, name) {
@@ -1222,6 +1273,13 @@ async function startDevelopmentEnvironment(
   await assertPortsAvailable(ports);
   await acquireSupervisorLock(layout);
 
+  const namedTunnel = cloudflareTunnel
+    ? resolveCloudflareNamedTunnel(environment)
+    : null;
+  const tunnelToken = environment.MMDASH_TESTENV_CLOUDFLARE_TUNNEL_TOKEN;
+  environment = { ...environment };
+  delete environment.MMDASH_TESTENV_CLOUDFLARE_TUNNEL_TOKEN;
+
   const services = [];
   let dockerWorkerContainer;
   let cloudflareTunnelContainer;
@@ -1242,12 +1300,16 @@ async function startDevelopmentEnvironment(
       const tunnel = startManagedProcess(
         "cloudflared",
         "docker",
-        cloudflareTunnelArguments(
-          cloudflareTunnelContainer,
-          `http://${host}:${ports.web}`,
-        ),
+        namedTunnel
+          ? cloudflareNamedTunnelArguments(cloudflareTunnelContainer)
+          : cloudflareTunnelArguments(
+              cloudflareTunnelContainer,
+              `http://${host}:${ports.web}`,
+            ),
         {
-          environment,
+          environment: namedTunnel
+            ? { ...environment, TUNNEL_TOKEN: tunnelToken }
+            : environment,
           layout,
           onLine: (line) => {
             discoveredTunnelUrl ??= line.match(
@@ -1257,17 +1319,22 @@ async function startDevelopmentEnvironment(
         },
       );
       services.push(tunnel);
-      const publicUrl = await waitForCloudflareTunnelUrl(
-        tunnel,
-        () => discoveredTunnelUrl,
-        shutdownRequested,
-      );
+      const publicUrl = namedTunnel
+        ? namedTunnel.publicUrl
+        : await waitForCloudflareTunnelUrl(
+            tunnel,
+            () => discoveredTunnelUrl,
+            shutdownRequested,
+          );
+      if (namedTunnel) {
+        await waitForProcessStable(tunnel, shutdownRequested);
+      }
       environment = {
         ...environment,
         MMDASH_TESTENV_PUBLIC_URL: publicUrl,
       };
       console.log(
-        `Cloudflare Quick Tunnel is running at ${publicUrl}; using it as MMDASH_TESTENV_PUBLIC_URL.`,
+        `${namedTunnel ? "Cloudflare Named Tunnel" : "Cloudflare Quick Tunnel"} is running at ${publicUrl}; using it as MMDASH_TESTENV_PUBLIC_URL.`,
       );
     }
 

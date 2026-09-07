@@ -38,13 +38,14 @@ uv run --package mmdash-worker mmdash-worker --once
 
 Optional runtime variables:
 
-| Variable                         | Default                 | Meaning                                                  |
-| -------------------------------- | ----------------------- | -------------------------------------------------------- |
-| `MMDASH_CORE_URL`                | `http://localhost:8080` | Core API base URL                                        |
-| `MMDASH_WORKER_ID`               | host name plus PID      | Stable process identity                                  |
-| `MMDASH_WORKER_LEASE_SECONDS`    | `60`                    | Lease duration, 10–900                                   |
-| `MMDASH_WORKER_POLL_SECONDS`     | `2`                     | Delay after an empty poll                                |
-| `MMDASH_PROGRESS_EVALUATOR_MODE` | `core_agent`            | `core_agent` or deterministic `mock` Progress evaluation |
+| Variable                                            | Default                 | Meaning                                                  |
+| --------------------------------------------------- | ----------------------- | -------------------------------------------------------- |
+| `MMDASH_CORE_URL`                                   | `http://localhost:8080` | Core API base URL                                        |
+| `MMDASH_WORKER_ID`                                  | host name plus PID      | Stable process identity                                  |
+| `MMDASH_WORKER_LEASE_SECONDS`                       | `60`                    | Lease duration, 10–900                                   |
+| `MMDASH_WORKER_POLL_SECONDS`                        | `2`                     | Delay after an empty poll                                |
+| `MMDASH_WORKER_PROGRESS_EVALUATION_TIMEOUT_SECONDS` | `1800`                  | Execute timeout for one `progress.evaluate` job; stays aligned with the Core job budget |
+| `MMDASH_PROGRESS_EVALUATOR_MODE`                    | `core_agent`            | `core_agent` or deterministic `mock` Progress evaluation |
 
 Register handlers through `HandlerRegistry`. Job type names are stable dotted
 identifiers. A handler receives a `HandlerContext` and JSON-object payload and

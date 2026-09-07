@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertPathWithin,
   cloudflareTunnelArguments,
+  cloudflareNamedTunnelArguments,
   createIsolatedEnvironment,
   createLayout,
   createServiceConfiguration,
@@ -12,6 +13,7 @@ import {
   parseDotEnv,
   parseDevelopmentArguments,
   resolvePorts,
+  resolveCloudflareNamedTunnel,
   resolveWorkerMode,
   serviceOrder,
 } from "./testenv.mjs";
@@ -196,6 +198,43 @@ describe("isolated Pixi development environment", () => {
       "--url",
       "http://host.docker.internal:13000",
     ]);
+  });
+
+  it("runs a local-only Named Tunnel without putting its token in arguments", () => {
+    const token = "eyJ-local-test-tunnel-token";
+    expect(
+      resolveCloudflareNamedTunnel({
+        MMDASH_TESTENV_CLOUDFLARE_TUNNEL_TOKEN: token,
+        MMDASH_TESTENV_CLOUDFLARE_TUNNEL_URL:
+          "https://mmdash-dev.example.com/",
+      }),
+    ).toEqual({
+      publicUrl: "https://mmdash-dev.example.com",
+      token,
+    });
+    expect(
+      cloudflareNamedTunnelArguments("mmdash-pixi-cloudflared-123"),
+    ).toEqual([
+      "run",
+      "--rm",
+      "--name",
+      "mmdash-pixi-cloudflared-123",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--env",
+      "TUNNEL_TOKEN",
+      "cloudflare/cloudflared:latest",
+      "tunnel",
+      "--no-autoupdate",
+      "run",
+    ]);
+    expect(
+      cloudflareNamedTunnelArguments("mmdash-pixi-cloudflared-123").join(" "),
+    ).not.toContain(token);
+  });
+
+  it("keeps Quick Tunnel behavior when the local Named Tunnel override is absent", () => {
+    expect(resolveCloudflareNamedTunnel({})).toBeNull();
   });
 
   it("loads dotenv syntax without overriding process-level values", () => {

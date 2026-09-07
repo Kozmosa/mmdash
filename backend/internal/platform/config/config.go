@@ -47,10 +47,16 @@ type NotionConfig struct {
 // AgentConfig configures the product Agent runtime boundary. Connector policy
 // is deployment-owned and cannot be weakened by per-project Agent settings.
 type AgentConfig struct {
-	GatewayURL                string
-	Management                AgentConnectorConfig
+	GatewayURL string
+	Management AgentConnectorConfig
+	// ManagementMinimumInterval rate-limits Dashboard management mutations.
 	ManagementMinimumInterval time.Duration
 	Runtime                   AgentConnectorConfig
+	// RunStartTimeout bounds one agent run-start request. Runtime acceptance of
+	// a run can legitimately exceed the general response-header window when the
+	// remote gateway is behind a proxy or busy; a client-side timeout there
+	// strands accepted runs the runtime keeps executing.
+	RunStartTimeout time.Duration
 }
 
 // AgentConnectorConfig limits one class of Hermes outbound connections.
@@ -188,6 +194,9 @@ func Load(lookup LookupEnv) (Config, error) {
 				lookup, "AGENT_MANAGEMENT_MINIMUM_INTERVAL", 250*time.Millisecond,
 			),
 			Runtime: runtimeConnector,
+			RunStartTimeout: durationOrDefault(
+				lookup, "AGENT_RUNTIME_RUN_START_TIMEOUT", 75*time.Second,
+			),
 		},
 		Artifact: ArtifactConfig{
 			LocalStorageRoot: envOrDefault(
@@ -352,6 +361,10 @@ func (config Config) Validate() error {
 	}
 	if config.Agent.ManagementMinimumInterval <= 0 {
 		return fmt.Errorf("AGENT_MANAGEMENT_MINIMUM_INTERVAL must be positive")
+	}
+	if config.Agent.RunStartTimeout < time.Second ||
+		config.Agent.RunStartTimeout > 10*time.Minute {
+		return fmt.Errorf("AGENT_RUNTIME_RUN_START_TIMEOUT must be between 1s and 10m")
 	}
 	if config.Artifact.StorageBackend != "local" &&
 		config.Artifact.StorageBackend != "minio" &&
