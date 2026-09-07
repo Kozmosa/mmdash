@@ -76,14 +76,20 @@ export function ProgressWorkbench({
   ]);
 
   useEffect(() => {
-    if (!manualEvaluationPending) return;
+    if (!manualEvaluationPending && !evaluationActive) return;
     const timer = window.setInterval(() => {
-      void queryClient.invalidateQueries({
-        queryKey: ["progress", projectId],
-      });
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["progress", projectId] }),
+        queryClient.invalidateQueries({
+          queryKey: ["project-home", projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["progress-evaluations", projectId],
+        }),
+      ]);
     }, 1_000);
     return () => window.clearInterval(timer);
-  }, [manualEvaluationPending, projectId, queryClient]);
+  }, [evaluationActive, manualEvaluationPending, projectId, queryClient]);
 
   async function refresh() {
     await Promise.all([
@@ -312,6 +318,7 @@ export function ProgressWorkbench({
           cron_schedule: progress.settings.cron_schedule,
           debounce_seconds: progress.settings.debounce_seconds,
           event_triggers_enabled: progress.settings.event_triggers_enabled,
+          enabled_event_types: progress.settings.enabled_event_types,
           min_interval_seconds: progress.settings.min_interval_seconds,
           reasoning_effort: progress.settings.reasoning_effort,
         },

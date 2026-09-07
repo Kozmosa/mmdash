@@ -16,6 +16,11 @@
   macOS (invisible on Windows/Linux where the temp prefix has no symlink).
   The build root is now resolved once at creation. Worker pytest is 69/69
   after the fix.
+- Migration renumber in the same session: origin/main meanwhile merged PR
+  #86, which took migration numbers 000055 (progress evaluation
+  notifications) and 000056 (progress event trigger selection). PR #84's
+  article migration was renumbered to `000057_article_abstract_paper_info`
+  to keep the sequence unique; the two change sets touch different tables.
 - Gate: full `pnpm check` on macOS arm64 — eslint/ruff/gofmt, TS tests
   (web 253, web-bff 76, mcp-gateway 39, core-client 7, scripts 26), Go
   tests (all backend/box/cli packages including `internal/article` and
@@ -194,7 +199,7 @@
   `ArticleDraft` with abstract/paper-info fields, and generated clients were
   regenerated (`pnpm contracts:generate`); API catalog now covers 544
   operations.
-- Migration `000055_article_abstract_paper_info`: article_drafts gains
+- Migration `000057_article_abstract_paper_info`: article_drafts gains
   abstract_markdown/abstract_tiptap_json/abstract_yjs_update/
   abstract_state_vector/abstract_revision and paper_info/paper_info_revision;
   article_commits and article_commit_operations gain the frozen equivalents
@@ -321,6 +326,52 @@
   overleaf-import cases), gofmt, and prettier all pass. Upstream grew the
   API catalog to 541 operations; the 535 count in this entry is the
   pre-merge state at delivery time.
+
+# mmdash v0.1 Progress evaluation speed optimizations
+
+- Updated: 2026-09-07
+- Branch: `main` (uncommitted working tree)
+- Scope: completed the three Progress evaluator optimizations in `TODO.md`
+  without changing OpenAPI, event, JSON Schema, or migrations.
+- No-change short-circuit: verified that the Data Hub evidence revision is
+  computed only from Project-scoped objects, activity, and confirmed Context;
+  event and local Cron scheduling pass `force=false`, while manual
+  `progress.recalculate` and retry retain the explicit forced rerun behavior.
+  The PostgreSQL integration coverage now uses an event request, asserts the
+  deduplicated request creates no second Job, and covers evidence/state
+  revision changes creating new evaluations.
+- Prompt layering (`backend/internal/agent/progress_automation.go`): moved the
+  complete evidence workflow, parallel-read guidance, unattended-run contract,
+  rubric, readable-feedback rules, and output contract into the stable Session
+  system prompt. Run instructions are now one identical task line with no
+  Project or evaluation IDs. The prompt version is `v3`.
+- Session rotation: Progress remote IDs are deterministic per Project, Agent,
+  prompt version, and generation (`g0` initially). Core counts retained local
+  Progress Session rows, checks Hermes message/token statistics before StartRun,
+  rotates at 120 messages or 300,000 combined input/output tokens, ends the
+  old local Session, best-effort ends Hermes with `rotated`, and adopts the
+  conflict winner when workers race. Statistics read failures reuse the old
+  Session. The concurrent rotation case also passes under `go test -race`.
+- Verification: focused Agent/Hermes/Progress tests pass. A full
+  `backend/go test ./internal/...` and root `pnpm check` run reach unrelated
+  Repo/Repo GitCLI tests that fail because the environment denies
+  canonicalizing the repository root (`Access is denied`), plus existing Box
+  Sandbox/E2B tests whose runtimes are unavailable; no Progress or Agent test
+  failed. Contracts/API/Caddy checks, builds, and the focused changed-module
+  tests pass.
+- Review fixes (2026-09-07, human review): the new PostgreSQL integration
+  tests had never run against a real database and failed twice. Event-trigger
+  requests are only claimable after the configured 60-second debounce window,
+  so both new tests advance the fixture clock between scheduling and claiming,
+  and the Job-count assertions are now scoped to the fixture Project instead
+  of counting every `progress.evaluate` row in a shared development database.
+  With those fixes the full Progress package passes against the real local
+  PostgreSQL (`MMDASH_TEST_DATABASE_URL`), the full backend suite is green,
+  and the concurrent rotation case is stable under `go test -race`.
+- Known follow-up: legacy Progress Session rows left active by earlier prompt
+  versions (v1/v2) are never ended after the v3 transition; they are harmless
+  because deterministic-ID matching ignores them, but a later cleanup could
+  end stale active Progress rows once a newer generation exists.
 
 # mmdash v0.1 Progress evaluation unattended-run resilience
 

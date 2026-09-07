@@ -925,6 +925,11 @@ func run(logger *logging.Logger) error {
 		return err
 	}
 	if err := eventBus.Register(eventbus.Consumer{
+		Name: "notification.progress-evaluations", Patterns: []string{"progress.evaluation.completed"}, Handler: notificationService.HandleEvent,
+	}); err != nil {
+		return err
+	}
+	if err := eventBus.Register(eventbus.Consumer{
 		Name: "notification.article-releases", Patterns: []string{"article.release.created"}, Handler: notificationService.HandleEvent,
 	}); err != nil {
 		return err

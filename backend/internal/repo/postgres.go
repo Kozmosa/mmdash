@@ -1125,8 +1125,8 @@ func (store PostgresStore) FailSync(
 		      ELSE sync_requested_at
 		    END,
 		    next_sync_at = CASE
-		      WHEN sync_requested_at > $6 THEN $8
-		      WHEN $5 THEN $7
+		      WHEN sync_requested_at > $6 THEN $8::timestamptz
+		      WHEN $5 THEN $7::timestamptz
 		      ELSE NULL
 		    END,
 		    updated_at = $8

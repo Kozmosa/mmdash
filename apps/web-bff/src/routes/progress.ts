@@ -82,6 +82,26 @@ const updateSettings = z.object({
   auto_task_changes: z.boolean(),
   auto_tracking_enabled: z.boolean(),
   event_triggers_enabled: z.boolean(),
+  enabled_event_types: z
+    .array(
+      z.enum([
+        "repo.commit.created",
+        "repo.commit.detected",
+        "model.snapshot.created",
+        "experiment.archived",
+        "article.build.completed",
+        "agent.run.completed",
+        "artifact.available",
+        "context.confirmed",
+        "progress.task.created",
+        "progress.task.updated",
+        "progress.task.deleted",
+        "progress.milestone.created",
+        "progress.milestone.updated",
+      ]),
+    )
+    .max(13)
+    .optional(),
   cron_enabled: z.boolean(),
   cron_schedule: z.string().trim().min(1).max(100),
   debounce_seconds: z.number().int().min(0).max(3_600),

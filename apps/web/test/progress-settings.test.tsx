@@ -31,6 +31,7 @@ const settings = {
   debounce_seconds: 60,
   evaluator_mode: "core_agent",
   event_triggers_enabled: true,
+  enabled_event_types: ["repo.commit.created"],
   min_interval_seconds: 300,
   project_id: "project-1",
   updated_at: "2026-08-11T08:00:00Z",
@@ -90,6 +91,9 @@ describe("Progress settings", () => {
     const automatic = await screen.findByRole("switch", {
       name: "启用自动进度评估",
     });
+    expect(
+      screen.getByRole("group", { name: "可触发进度评估的项目事件" }),
+    ).toBeVisible();
     expect(automatic).not.toBeChecked();
     fireEvent.change(
       screen.getByRole("combobox", { name: "设置 Progress Agent" }),
@@ -98,6 +102,8 @@ describe("Progress settings", () => {
       },
     );
     fireEvent.click(automatic);
+    fireEvent.click(screen.getByRole("checkbox", { name: "代码提交已创建" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "模型快照已创建" }));
     fireEvent.click(screen.getByRole("button", { name: "保存自动评估设置" }));
 
     await waitFor(() =>
@@ -107,6 +113,7 @@ describe("Progress settings", () => {
           body: expect.objectContaining({
             agent_instance_id: "00000000-0000-4000-8000-000000000061",
             auto_tracking_enabled: true,
+            enabled_event_types: ["model.snapshot.created"],
           }),
           method: "PATCH",
         },

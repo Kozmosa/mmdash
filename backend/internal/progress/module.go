@@ -385,7 +385,8 @@ func (module Module) handleSettings(w http.ResponseWriter, r *http.Request, iden
 		item, err := module.Service.UpdateTrackingSettings(r.Context(), identity, projectID, UpdateTrackingSettingsInput{
 			AutoTaskChanges: body.AutoTaskChanges, AutoTrackingEnabled: body.AutoTrackingEnabled,
 			EventTriggersEnabled: body.EventTriggersEnabled, CronEnabled: body.CronEnabled,
-			CronSchedule: body.CronSchedule, DebounceSeconds: int(body.DebounceSeconds),
+			EnabledEventTypes: optionalStrings(body.EnabledEventTypes),
+			CronSchedule:      body.CronSchedule, DebounceSeconds: int(body.DebounceSeconds),
 			MinIntervalSeconds: int(body.MinIntervalSeconds), ReasoningEffort: string(body.ReasoningEffort), AgentInstanceID: stringValue(body.AgentInstanceID),
 		})
 		if err != nil {
@@ -396,6 +397,13 @@ func (module Module) handleSettings(w http.ResponseWriter, r *http.Request, iden
 	default:
 		writeError(w, r, apperror.New(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed"))
 	}
+}
+
+func optionalStrings(value *[]string) []string {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func (module Module) handleRecalculate(w http.ResponseWriter, r *http.Request, identity auth.Identity, projectID string) {

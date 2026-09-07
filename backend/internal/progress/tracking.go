@@ -39,6 +39,8 @@ var automaticTriggerEvents = map[string]bool{
 	"progress.milestone.updated": true,
 }
 
+func DefaultAutomaticTriggerEvents() []string { return AutomaticTriggerPatterns() }
+
 func AutomaticTriggerPatterns() []string {
 	patterns := make([]string, 0, len(automaticTriggerEvents))
 	for pattern := range automaticTriggerEvents {
@@ -185,6 +187,7 @@ type UpdateTrackingSettingsInput struct {
 	AutoTaskChanges      bool
 	AutoTrackingEnabled  bool
 	EventTriggersEnabled bool
+	EnabledEventTypes    []string
 	CronEnabled          bool
 	CronSchedule         string
 	DebounceSeconds      int
@@ -391,10 +394,14 @@ func (service Service) UpdateTrackingSettings(ctx context.Context, caller auth.I
 	input.CronSchedule = strings.TrimSpace(input.CronSchedule)
 	input.AgentInstanceID = strings.TrimSpace(input.AgentInstanceID)
 	input.ReasoningEffort = strings.TrimSpace(input.ReasoningEffort)
+	if input.EnabledEventTypes == nil {
+		input.EnabledEventTypes = DefaultAutomaticTriggerEvents()
+	}
+	input.EnabledEventTypes = normalizedAutomaticTriggerEvents(input.EnabledEventTypes)
 	if input.ReasoningEffort == "" {
 		input.ReasoningEffort = "medium"
 	}
-	if input.DebounceSeconds < 0 || input.DebounceSeconds > 3600 || input.MinIntervalSeconds < 0 || input.MinIntervalSeconds > 86400 ||
+	if input.EnabledEventTypes == nil || input.DebounceSeconds < 0 || input.DebounceSeconds > 3600 || input.MinIntervalSeconds < 0 || input.MinIntervalSeconds > 86400 ||
 		!validProgressReasoningEffort(input.ReasoningEffort) ||
 		(input.CronEnabled && input.AgentInstanceID == "") ||
 		(input.AutoTrackingEnabled && input.AgentInstanceID == "" && service.evaluatorMode() != "mock") {
@@ -416,6 +423,32 @@ func (service Service) UpdateTrackingSettings(ctx context.Context, caller auth.I
 		}, err)
 	}
 	return item, err
+}
+
+func normalizedAutomaticTriggerEvents(values []string) []string {
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if !automaticTriggerEvents[value] {
+			return nil
+		}
+		seen[value] = true
+	}
+	result := make([]string, 0, len(seen))
+	for value := range seen {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func validProgressReasoningEffort(value string) bool {

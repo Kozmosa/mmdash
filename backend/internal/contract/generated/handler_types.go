@@ -920,15 +920,16 @@ func (request BatchReviewProgressProposalsRequest) Validate() error {
 
 // UpdateProgressSettingsRequest is generated from the Core request-body schema.
 type UpdateProgressSettingsRequest struct {
-	AutoTaskChanges      bool    `json:"auto_task_changes"`
-	AutoTrackingEnabled  bool    `json:"auto_tracking_enabled"`
-	EventTriggersEnabled bool    `json:"event_triggers_enabled"`
-	CronEnabled          bool    `json:"cron_enabled"`
-	CronSchedule         string  `json:"cron_schedule"`
-	DebounceSeconds      int64   `json:"debounce_seconds"`
-	MinIntervalSeconds   int64   `json:"min_interval_seconds"`
-	ReasoningEffort      string  `json:"reasoning_effort"`
-	AgentInstanceID      *string `json:"agent_instance_id,omitempty"`
+	AutoTaskChanges      bool      `json:"auto_task_changes"`
+	AutoTrackingEnabled  bool      `json:"auto_tracking_enabled"`
+	EventTriggersEnabled bool      `json:"event_triggers_enabled"`
+	EnabledEventTypes    *[]string `json:"enabled_event_types,omitempty"`
+	CronEnabled          bool      `json:"cron_enabled"`
+	CronSchedule         string    `json:"cron_schedule"`
+	DebounceSeconds      int64     `json:"debounce_seconds"`
+	MinIntervalSeconds   int64     `json:"min_interval_seconds"`
+	ReasoningEffort      string    `json:"reasoning_effort"`
+	AgentInstanceID      *string   `json:"agent_instance_id,omitempty"`
 }
 
 // Validate applies the OpenAPI field constraints before a handler runs.

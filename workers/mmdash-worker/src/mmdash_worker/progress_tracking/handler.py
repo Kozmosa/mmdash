@@ -66,8 +66,45 @@ def _parse_agent_output(value: Any) -> dict[str, Any]:
     encoded = value.strip().encode()
     if len(encoded) > MAX_AGENT_OUTPUT_BYTES:
         raise HandlerError("PROGRESS_INVALID_OUTPUT", "Agent Progress output is too large")
-    parsed = _decode_agent_json(value)
+    parsed = _normalize_agent_output(_decode_agent_json(value))
     return _validate_output(parsed)
+
+
+def _normalize_agent_output(value: Any) -> Any:
+    """Normalize bounded, known Hermes deviations from the Progress contract.
+
+    Older Progress prompts used ``detected_stage`` and did not require the two
+    action arrays. Hermes may also express a prose-only risk as a string. These
+    shapes still contain an unambiguous, non-mutating assessment, so normalize
+    them before applying the strict validator. Unknown fields and all other
+    type errors remain invalid.
+    """
+
+    if not isinstance(value, Mapping):
+        return value
+    result = dict(value)
+    if "stage" not in result and isinstance(result.get("detected_stage"), str):
+        result["stage"] = result.pop("detected_stage")
+    result.setdefault("work_state_updates", [])
+    result.setdefault("suggestions", [])
+    risks = result.get("risks")
+    if isinstance(risks, list):
+        normalized_risks: list[Any] = []
+        for index, risk in enumerate(risks):
+            if isinstance(risk, str) and risk.strip():
+                detail = risk.strip()
+                normalized_risks.append(
+                    {
+                        "key": f"prose-risk:{index + 1}",
+                        "title": detail[:120],
+                        "severity": "medium",
+                        "detail": detail,
+                    }
+                )
+            else:
+                normalized_risks.append(risk)
+        result["risks"] = normalized_risks
+    return result
 
 
 def _decode_agent_json(value: str) -> Any:

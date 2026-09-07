@@ -32,9 +32,26 @@ type SettingsForm = Pick<
   | "cron_schedule"
   | "debounce_seconds"
   | "event_triggers_enabled"
+  | "enabled_event_types"
   | "min_interval_seconds"
   | "reasoning_effort"
 >;
+
+const eventTriggerOptions = [
+  ["repo.commit.created", "代码提交已创建"],
+  ["repo.commit.detected", "检测到仓库新提交"],
+  ["model.snapshot.created", "模型快照已创建"],
+  ["experiment.archived", "实验已归档"],
+  ["article.build.completed", "论文构建已完成"],
+  ["artifact.available", "产物已可用"],
+  ["context.confirmed", "项目上下文已确认"],
+  ["agent.run.completed", "普通 Agent Run 已完成"],
+  ["progress.task.created", "任务已创建"],
+  ["progress.task.updated", "任务已更新"],
+  ["progress.task.deleted", "任务已删除"],
+  ["progress.milestone.created", "里程碑已创建"],
+  ["progress.milestone.updated", "里程碑已更新"],
+] as const;
 
 export function ProgressSettingsPanel() {
   const project = useCurrentProject();
@@ -182,6 +199,41 @@ function ProgressSettingsEditor({
                 }))
               }
             />
+            <fieldset
+              className="grid gap-2 p-4 sm:grid-cols-2"
+              disabled={!form.event_triggers_enabled}
+            >
+              <legend className="px-1 text-sm font-medium">
+                可触发进度评估的项目事件
+              </legend>
+              {eventTriggerOptions.map(([value, label]) => (
+                <label
+                  className="flex items-center gap-2 text-sm disabled:opacity-60"
+                  key={value}
+                >
+                  <input
+                    checked={form.enabled_event_types.includes(value)}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        enabled_event_types: event.target.checked
+                          ? [...current.enabled_event_types, value]
+                          : current.enabled_event_types.filter(
+                              (item) => item !== value,
+                            ),
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  {label}
+                </label>
+              ))}
+              {!form.event_triggers_enabled ? (
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  开启“消费领域事件”后可修改；当前选择会保留。
+                </p>
+              ) : null}
+            </fieldset>
             <SettingSwitch
               checked={form.cron_enabled}
               description="由 mmdash 按 Cron 表达式定期创建评估；所选 Agent 只负责执行评估 Run。"
@@ -323,7 +375,11 @@ function ReadOnlySettings({
       <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
         <SettingValue
           label="领域事件"
-          value={settings.event_triggers_enabled ? "已启用" : "未启用"}
+          value={
+            settings.event_triggers_enabled
+              ? `已启用 ${(settings.enabled_event_types ?? eventTriggerOptions.map(([value]) => value)).length} 项`
+              : "未启用"
+          }
         />
         <SettingValue
           label="定时评估"
@@ -421,6 +477,8 @@ function settingsForm(value: ProgressSettings): SettingsForm {
     cron_schedule: value.cron_schedule,
     debounce_seconds: value.debounce_seconds,
     event_triggers_enabled: value.event_triggers_enabled,
+    enabled_event_types:
+      value.enabled_event_types ?? eventTriggerOptions.map(([event]) => event),
     min_interval_seconds: value.min_interval_seconds,
     reasoning_effort: value.reasoning_effort ?? "medium",
   };
@@ -435,6 +493,7 @@ function settingsRequest(value: SettingsForm) {
     cron_schedule: value.cron_schedule,
     debounce_seconds: value.debounce_seconds,
     event_triggers_enabled: value.event_triggers_enabled,
+    enabled_event_types: value.enabled_event_types,
     min_interval_seconds: value.min_interval_seconds,
     reasoning_effort: value.reasoning_effort,
   };
