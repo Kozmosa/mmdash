@@ -18,6 +18,14 @@ manifest 必须符合 [`contracts/json-schema/article-template.schema.json`](../
 - `figure_dir`：构建时转换后图片的落位目录，默认 `figures`。
 - `bibliography_mode`：`inline`（citeproc 把参考文献渲染进正文片段）或 `native`（保留模板自带 `\bibliography`/`\addbibresource` + `\printbibliography` 接线，系统只把 Zotero 文献写入 `bibliography_target`，Pandoc 输出 `\cite` 命令）。缺省 `inline`。
 
+## Markdown → TeX 转换约定
+
+正文与摘要由 Pandoc 以片段模式（无 `--standalone`）转换：输出不包含 `\documentclass`、preamble 或 `\begin{document}`，文档结构完全由模板 entrypoint 拥有，片段通过 `content_target`/`abstract_target` 被模板 `\input`。
+
+- Pandoc 调用固定携带 `--no-highlight`：代码块一律输出标准 `verbatim` 环境。语法高亮只发生在编辑器内；不引入 Pandoc standalone 模板专属的 `Shaded`/`Highlighting` 宏依赖。
+- `inline` 参考文献模式下，正文与摘要中的引用都由 citeproc 渲染为文本引用；`CSLReferences` 文献表只出现在正文片段中，摘要片段会被剥除文献表。
+- 片段中允许出现的 Pandoc 生成命令以 worker 契约测试为准（`test_pandoc_fragment_stays_within_the_template_contract`）：升级 Worker 镜像的 Pandoc 版本时，新引入的模板专属命令会被该测试拦截。
+
 ## 安全验证
 
 验证器拒绝绝对路径、`..`、反斜杠路径、NUL、重复成员、symlink、ZIP bomb、超额文件数/压缩或解压大小、脚本、Makefile、用户 `latexmkrc`、未登记的编译器、非法 entrypoint/output 以及覆盖模板原文件的生成目标。注册前使用受限测试正文执行一次同版本工具链构建。

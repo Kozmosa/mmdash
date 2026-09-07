@@ -1,9 +1,13 @@
 import asyncio
 import hashlib
 import json
+import shutil
 import stat
+import subprocess
+import sys
 import zipfile
 from collections.abc import Mapping
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -11,6 +15,7 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 
+from mmdash_worker.article import handler as handler_module
 from mmdash_worker.article.handler import (
     ArticleBuildHandler,
     _CommandFailure,
@@ -173,6 +178,7 @@ def test_successful_build_uploads_reproducible_overleaf_zip(tmp_path: Path) -> N
         del timeout, limits
         if arguments[0] == "pandoc":
             assert "--from=markdown+tex_math_dollars+raw_tex+table_captions" in arguments
+            assert "--no-highlight" in arguments
             output = Path(arguments[arguments.index("--output") + 1])
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("Generated TeX", encoding="utf-8")
@@ -333,3 +339,187 @@ def create_template(path: Path) -> Path:
             "\\input{sections/generated-content.tex}\\end{document}",
         )
     return path
+
+
+MANIFEST_11_INLINE = {
+    "schema_version": "1.1",
+    "name": "inline-abstract-template",
+    "version": "1.0.0",
+    "entrypoint": "main.tex",
+    "output": "paper.pdf",
+    "content_target": "generated-content.tex",
+    "bibliography_target": "references.bib",
+    "engine": "pdflatex",
+    "bibliography_tool": "auto",
+    "abstract_target": ".mmdash/abstract-block.tex",
+    "body_layout": "single",
+    "field_profile": "default",
+    "bibliography_mode": "inline",
+}
+
+
+def create_inline_template(path: Path) -> Path:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("mmdash-template.json", json.dumps(MANIFEST_11_INLINE, sort_keys=True))
+        archive.writestr(
+            "main.tex",
+            "\\documentclass{article}\\begin{document}"
+            "\\input{.mmdash/abstract-block.tex}"
+            "\\input{generated-content.tex}\\end{document}",
+        )
+    return path
+
+
+class InlineAbstractClient(FakeArticleClient):
+    def __init__(
+        self,
+        template_zip: Path,
+        manuscript: str | None = None,
+        pandoc_version: str | None = None,
+    ) -> None:
+        super().__init__(template_zip)
+        self.manuscript = manuscript
+        self.pandoc_version = pandoc_version
+        self.pandoc_commands: list[list[str]] = []
+
+    def get_article_build_input(self, job_id: str) -> dict[str, Any]:
+        build = super().get_article_build_input(job_id)
+        build["manuscript"] = self.manuscript or "# Paper\n\nSee [@ref].\n"
+        build["abstract"] = "Abstract cites [@ref] too.\n"
+        build["references_bib"] = "@misc{ref,\n  author = {Author, A.},\n  title = {Title},\n  year = {2026},\n}\n"
+        build["template"]["manifest"] = MANIFEST_11_INLINE
+        if self.pandoc_version:
+            build["toolchain"]["pandoc"] = self.pandoc_version
+        return build
+
+
+def test_inline_abstract_citations_render_without_bibliography(tmp_path: Path) -> None:
+    client = InlineAbstractClient(create_inline_template(tmp_path / "template.zip"))
+
+    def citeproc_command(
+        arguments: list[str],
+        cwd: Path,
+        *,
+        timeout: int,
+        limits: Mapping[str, int] | None = None,
+    ) -> str:
+        del timeout, limits
+        if arguments[0] == "pandoc":
+            client.pandoc_commands.append(arguments)
+            output = Path(arguments[arguments.index("--output") + 1])
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
+                "cited text\n"
+                "\\protect\\phantomsection\\label{refs}\n"
+                "\\begin{CSLReferences}{1}{1}\nbibitem entry\n\\end{CSLReferences}\n",
+                encoding="utf-8",
+            )
+        else:
+            (cwd / "paper.pdf").write_bytes(b"%PDF-1.7\narticle\n")
+            (cwd / "main.synctex.gz").write_bytes(b"synctex")
+        return "$ " + " ".join(arguments) + "\nok"
+
+    with (
+        patch("mmdash_worker.article.handler._run_command", side_effect=citeproc_command),
+        patch("mmdash_worker.article.handler._toolchain", return_value=PINNED_TOOLCHAIN),
+    ):
+        asyncio.run(
+            ArticleBuildHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+        )
+
+    outputs = {Path(c[c.index("--output") + 1]).name: c for c in client.pandoc_commands}
+    assert set(outputs) == {"generated-content.tex", "abstract-block.tex"}
+    for command in client.pandoc_commands:
+        assert "--no-highlight" in command
+        assert "--citeproc" in command
+
+    source_zip = tmp_path / "result.zip"
+    source_zip.write_bytes(client.uploads["source_zip"])
+    with zipfile.ZipFile(source_zip) as archive:
+        abstract = archive.read(".mmdash/abstract-block.tex").decode()
+        body = archive.read("generated-content.tex").decode()
+    assert abstract == "cited text\n"
+    assert "CSLReferences" not in abstract
+    assert "phantomsection" not in abstract
+    # The body fragment keeps the reference list and gains the compatibility
+    # definitions the non-standalone output needs.
+    assert "cited text" in body
+    assert "\\begin{CSLReferences}{1}{1}" in body
+    assert body.startswith("% mmdash Pandoc")
+
+
+def test_pandoc_fragment_stays_within_the_template_contract(tmp_path: Path) -> None:
+    if shutil.which("pandoc") is None:
+        pytest.skip("pandoc is not installed; run inside the worker image for coverage")
+    manuscript = (
+        "# Paper\n\n"
+        "Code stays plain [@ref] with math $x_i^2$.\n\n"
+        "```python\nimport numpy as np\n```\n\n"
+        "| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+    )
+    template = create_inline_template(tmp_path / "template.zip")
+    real_run_command = handler_module._run_command
+
+    def real_pandoc_command(
+        arguments: list[str],
+        cwd: Path,
+        *,
+        timeout: int,
+        limits: Mapping[str, int] | None = None,
+    ) -> str:
+        if arguments[0] == "pandoc":
+            return real_run_command(arguments, cwd, timeout=timeout, limits=limits)
+        (cwd / "paper.pdf").write_bytes(b"%PDF-1.7\narticle\n")
+        (cwd / "main.synctex.gz").write_bytes(b"synctex")
+        return "$ " + " ".join(arguments) + "\nok (simulated latexmk)\n"
+
+    pandoc_version = subprocess.run(
+        ["pandoc", "--version"], capture_output=True, text=True, check=True
+    ).stdout.splitlines()[0]
+    toolchain = {
+        "pandoc": pandoc_version,
+        "latexmk": "Latexmk Version 4.79",
+        "tex_engine": "pdfTeX 3.141592653 (TeX Live 2022/Debian)",
+        "engine": "pdflatex",
+    }
+
+    def real_toolchain(engine: str) -> dict[str, str]:
+        return {**toolchain, "engine": engine}
+
+    patches = [
+        patch("mmdash_worker.article.handler._run_command", side_effect=real_pandoc_command),
+        patch("mmdash_worker.article.handler._toolchain", side_effect=real_toolchain),
+    ]
+    if sys.platform == "darwin":
+        # setrlimit(RLIMIT_AS) raises EINVAL on macOS; limits stay enforced in
+        # the Linux worker image.
+        patches.append(
+            patch("mmdash_worker.article.handler._limit_process", lambda limits: None)
+        )
+    with ExitStack() as stack:
+        for patcher in patches:
+            stack.enter_context(patcher)
+        client = InlineAbstractClient(template, manuscript=manuscript, pandoc_version="pandoc")
+        asyncio.run(
+            ArticleBuildHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+        )
+
+    source_zip = tmp_path / "contract.zip"
+    source_zip.write_bytes(client.uploads["source_zip"])
+    with zipfile.ZipFile(source_zip) as archive:
+        fragments = {
+            name: archive.read(name).decode()
+            for name in ("generated-content.tex", ".mmdash/abstract-block.tex")
+        }
+    for name, text in fragments.items():
+        for banned in (
+            "\\begin{Shaded}",
+            "\\begin{Highlighting}",
+            "\\ImportTok",
+            "\\pandocbounded",
+            "{[}@",
+        ):
+            assert banned not in text, f"{banned} leaked into {name}"
+    assert "\\begin{verbatim}" in fragments["generated-content.tex"]
+    assert "CSLReferences" not in fragments[".mmdash/abstract-block.tex"]
+    assert "CSLReferences" in fragments["generated-content.tex"]

@@ -256,6 +256,7 @@ class ArticleBuildHandler:
             else:
                 pandoc_runs.append((manuscript_text, content_target))
             abstract_declared = manifest.get("abstract_target")
+            abstract_path: Path | None = None
             if abstract_declared and abstract_enabled and raw_abstract.strip():
                 abstract_path = _safe_child(template_root, str(abstract_declared))
                 abstract_path.parent.mkdir(parents=True, exist_ok=True)
@@ -296,15 +297,21 @@ class ArticleBuildHandler:
                         # supports the `Table:` captions emitted by Core.
                         "--from=markdown+tex_math_dollars+raw_tex+table_captions",
                         "--to=latex",
+                        # Syntax highlighting would emit Shaded/Highlighting and
+                        # \ImportTok-style commands whose definitions live only in
+                        # Pandoc's standalone template; a plain verbatim block keeps
+                        # the fragment self-contained. Code-block languages remain an
+                        # editor concern only.
+                        "--no-highlight",
                         "--wrap=none",
                         "--resource-path",
                         str(template_root),
                         "--output",
                         str(output_path),
                     ]
-                    is_body_output = output_path == content_target
+                    is_citeproc_target = output_path in (content_target, abstract_path)
                     if (
-                        is_body_output
+                        is_citeproc_target
                         and bibliography.stat().st_size
                         and bibliography_mode != "native"
                     ):
@@ -323,6 +330,14 @@ class ArticleBuildHandler:
                     and any(path == content_target for _, path in pandoc_runs)
                 ):
                     _inject_pandoc_citeproc_compatibility(content_target)
+                if (
+                    bibliography.stat().st_size
+                    and bibliography_mode != "native"
+                    and any(path == abstract_path for _, path in pandoc_runs)
+                ):
+                    # The abstract renders citations as inline text but never owns
+                    # the reference list: it belongs to the body fragment only.
+                    _strip_csl_references(abstract_path)
                 _check_disk(root, limits["disk_bytes"])
                 self.client.update_article_build_progress(context.job_id, 55, "compiling")
                 log_parts.append(
@@ -477,6 +492,32 @@ def _inject_pandoc_citeproc_compatibility(content_target: Path) -> None:
             "ARTICLE_BUILD_FAILED",
             "Pandoc citation output could not be prepared for LaTeX",
         ) from error
+
+
+def _strip_csl_references(target: Path) -> None:
+    r"""Remove the citeproc reference list from a non-body fragment.
+
+    `--citeproc` appends `\phantomsection\label{refs}` plus a `CSLReferences`
+    environment to any fragment that cites something. The abstract must render
+    citations as inline text while the reference list stays in the body
+    fragment, so the trailing bibliography block is cut from abstract output.
+    """
+    try:
+        generated = target.read_text(encoding="utf-8")
+        stripped = _CSL_REFERENCES_BLOCK.sub("", generated).rstrip() + "\n"
+        target.write_text(stripped, encoding="utf-8", newline="\n")
+    except OSError as error:
+        raise HandlerError(
+            "ARTICLE_BUILD_FAILED",
+            "Pandoc citation output could not be prepared for LaTeX",
+        ) from error
+
+
+_CSL_REFERENCES_BLOCK = re.compile(
+    r"(?:\\protect)?\\phantomsection\\label\{refs\}\s*"
+    r"\\begin\{CSLReferences\}\{[0-9]+\}\{[0-9]+\}.*?\\end\{CSLReferences\}\s*",
+    re.DOTALL,
+)
 
 
 def _resource_filename(index: int, resource: Mapping[str, Any]) -> str:
