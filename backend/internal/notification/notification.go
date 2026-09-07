@@ -25,13 +25,14 @@ import (
 )
 
 const (
-	TypeInvitationReceived = "project.invitation.received"
-	TypeReminderDue        = "progress.reminder.due"
-	TypeArticleRelease     = "article.release.created"
-	OutcomeActive          = "active"
-	OutcomeResolved        = "resolved"
-	OutcomeRevoked         = "revoked"
-	OutcomeExpired         = "expired"
+	TypeInvitationReceived  = "project.invitation.received"
+	TypeReminderDue         = "progress.reminder.due"
+	TypeEvaluationCompleted = "progress.evaluation.completed"
+	TypeArticleRelease      = "article.release.created"
+	OutcomeActive           = "active"
+	OutcomeResolved         = "resolved"
+	OutcomeRevoked          = "revoked"
+	OutcomeExpired          = "expired"
 )
 
 type Notification struct {
@@ -187,7 +188,7 @@ func (registry *Registry) Register(descriptor Descriptor) error {
 	if descriptor.Priority != "low" && descriptor.Priority != "normal" && descriptor.Priority != "high" && descriptor.Priority != "urgent" {
 		return fmt.Errorf("invalid notification priority")
 	}
-	knownEvents := map[string]bool{"project.member.invited": true, "progress.reminder.due": true, "article.release.created": true}
+	knownEvents := map[string]bool{"project.member.invited": true, "progress.reminder.due": true, "progress.evaluation.completed": true, "article.release.created": true}
 	for _, source := range descriptor.SourceEventTypes {
 		if !knownEvents[source] {
 			return fmt.Errorf("unknown notification source event: %s", source)
@@ -230,6 +231,15 @@ func DefaultRegistry() (*Registry, error) {
 		Scope: "project", InboxPolicy: "default_on", ExternalAllowed: true, Priority: "normal", TemplateKey: "progress-reminder", TemplateVersion: 1,
 		AllowedTemplateFields: []string{"project_id", "reminder_id", "task_id", "milestone_id", "title", "status"},
 		RecipientResolver:     "event.actor_or_assignee", Renderer: "code",
+	}); err != nil {
+		return nil, err
+	}
+	if err := registry.Register(Descriptor{
+		TypeKey: TypeEvaluationCompleted, SchemaVersion: 1,
+		SourceEventTypes: []string{"progress.evaluation.completed"}, AcceptedEventSchemaVersions: []int64{1},
+		Scope: "project", InboxPolicy: "default_on", ExternalAllowed: true, Priority: "normal", TemplateKey: "progress-evaluation-completed", TemplateVersion: 1,
+		AllowedTemplateFields: []string{"resource_id", "resource_type", "title", "status", "stage", "effective_stage", "summary", "risk_count", "suggestion_count"},
+		RecipientResolver:     "event.actor", Renderer: "code",
 	}); err != nil {
 		return nil, err
 	}
@@ -444,6 +454,12 @@ func (service Service) handleRegisteredEvent(ctx context.Context, event contract
 			Route: "/projects/" + projectID + "/article",
 		}
 	}
+	if descriptor.TypeKey == TypeEvaluationCompleted {
+		notification.Action = &Action{
+			Type: "progress.evaluation.open", ResourceID: resourceID,
+			Route: "/projects/" + projectID + "/progress",
+		}
+	}
 	intents := make([]DeliveryIntent, 0)
 	if service.Settings != nil && service.Deliveries != nil && descriptor.ExternalAllowed && rule.ExternalEnabled && priorityAtLeast(notification.Priority, rule.MinimumPriority) {
 		channels := rule.ChannelKeys
@@ -539,6 +555,17 @@ func renderInboxSnapshot(typeKey string, data map[string]interface{}) map[string
 			title = "Progress 提醒到期"
 		}
 		return map[string]interface{}{"title": title, "body": "项目中有一项需要你关注的 Progress 提醒。"}
+	case TypeEvaluationCompleted:
+		stage := stringValue(data["effective_stage"])
+		summary := stringValue(data["summary"])
+		title := "自动进度追踪已完成"
+		if stage != "" {
+			title += " · " + stage
+		}
+		if summary == "" {
+			summary = "新的项目进度评估结果已生成。"
+		}
+		return map[string]interface{}{"title": title, "body": summary}
 	case TypeArticleRelease:
 		title := stringValue(data["title"])
 		if title == "" {
@@ -727,7 +754,7 @@ func resolveRecipients(event contract.EventEnvelope, data map[string]interface{}
 	if userID := stringValue(data["assignee_id"]); userID != "" {
 		return []RecipientInput{{Key: "user:" + userID, UserID: userID, ExpiresAt: expiresAt}}
 	}
-	if userID := event.Actor["user_id"]; userID != "" && event.EventType == "progress.reminder.due" {
+	if userID := event.Actor["user_id"]; userID != "" && (event.EventType == "progress.reminder.due" || event.EventType == "progress.evaluation.completed") {
 		return []RecipientInput{{Key: "user:" + userID, UserID: userID, ExpiresAt: expiresAt}}
 	}
 	if userID := event.Actor["actor_id"]; userID != "" && event.EventType == "article.release.created" {

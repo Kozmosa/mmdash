@@ -275,6 +275,8 @@ export function createServiceConfiguration(
         REPO_ASKPASS_PATH: path.join(layout.runtimeBin, askPassBinary),
         REPO_LOCAL_ALLOWED_ROOTS:
           environment.REPO_LOCAL_ALLOWED_ROOTS ?? layout.localRepositoryRoot,
+        REPO_STORAGE_ROOT:
+          environment.REPO_STORAGE_ROOT ?? layout.localRepositoryRoot,
         REPO_GITHUB_NO_PROXY:
           environment.REPO_GITHUB_NO_PROXY ?? "localhost,127.0.0.1,::1",
         REPO_GITHUB_PROXY_URL: environment.REPO_GITHUB_PROXY_URL ?? "",

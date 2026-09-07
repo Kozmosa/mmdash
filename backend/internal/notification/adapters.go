@@ -93,8 +93,11 @@ func (adapter FeishuWebhook) Test(ctx context.Context, config map[string]interfa
 }
 func (adapter FeishuWebhook) Render(_ context.Context, notification Notification, _ int) (RenderedMessage, error) {
 	text := notification.TypeKey
-	if title, ok := notification.Data["title"].(string); ok && title != "" {
+	if title, ok := notification.RenderedSnapshot["title"].(string); ok && title != "" {
 		text += ": " + title
+	}
+	if body, ok := notification.RenderedSnapshot["body"].(string); ok && body != "" {
+		text += "\n" + body
 	}
 	body, err := json.Marshal(map[string]interface{}{"msg_type": "text", "content": map[string]string{"text": text}})
 	return RenderedMessage{Body: body, ContentType: "application/json"}, err

@@ -37,6 +37,7 @@ import type {
 const notificationTypes = [
   { key: "project.invitation.received", label: "项目邀请" },
   { key: "progress.reminder.due", label: "Progress 提醒" },
+  { key: "progress.evaluation.completed", label: "自动进度追踪结果" },
 ] as const;
 
 const outcomeLabels: Record<InboxItem["outcome"], string> = {

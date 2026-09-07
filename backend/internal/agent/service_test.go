@@ -94,6 +94,109 @@ type agentServiceTestStore struct {
 	instanceUpdates   int
 }
 
+// concurrentProgressStore releases two initial session lookups together so a
+// test can exercise the same deterministic-ID race that PostgreSQL resolves
+// with the agent session unique constraint.
+type concurrentProgressStore struct {
+	Store
+	listReady   chan struct{}
+	listRelease chan struct{}
+	listMu      sync.Mutex
+	listCalls   int
+	writeMu     sync.Mutex
+}
+
+func (store *concurrentProgressStore) ListSessions(
+	ctx context.Context,
+	projectID string,
+	instanceID string,
+) ([]SessionRecord, error) {
+	wait := false
+	store.listMu.Lock()
+	if store.listCalls < 2 {
+		store.listCalls++
+		wait = true
+		if store.listCalls == 2 {
+			close(store.listReady)
+		}
+	}
+	store.listMu.Unlock()
+	if wait {
+		select {
+		case <-store.listRelease:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.Store.ListSessions(ctx, projectID, instanceID)
+}
+
+func (store *concurrentProgressStore) CreateSession(
+	ctx context.Context,
+	actorID string,
+	item SessionRecord,
+	event string,
+) (SessionRecord, error) {
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.Store.CreateSession(ctx, actorID, item, event)
+}
+
+func (store *concurrentProgressStore) UpdateSession(
+	ctx context.Context,
+	actorID string,
+	item SessionRecord,
+	event string,
+	now time.Time,
+) (SessionRecord, error) {
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.Store.UpdateSession(ctx, actorID, item, event, now)
+}
+
+func (store *concurrentProgressStore) ReserveRun(ctx context.Context, item RunRecord) (RunRecord, error) {
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.Store.ReserveRun(ctx, item)
+}
+
+func (store *concurrentProgressStore) ActivateRun(
+	ctx context.Context,
+	actorID string,
+	item RunRecord,
+	now time.Time,
+) (RunRecord, error) {
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.Store.ActivateRun(ctx, actorID, item, now)
+}
+
+func (store *concurrentProgressStore) FailRunReservation(
+	ctx context.Context,
+	actorID string,
+	runID string,
+	code string,
+	now time.Time,
+) error {
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.Store.FailRunReservation(ctx, actorID, runID, code, now)
+}
+
+func (store *concurrentProgressStore) UpdateRun(
+	ctx context.Context,
+	runID string,
+	status string,
+	code string,
+	now time.Time,
+) (RunRecord, error) {
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.Store.UpdateRun(ctx, runID, status, code, now)
+}
+
 func newAgentServiceTestStore() *agentServiceTestStore {
 	return &agentServiceTestStore{
 		instances:       map[string]Instance{},
@@ -274,6 +377,11 @@ func (store *agentServiceTestStore) CreateSession(
 ) (SessionRecord, error) {
 	if _, exists := store.sessions[item.ID]; exists {
 		return SessionRecord{}, ErrConflict
+	}
+	for _, existing := range store.sessions {
+		if existing.AgentInstanceID == item.AgentInstanceID && existing.RemoteSessionID == item.RemoteSessionID {
+			return SessionRecord{}, ErrConflict
+		}
 	}
 	store.sessions[item.ID] = item
 	store.createdEvents = append(store.createdEvents, event)
@@ -703,43 +811,48 @@ func (store *agentServiceTestStore) UpdateRotation(
 }
 
 type agentServiceTestAdapter struct {
-	createSessionRequests []CreateSessionRequest
-	sessions              map[string]Session
-	updateSessionRequests []UpdateSessionRequest
-	forkSessionRequests   []ForkSessionRequest
-	startRunRequests      []StartRunRequest
-	messages              []Message
-	probe                 ProbeResult
-	probeCalls            int
-	checkRuntimeCalls     int
-	checkRuntimeErr       error
-	verifyAccess          ProjectAccessResult
-	getRunResult          Run
-	onGetRun              func(call int) (Run, error)
-	stopRunResult         Run
-	approvalResult        ApprovalResult
-	approvalRequest       ApprovalRequest
-	approvalErr           error
-	approvalCalls         int
-	approvalMu            sync.Mutex
-	onApprove             func(ApprovalRequest)
-	configureAccessResult ProjectAccessResult
-	onConfigureAccess     func(ProjectAccessRequest)
-	rotateAccessResult    ProjectAccessResult
-	onRotateAccess        func(ProjectAccessRequest)
-	finalizeAccessResult  ProjectAccessFinalizeResult
-	finalizeAccessErr     error
-	onFinalizeAccess      func(ProjectAccessFinalizeRequest)
-	configureAccessCalls  int
-	getRunCalls           int
-	stopRunCalls          int
-	streamRunCalls        int
-	streamRunEvents       []Event
-	streamRunErr          error
-	forkCalls             int
-	rotateAccessCalls     int
-	finalizeAccessCalls   int
-	runSequence           int
+	runtimeMu              sync.Mutex
+	createSessionRequests  []CreateSessionRequest
+	createSessionErr       error
+	sessions               map[string]Session
+	updateSessionRequests  []UpdateSessionRequest
+	updateSessionRemoteIDs []string
+	getSessionErr          error
+	updateSessionErr       error
+	forkSessionRequests    []ForkSessionRequest
+	startRunRequests       []StartRunRequest
+	messages               []Message
+	probe                  ProbeResult
+	probeCalls             int
+	checkRuntimeCalls      int
+	checkRuntimeErr        error
+	verifyAccess           ProjectAccessResult
+	getRunResult           Run
+	onGetRun               func(call int) (Run, error)
+	stopRunResult          Run
+	approvalResult         ApprovalResult
+	approvalRequest        ApprovalRequest
+	approvalErr            error
+	approvalCalls          int
+	approvalMu             sync.Mutex
+	onApprove              func(ApprovalRequest)
+	configureAccessResult  ProjectAccessResult
+	onConfigureAccess      func(ProjectAccessRequest)
+	rotateAccessResult     ProjectAccessResult
+	onRotateAccess         func(ProjectAccessRequest)
+	finalizeAccessResult   ProjectAccessFinalizeResult
+	finalizeAccessErr      error
+	onFinalizeAccess       func(ProjectAccessFinalizeRequest)
+	configureAccessCalls   int
+	getRunCalls            int
+	stopRunCalls           int
+	streamRunCalls         int
+	streamRunEvents        []Event
+	streamRunErr           error
+	forkCalls              int
+	rotateAccessCalls      int
+	finalizeAccessCalls    int
+	runSequence            int
 }
 
 func (adapter *agentServiceTestAdapter) Probe(context.Context) (ProbeResult, error) {
@@ -760,6 +873,14 @@ func (adapter *agentServiceTestAdapter) CreateSession(
 	_ context.Context,
 	request CreateSessionRequest,
 ) (Session, error) {
+	adapter.runtimeMu.Lock()
+	defer adapter.runtimeMu.Unlock()
+	if adapter.createSessionErr != nil {
+		return Session{}, adapter.createSessionErr
+	}
+	if _, exists := adapter.sessions[request.RemoteID]; exists {
+		return Session{}, &AdapterError{Code: ErrorConflict, Operation: "session.create"}
+	}
 	adapter.createSessionRequests = append(adapter.createSessionRequests, request)
 	created := Session{RemoteID: request.RemoteID, Source: request.Source, Title: request.Title}
 	if adapter.sessions == nil {
@@ -770,6 +891,11 @@ func (adapter *agentServiceTestAdapter) CreateSession(
 }
 
 func (adapter *agentServiceTestAdapter) GetSession(_ context.Context, remoteID string) (Session, error) {
+	adapter.runtimeMu.Lock()
+	defer adapter.runtimeMu.Unlock()
+	if adapter.getSessionErr != nil {
+		return Session{}, adapter.getSessionErr
+	}
 	if session, ok := adapter.sessions[remoteID]; ok {
 		return session, nil
 	}
@@ -781,7 +907,20 @@ func (adapter *agentServiceTestAdapter) UpdateSession(
 	remoteID string,
 	request UpdateSessionRequest,
 ) (Session, error) {
+	adapter.runtimeMu.Lock()
+	defer adapter.runtimeMu.Unlock()
 	adapter.updateSessionRequests = append(adapter.updateSessionRequests, request)
+	adapter.updateSessionRemoteIDs = append(adapter.updateSessionRemoteIDs, remoteID)
+	if adapter.updateSessionErr != nil {
+		return Session{}, adapter.updateSessionErr
+	}
+	if session, ok := adapter.sessions[remoteID]; ok {
+		if request.EndReason != nil {
+			session.EndReason = *request.EndReason
+		}
+		adapter.sessions[remoteID] = session
+		return session, nil
+	}
 	return Session{RemoteID: remoteID}, nil
 }
 
@@ -798,6 +937,8 @@ func (adapter *agentServiceTestAdapter) ForkSession(
 }
 
 func (adapter *agentServiceTestAdapter) ListMessages(context.Context, string) ([]Message, error) {
+	adapter.runtimeMu.Lock()
+	defer adapter.runtimeMu.Unlock()
 	return append([]Message(nil), adapter.messages...), nil
 }
 
@@ -819,6 +960,8 @@ func (adapter *agentServiceTestAdapter) StartRun(
 	_ context.Context,
 	request StartRunRequest,
 ) (Run, error) {
+	adapter.runtimeMu.Lock()
+	defer adapter.runtimeMu.Unlock()
 	adapter.runSequence++
 	adapter.startRunRequests = append(adapter.startRunRequests, request)
 	return Run{
@@ -829,11 +972,14 @@ func (adapter *agentServiceTestAdapter) StartRun(
 }
 
 func (adapter *agentServiceTestAdapter) GetRun(context.Context, string) (Run, error) {
+	adapter.runtimeMu.Lock()
 	adapter.getRunCalls++
-	if adapter.onGetRun != nil {
-		return adapter.onGetRun(adapter.getRunCalls)
+	call, callback, result := adapter.getRunCalls, adapter.onGetRun, adapter.getRunResult
+	adapter.runtimeMu.Unlock()
+	if callback != nil {
+		return callback(call)
 	}
-	return adapter.getRunResult, nil
+	return result, nil
 }
 
 func (adapter *agentServiceTestAdapter) StreamRun(
@@ -876,6 +1022,8 @@ func (adapter *agentServiceTestAdapter) ApproveRun(
 }
 
 func (adapter *agentServiceTestAdapter) StopRun(context.Context, string) (Run, error) {
+	adapter.runtimeMu.Lock()
+	defer adapter.runtimeMu.Unlock()
 	adapter.stopRunCalls++
 	return adapter.stopRunResult, nil
 }
@@ -1339,8 +1487,9 @@ func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
 	if !ok || session.SessionType != SessionProgress {
 		t.Fatalf("progress evaluation used a non-Progress Session: %#v", session)
 	}
-	if len(fixture.adapter.startRunRequests) != 1 || !strings.Contains(fixture.adapter.startRunRequests[0].Instructions, "Progress-type Session") || !strings.Contains(fixture.adapter.startRunRequests[0].Instructions, "task.complete") {
-		t.Fatalf("progress evaluation instructions lost the human review boundary: %#v", fixture.adapter.startRunRequests)
+	if len(fixture.adapter.startRunRequests) != 1 || fixture.adapter.startRunRequests[0].Instructions != progressEvaluationInstructions() ||
+		strings.Contains(fixture.adapter.startRunRequests[0].Instructions, evaluationID) || strings.Contains(fixture.adapter.startRunRequests[0].Instructions, "project-1") {
+		t.Fatalf("progress evaluation instructions were not stable and run-scoped: %#v", fixture.adapter.startRunRequests)
 	}
 	if len(fixture.adapter.createSessionRequests) != 1 || fixture.adapter.createSessionRequests[0].Title == "Progress automation" {
 		t.Fatalf("progress Session did not use a collision-safe identity: %#v", fixture.adapter.createSessionRequests)
@@ -1349,18 +1498,21 @@ func TestEvaluateProgressUsesDedicatedEvaluationProvenance(t *testing.T) {
 		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "untrusted data") ||
 		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "required mmdash MCP read workflow") ||
 		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "first character must be {") ||
-		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "Use only read tools") {
+		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "Use only read tools") ||
+		!strings.Contains(fixture.adapter.createSessionRequests[0].SystemPrompt, "task.complete") {
 		t.Fatalf("progress Session lost its evidence and read-only boundaries: %#v", fixture.adapter.createSessionRequests)
 	}
 }
 
 func TestProgressEvaluationInstructionsDefineEvidenceAndReadableFeedbackRubric(t *testing.T) {
-	prompt := progressEvaluationInstructions("project-1", "evaluation-1")
+	prompt := progressEvaluationSystemPrompt
 	required := []string{
 		"MANDATORY MCP EVIDENCE WORKFLOW",
 		"Do not produce the final answer until you complete these steps in order",
-		"Call project.get for exactly project project-1",
+		"Call project.get for exactly the value of project.project_id",
 		"Call progress.get for the same Project",
+		"same assistant turn",
+		"four data.list discovery calls in parallel",
 		"recover them with data.list for milestone and task",
 		"Never ask the user for tool-owned fields merely because a response was truncated",
 		"Call data.list for project-context",
@@ -1400,8 +1552,36 @@ func TestProgressEvaluationInstructionsDefineEvidenceAndReadableFeedbackRubric(t
 			t.Fatalf("progress evaluation prompt is missing %q", fragment)
 		}
 	}
-	if !strings.Contains(prompt, "project-1") || !strings.Contains(prompt, "evaluation-1") {
-		t.Fatalf("progress evaluation prompt lost Run identity: %q", prompt)
+	if strings.Contains(prompt, "project-1") || strings.Contains(prompt, "evaluation-1") {
+		t.Fatalf("stable Progress system prompt contains run identity: %q", prompt)
+	}
+}
+
+func TestProgressEvaluationInstructionsAreStableAcrossRuns(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for _, evaluationID := range []string{
+		"00000000-0000-4000-8000-000000000091",
+		"00000000-0000-4000-8000-000000000092",
+	} {
+		if _, err := fixture.service.EvaluateProgress(ctx, "project-1", "agent-1", evaluationID,
+			map[string]interface{}{"project": map[string]interface{}{"project_id": "project-1"}}, nil); err != nil {
+			t.Fatalf("evaluate Progress %s: %v", evaluationID, err)
+		}
+	}
+	if len(fixture.adapter.startRunRequests) != 2 ||
+		fixture.adapter.startRunRequests[0].Instructions != fixture.adapter.startRunRequests[1].Instructions ||
+		fixture.adapter.startRunRequests[0].Instructions != progressEvaluationInstructions() {
+		t.Fatalf("Progress run instructions changed between evaluations: %#v", fixture.adapter.startRunRequests)
+	}
+	for _, request := range fixture.adapter.startRunRequests {
+		if strings.Contains(request.Instructions, "00000000-0000-4000-8000-00000000009") || strings.Contains(request.Instructions, "project-1") {
+			t.Fatalf("run-specific identity leaked into stable instructions: %q", request.Instructions)
+		}
 	}
 }
 
@@ -1410,7 +1590,7 @@ func TestEvaluateProgressAdoptsDeterministicRemoteSession(t *testing.T) {
 	fixture.adapter.getRunResult = Run{
 		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
 	}
-	remoteID := progressSessionRemoteID("project-1", "agent-1")
+	remoteID := progressSessionRemoteID("project-1", "agent-1", 0)
 	fixture.adapter.sessions = map[string]Session{
 		remoteID: {RemoteID: remoteID, Source: "api_server", Title: progressSessionTitle(remoteID)},
 	}
@@ -1462,12 +1642,234 @@ func TestEvaluateProgressRotatesAnActiveSessionFromAnOlderPromptVersion(t *testi
 		t.Fatalf("evaluation reused a Session with a stale system prompt: %#v", run)
 	}
 	created := fixture.store.sessions[run.SessionID]
-	if created.RemoteSessionID != progressSessionRemoteID("project-1", "agent-1") {
+	if created.RemoteSessionID != progressSessionRemoteID("project-1", "agent-1", 1) {
 		t.Fatalf("evaluation did not create the current prompt-version Session: %#v", created)
 	}
 	if len(fixture.adapter.createSessionRequests) != 1 ||
 		fixture.adapter.createSessionRequests[0].SystemPrompt != progressEvaluationSystemPrompt {
 		t.Fatalf("rotated Session lost the current system prompt: %#v", fixture.adapter.createSessionRequests)
+	}
+}
+
+func TestEvaluateProgressRotatesAnOversizedSession(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	oldRemoteID := progressSessionRemoteID("project-1", "agent-1", 0)
+	fixture.store.sessions["progress-session-0"] = SessionRecord{
+		AgentInstanceID: "agent-1", CreatedAt: agentServiceTestNow, CreatedBy: "user-1",
+		GrantID: "grant-1", ID: "progress-session-0", ProjectID: "project-1",
+		RemoteSessionID: oldRemoteID, SessionType: SessionProgress, Status: SessionActive,
+		Title: progressSessionTitle(oldRemoteID), UpdatedAt: agentServiceTestNow, Version: 1,
+	}
+	fixture.adapter.sessions = map[string]Session{
+		oldRemoteID: {RemoteID: oldRemoteID, Source: "mmdash", Title: progressSessionTitle(oldRemoteID), MessageCount: progressSessionRotationMessageCount},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000090", map[string]interface{}{"project_id": "project-1"}, nil)
+	if err != nil {
+		t.Fatalf("evaluate oversized Progress Session: %v", err)
+	}
+	run := fixture.store.runs[result.AgentRunID]
+	newRemoteID := progressSessionRemoteID("project-1", "agent-1", 1)
+	if run.SessionID == "progress-session-0" || fixture.store.sessions[run.SessionID].RemoteSessionID != newRemoteID {
+		t.Fatalf("evaluation did not move to the next generation: run=%#v session=%#v", run, fixture.store.sessions[run.SessionID])
+	}
+	old := fixture.store.sessions["progress-session-0"]
+	if old.Status != SessionEnded || old.EndReason != "rotated" || old.EndedAt == nil {
+		t.Fatalf("old Progress Session was not ended locally: %#v", old)
+	}
+	if len(fixture.adapter.updateSessionRequests) != 1 || len(fixture.adapter.updateSessionRemoteIDs) != 1 ||
+		fixture.adapter.updateSessionRemoteIDs[0] != oldRemoteID || fixture.adapter.updateSessionRequests[0].EndReason == nil ||
+		*fixture.adapter.updateSessionRequests[0].EndReason != "rotated" {
+		t.Fatalf("old remote Progress Session was not ended: %#v ids=%#v", fixture.adapter.updateSessionRequests, fixture.adapter.updateSessionRemoteIDs)
+	}
+}
+
+func TestEvaluateProgressKeepsOversizedSessionWhenReplacementCreationFails(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	oldRemoteID := progressSessionRemoteID("project-1", "agent-1", 0)
+	fixture.store.sessions["progress-session-0"] = SessionRecord{
+		AgentInstanceID: "agent-1", CreatedAt: agentServiceTestNow, CreatedBy: "user-1",
+		GrantID: "grant-1", ID: "progress-session-0", ProjectID: "project-1",
+		RemoteSessionID: oldRemoteID, SessionType: SessionProgress, Status: SessionActive,
+		Title: progressSessionTitle(oldRemoteID), UpdatedAt: agentServiceTestNow, Version: 1,
+	}
+	fixture.adapter.sessions = map[string]Session{
+		oldRemoteID: {RemoteID: oldRemoteID, Source: "mmdash", Title: progressSessionTitle(oldRemoteID), InputTokens: progressSessionRotationTokenCount},
+	}
+	fixture.adapter.createSessionErr = &AdapterError{Code: ErrorUnavailable, Operation: "session.create", Retryable: true}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000085", map[string]interface{}{"project_id": "project-1"}, nil)
+	if err != nil {
+		t.Fatalf("rotation failure should fall back to the current Progress Session: %v", err)
+	}
+	if fixture.store.runs[result.AgentRunID].SessionID != "progress-session-0" {
+		t.Fatalf("evaluation did not use the current Session after rotation failed: %#v", fixture.store.runs[result.AgentRunID])
+	}
+	old := fixture.store.sessions["progress-session-0"]
+	if old.Status != SessionActive || old.EndReason != "" || old.EndedAt != nil {
+		t.Fatalf("failed rotation ended the only runnable Progress Session: %#v", old)
+	}
+	if len(fixture.adapter.updateSessionRequests) != 0 {
+		t.Fatalf("failed rotation attempted to end the remote Session: %#v", fixture.adapter.updateSessionRequests)
+	}
+}
+
+func TestEvaluateProgressRecreatesMissingRemoteSession(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	oldRemoteID := progressSessionRemoteID("project-1", "agent-1", 0)
+	fixture.store.sessions["progress-session-0"] = SessionRecord{
+		AgentInstanceID: "agent-1", CreatedAt: agentServiceTestNow, CreatedBy: "user-1",
+		GrantID: "grant-1", ID: "progress-session-0", ProjectID: "project-1",
+		RemoteSessionID: oldRemoteID, SessionType: SessionProgress, Status: SessionActive,
+		Title: progressSessionTitle(oldRemoteID), UpdatedAt: agentServiceTestNow, Version: 1,
+	}
+	fixture.adapter.getSessionErr = &AdapterError{Code: ErrorNotFound, Operation: "session.get"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000084", map[string]interface{}{"project_id": "project-1"}, nil)
+	if err != nil {
+		t.Fatalf("missing remote Session should be replaced: %v", err)
+	}
+	run := fixture.store.runs[result.AgentRunID]
+	newRemoteID := progressSessionRemoteID("project-1", "agent-1", 1)
+	if run.SessionID == "progress-session-0" || fixture.store.sessions[run.SessionID].RemoteSessionID != newRemoteID {
+		t.Fatalf("evaluation did not move to a replacement Session: run=%#v session=%#v", run, fixture.store.sessions[run.SessionID])
+	}
+	if fixture.store.sessions["progress-session-0"].Status != SessionEnded {
+		t.Fatalf("missing remote Session was not ended locally: %#v", fixture.store.sessions["progress-session-0"])
+	}
+}
+
+func TestEvaluateProgressConcurrentRotationAdoptsOneNewSession(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	oldRemoteID := progressSessionRemoteID("project-1", "agent-1", 0)
+	fixture.store.sessions["progress-session-0"] = SessionRecord{
+		AgentInstanceID: "agent-1", CreatedAt: agentServiceTestNow, CreatedBy: "user-1",
+		GrantID: "grant-1", ID: "progress-session-0", ProjectID: "project-1",
+		RemoteSessionID: oldRemoteID, SessionType: SessionProgress, Status: SessionActive,
+		Title: progressSessionTitle(oldRemoteID), UpdatedAt: agentServiceTestNow, Version: 1,
+	}
+	fixture.adapter.sessions = map[string]Session{
+		oldRemoteID: {RemoteID: oldRemoteID, Source: "mmdash", Title: progressSessionTitle(oldRemoteID), MessageCount: progressSessionRotationMessageCount},
+	}
+	concurrentStore := &concurrentProgressStore{
+		Store:       fixture.store,
+		listReady:   make(chan struct{}),
+		listRelease: make(chan struct{}),
+	}
+	fixture.service.Store = concurrentStore
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	type evaluationResult struct {
+		execution progress.AgentExecution
+		err       error
+	}
+	results := make(chan evaluationResult, 2)
+	for _, evaluationID := range []string{
+		"00000000-0000-4000-8000-000000000086",
+		"00000000-0000-4000-8000-000000000087",
+	} {
+		go func(id string) {
+			execution, err := fixture.service.EvaluateProgress(ctx, "project-1", "agent-1", id, map[string]interface{}{"project_id": "project-1"}, nil)
+			results <- evaluationResult{execution: execution, err: err}
+		}(evaluationID)
+	}
+	select {
+	case <-concurrentStore.listReady:
+		close(concurrentStore.listRelease)
+	case <-ctx.Done():
+		t.Fatal("concurrent Progress evaluations did not inspect the old Session together")
+	}
+
+	var executions []progress.AgentExecution
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			t.Fatalf("concurrent Progress evaluation: %v", result.err)
+		}
+		executions = append(executions, result.execution)
+	}
+	if len(executions) != 2 || executions[0].AgentSessionID == "" || executions[0].AgentSessionID != executions[1].AgentSessionID {
+		t.Fatalf("concurrent evaluations did not adopt one new local Session: %#v", executions)
+	}
+	newSession := fixture.store.sessions[executions[0].AgentSessionID]
+	if newSession.RemoteSessionID != progressSessionRemoteID("project-1", "agent-1", 1) || newSession.Status != SessionActive {
+		t.Fatalf("concurrent evaluations used the wrong generation: %#v", newSession)
+	}
+}
+
+func TestEvaluateProgressReusesSessionBelowRotationThreshold(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	remoteID := progressSessionRemoteID("project-1", "agent-1", 0)
+	fixture.store.sessions["progress-session-0"] = SessionRecord{
+		AgentInstanceID: "agent-1", CreatedAt: agentServiceTestNow, CreatedBy: "user-1",
+		GrantID: "grant-1", ID: "progress-session-0", ProjectID: "project-1",
+		RemoteSessionID: remoteID, SessionType: SessionProgress, Status: SessionActive,
+		Title: progressSessionTitle(remoteID), UpdatedAt: agentServiceTestNow, Version: 1,
+	}
+	fixture.adapter.sessions = map[string]Session{
+		remoteID: {RemoteID: remoteID, Source: "mmdash", Title: progressSessionTitle(remoteID), MessageCount: progressSessionRotationMessageCount - 1, InputTokens: progressSessionRotationTokenCount - 1},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000089", map[string]interface{}{"project_id": "project-1"}, nil)
+	if err != nil {
+		t.Fatalf("evaluate within Progress Session threshold: %v", err)
+	}
+	if fixture.store.runs[result.AgentRunID].SessionID != "progress-session-0" || len(fixture.adapter.createSessionRequests) != 0 || len(fixture.adapter.updateSessionRequests) != 0 {
+		t.Fatalf("session below threshold was rotated: run=%#v creates=%#v updates=%#v", fixture.store.runs[result.AgentRunID], fixture.adapter.createSessionRequests, fixture.adapter.updateSessionRequests)
+	}
+}
+
+func TestEvaluateProgressReusesSessionWhenStatsReadFails(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{
+		RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`,
+	}
+	remoteID := progressSessionRemoteID("project-1", "agent-1", 0)
+	fixture.store.sessions["progress-session-0"] = SessionRecord{
+		AgentInstanceID: "agent-1", CreatedAt: agentServiceTestNow, CreatedBy: "user-1",
+		GrantID: "grant-1", ID: "progress-session-0", ProjectID: "project-1",
+		RemoteSessionID: remoteID, SessionType: SessionProgress, Status: SessionActive,
+		Title: progressSessionTitle(remoteID), UpdatedAt: agentServiceTestNow, Version: 1,
+	}
+	fixture.adapter.getSessionErr = &AdapterError{Code: ErrorTimeout, Operation: "session.get"}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000088", map[string]interface{}{"project_id": "project-1"}, nil)
+	if err != nil {
+		t.Fatalf("evaluate after Session stats read failure: %v", err)
+	}
+	if fixture.store.runs[result.AgentRunID].SessionID != "progress-session-0" || len(fixture.adapter.createSessionRequests) != 0 {
+		t.Fatalf("stats read failure did not preserve the current Session: run=%#v creates=%#v", fixture.store.runs[result.AgentRunID], fixture.adapter.createSessionRequests)
+	}
+}
+
+func TestProgressSessionRemoteIDIsDeterministicPerGeneration(t *testing.T) {
+	first := progressSessionRemoteID("project-1", "agent-1", 2)
+	second := progressSessionRemoteID("project-1", "agent-1", 2)
+	if first != second || first == progressSessionRemoteID("project-1", "agent-1", 3) {
+		t.Fatalf("Progress Session remote ID is not generation-deterministic: %q %q", first, second)
 	}
 }
 

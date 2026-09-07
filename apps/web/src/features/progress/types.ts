@@ -48,6 +48,7 @@ export type ProgressSettings = {
   auto_task_changes: boolean;
   auto_tracking_enabled: boolean;
   event_triggers_enabled: boolean;
+  enabled_event_types: string[];
   cron_enabled: boolean;
   cron_schedule: string;
   debounce_seconds: number;

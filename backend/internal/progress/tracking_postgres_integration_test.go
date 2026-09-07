@@ -78,10 +78,13 @@ func TestPostgresProgressTrackingDebounceDedupAndLeaseRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	duplicate, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "session", "manual", false, EvaluationTrigger{TriggerType: "manual", OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{}})
+	duplicate, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "system", "event", false, EvaluationTrigger{TriggerType: "repo.commit.created", SourceEventID: fixture.generator.MustNew(), OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{}})
 	if err != nil || duplicate.Merged {
 		t.Fatalf("schedule unchanged non-forced input request: result=%#v err=%v", duplicate, err)
 	}
+	// Event requests stay inside the configured debounce window until the
+	// clock passes it; only due requests are claimable.
+	fixture.clock.Advance(time.Minute)
 	duplicateClaim, err := fixture.store.ClaimRequest(fixture.ctx, "core-c", time.Minute)
 	if err != nil || duplicateClaim == nil {
 		t.Fatalf("claim duplicate request: claim=%#v err=%v", duplicateClaim, err)
@@ -89,6 +92,10 @@ func TestPostgresProgressTrackingDebounceDedupAndLeaseRecovery(t *testing.T) {
 	merged, err := fixture.store.FinalizeRequest(fixture.ctx, *duplicateClaim, input, version)
 	if err != nil || merged != nil {
 		t.Fatalf("deduplicate identical input: evaluation=%#v err=%v", merged, err)
+	}
+	var jobCount int
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM jobs WHERE project_id=$1 AND job_type=$2`, fixture.projectID, EvaluationJobType).Scan(&jobCount); err != nil || jobCount != 1 {
+		t.Fatalf("unchanged event created a new evaluation Job: count=%d err=%v", jobCount, err)
 	}
 	var status, mergedInto string
 	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT status,COALESCE(merged_into_evaluation_id::text,'') FROM progress_evaluation_requests WHERE request_id=$1`, duplicate.RequestID).Scan(&status, &mergedInto); err != nil || status != "merged" || mergedInto != evaluation.ID {
@@ -117,6 +124,46 @@ func TestPostgresProgressTrackingDebounceDedupAndLeaseRecovery(t *testing.T) {
 	var reconciledStatus, reconciledCode string
 	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT status,error_code FROM progress_evaluations WHERE evaluation_id=$1`, forcedEvaluation.ID).Scan(&reconciledStatus, &reconciledCode); err != nil || reconciledStatus != "failed" || reconciledCode != "PROGRESS_EVALUATION_JOB_TIMED_OUT" {
 		t.Fatalf("terminal Job reconciliation: status=%q code=%q err=%v", reconciledStatus, reconciledCode, err)
+	}
+}
+
+func TestPostgresProgressTrackingRevisionChangesDoNotMerge(t *testing.T) {
+	fixture := newTrackingPostgresFixture(t)
+	base := map[string]interface{}{
+		"project":          map[string]interface{}{"project_id": fixture.projectID},
+		"evidence_catalog": map[string]interface{}{"revision": "evidence-1"},
+		"progress":         map[string]interface{}{"state_revision": "state-1"},
+	}
+	first := fixture.queueEvaluation(t, base)
+	if _, err := fixture.db.ExecContext(fixture.ctx, `UPDATE progress_evaluations SET status='succeeded' WHERE evaluation_id=$1`, first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	changedEvidence := map[string]interface{}{
+		"project":          map[string]interface{}{"project_id": fixture.projectID},
+		"evidence_catalog": map[string]interface{}{"revision": "evidence-2"},
+		"progress":         map[string]interface{}{"state_revision": "state-1"},
+	}
+	evidenceEvaluation := fixture.finalizeEventEvaluation(t, changedEvidence)
+	if evidenceEvaluation.ID == first.ID {
+		t.Fatalf("evidence revision change merged into the old evaluation: %#v", evidenceEvaluation)
+	}
+	if _, err := fixture.db.ExecContext(fixture.ctx, `UPDATE progress_evaluations SET status='succeeded' WHERE evaluation_id=$1`, evidenceEvaluation.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	changedState := map[string]interface{}{
+		"project":          map[string]interface{}{"project_id": fixture.projectID},
+		"evidence_catalog": map[string]interface{}{"revision": "evidence-2"},
+		"progress":         map[string]interface{}{"state_revision": "state-2"},
+	}
+	stateEvaluation := fixture.finalizeEventEvaluation(t, changedState)
+	if stateEvaluation.ID == evidenceEvaluation.ID {
+		t.Fatalf("Progress state revision change merged into the old evaluation: %#v", stateEvaluation)
+	}
+	var jobCount int
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM jobs WHERE project_id=$1 AND job_type=$2`, fixture.projectID, EvaluationJobType).Scan(&jobCount); err != nil || jobCount != 3 {
+		t.Fatalf("revision changes did not create one Job per semantic input: count=%d err=%v", jobCount, err)
 	}
 }
 
@@ -457,6 +504,31 @@ func (fixture trackingPostgresFixture) queueEvaluation(t *testing.T, input map[s
 	evaluation, err := fixture.store.FinalizeRequest(fixture.ctx, *claim, input, version)
 	if err != nil || evaluation == nil {
 		t.Fatalf("queue evaluation: evaluation=%#v err=%v", evaluation, err)
+	}
+	return *evaluation
+}
+
+func (fixture trackingPostgresFixture) finalizeEventEvaluation(t *testing.T, input map[string]interface{}) Evaluation {
+	t.Helper()
+	request, err := fixture.store.ScheduleRequest(fixture.ctx, fixture.projectID, fixture.userID, "system", "event", false, EvaluationTrigger{
+		TriggerType: "repo.commit.created", SourceEventID: fixture.generator.MustNew(), OccurredAt: fixture.clock.Now(), Payload: map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Event requests are claimable only after the debounce window passes.
+	fixture.clock.Advance(time.Minute)
+	claim, err := fixture.store.ClaimRequest(fixture.ctx, "test-core-revision", time.Minute)
+	if err != nil || claim == nil || claim.ID != request.RequestID {
+		t.Fatalf("claim revision-change event: claim=%#v err=%v", claim, err)
+	}
+	version, err := canonicalInputVersion(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluation, err := fixture.store.FinalizeRequest(fixture.ctx, *claim, input, version)
+	if err != nil || evaluation == nil {
+		t.Fatalf("finalize revision-change event: evaluation=%#v err=%v", evaluation, err)
 	}
 	return *evaluation
 }

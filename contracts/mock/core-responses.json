@@ -298,6 +298,7 @@
       "auto_task_changes": true,
       "auto_tracking_enabled": false,
       "event_triggers_enabled": true,
+      "enabled_event_types": ["repo.commit.created", "model.snapshot.created"],
       "cron_enabled": false,
       "cron_schedule": "0 */6 * * *",
       "debounce_seconds": 60,

@@ -56,7 +56,8 @@ describe("notification settings", () => {
             settings_version: enabled ? 2 : 0,
           });
         }
-        if (path.endsWith("/notification-rules/progress.reminder.due")) {
+        if (path.includes("/notification-rules/progress.")) {
+          const typeKey = path.split("/").at(-1)!;
           return Promise.resolve({
             channel_keys:
               options?.method === "PUT"
@@ -65,7 +66,7 @@ describe("notification settings", () => {
             external_enabled: options?.method === "PUT",
             minimum_priority: "normal",
             project_id: projectId,
-            type_key: "progress.reminder.due",
+            type_key: typeKey,
             version: 1,
           });
         }
@@ -111,12 +112,16 @@ describe("notification settings", () => {
     ).toHaveAttribute("type", "button");
 
     fireEvent.click(
-      await screen.findByRole("checkbox", { name: /飞书群机器人.*已启用/ }),
+      (
+        await screen.findAllByRole("checkbox", {
+          name: /飞书群机器人.*已启用/,
+        })
+      )[1],
     );
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "额外发送到外部渠道" }),
+      screen.getAllByRole("checkbox", { name: "额外发送到外部渠道" })[1],
     );
-    fireEvent.click(screen.getByRole("button", { name: "保存投递规则" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "保存投递规则" })[1]);
 
     await waitFor(() => {
       const call = mocks.request.mock.calls.find(

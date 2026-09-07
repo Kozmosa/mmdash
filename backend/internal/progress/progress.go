@@ -132,6 +132,7 @@ type Settings struct {
 	AutoTaskChanges      bool       `json:"auto_task_changes"`
 	AutoTrackingEnabled  bool       `json:"auto_tracking_enabled"`
 	EventTriggersEnabled bool       `json:"event_triggers_enabled"`
+	EnabledEventTypes    EventTypes `json:"enabled_event_types"`
 	CronEnabled          bool       `json:"cron_enabled"`
 	CronSchedule         string     `json:"cron_schedule"`
 	DebounceSeconds      int        `json:"debounce_seconds"`

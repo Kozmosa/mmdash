@@ -13,6 +13,16 @@ type trackingEventStoreStub struct {
 	events []contract.EventEnvelope
 }
 
+func TestAutomaticTriggerSelectionNormalizesAndRejectsUnknownEvents(t *testing.T) {
+	selected := normalizedAutomaticTriggerEvents([]string{"repo.commit.created", "model.snapshot.created", "repo.commit.created"})
+	if len(selected) != 2 || selected[0] != "model.snapshot.created" || selected[1] != "repo.commit.created" {
+		t.Fatalf("unexpected normalized event selection: %#v", selected)
+	}
+	if normalizedAutomaticTriggerEvents([]string{"repo.commit.created", "unknown.event"}) != nil {
+		t.Fatal("unknown automatic event type was accepted")
+	}
+}
+
 func (store *trackingEventStoreStub) ScheduleEvent(_ context.Context, event contract.EventEnvelope, _ string) error {
 	store.events = append(store.events, event)
 	return nil

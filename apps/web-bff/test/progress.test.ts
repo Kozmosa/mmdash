@@ -30,6 +30,7 @@ describe("Progress automatic tracking routes", () => {
       cron_schedule: "0 */6 * * *",
       debounce_seconds: 60,
       event_triggers_enabled: true,
+      enabled_event_types: ["repo.commit.created"],
       min_interval_seconds: 300,
       reasoning_effort: "high",
     };

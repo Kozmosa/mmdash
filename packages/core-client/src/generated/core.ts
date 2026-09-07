@@ -7618,6 +7618,7 @@ export interface components {
       auto_task_changes: boolean;
       auto_tracking_enabled: boolean;
       event_triggers_enabled: boolean;
+      enabled_event_types?: components["schemas"]["ProgressAutomaticEventType"][];
       /** @description Whether mmdash Core schedules periodic Progress evaluations. */
       cron_enabled: boolean;
       /** @description Five-field UTC Cron expression evaluated by mmdash Core. */
@@ -7657,6 +7658,7 @@ export interface components {
       auto_task_changes: boolean;
       auto_tracking_enabled: boolean;
       event_triggers_enabled: boolean;
+      enabled_event_types?: components["schemas"]["ProgressAutomaticEventType"][];
       /** @description Whether mmdash Core should schedule periodic Progress evaluations. */
       cron_enabled: boolean;
       /** @description Five-field UTC Cron expression evaluated by mmdash Core. */
@@ -7676,6 +7678,21 @@ export interface components {
       /** Format: uuid */
       agent_instance_id?: string;
     };
+    /** @enum {string} */
+    ProgressAutomaticEventType:
+      | "repo.commit.created"
+      | "repo.commit.detected"
+      | "model.snapshot.created"
+      | "experiment.archived"
+      | "article.build.completed"
+      | "agent.run.completed"
+      | "artifact.available"
+      | "context.confirmed"
+      | "progress.task.created"
+      | "progress.task.updated"
+      | "progress.task.deleted"
+      | "progress.milestone.created"
+      | "progress.milestone.updated";
     ProgressTrackerState: {
       /** Format: uuid */
       project_id: string;

@@ -19,6 +19,21 @@ import (
 	"github.com/mmdash/mmdash/backend/internal/platform/transaction"
 )
 
+type EventTypes []string
+
+func (types *EventTypes) Scan(value interface{}) error {
+	var raw []byte
+	switch typed := value.(type) {
+	case []byte:
+		raw = typed
+	case string:
+		raw = []byte(typed)
+	default:
+		return fmt.Errorf("invalid progress event types")
+	}
+	return json.Unmarshal(raw, types)
+}
+
 func (store PostgresStore) GetState(ctx context.Context, projectID string) (TrackerState, error) {
 	var item TrackerState
 	var changes, completed, inProgress, blockers, questions []byte
@@ -244,17 +259,19 @@ func (store PostgresStore) UpdateTrackingSettings(ctx context.Context, projectID
 				return ErrReferenceInvalid
 			}
 		}
+		eventTypes, _ := json.Marshal(input.EnabledEventTypes)
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO progress_settings(project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,reasoning_effort,agent_instance_id,cron_next_run_at,cron_retry_at,updated_by,updated_at)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,'')::uuid,$11,NULL,$12,$13)
+			INSERT INTO progress_settings(project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,enabled_event_types,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,reasoning_effort,agent_instance_id,cron_next_run_at,cron_retry_at,updated_by,updated_at)
+			VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,NULLIF($11,'')::uuid,$12,NULL,$13,$14)
 			ON CONFLICT(project_id) DO UPDATE SET auto_task_changes=EXCLUDED.auto_task_changes,
 				auto_tracking_enabled=EXCLUDED.auto_tracking_enabled,event_triggers_enabled=EXCLUDED.event_triggers_enabled,
+				enabled_event_types=EXCLUDED.enabled_event_types,
 				cron_enabled=EXCLUDED.cron_enabled,cron_schedule=EXCLUDED.cron_schedule,
 				debounce_seconds=EXCLUDED.debounce_seconds,min_interval_seconds=EXCLUDED.min_interval_seconds,
 				reasoning_effort=EXCLUDED.reasoning_effort,agent_instance_id=EXCLUDED.agent_instance_id,cron_next_run_at=EXCLUDED.cron_next_run_at,
 				cron_retry_at=NULL,cron_lease_owner='',cron_lease_expires_at=NULL,
 				updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at
-		`, projectID, input.AutoTaskChanges, input.AutoTrackingEnabled, input.EventTriggersEnabled,
+		`, projectID, input.AutoTaskChanges, input.AutoTrackingEnabled, input.EventTriggersEnabled, eventTypes,
 			input.CronEnabled, input.CronSchedule, input.DebounceSeconds, input.MinIntervalSeconds,
 			input.ReasoningEffort, input.AgentInstanceID, input.CronNextRunAt, actorID, now); err != nil {
 			return err
@@ -267,7 +284,8 @@ func (store PostgresStore) UpdateTrackingSettings(ctx context.Context, projectID
 		settingsPayload := map[string]interface{}{
 			"resource_type": "progress_settings", "auto_task_changes": input.AutoTaskChanges,
 			"auto_tracking_enabled": input.AutoTrackingEnabled, "event_triggers_enabled": input.EventTriggersEnabled,
-			"cron_enabled": input.CronEnabled, "cron_schedule": input.CronSchedule,
+			"enabled_event_types": input.EnabledEventTypes,
+			"cron_enabled":        input.CronEnabled, "cron_schedule": input.CronSchedule,
 			"debounce_seconds": input.DebounceSeconds, "min_interval_seconds": input.MinIntervalSeconds,
 			"reasoning_effort": input.ReasoningEffort,
 		}
@@ -416,6 +434,9 @@ func (store PostgresStore) ScheduleEvent(ctx context.Context, event contract.Eve
 		return err
 	}
 	if !settings.AutoTrackingEnabled || !settings.EventTriggersEnabled {
+		return nil
+	}
+	if !containsString([]string(settings.EnabledEventTypes), event.EventType) {
 		return nil
 	}
 	resourceID := stringMapValue(event.Payload, "resource_id")
@@ -1212,7 +1233,7 @@ func (store PostgresStore) trackingAudit(ctx context.Context, tx transaction.Tx,
 }
 
 func defaultSettings(projectID string) Settings {
-	return Settings{ProjectID: projectID, AutoTaskChanges: true, EventTriggersEnabled: true, CronSchedule: "0 */6 * * *", DebounceSeconds: 60, MinIntervalSeconds: 300, ReasoningEffort: "medium"}
+	return Settings{ProjectID: projectID, AutoTaskChanges: true, EventTriggersEnabled: true, EnabledEventTypes: EventTypes(DefaultAutomaticTriggerEvents()), CronSchedule: "0 */6 * * *", DebounceSeconds: 60, MinIntervalSeconds: 300, ReasoningEffort: "medium"}
 }
 
 func (store PostgresStore) evaluatorMode() string {
@@ -1271,11 +1292,12 @@ func scanStageOverride(scan scanFunc) (StageOverride, error) {
 func settingsScanTargets(item *Settings) []interface{} {
 	return []interface{}{&item.ProjectID, &item.AutoTaskChanges, &item.AutoTrackingEnabled,
 		&item.EventTriggersEnabled, &item.CronEnabled, &item.CronSchedule,
+		&item.EnabledEventTypes,
 		&item.DebounceSeconds, &item.MinIntervalSeconds, &item.ReasoningEffort, &item.AgentInstanceID,
 		&item.CronNextRunAt, &item.CronLastScheduledAt, &item.UpdatedBy, &item.UpdatedAt}
 }
 
-const settingsSelect = `SELECT project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,debounce_seconds,min_interval_seconds,reasoning_effort,COALESCE(agent_instance_id::text,''),cron_next_run_at,cron_last_scheduled_at,updated_by,updated_at FROM progress_settings`
+const settingsSelect = `SELECT project_id,auto_task_changes,auto_tracking_enabled,event_triggers_enabled,cron_enabled,cron_schedule,enabled_event_types,debounce_seconds,min_interval_seconds,reasoning_effort,COALESCE(agent_instance_id::text,''),cron_next_run_at,cron_last_scheduled_at,updated_by,updated_at FROM progress_settings`
 const stageOverrideSelect = `SELECT override_id,project_id,stage,summary,note,active,created_by,created_at,COALESCE(cleared_by::text,''),cleared_at FROM progress_stage_overrides`
 const evaluationSelect = `SELECT evaluation.evaluation_id,evaluation.request_id,evaluation.project_id,COALESCE(evaluation.job_id::text,''),evaluation.status,evaluation.input_version,evaluation.input_snapshot,evaluation.output_snapshot,evaluation.detected_stage,evaluation.summary,evaluation.changes_since_last,evaluation.completed_items,evaluation.in_progress_items,evaluation.blockers,evaluation.pending_questions,evaluation.source_event_ids,evaluation.trigger_kind,COALESCE(evaluation.agent_instance_id::text,progress_session.agent_instance_id::text,''),COALESCE(evaluation.agent_session_id::text,progress_run.session_id::text,''),COALESCE(evaluation.agent_run_id::text,progress_run.run_id::text,''),evaluation.evaluator_mode,evaluation.attempts,evaluation.error_code,evaluation.error_message,evaluation.requested_by,evaluation.created_at,evaluation.started_at,evaluation.completed_at,evaluation.updated_at FROM progress_evaluations AS evaluation LEFT JOIN LATERAL (SELECT run_id,session_id FROM agent_runs WHERE source_evaluation_id=evaluation.evaluation_id ORDER BY created_at DESC,run_id DESC LIMIT 1) AS progress_run ON true LEFT JOIN agent_sessions AS progress_session ON progress_session.session_id=progress_run.session_id `
 

@@ -72,3 +72,32 @@ func TestArticleReleaseNotificationIsRegisteredAndSafe(t *testing.T) {
 		t.Fatalf("release recipient mismatch: %#v", recipients)
 	}
 }
+
+func TestProgressEvaluationNotificationIsRegisteredAndSafe(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor, ok := registry.Get(TypeEvaluationCompleted)
+	if !ok || !descriptor.ExternalAllowed || descriptor.InboxPolicy != "default_on" {
+		t.Fatalf("progress evaluation descriptor missing: %#v", descriptor)
+	}
+	projectID := "00000000-0000-4000-8000-000000000001"
+	event := contract.EventEnvelope{
+		EventType: "progress.evaluation.completed", ProjectID: &projectID,
+		Actor: map[string]string{"user_id": "user-1"},
+		Payload: map[string]interface{}{
+			"resource_id": "00000000-0000-4000-8000-000000000002", "resource_type": "progress_evaluation",
+			"effective_stage": "求解中", "summary": "模型文档已经确认，下一步执行求解。", "secret": "must-not-render",
+		},
+	}
+	data := allowedData(event.Payload, descriptor.AllowedTemplateFields)
+	snapshot := renderInboxSnapshot(TypeEvaluationCompleted, data)
+	if snapshot["title"] != "自动进度追踪已完成 · 求解中" || snapshot["body"] != "模型文档已经确认，下一步执行求解。" || data["secret"] != nil {
+		t.Fatalf("unsafe evaluation rendering: data=%#v snapshot=%#v", data, snapshot)
+	}
+	recipients := resolveRecipients(event, data)
+	if len(recipients) != 1 || recipients[0].UserID != "user-1" {
+		t.Fatalf("evaluation recipient mismatch: %#v", recipients)
+	}
+}

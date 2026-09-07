@@ -22,6 +22,28 @@
     "auto_task_changes": { "type": "boolean" },
     "auto_tracking_enabled": { "type": "boolean" },
     "event_triggers_enabled": { "type": "boolean" },
+    "enabled_event_types": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "repo.commit.created",
+          "repo.commit.detected",
+          "model.snapshot.created",
+          "experiment.archived",
+          "article.build.completed",
+          "agent.run.completed",
+          "artifact.available",
+          "context.confirmed",
+          "progress.task.created",
+          "progress.task.updated",
+          "progress.task.deleted",
+          "progress.milestone.created",
+          "progress.milestone.updated"
+        ]
+      }
+    },
     "cron_enabled": { "type": "boolean" },
     "cron_schedule": { "type": "string", "minLength": 1, "maxLength": 100 },
     "debounce_seconds": { "type": "integer", "minimum": 0, "maximum": 3600 },

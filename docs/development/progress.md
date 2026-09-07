@@ -93,6 +93,12 @@ minimum interval, and is re-claimable after an assembly lease expires. A
 unique active input-version index merges queued, running, or successful
 evaluations with identical semantic input.
 
+When an assembled request has the same input version as a queued, running, or
+recent successful evaluation, Core marks the new request merged into that
+evaluation and does not create another Job or call Hermes. This no-change
+short-circuit also applies to event and local Cron requests; the human
+`progress.recalculate` `force` option intentionally bypasses it.
+
 Evaluation assembly hashes the Project problem, constraints, bounded Data Hub
 objects/activity, confirmed context, Milestones, Tasks, tracking settings, and
 active human override into semantic evidence and Progress state revisions.
@@ -107,6 +113,10 @@ produced by Stage 6 itself are excluded from semantic versions.
 The evaluator must obtain current evidence through audited MCP reads in a fixed
 sequence: `project.get`, `progress.get`, then bounded `data.list` discovery and
 selected `data.read` calls for code, model, experiment, and article evidence.
+The first two reads and the four domain discovery reads may be issued in the
+same assistant turn as parallel tool calls; all reads still complete before
+the corresponding evidence is assessed, and each domain allows at most two
+`data.read` calls unless a contradiction requires one more.
 Catalog counts and list summaries are navigation hints rather than proof; a
 material domain claim requires authoritative content from the owning reader.
 This keeps prompts small while retaining input-version deduplication when
@@ -121,6 +131,13 @@ ordinary Agent Runs, and human Progress Task/Milestone changes. Events carrying
 `source_evaluation_id`, plus Agent Runs with `source=progress_evaluation`, are
 ignored so evaluation output cannot recursively retrigger itself.
 
+Project Settings persists `enabled_event_types` as the per-project allowlist
+under the event-trigger master switch. Migration
+`000056_progress_event_trigger_selection` enables every currently supported
+event for existing projects, preserving the prior behavior. An explicitly empty
+list disables all event-driven evaluations without affecting manual or Cron
+evaluation. Unknown event names are rejected at both the BFF and Core boundary.
+
 ## Evaluator and failure lifecycle
 
 `core_agent` is the production path. The Worker asks Core to execute the
@@ -133,14 +150,30 @@ introduced. Core owns Cron due-time calculation, PostgreSQL leases, retries,
 and evaluation request creation. Hermes owns only the resulting evaluation
 Run and requires an active selected Agent.
 
-The remote Progress Session uses a deterministic Project-and-Agent-scoped ID
-and a collision-safe title. Core adopts that exact remote Session after a
-local persistence interruption instead of creating duplicates. Once Hermes
-accepts a Run, Core persists its Agent Session/Run provenance immediately so
-the Progress UI can attach a read-only live Session view before the evaluation
-finishes. Runtime configuration rejections are returned as non-retryable
-`PROGRESS_EVALUATOR_CONFIGURATION_INVALID`; transient runtime failures remain
-`PROGRESS_EVALUATOR_UNAVAILABLE` and may be retried by the Job Queue.
+The remote Progress Session uses a deterministic Project-and-Agent-and-
+generation-scoped ID and a collision-safe title. Core adopts that exact remote
+Session after a local persistence interruption instead of creating duplicates.
+The generation is the number of retained Progress Session rows for that
+Project and Agent; the first generation is `g0`, and ended rows remain counted
+so concurrent workers converge on the same next ID. Before each Run, Core
+reads remote Session statistics. At 120 messages or 300,000 combined input
+and output tokens it ends the old Session locally, best-effort ends it remotely
+with reason `rotated`, and creates one next-generation Session. A statistics
+read failure keeps the current Session for that evaluation.
+
+The persistent Session system prompt contains the stable evidence workflow,
+read-only/unattended rules, rubric, readable-feedback guidance, and strict
+output contract. Each Run adds only the same one-line task instruction, so
+evaluation IDs and Project IDs do not vary the prompt prefix. The current
+prompt version is `v3`; bumping it creates one new deterministic Progress
+Session for each Project and selected Agent on the next evaluation.
+
+Once Hermes accepts a Run, Core persists its Agent Session/Run provenance
+immediately so the Progress UI can attach a read-only live Session view before
+the evaluation finishes. Runtime configuration rejections are returned as
+non-retryable `PROGRESS_EVALUATOR_CONFIGURATION_INVALID`; transient runtime
+failures remain `PROGRESS_EVALUATOR_UNAVAILABLE` and may be retried by the Job
+Queue.
 
 The evaluation Run is unattended, so the Core poll loop keeps it alive through
 expected remote friction instead of failing early. A `waiting_for_approval`
@@ -155,11 +188,6 @@ times out client-side may still have been accepted remotely. The run-start
 request uses a dedicated, wider transport window
 (`AGENT_RUNTIME_RUN_START_TIMEOUT`, default `75s`), and the evaluation job
 budget is 30 minutes, aligned with the Worker execute timeout.
-
-The deterministic ID includes the evaluator prompt version. Because Hermes
-does not patch a Session system prompt after creation, bumping that version
-creates one new Progress Session and prevents an active Session from silently
-retaining stale evaluation instructions.
 
 The read-only Progress Session dialog translates MCP Tool names into Project
 evidence steps and reconnects a recoverable Run event stream with bounded
@@ -257,7 +285,8 @@ idempotency, and result completion remain owned by the existing Core Job Queue.
 
 ## Notification boundary
 
-Progress publishes `progress.reminder.due` and never calls Feishu, Webhook, or
+Progress publishes `progress.reminder.due` and `progress.evaluation.completed`
+and never calls Feishu, Webhook, or
 another external channel. Migration `000017_notification_stage4` remains as a
 compatibility bridge for existing development data; `000018_notification_core`
 adds the canonical Notification, Recipient, Inbox, Rule, Delivery, and Delivery
@@ -266,7 +295,12 @@ reminder events idempotently by `source_event_id + type_key`, claims pending
 email recipients after registration, and preserves read/archive state while
 applying invitation outcomes. Project channel secrets continue to use the
 encrypted Settings boundary, and external sends run in the Core Delivery
-Processor through the Feishu/Generic Webhook adapter registry.
+Processor through the Feishu/Generic Webhook adapter registry. Projects can
+configure independent external-delivery rules for due reminders and completed
+automatic evaluation summaries. Migration
+`000055_progress_evaluation_notifications` carries an existing enabled Progress
+reminder route forward to the new evaluation-result rule, while projects can
+still change the two rules independently afterward.
 Migration `000019_notification_rule_channels_jsonb` upgrades the originally
 applied development `text[]` Rule channel column to the design-baseline JSONB
 shape; Rule PUT carries a version and rejects stale updates with `409`.

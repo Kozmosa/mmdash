@@ -11421,6 +11421,10 @@ components:
         auto_task_changes: { type: boolean }
         auto_tracking_enabled: { type: boolean }
         event_triggers_enabled: { type: boolean }
+        enabled_event_types:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ProgressAutomaticEventType" }
         cron_enabled:
           type: boolean
           description: Whether mmdash Core schedules periodic Progress evaluations.
@@ -11464,6 +11468,10 @@ components:
         auto_task_changes: { type: boolean }
         auto_tracking_enabled: { type: boolean }
         event_triggers_enabled: { type: boolean }
+        enabled_event_types:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ProgressAutomaticEventType" }
         cron_enabled:
           type: boolean
           description: Whether mmdash Core should schedule periodic Progress evaluations.
@@ -11478,6 +11486,24 @@ components:
           type: string
           enum: [none, minimal, low, medium, high, xhigh, max, ultra]
         agent_instance_id: { type: string, format: uuid }
+    ProgressAutomaticEventType:
+      type: string
+      enum:
+        [
+          repo.commit.created,
+          repo.commit.detected,
+          model.snapshot.created,
+          experiment.archived,
+          article.build.completed,
+          agent.run.completed,
+          artifact.available,
+          context.confirmed,
+          progress.task.created,
+          progress.task.updated,
+          progress.task.deleted,
+          progress.milestone.created,
+          progress.milestone.updated,
+        ]
     ProgressTrackerState:
       type: object
       additionalProperties: false
