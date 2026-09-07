@@ -71,6 +71,12 @@ describe("Agent settings", () => {
       target: { value: "https://hermes.example.test" },
     });
     fireEvent.change(apiKey, { target: { value: "hermes-api-key-input" } });
+    fireEvent.change(screen.getByLabelText(/Cloudflare Access Client ID/), {
+      target: { value: "cf-client-id" },
+    });
+    fireEvent.change(screen.getByLabelText(/Cloudflare Access Client Secret/), {
+      target: { value: "cf-secret-input-1" },
+    });
     fireEvent.change(screen.getByLabelText("Hermes 请求超时（秒）"), {
       target: { value: "45" },
     });
@@ -87,8 +93,11 @@ describe("Agent settings", () => {
           "data.read",
           "context.promote",
         ],
+        cloudflare_access_client_id: "cf-client-id",
+        cloudflare_access_client_secret: "cf-secret-input-1",
         hermes_api_key: "hermes-api-key-input",
         management_mode: "manual",
+        profile: "",
         request_timeout_seconds: 45,
         runtime_url: "https://hermes.example.test",
       }),

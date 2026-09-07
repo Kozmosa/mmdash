@@ -1065,13 +1065,13 @@ func (request CreateAgentInstanceRequest) Validate() error {
 		return fmt.Errorf("hermes_api_key is too long")
 	}
 	if request.Profile != nil {
-		if len(*request.Profile) < 1 {
+		if len(*request.Profile) < 0 {
 			return fmt.Errorf("profile is too short")
 		}
 		if len(*request.Profile) > 64 {
 			return fmt.Errorf("profile is too long")
 		}
-		if matched, err := regexp.MatchString("^[a-z0-9][a-z0-9_-]{0,63}$", *request.Profile); err != nil || !matched {
+		if matched, err := regexp.MatchString("^(?:|[a-z0-9][a-z0-9_-]{0,63})$", *request.Profile); err != nil || !matched {
 			return fmt.Errorf("profile has an invalid format")
 		}
 	}
@@ -1171,13 +1171,13 @@ func (request UpdateAgentInstanceRequest) Validate() error {
 		}
 	}
 	if request.Profile != nil {
-		if len(*request.Profile) < 1 {
+		if len(*request.Profile) < 0 {
 			return fmt.Errorf("profile is too short")
 		}
 		if len(*request.Profile) > 64 {
 			return fmt.Errorf("profile is too long")
 		}
-		if matched, err := regexp.MatchString("^[a-z0-9][a-z0-9_-]{0,63}$", *request.Profile); err != nil || !matched {
+		if matched, err := regexp.MatchString("^(?:|[a-z0-9][a-z0-9_-]{0,63})$", *request.Profile); err != nil || !matched {
 			return fmt.Errorf("profile has an invalid format")
 		}
 	}

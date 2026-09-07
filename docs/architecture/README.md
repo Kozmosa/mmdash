@@ -15,9 +15,10 @@ signed-in user's CLI identity. Hermes is an independently hosted MCP client and,
 in the later Agent stage, presents its own Project-scoped Agent Token directly
 to the Gateway; it never traverses the CLI. `manual` and `auto` Hermes
 management modes change who installs and rotates that credential, not the MCP
-runtime path. Automatic management uses a separate server-reachable Hermes
-management connection, either directly or through an authenticated network
-layer such as Cloudflare Access.
+runtime path. If the Hermes Runtime API is behind an authenticated network
+layer such as Cloudflare Access, Core uses the configured service token in
+both modes. Automatic management additionally uses the same service token for
+the separate server-reachable Hermes Dashboard connection when needed.
 
 Only Core owns authoritative business state. Web BFF, MCP Gateway, CLI, Worker,
 and Box do not write the business database directly.

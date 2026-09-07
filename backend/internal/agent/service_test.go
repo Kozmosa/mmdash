@@ -2062,13 +2062,38 @@ func TestServiceCreateInstanceValidatesCanonicalHermesProfile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateInstance rejected profile %q: %v", profile, err)
 		}
-		want := profile
-		if want == "" {
-			want = "default"
-		}
-		if result.Instance.Profile != want || fixture.settingsStore.upsertCalls == 0 {
+		if result.Instance.Profile != profile || fixture.settingsStore.upsertCalls == 0 {
 			t.Fatalf("CreateInstance profile %q normalized to %q or did not persist", profile, result.Instance.Profile)
 		}
+	}
+}
+
+func TestServiceCreateManualInstancePersistsCloudflareRuntimeCredentials(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	input := CreateInstanceInput{
+		APIKey:                 "runtime-secret",
+		AllowedTools:           append([]string(nil), DefaultAllowedTools...),
+		CloudflareClientID:     "cf-client-id",
+		CloudflareClientSecret: "cf-client-secret",
+		DisplayName:            "Cloudflare Hermes",
+		ManagementMode:         ManagementManual,
+		Profile:                "default",
+		RuntimeURL:             "https://runtime.example.test",
+	}
+	result, err := fixture.service.CreateInstance(context.Background(), fixture.caller, "project-1", input)
+	if err != nil {
+		t.Fatalf("manual instance with Cloudflare runtime credentials was rejected: %v", err)
+	}
+	resolved, err := fixture.service.Settings.ResolveResource(
+		context.Background(), settings.ScopeProject, "project-1",
+		SettingTypeAgentHermes, result.Instance.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stringValue(resolved.Values[settingCFClientID]) != input.CloudflareClientID ||
+		stringValue(resolved.Values[settingCFClientSecret]) != input.CloudflareClientSecret {
+		t.Fatalf("manual Cloudflare runtime credentials were not persisted: %#v", resolved.Values)
 	}
 }
 
@@ -2109,7 +2134,7 @@ func TestServiceCheckConnectionsDoesNotPassFailedRuntimeInteroperability(t *test
 }
 
 func TestServiceUpdateInstanceValidatesCanonicalHermesProfileBeforeWrites(t *testing.T) {
-	for _, profile := range []string{"", " research ", "Research", "research.profile", "research/profile", "hermes", "test", "tmp", "root", "sudo"} {
+	for _, profile := range []string{" research ", "Research", "research.profile", "research/profile", "hermes", "test", "tmp", "root", "sudo"} {
 		fixture := newAgentServiceFixture(t)
 		_, err := fixture.service.UpdateInstance(
 			context.Background(), fixture.caller, "project-1", "agent-1",
@@ -2122,7 +2147,7 @@ func TestServiceUpdateInstanceValidatesCanonicalHermesProfileBeforeWrites(t *tes
 			t.Fatalf("invalid profile %q caused a write: settings=%d instances=%d stored=%q", profile, fixture.settingsStore.upsertCalls, fixture.store.instanceUpdates, fixture.store.instances["agent-1"].Profile)
 		}
 	}
-	for _, profile := range []string{"default", "research"} {
+	for _, profile := range []string{"", "default", "research"} {
 		fixture := newAgentServiceFixture(t)
 		result, err := fixture.service.UpdateInstance(
 			context.Background(), fixture.caller, "project-1", "agent-1",
@@ -2183,10 +2208,10 @@ func TestServiceUpdateInstanceRejectsCrossOriginSecretReuseBeforePersistence(t *
 		fixture := newAgentServiceFixture(t)
 		runtimeURL := "https://other-runtime.example.test"
 		apiKey := "new-runtime-api-key"
-		emptyProfile := ""
+		invalidProfile := "Research"
 		_, err := fixture.service.UpdateInstance(
 			context.Background(), fixture.caller, "project-1", "agent-1",
-			UpdateInstanceInput{RuntimeURL: &runtimeURL, APIKey: &apiKey, Profile: &emptyProfile},
+			UpdateInstanceInput{RuntimeURL: &runtimeURL, APIKey: &apiKey, Profile: &invalidProfile},
 		)
 		if !errors.Is(err, ErrInvalid) {
 			t.Fatalf("invalid prospective profile was accepted: %v", err)
@@ -2229,6 +2254,31 @@ func TestServiceUpdateInstanceCrossOriginReplacementDoesNotCarryOldSecrets(t *te
 		stringValue(resolved.Values[settingCFClientSecret]) != "" {
 		t.Fatalf("old dashboard credentials crossed origins: instance=%#v values=%#v",
 			result.Instance, resolved.Values)
+	}
+}
+
+func TestServiceSwitchToManualRetainsCloudflareRuntimeCredentials(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.enableAutoManagement(t, "managed-access-old")
+	fixture.setEncryptedSetting(t, settingCFClientID, "cf-client-id")
+	fixture.setEncryptedSetting(t, settingCFClientSecret, "cf-client-secret")
+	mode := ManagementManual
+	if _, err := fixture.service.UpdateInstance(
+		context.Background(), fixture.caller, "project-1", "agent-1",
+		UpdateInstanceInput{ManagementMode: &mode},
+	); err != nil {
+		t.Fatalf("switching to manual management cleared valid runtime credentials: %v", err)
+	}
+	resolved, err := fixture.service.Settings.ResolveResource(
+		context.Background(), settings.ScopeProject, "project-1",
+		SettingTypeAgentHermes, "agent-1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stringValue(resolved.Values[settingCFClientID]) != "cf-client-id" ||
+		stringValue(resolved.Values[settingCFClientSecret]) != "cf-client-secret" {
+		t.Fatalf("switching to manual removed runtime credentials: %#v", resolved.Values)
 	}
 }
 

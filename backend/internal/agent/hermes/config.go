@@ -64,6 +64,8 @@ type Config struct {
 	InstanceID                string
 	RuntimeURL                string
 	APIKey                    string
+	CloudflareClientID        string
+	CloudflareClientSecret    string
 	Profile                   string
 	Management                *ManagementConfig
 	RuntimePolicy             NetworkPolicy
@@ -114,9 +116,11 @@ func NewFactory(options FactoryOptions) agent.Factory {
 			managementPolicy = narrowRequestTimeout(managementPolicy, requested)
 		}
 		config := Config{
-			InstanceID: strings.TrimSpace(opaque.InstanceID),
-			RuntimeURL: strings.TrimSpace(values[ConfigRuntimeURL]),
-			APIKey:     values[ConfigAPIKey],
+			InstanceID:             strings.TrimSpace(opaque.InstanceID),
+			RuntimeURL:             strings.TrimSpace(values[ConfigRuntimeURL]),
+			APIKey:                 values[ConfigAPIKey],
+			CloudflareClientID:     values[ConfigCloudflareClientID],
+			CloudflareClientSecret: values[ConfigCloudflareClientSecret],
 			// Profile identifiers are canonical and must not be silently
 			// normalized at an adapter ingress. An omitted setting remains the
 			// unscoped/default Hermes profile.

@@ -60,7 +60,7 @@ const emptyForm: AgentForm = {
   hermesApiKey: "",
   managementMode: "manual",
   managementUrl: "",
-  profile: "default",
+  profile: "",
   requestTimeoutSeconds: "30",
   runtimeUrl: "",
 };
@@ -389,6 +389,7 @@ function AgentConnectionForm({
             <Input
               disabled={!canManage}
               onChange={(event) => set("profile", event.target.value)}
+              placeholder="留空使用无 Profile API"
               value={form.profile}
             />
           </Field>
@@ -486,57 +487,61 @@ function AgentConnectionForm({
             />
           </Field>
           {form.managementMode === "auto" ? (
-            <>
-              <Field className="md:col-span-2" label="Dashboard Session Token">
-                <Input
-                  autoComplete="new-password"
-                  disabled={!canManage}
-                  onChange={(event) =>
-                    set("dashboardSessionToken", event.target.value)
-                  }
-                  placeholder={secretPlaceholder(
-                    Boolean(
-                      instance?.secrets.dashboard_session_token_configured,
-                    ),
-                    "Dashboard Session Token",
-                  )}
-                  required={!instance}
-                  type="password"
-                  value={form.dashboardSessionToken}
-                />
-              </Field>
-              <Field label="Cloudflare Access Client ID（按需）">
-                <Input
-                  autoComplete="new-password"
-                  disabled={!canManage}
-                  onChange={(event) =>
-                    set("cloudflareClientId", event.target.value)
-                  }
-                  placeholder={secretPlaceholder(
-                    Boolean(instance?.secrets.cloudflare_access_configured),
-                    "Client ID",
-                  )}
-                  type="password"
-                  value={form.cloudflareClientId}
-                />
-              </Field>
-              <Field label="Cloudflare Access Client Secret（按需）">
-                <Input
-                  autoComplete="new-password"
-                  disabled={!canManage}
-                  onChange={(event) =>
-                    set("cloudflareClientSecret", event.target.value)
-                  }
-                  placeholder={secretPlaceholder(
-                    Boolean(instance?.secrets.cloudflare_access_configured),
-                    "Client Secret",
-                  )}
-                  type="password"
-                  value={form.cloudflareClientSecret}
-                />
-              </Field>
-            </>
+            <Field className="md:col-span-2" label="Dashboard Session Token">
+              <Input
+                autoComplete="new-password"
+                disabled={!canManage}
+                onChange={(event) =>
+                  set("dashboardSessionToken", event.target.value)
+                }
+                placeholder={secretPlaceholder(
+                  Boolean(
+                    instance?.secrets.dashboard_session_token_configured,
+                  ),
+                  "Dashboard Session Token",
+                )}
+                required={!instance}
+                type="password"
+                value={form.dashboardSessionToken}
+              />
+            </Field>
           ) : null}
+          <>
+            <Field label="Cloudflare Access Client ID（Runtime 按需）">
+              <Input
+                autoComplete="new-password"
+                disabled={!canManage}
+                onChange={(event) =>
+                  set("cloudflareClientId", event.target.value)
+                }
+                placeholder={secretPlaceholder(
+                  Boolean(instance?.secrets.cloudflare_access_configured),
+                  "Client ID",
+                )}
+                type="password"
+                value={form.cloudflareClientId}
+              />
+            </Field>
+            <Field label="Cloudflare Access Client Secret（Runtime 按需）">
+              <Input
+                autoComplete="new-password"
+                disabled={!canManage}
+                onChange={(event) =>
+                  set("cloudflareClientSecret", event.target.value)
+                }
+                placeholder={secretPlaceholder(
+                  Boolean(instance?.secrets.cloudflare_access_configured),
+                  "Client Secret",
+                )}
+                type="password"
+                value={form.cloudflareClientSecret}
+              />
+            </Field>
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              当 Hermes Runtime API 位于 Cloudflare Access 后方时填写。自动管理模式下，
+              同一组凭据也用于 Dashboard。
+            </p>
+          </>
           <fieldset className="space-y-2 md:col-span-2">
             <legend className="text-sm font-medium">允许的 MCP Tools</legend>
             <p className="text-xs text-muted-foreground">
@@ -1005,22 +1010,20 @@ function createInput(form: AgentForm): AgentInstanceInput {
     display_name: form.displayName.trim(),
     hermes_api_key: form.hermesApiKey,
     management_mode: form.managementMode,
-    profile: optionalValue(form.profile),
+    profile: form.profile,
     request_timeout_seconds: parseRequestTimeout(form.requestTimeoutSeconds),
     runtime_url: form.runtimeUrl.trim(),
     ...(form.managementUrl.trim()
       ? { management_url: form.managementUrl.trim() }
       : {}),
     ...(form.managementMode === "auto"
-      ? {
-          dashboard_session_token: form.dashboardSessionToken,
-          ...(form.cloudflareClientId && form.cloudflareClientSecret
-            ? {
-                cloudflare_access_client_id: form.cloudflareClientId,
-                cloudflare_access_client_secret: form.cloudflareClientSecret,
-              }
-            : {}),
-        }
+      ? { dashboard_session_token: form.dashboardSessionToken }
+      : {}),
+    ...(form.cloudflareClientId
+      ? { cloudflare_access_client_id: form.cloudflareClientId }
+      : {}),
+    ...(form.cloudflareClientSecret
+      ? { cloudflare_access_client_secret: form.cloudflareClientSecret }
       : {}),
   };
 }
@@ -1030,7 +1033,7 @@ function updateInput(form: AgentForm) {
     allowed_tools: form.allowedTools,
     display_name: form.displayName.trim(),
     management_mode: form.managementMode,
-    profile: optionalValue(form.profile),
+    profile: form.profile,
     request_timeout_seconds: parseRequestTimeout(form.requestTimeoutSeconds),
     runtime_url: form.runtimeUrl.trim(),
     ...(form.managementUrl.trim()
@@ -1040,14 +1043,14 @@ function updateInput(form: AgentForm) {
   if (form.hermesApiKey) {
     input.hermes_api_key = form.hermesApiKey;
   }
-  if (form.managementMode === "auto") {
-    if (form.dashboardSessionToken) {
-      input.dashboard_session_token = form.dashboardSessionToken;
-    }
-    if (form.cloudflareClientId && form.cloudflareClientSecret) {
-      input.cloudflare_access_client_id = form.cloudflareClientId;
-      input.cloudflare_access_client_secret = form.cloudflareClientSecret;
-    }
+  if (form.managementMode === "auto" && form.dashboardSessionToken) {
+    input.dashboard_session_token = form.dashboardSessionToken;
+  }
+  if (form.cloudflareClientId) {
+    input.cloudflare_access_client_id = form.cloudflareClientId;
+  }
+  if (form.cloudflareClientSecret) {
+    input.cloudflare_access_client_secret = form.cloudflareClientSecret;
   }
   return input;
 }
@@ -1060,10 +1063,6 @@ function clearSecrets(form: AgentForm): AgentForm {
     dashboardSessionToken: "",
     hermesApiKey: "",
   };
-}
-
-function optionalValue(value: string): string | undefined {
-  return value.trim() || undefined;
 }
 
 function parseRequestTimeout(value: string): number {

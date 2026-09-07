@@ -8,7 +8,7 @@ import "github.com/mmdash/mmdash/backend/internal/settings"
 // overwrite an instance's encrypted record.
 func SettingDefinition() settings.TypeDefinition {
 	return settings.TypeDefinition{
-		Description: "Encrypted Hermes runtime and automatic-management credentials for one Agent instance.",
+		Description: "Encrypted Hermes runtime and endpoint-management credentials for one Agent instance.",
 		Fields: []settings.FieldDefinition{
 			{
 				Description: "Hermes API Server key used only by Core.",
@@ -18,11 +18,10 @@ func SettingDefinition() settings.TypeDefinition {
 				Required:    true,
 			},
 			{
-				Description: "Hermes profile or Agent identifier.",
+				Description: "Optional Hermes profile or Agent identifier; omitted selects the unscoped API.",
 				Key:         settingProfile,
 				Kind:        settings.FieldString,
 				Label:       "Hermes profile",
-				Required:    true,
 			},
 			{
 				Description: "Per-instance request timeout capped by deployment policy.",
@@ -38,13 +37,13 @@ func SettingDefinition() settings.TypeDefinition {
 				Label:       "Dashboard session token",
 			},
 			{
-				Description: "Cloudflare Access service client identifier when required.",
+				Description: "Cloudflare Access service client identifier for the Hermes Runtime API and, in auto mode, the Dashboard.",
 				Key:         settingCFClientID,
 				Kind:        settings.FieldSecret,
 				Label:       "Cloudflare Access client ID",
 			},
 			{
-				Description: "Cloudflare Access service client secret when required.",
+				Description: "Cloudflare Access service client secret for the Hermes Runtime API and, in auto mode, the Dashboard.",
 				Key:         settingCFClientSecret,
 				Kind:        settings.FieldSecret,
 				Label:       "Cloudflare Access client secret",

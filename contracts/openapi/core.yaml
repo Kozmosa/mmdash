@@ -12244,11 +12244,11 @@ components:
         profile:
           type: string
           maxLength: 64
-          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+          pattern: "^(?:|[a-z0-9][a-z0-9_-]{0,63})$"
           description: >-
-            Canonical Hermes profile identifier. The built-in default profile
-            is represented by the special identifier `default`; Hermes
-            reserved names remain unavailable for named profiles.
+            Canonical Hermes profile identifier. An empty string selects the
+            unscoped Hermes API; `default` explicitly selects the named
+            default profile. Hermes reserved names remain unavailable.
         request_timeout_seconds:
           type: integer
           minimum: 1
@@ -12322,9 +12322,12 @@ components:
           writeOnly: true
         profile:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 64
-          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+          pattern: "^(?:|[a-z0-9][a-z0-9_-]{0,63})$"
+          description: >-
+            Empty selects the unscoped Hermes API. A non-empty value selects
+            `/p/{profile}` routes.
         request_timeout_seconds:
           type: integer
           minimum: 1
@@ -12346,11 +12349,21 @@ components:
           minLength: 1
           maxLength: 4096
           writeOnly: true
+          description: >-
+            Cloudflare Access service client ID for the Hermes Runtime API.
+            In auto management mode the same credential is also used for the
+            Dashboard management API when it is protected by Cloudflare
+            Access.
         cloudflare_access_client_secret:
           type: string
           minLength: 16
           maxLength: 4096
           writeOnly: true
+          description: >-
+            Cloudflare Access service client secret for the Hermes Runtime API.
+            In auto management mode the same credential is also used for the
+            Dashboard management API when it is protected by Cloudflare
+            Access.
         allowed_tools:
           type: array
           minItems: 1
@@ -12394,9 +12407,12 @@ components:
           writeOnly: true
         profile:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 64
-          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$"
+          pattern: "^(?:|[a-z0-9][a-z0-9_-]{0,63})$"
+          description: >-
+            Empty switches to the unscoped Hermes API. A non-empty value
+            selects `/p/{profile}` routes.
         request_timeout_seconds:
           type: integer
           minimum: 1
@@ -12418,11 +12434,21 @@ components:
           minLength: 1
           maxLength: 4096
           writeOnly: true
+          description: >-
+            Cloudflare Access service client ID for the Hermes Runtime API.
+            In auto management mode the same credential is also used for the
+            Dashboard management API when it is protected by Cloudflare
+            Access.
         cloudflare_access_client_secret:
           type: string
           minLength: 16
           maxLength: 4096
           writeOnly: true
+          description: >-
+            Cloudflare Access service client secret for the Hermes Runtime API.
+            In auto management mode the same credential is also used for the
+            Dashboard management API when it is protected by Cloudflare
+            Access.
         allowed_tools:
           type: array
           minItems: 1

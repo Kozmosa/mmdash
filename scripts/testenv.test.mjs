@@ -157,6 +157,7 @@ describe("isolated Pixi development environment", () => {
 
     expect(configuration.publicUrl).toBe(publicUrl);
     expect(configuration.environments.core).toMatchObject({
+      AGENT_MCP_GATEWAY_URL: `${publicUrl}/mcp`,
       ARTIFACT_WEB_ORIGIN: publicUrl,
       MMDASH_PUBLIC_URL: publicUrl,
       NOTION_OAUTH_REDIRECT_URI: `${publicUrl}/api/integrations/notion/oauth/callback`,

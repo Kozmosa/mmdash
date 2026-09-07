@@ -8206,7 +8206,7 @@ export interface components {
       management_mode: components["schemas"]["AgentManagementMode"];
       /** Format: uri */
       runtime_url: string;
-      /** @description Canonical Hermes profile identifier. The built-in default profile is represented by the special identifier `default`; Hermes reserved names remain unavailable for named profiles. */
+      /** @description Canonical Hermes profile identifier. An empty string selects the unscoped Hermes API; `default` explicitly selects the named default profile. Hermes reserved names remain unavailable. */
       profile?: string;
       request_timeout_seconds: number;
       /**
@@ -8244,13 +8244,16 @@ export interface components {
       /** Format: uri */
       runtime_url: string;
       hermes_api_key: string;
+      /** @description Empty selects the unscoped Hermes API. A non-empty value selects `/p/{profile}` routes. */
       profile?: string;
       /** @description Per-instance Hermes request timeout. The Adapter may apply a lower deployment-configured maximum. */
       request_timeout_seconds?: number;
       /** Format: uri */
       management_url?: string;
       dashboard_session_token?: string;
+      /** @description Cloudflare Access service client ID for the Hermes Runtime API. In auto management mode the same credential is also used for the Dashboard management API when it is protected by Cloudflare Access. */
       cloudflare_access_client_id?: string;
+      /** @description Cloudflare Access service client secret for the Hermes Runtime API. In auto management mode the same credential is also used for the Dashboard management API when it is protected by Cloudflare Access. */
       cloudflare_access_client_secret?: string;
       /**
        * @description Exact reviewed MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.
@@ -8273,13 +8276,16 @@ export interface components {
       /** Format: uri */
       runtime_url?: string;
       hermes_api_key?: string;
+      /** @description Empty switches to the unscoped Hermes API. A non-empty value selects `/p/{profile}` routes. */
       profile?: string;
       /** @description Per-instance Hermes request timeout. The Adapter may apply a lower deployment-configured maximum. */
       request_timeout_seconds?: number;
       /** Format: uri */
       management_url?: string;
       dashboard_session_token?: string;
+      /** @description Cloudflare Access service client ID for the Hermes Runtime API. In auto management mode the same credential is also used for the Dashboard management API when it is protected by Cloudflare Access. */
       cloudflare_access_client_id?: string;
+      /** @description Cloudflare Access service client secret for the Hermes Runtime API. In auto management mode the same credential is also used for the Dashboard management API when it is protected by Cloudflare Access. */
       cloudflare_access_client_secret?: string;
       /**
        * @description Exact reviewed MCP Tool names; product Agent grants do not accept wildcards or tools outside the closed Agent scope.

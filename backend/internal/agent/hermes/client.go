@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mmdash/mmdash/backend/internal/agent"
@@ -32,10 +33,14 @@ var (
 )
 
 type apiClient struct {
-	connector    *connector
-	bearerToken  string
-	profile      string
-	extraHeaders http.Header
+	connector               *connector
+	bearerToken             string
+	profile                 string
+	extraHeaders            http.Header
+	cloudflareClientID      string
+	cloudflareClientSecret  string
+	cloudflareMu            sync.RWMutex
+	cloudflareAuthenticated bool
 }
 
 func (client *apiClient) doJSON(ctx context.Context, operation, method, path string, query url.Values, body, destination any, expected ...int) error {
@@ -92,27 +97,59 @@ func (client *apiClient) do(ctx context.Context, method, path string, query url.
 	if bounded {
 		requestContext, cancel = context.WithTimeout(ctx, client.connector.policy.RequestTimeout)
 	}
-	var reader io.Reader
+	var payload []byte
 	if body != nil {
-		payload, err := json.Marshal(body)
+		var err error
+		payload, err = json.Marshal(body)
 		if err != nil {
 			if cancel != nil {
 				cancel()
 			}
 			return nil, nil, &agent.AdapterError{Code: agent.ErrorInvalid, Operation: "request", Message: "request encoding failed"}
 		}
-		reader = bytes.NewReader(payload)
 	}
-	target := client.connector.endpoint(client.profilePath(path), query)
-	request, err := http.NewRequestWithContext(requestContext, method, target.String(), reader)
+	useCloudflare := client.cloudflareAuthenticatedValue()
+	response, err := client.doAttempt(requestContext, method, path, query, payload, headers, useCloudflare)
 	if err != nil {
+		if response != nil && !useCloudflare && client.cloudflareConfigured() && isCloudflareChallenge(response) {
+			_ = response.Body.Close()
+			client.markCloudflareAuthenticated()
+			response, err = client.doAttempt(requestContext, method, path, query, payload, headers, true)
+			if err == nil {
+				return response, cancel, nil
+			}
+		}
 		if cancel != nil {
 			cancel()
 		}
-		return nil, nil, &agent.AdapterError{Code: agent.ErrorInvalid, Operation: "request", Message: "request construction failed"}
+		return nil, nil, err
+	}
+	if !useCloudflare && response.StatusCode >= 300 && isCloudflareChallenge(response) && client.cloudflareConfigured() {
+		_ = response.Body.Close()
+		client.markCloudflareAuthenticated()
+		response, err = client.doAttempt(requestContext, method, path, query, payload, headers, true)
+		if err != nil {
+			if cancel != nil {
+				cancel()
+			}
+			return nil, nil, err
+		}
+	}
+	return response, cancel, nil
+}
+
+func (client *apiClient) doAttempt(ctx context.Context, method, path string, query url.Values, payload []byte, headers http.Header, useCloudflare bool) (*http.Response, error) {
+	var reader io.Reader
+	if payload != nil {
+		reader = bytes.NewReader(payload)
+	}
+	target := client.connector.endpoint(client.profilePath(path), query)
+	request, err := http.NewRequestWithContext(ctx, method, target.String(), reader)
+	if err != nil {
+		return nil, &agent.AdapterError{Code: agent.ErrorInvalid, Operation: "request", Message: "request construction failed"}
 	}
 	request.Header.Set("Accept", "application/json")
-	if body != nil {
+	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	if client.bearerToken != "" {
@@ -123,6 +160,10 @@ func (client *apiClient) do(ctx context.Context, method, path string, query url.
 			request.Header.Add(key, value)
 		}
 	}
+	if useCloudflare {
+		request.Header.Set("CF-Access-Client-Id", client.cloudflareClientID)
+		request.Header.Set("CF-Access-Client-Secret", client.cloudflareClientSecret)
+	}
 	for key, values := range headers {
 		request.Header.Del(key)
 		for _, value := range values {
@@ -131,12 +172,25 @@ func (client *apiClient) do(ctx context.Context, method, path string, query url.
 	}
 	response, err := client.connector.client.Do(request)
 	if err != nil {
-		if cancel != nil {
-			cancel()
-		}
-		return nil, nil, normalizeNetworkError("request", err)
+		return response, normalizeNetworkError("request", err)
 	}
-	return response, cancel, nil
+	return response, nil
+}
+
+func (client *apiClient) cloudflareConfigured() bool {
+	return client.cloudflareClientID != "" && client.cloudflareClientSecret != ""
+}
+
+func (client *apiClient) cloudflareAuthenticatedValue() bool {
+	client.cloudflareMu.RLock()
+	defer client.cloudflareMu.RUnlock()
+	return client.cloudflareAuthenticated
+}
+
+func (client *apiClient) markCloudflareAuthenticated() {
+	client.cloudflareMu.Lock()
+	client.cloudflareAuthenticated = true
+	client.cloudflareMu.Unlock()
 }
 
 func (client *apiClient) profilePath(path string) string {

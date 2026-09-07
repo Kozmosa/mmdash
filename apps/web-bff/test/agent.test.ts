@@ -125,6 +125,8 @@ describe("Agent BFF routes", () => {
         "context.promote",
       ],
       display_name: "D".repeat(120),
+      cloudflare_access_client_id: "cf-client-id",
+      cloudflare_access_client_secret: "cf-secret-input-1",
       hermes_api_key: "k".repeat(16),
       management_mode: "manual",
       profile: "p".repeat(64),
@@ -246,7 +248,7 @@ describe("Agent BFF routes", () => {
     });
     apps.push(app);
     const cookie = await signedSessionCookie(app);
-    for (const profile of ["chat", "profile", "default"]) {
+    for (const profile of ["", "chat", "profile", "default"]) {
       const response = await app.inject({
         headers: { cookie },
         method: "POST",
@@ -262,7 +264,7 @@ describe("Agent BFF routes", () => {
       });
       expect(response.statusCode).toBe(201);
     }
-    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    expect(fetchImplementation).toHaveBeenCalledTimes(4);
   });
 
   it("never returns provider secrets and suppresses accidental auto-mode plaintext", async () => {
