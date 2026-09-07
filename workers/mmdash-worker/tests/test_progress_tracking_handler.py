@@ -99,6 +99,40 @@ def test_core_agent_accepts_one_trailing_json_object_after_progress_notes() -> N
     assert result["output"]["summary"] == "One blocker"
 
 
+def test_core_agent_normalizes_known_legacy_hermes_output() -> None:
+    client = FakeClient()
+    client.execution["output"] = "评估完成，输出结论 JSON：\n\n" + json.dumps(
+        {
+            "detected_stage": "Q2建模成稿待确认",
+            "summary": "Q2模型文档已经成稿。",
+            "changes_since_last": ["新增Q2模型快照"],
+            "completed_items": ["Q1建模"],
+            "in_progress_items": ["Q2建模"],
+            "blockers": [],
+            "risks": ["Q1求解临近截止，存在逾期风险"],
+            "pending_questions": [],
+        },
+        ensure_ascii=False,
+    )
+
+    result = asyncio.run(
+        ProgressEvaluationHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+    )
+
+    output = result["output"]
+    assert output["stage"] == "Q2建模成稿待确认"
+    assert output["work_state_updates"] == []
+    assert output["suggestions"] == []
+    assert output["risks"] == [
+        {
+            "key": "prose-risk:1",
+            "title": "Q1求解临近截止，存在逾期风险",
+            "severity": "medium",
+            "detail": "Q1求解临近截止，存在逾期风险",
+        }
+    ]
+
+
 def test_core_agent_rejects_commentary_after_the_json_object() -> None:
     client = FakeClient()
     client.execution["output"] += "\n评估结束。"

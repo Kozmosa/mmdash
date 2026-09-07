@@ -41,6 +41,19 @@ const channelTypes = [
   },
 ] as const;
 
+const externalRuleTypes = [
+  {
+    description: "评估完成后发送阶段、摘要和需要关注的结果。",
+    key: "progress.evaluation.completed",
+    title: "自动进度追踪结果",
+  },
+  {
+    description: "提醒到期时发送对应的待办提醒。",
+    key: "progress.reminder.due",
+    title: "Progress 提醒",
+  },
+] as const;
+
 type ChannelDefinition = (typeof channelTypes)[number];
 type ChannelState = {
   channel_key: string;
@@ -373,14 +386,17 @@ function ChannelEditor({
 
 function ExternalRuleCard({ projectId }: Readonly<{ projectId: string }>) {
   const queryClient = useQueryClient();
-  const rule = useQuery({
-    queryFn: () =>
-      apiClient.request<NotificationRule>(
-        "/projects/" +
-          encodeURIComponent(projectId) +
-          "/notification-rules/progress.reminder.due",
-      ),
-    queryKey: ["notification", "rule", projectId, "progress.reminder.due"],
+  const rules = useQueries({
+    queries: externalRuleTypes.map((definition) => ({
+      queryFn: () =>
+        apiClient.request<NotificationRule>(
+          "/projects/" +
+            encodeURIComponent(projectId) +
+            "/notification-rules/" +
+            encodeURIComponent(definition.key),
+        ),
+      queryKey: ["notification", "rule", projectId, definition.key],
+    })),
   });
   const channelQueries = useQueries({
     queries: channelTypes.map((definition) => ({
@@ -409,41 +425,46 @@ function ExternalRuleCard({ projectId }: Readonly<{ projectId: string }>) {
           Inbox。
         </p>
       </div>
-      {rule.isPending ? (
+      {rules.some((rule) => rule.isPending) ? (
         <Card className="min-h-48 animate-pulse bg-muted/20" />
       ) : null}
-      {rule.isError ? (
+      {rules.some((rule) => rule.isError) ? (
         <Card>
           <CardContent className="p-5 text-sm text-destructive">
-            无法读取 Progress 提醒投递规则。
+            无法读取部分 Progress 投递规则。
           </CardContent>
         </Card>
       ) : null}
-      {rule.data ? (
-        <ExternalRuleEditor
-          channels={channels}
-          key={rule.data.version}
-          onSaved={(saved) => {
-            queryClient.setQueryData(
-              ["notification", "rule", projectId, "progress.reminder.due"],
-              saved,
-            );
-          }}
-          projectId={projectId}
-          rule={rule.data}
-        />
-      ) : null}
+      {rules.map((rule, index) =>
+        rule.data ? (
+          <ExternalRuleEditor
+            channels={channels}
+            definition={externalRuleTypes[index]}
+            key={rule.data.type_key + ":" + rule.data.version}
+            onSaved={(saved) => {
+              queryClient.setQueryData(
+                ["notification", "rule", projectId, saved.type_key],
+                saved,
+              );
+            }}
+            projectId={projectId}
+            rule={rule.data}
+          />
+        ) : null,
+      )}
     </section>
   );
 }
 
 function ExternalRuleEditor({
   channels,
+  definition,
   onSaved,
   projectId,
   rule,
 }: Readonly<{
   channels: Array<{ definition: ChannelDefinition; state: ChannelState }>;
+  definition: (typeof externalRuleTypes)[number];
   onSaved: (rule: NotificationRule) => void;
   projectId: string;
   rule: NotificationRule;
@@ -458,7 +479,8 @@ function ExternalRuleEditor({
       apiClient.request<NotificationRule>(
         "/projects/" +
           encodeURIComponent(projectId) +
-          "/notification-rules/progress.reminder.due",
+          "/notification-rules/" +
+          encodeURIComponent(definition.key),
         {
           body: {
             channel_keys: channelKeys,
@@ -489,9 +511,10 @@ function ExternalRuleEditor({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Progress 提醒</CardTitle>
+        <CardTitle className="text-base">{definition.title}</CardTitle>
         <CardDescription>
-          Inbox 默认保留；这里可以额外选择已启用的项目外部渠道。
+          {definition.description} Inbox
+          默认保留；这里可以额外选择已启用的项目外部渠道。
         </CardDescription>
       </CardHeader>
       <CardContent>

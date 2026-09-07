@@ -38,6 +38,7 @@ type SettingsForm = Pick<
   | "debounce_seconds"
   | "evaluator_mode"
   | "event_triggers_enabled"
+  | "enabled_event_types"
   | "min_interval_seconds"
   | "reasoning_effort"
 >;
@@ -681,6 +682,7 @@ function settingsForm(value: ProgressSettings): SettingsForm {
     debounce_seconds: value.debounce_seconds,
     evaluator_mode: value.evaluator_mode,
     event_triggers_enabled: value.event_triggers_enabled,
+    enabled_event_types: value.enabled_event_types,
     min_interval_seconds: value.min_interval_seconds,
     reasoning_effort: value.reasoning_effort ?? "medium",
   };
@@ -695,6 +697,7 @@ function settingsRequest(value: SettingsForm) {
     cron_schedule: value.cron_schedule,
     debounce_seconds: value.debounce_seconds,
     event_triggers_enabled: value.event_triggers_enabled,
+    enabled_event_types: value.enabled_event_types,
     min_interval_seconds: value.min_interval_seconds,
     reasoning_effort: value.reasoning_effort,
   };

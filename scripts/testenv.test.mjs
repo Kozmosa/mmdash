@@ -108,6 +108,9 @@ describe("isolated Pixi development environment", () => {
     expect(configuration.environments.core.REPO_LOCAL_ALLOWED_ROOTS).toBe(
       layout.localRepositoryRoot,
     );
+    expect(configuration.environments.core.REPO_STORAGE_ROOT).toBe(
+      layout.localRepositoryRoot,
+    );
     expect(configuration.environments.core.REPO_ASKPASS_PATH).toContain(
       "mmdash-git-askpass",
     );

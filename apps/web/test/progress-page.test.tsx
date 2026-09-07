@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -106,6 +107,7 @@ const progress: ProgressAggregate = {
     debounce_seconds: 60,
     evaluator_mode: "core_agent",
     event_triggers_enabled: true,
+    enabled_event_types: ["repo.commit.created"],
     min_interval_seconds: 300,
     reasoning_effort: "medium" as const,
     agent_instance_id: undefined,
@@ -458,6 +460,41 @@ describe("Progress human workbench", () => {
     expect(
       await screen.findByRole("button", { name: "正在评估" }),
     ).toBeDisabled();
+  });
+
+  it("keeps refreshing while an evaluation is active", async () => {
+    vi.useFakeTimers();
+    try {
+      const running = {
+        ...progress,
+        latest_evaluation: {
+          ...progress.latest_evaluation!,
+          status: "running" as const,
+        },
+        proposals: [],
+      };
+      useRequests(running);
+      renderPage();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const initialCalls = mocks.request.mock.calls.filter(
+        ([path]) => path === "/projects/project-1/progress",
+      ).length;
+      expect(initialCalls).toBeGreaterThan(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      expect(
+        mocks.request.mock.calls.filter(
+          ([path]) => path === "/projects/project-1/progress",
+        ).length,
+      ).toBeGreaterThan(initialCalls);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("forces a fresh manual evaluation and locks the button immediately", async () => {

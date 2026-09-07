@@ -40,6 +40,23 @@ func TestGenericWebhookSignsRequestAndPassesNotificationType(t *testing.T) {
 	}
 }
 
+func TestFeishuRenderIncludesControlledEvaluationSummary(t *testing.T) {
+	message, err := (FeishuWebhook{}).Render(context.Background(), Notification{
+		TypeKey: TypeEvaluationCompleted,
+		RenderedSnapshot: map[string]interface{}{
+			"title": "自动进度追踪已完成 · 求解中",
+			"body":  "模型文档已经确认，下一步执行求解。",
+		},
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(message.Body)
+	if !strings.Contains(text, "自动进度追踪已完成") || !strings.Contains(text, "下一步执行求解") {
+		t.Fatalf("Feishu message omitted evaluation result: %s", text)
+	}
+}
+
 func TestWebhookClassifiesRetryAfterAndPermanentFailures(t *testing.T) {
 	for _, test := range []struct {
 		name       string
