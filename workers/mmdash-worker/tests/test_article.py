@@ -67,7 +67,7 @@ class FakeArticleClient:
             "project_id": "project-1",
             "build_kind": "formal",
             "manuscript": "# Paper\n",
-            "references_bib": "@misc{ref}\n",
+            "references_bib": "@misc{ref,\n  author = {Author, A.},\n  title = {Title},\n  year = {2026},\n}\n",
             "article_manifest": {"draft_revision": 3},
             "template": {
                 "manifest": MANIFEST,
@@ -386,7 +386,6 @@ class InlineAbstractClient(FakeArticleClient):
         build = super().get_article_build_input(job_id)
         build["manuscript"] = self.manuscript or "# Paper\n\nSee [@ref].\n"
         build["abstract"] = "Abstract cites [@ref] too.\n"
-        build["references_bib"] = "@misc{ref,\n  author = {Author, A.},\n  title = {Title},\n  year = {2026},\n}\n"
         build["template"]["manifest"] = MANIFEST_11_INLINE
         if self.pandoc_version:
             build["toolchain"]["pandoc"] = self.pandoc_version

@@ -39,9 +39,12 @@
   pandoc 3.9 arm64 on PATH (contract test included); ruff, gofmt, and
   prettier (docs) clean. Notes: `--no-highlight` triggers a deprecation
   warning on Pandoc 3.x (`--syntax-highlighting=none` is the new spelling)
-  but is the correct flag for the pinned 2.17.1.1 image; the fake suite's
-  historical `@misc{ref}` bib is invalid BibTeX and never parsed because
-  commands were faked — the new inline client uses a valid entry.
+  but is the correct flag for the pinned 2.17.1.1 image — the pin stays at
+  Debian bookworm's 2.17.1.1 because no newer pandoc exists in the image's
+  package manager (2026-09-08 decision: keep the pin, do not vendor release
+  binaries into the image yet). The fake suite's historical `@misc{ref}` bib
+  was invalid BibTeX that never parsed because commands were faked; both
+  fixtures now use a valid entry.
 
 # mmdash v0.1 PR #84 merge integration and macOS temp-path repair
 
