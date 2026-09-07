@@ -559,6 +559,7 @@ func run(logger *logging.Logger) error {
 		RuntimePolicy:             hermesNetworkPolicy(processConfig.Agent.Runtime),
 		ManagementPolicy:          hermesNetworkPolicy(processConfig.Agent.Management),
 		ManagementMinimumInterval: processConfig.Agent.ManagementMinimumInterval,
+		RunStartTimeout:           processConfig.Agent.RunStartTimeout,
 	}); err != nil {
 		return fmt.Errorf("register Hermes Agent adapter: %w", err)
 	}

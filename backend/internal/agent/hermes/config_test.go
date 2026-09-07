@@ -75,3 +75,42 @@ func TestFactoryRejectsInvalidRequestTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestRunStartTransportWidensOnlyRunStart(t *testing.T) {
+	adapter, err := New(Config{
+		InstanceID:      "instance-1",
+		RuntimeURL:      "https://runtime.example.test",
+		APIKey:          "runtime-secret",
+		RuntimePolicy:   NetworkPolicy{RequestTimeout: 20 * time.Second},
+		RunStartTimeout: 75 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+	if timeout := adapter.runStart.connector.policy.RequestTimeout; timeout != 75*time.Second {
+		t.Fatalf("expected run-start request timeout of 75s, got %s", timeout)
+	}
+	if timeout := adapter.runStart.connector.policy.ResponseHeaderTimeout; timeout != 75*time.Second {
+		t.Fatalf("expected run-start response-header timeout of 75s, got %s", timeout)
+	}
+	if timeout := adapter.runtime.connector.policy.RequestTimeout; timeout != 20*time.Second {
+		t.Fatalf("run-start window leaked into the general runtime policy: %s", timeout)
+	}
+	if timeout := adapter.runtime.connector.policy.ResponseHeaderTimeout; timeout != 10*time.Second {
+		t.Fatalf("run-start header window leaked into the general runtime policy: %s", timeout)
+	}
+
+	// Without an explicit run-start window the runtime policy is reused as-is.
+	adapter, err = New(Config{
+		InstanceID:    "instance-2",
+		RuntimeURL:    "https://runtime.example.test",
+		APIKey:        "runtime-secret",
+		RuntimePolicy: NetworkPolicy{RequestTimeout: 20 * time.Second},
+	})
+	if err != nil {
+		t.Fatalf("create default adapter: %v", err)
+	}
+	if timeout := adapter.runStart.connector.policy.RequestTimeout; timeout != 20*time.Second {
+		t.Fatalf("expected inherited run-start timeout, got %s", timeout)
+	}
+}

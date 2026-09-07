@@ -715,6 +715,7 @@ type agentServiceTestAdapter struct {
 	checkRuntimeErr       error
 	verifyAccess          ProjectAccessResult
 	getRunResult          Run
+	onGetRun              func(call int) (Run, error)
 	stopRunResult         Run
 	approvalResult        ApprovalResult
 	approvalRequest       ApprovalRequest
@@ -829,6 +830,9 @@ func (adapter *agentServiceTestAdapter) StartRun(
 
 func (adapter *agentServiceTestAdapter) GetRun(context.Context, string) (Run, error) {
 	adapter.getRunCalls++
+	if adapter.onGetRun != nil {
+		return adapter.onGetRun(adapter.getRunCalls)
+	}
 	return adapter.getRunResult, nil
 }
 
@@ -1365,6 +1369,10 @@ func TestProgressEvaluationInstructionsDefineEvidenceAndReadableFeedbackRubric(t
 		"call data.read before making a material claim",
 		"previous output are navigation/comparison hints, never evidence",
 		"never call progress.recalculate",
+		"UNATTENDED RUN CONTRACT",
+		"Interactive tool approvals are denied automatically",
+		"Never call tools that open an approval prompt",
+		"retry the same call after the runtime retry window",
 		"A Commit, Artifact, build, Snapshot, or archived Experiment proves a deliverable exists",
 		"Never describe \"no activity\" as a change",
 		"Never inspect progress_evaluation or progress_risk",
@@ -1460,6 +1468,206 @@ func TestEvaluateProgressRotatesAnActiveSessionFromAnOlderPromptVersion(t *testi
 	if len(fixture.adapter.createSessionRequests) != 1 ||
 		fixture.adapter.createSessionRequests[0].SystemPrompt != progressEvaluationSystemPrompt {
 		t.Fatalf("rotated Session lost the current system prompt: %#v", fixture.adapter.createSessionRequests)
+	}
+}
+
+func TestEvaluateProgressAutoDeniesApprovalAndContinues(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.onGetRun = func(call int) (Run, error) {
+		if call == 1 {
+			return Run{RemoteID: "remote-progress-run", Status: RunWaitingForApproval}, nil
+		}
+		return Run{RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000096",
+		map[string]interface{}{"project_id": "project-1"}, nil,
+	)
+	if err != nil {
+		t.Fatalf("evaluate progress across an approval gate: %v", err)
+	}
+	if fixture.adapter.approvalCalls != 1 {
+		t.Fatalf("expected exactly one automatic approval denial, got %d", fixture.adapter.approvalCalls)
+	}
+	if request := fixture.adapter.approvalRequest; request.Choice != ApprovalDeny ||
+		!request.ResolveAll || request.RemoteID != "remote-progress-run" {
+		t.Fatalf("approval denial lost its unattended policy: %#v", request)
+	}
+	if fixture.adapter.stopRunCalls != 0 {
+		t.Fatalf("a denied approval must not stop the remote Run")
+	}
+	run := fixture.store.runs[result.AgentRunID]
+	if run.Status != RunRecordCompleted {
+		t.Fatalf("evaluation did not resume after the denial: %#v", run)
+	}
+}
+
+func TestEvaluateProgressStopsRunAfterExhaustedApprovalDenials(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.service.ProgressRun.MaxApprovalDenials = 2
+	fixture.adapter.onGetRun = func(int) (Run, error) {
+		return Run{RemoteID: "remote-progress-run", Status: RunWaitingForApproval}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000095",
+		map[string]interface{}{"project_id": "project-1"}, nil,
+	)
+	if !errors.Is(err, progress.ErrEvaluationConfiguration) {
+		t.Fatalf("exhausted approval denials: %v", err)
+	}
+	if fixture.adapter.approvalCalls != 2 || fixture.adapter.stopRunCalls != 1 {
+		t.Fatalf("expected two denials then one stop, got %d denials and %d stops",
+			fixture.adapter.approvalCalls, fixture.adapter.stopRunCalls)
+	}
+	for _, run := range fixture.store.runs {
+		if run.Source != "progress_evaluation" {
+			continue
+		}
+		if run.Status != RunRecordFailed || run.SafeErrorCode != "approval_exhausted" {
+			t.Fatalf("exhausted approvals were not recorded on the Run: %#v", run)
+		}
+	}
+}
+
+func TestEvaluateProgressStopsRunWhenApprovalsUnsupported(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.approvalErr = &AdapterError{Code: ErrorUnsupported, Operation: "hermes.runs.approve"}
+	fixture.adapter.onGetRun = func(int) (Run, error) {
+		return Run{RemoteID: "remote-progress-run", Status: RunWaitingForApproval}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000094",
+		map[string]interface{}{"project_id": "project-1"}, nil,
+	)
+	if !errors.Is(err, progress.ErrEvaluationConfiguration) {
+		t.Fatalf("unsupported approvals: %v", err)
+	}
+	if fixture.adapter.approvalCalls != 1 || fixture.adapter.stopRunCalls != 1 {
+		t.Fatalf("expected one denial attempt then one stop, got %d denials and %d stops",
+			fixture.adapter.approvalCalls, fixture.adapter.stopRunCalls)
+	}
+	for _, run := range fixture.store.runs {
+		if run.Source != "progress_evaluation" {
+			continue
+		}
+		if run.Status != RunRecordFailed || run.SafeErrorCode != "approval_required" {
+			t.Fatalf("unsupported approvals were not recorded on the Run: %#v", run)
+		}
+	}
+}
+
+func TestEvaluateProgressToleratesTransientPollErrors(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.onGetRun = func(call int) (Run, error) {
+		if call == 1 {
+			return Run{}, &AdapterError{Code: ErrorUnavailable, Operation: "hermes.runs.get", Retryable: true}
+		}
+		return Run{RemoteID: "remote-progress-run", Status: RunCompleted, Output: `{"stage":"planning"}`}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000093",
+		map[string]interface{}{"project_id": "project-1"}, nil,
+	)
+	if err != nil {
+		t.Fatalf("transient poll errors should not fail the evaluation: %v", err)
+	}
+	if fixture.adapter.stopRunCalls != 0 {
+		t.Fatalf("a recovered poll must not stop the remote Run")
+	}
+	run := fixture.store.runs[result.AgentRunID]
+	if run.Status != RunRecordCompleted {
+		t.Fatalf("evaluation did not complete after the transient error: %#v", run)
+	}
+}
+
+func TestEvaluateProgressStopsRunAfterPollErrorsExhaustTolerance(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.service.ProgressRun.PollErrorTolerance = 2
+	fixture.adapter.onGetRun = func(int) (Run, error) {
+		return Run{}, &AdapterError{Code: ErrorUnavailable, Operation: "hermes.runs.get", Retryable: true}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000092",
+		map[string]interface{}{"project_id": "project-1"}, nil,
+	)
+	if !errors.Is(err, progress.ErrEvaluationUnavailable) {
+		t.Fatalf("exhausted poll tolerance: %v", err)
+	}
+	if fixture.adapter.stopRunCalls != 1 {
+		t.Fatalf("expected the remote Run to be stopped once, got %d stops", fixture.adapter.stopRunCalls)
+	}
+	for _, run := range fixture.store.runs {
+		if run.Source != "progress_evaluation" {
+			continue
+		}
+		if run.Status != RunRecordFailed || run.SafeErrorCode != "unavailable" {
+			t.Fatalf("poll failures were not recorded on the Run: %#v", run)
+		}
+	}
+}
+
+func TestEvaluateProgressRefusesDuplicateDeliveredPrompt(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	input := map[string]interface{}{"project_id": "project-1"}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	fixture.adapter.messages = []Message{{Role: "user", Content: string(encoded)}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000091",
+		input, nil,
+	)
+	if !errors.Is(err, progress.ErrEvaluationConfiguration) {
+		t.Fatalf("delivered prompt: %v", err)
+	}
+	if len(fixture.adapter.startRunRequests) != 0 {
+		t.Fatalf("evaluation reposted an already delivered prompt: %#v", fixture.adapter.startRunRequests)
+	}
+	for _, run := range fixture.store.runs {
+		if run.Source != "progress_evaluation" {
+			continue
+		}
+		if run.Status != RunRecordFailed || run.SafeErrorCode != "run_start_unresolved" {
+			t.Fatalf("unresolved start was not recorded on the Run: %#v", run)
+		}
+	}
+}
+
+func TestEvaluateProgressStopsRemoteRunWhenContextEnds(t *testing.T) {
+	fixture := newAgentServiceFixture(t)
+	fixture.adapter.getRunResult = Run{RemoteID: "remote-progress-run", Status: RunRunning}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := fixture.service.EvaluateProgress(
+		ctx, "project-1", "agent-1", "00000000-0000-4000-8000-000000000090",
+		map[string]interface{}{"project_id": "project-1"}, nil,
+	)
+	if !errors.Is(err, progress.ErrEvaluationUnavailable) {
+		t.Fatalf("ended evaluation context: %v", err)
+	}
+	if fixture.adapter.stopRunCalls != 1 {
+		t.Fatalf("expected the remote Run to be stopped once, got %d stops", fixture.adapter.stopRunCalls)
+	}
+	for _, run := range fixture.store.runs {
+		if run.Source != "progress_evaluation" {
+			continue
+		}
+		if run.Status != RunRecordFailed || run.SafeErrorCode != "evaluation_timeout" {
+			t.Fatalf("context end was not recorded on the Run: %#v", run)
+		}
 	}
 }
 
