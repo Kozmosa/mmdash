@@ -1,3 +1,48 @@
+# mmdash v0.1 md→tex fragment contract repairs (issue #87)
+
+- Updated: 2026-09-07
+- Branch: `main`
+- Scope: fixes for the three defects found by an offline end-to-end md→tex
+  experiment (Core projection → worker slot/pandoc pipeline → fragment
+  inspection) documented in issue #87. The experiment drove the real
+  `NormalizeDocument` and the real `ArticleBuildHandler._run` with a real
+  pandoc binary and a stubbed latexmk — no dev stack.
+- Pandoc invocation (`handler.py`): `--no-highlight` is now always passed.
+  Highlighted code previously emitted `Shaded`/`Highlighting`/`\ImportTok`
+  commands whose definitions exist only in Pandoc's standalone template, so
+  any language-tagged code block failed the build with undefined control
+  sequences. Code blocks now render as plain `verbatim`; syntax highlighting
+  stays an editor-only concern.
+- Abstract citations in inline mode (`handler.py`): the abstract pandoc run
+  now also gets `--citeproc --bibliography` when the bibliography is
+  non-empty and the mode is inline; a new `_strip_csl_references` removes the
+  `\phantomsection\label{refs}` + `CSLReferences` block from the abstract
+  fragment so the reference list exists only in the body. Previously abstract
+  citations rendered as literal `{[}@key{]}` text.
+- Core projection (`document.go`): text carrying the `code` mark is no longer
+  pre-escaped by `escapeMarkdown` — Markdown code spans treat backslashes
+  literally, so `code_x` used to leak as `code\_x` into the rendered code
+  (`\texttt{code\textbackslash{}\_x}` in TeX). Plain and bold/italic text
+  keep escaping; `hasMark` decides.
+- Tests: `test_article.py` asserts `--no-highlight` on every pandoc command;
+  new `test_inline_abstract_citations_render_without_bibliography` (fake
+  commands; abstract stripped, body keeps `CSLReferences` + compatibility
+  shim); new `test_pandoc_fragment_stays_within_the_template_contract` runs
+  REAL pandoc (skipped when the binary is absent) against a kitchen-sink
+  manuscript and asserts no template-only commands (`Shaded`, `Highlighting`,
+  `\ImportTok`, `\pandocbounded`, literal `{[}@`) leak into any fragment —
+  this is the tripwire for future worker-image Pandoc upgrades. Go adds
+  `TestCodeMarkTextStaysLiteralInProjection`.
+- `docs/article/template-spec.md` gains a "Markdown → TeX 转换约定" section
+  recording the fragment contract and the `--no-highlight` decision.
+- Verification: `go test ./internal/article/` green; worker pytest 72/72 with
+  pandoc 3.9 arm64 on PATH (contract test included); ruff, gofmt, and
+  prettier (docs) clean. Notes: `--no-highlight` triggers a deprecation
+  warning on Pandoc 3.x (`--syntax-highlighting=none` is the new spelling)
+  but is the correct flag for the pinned 2.17.1.1 image; the fake suite's
+  historical `@misc{ref}` bib is invalid BibTeX and never parsed because
+  commands were faked — the new inline client uses a valid entry.
+
 # mmdash v0.1 PR #84 merge integration and macOS temp-path repair
 
 - Updated: 2026-09-07
