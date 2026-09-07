@@ -820,11 +820,23 @@ func (store PostgresStore) CompleteEvaluation(ctx context.Context, tx transactio
 	now := store.now()
 	for _, update := range output.WorkStateUpdates {
 		if err := store.applyEvaluationWorkState(ctx, tx, projectID, evaluationID, actorID, agentRunID, update, now); err != nil {
+			// A hallucinated or since-deleted task reference must not discard the
+			// whole assessment; the original update stays visible in
+			// output_snapshot.
+			if errors.Is(err, ErrReferenceInvalid) {
+				continue
+			}
 			return err
 		}
 	}
 	for _, suggestion := range output.Suggestions {
 		if err := store.applyEvaluationSuggestion(ctx, tx, projectID, evaluationID, actorID, agentRunID, suggestion, now); err != nil {
+			// Per-suggestion reference or shape defects drop only that proposal.
+			// Infrastructure failures (event, audit, generator) still fail the
+			// evaluation.
+			if errors.Is(err, ErrReferenceInvalid) || errors.Is(err, ErrInvalid) {
+				continue
+			}
 			return err
 		}
 	}

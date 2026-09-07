@@ -242,9 +242,19 @@ The Worker validates an exact bounded output shape: stage, summary, changes,
 completed/in-progress/blocked report items, risks, automatic
 `work_state_updates`, reviewable suggestions, and pending questions. A runtime
 may persist short progress notes before the final answer, so the Worker also
-accepts one complete trailing JSON object; commentary after that object,
-unknown fields, invalid suggestion/reference types, oversized output, provider
+accepts one complete trailing JSON object; commentary after that object
+remains a safe evaluation failure. Known harmless model deviations are
+normalized instead of failing the completed run: missing empty arrays are
+defaulted, unknown top-level keys (for example an appended `status` note) are
+dropped like the already-tolerated nested extras, `detected_stage` maps to
+`stage`, and prose-only risks become medium risks. Invalid suggestion or
+reference types, duplicate suggestion keys, oversized output, provider
 failures, and exhausted retries become safe evaluation failure codes/history.
+Core re-validates the reported output, bounding `stage` and `summary` in
+Unicode characters (100/10 000) to match the OpenAPI contract, and applies
+automatic work-state updates and suggestions item by item: a hallucinated or
+since-deleted task/milestone reference skips that one item (the original
+stays visible in `output_snapshot`) instead of discarding the assessment.
 A human may retry only a terminal failed evaluation. Job lease, retry, timeout,
 idempotency, and result completion remain owned by the existing Core Job Queue.
 

@@ -12,6 +12,32 @@ from mmdash_worker.jobs.handlers import HandlerContext, HandlerError
 
 MAX_AGENT_OUTPUT_BYTES = 2 * 1024 * 1024
 
+_KNOWN_OUTPUT_FIELDS = frozenset(
+    {
+        "stage",
+        "summary",
+        "changes_since_last",
+        "completed_items",
+        "in_progress_items",
+        "blockers",
+        "risks",
+        "work_state_updates",
+        "suggestions",
+        "pending_questions",
+    }
+)
+
+_DEFAULTED_LIST_FIELDS = (
+    "changes_since_last",
+    "completed_items",
+    "in_progress_items",
+    "blockers",
+    "risks",
+    "work_state_updates",
+    "suggestions",
+    "pending_questions",
+)
+
 
 class ProgressEvaluationClient(Protocol):
     def get_progress_evaluation_input(self, job_id: str) -> dict[str, Any]: ...
@@ -74,10 +100,11 @@ def _normalize_agent_output(value: Any) -> Any:
     """Normalize bounded, known Hermes deviations from the Progress contract.
 
     Older Progress prompts used ``detected_stage`` and did not require the two
-    action arrays. Hermes may also express a prose-only risk as a string. These
-    shapes still contain an unambiguous, non-mutating assessment, so normalize
-    them before applying the strict validator. Unknown fields and all other
-    type errors remain invalid.
+    action arrays. Models also routinely omit empty arrays, append harmless
+    top-level status/notes keys, or express a prose-only risk as a string.
+    These shapes still contain an unambiguous, non-mutating assessment, so
+    normalize them before applying the strict validator. Malformed values of
+    known fields and all other type errors remain invalid.
     """
 
     if not isinstance(value, Mapping):
@@ -85,8 +112,12 @@ def _normalize_agent_output(value: Any) -> Any:
     result = dict(value)
     if "stage" not in result and isinstance(result.get("detected_stage"), str):
         result["stage"] = result.pop("detected_stage")
-    result.setdefault("work_state_updates", [])
-    result.setdefault("suggestions", [])
+    # Unknown top-level keys carry no assessment semantics (models append
+    # status/notes commentary); nested extras are already tolerated, so drop
+    # them here instead of rejecting the completed run.
+    result = {key: item for key, item in result.items() if key in _KNOWN_OUTPUT_FIELDS}
+    for field in _DEFAULTED_LIST_FIELDS:
+        result.setdefault(field, [])
     risks = result.get("risks")
     if isinstance(risks, list):
         normalized_risks: list[Any] = []
@@ -197,6 +228,9 @@ def _validate_output(value: Any) -> dict[str, Any]:
     result["risks"] = [_risk(item) for item in risks]
     result["work_state_updates"] = [_work_state_update(item) for item in work_state_updates]
     result["suggestions"] = [_suggestion(item) for item in suggestions]
+    suggestion_keys = [item["key"] for item in result["suggestions"]]
+    if len(set(suggestion_keys)) != len(suggestion_keys):
+        raise HandlerError("PROGRESS_INVALID_OUTPUT", "Progress suggestion keys are not unique")
     return result
 
 
