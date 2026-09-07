@@ -8,7 +8,8 @@ browser can synchronize before retrying. Repeating the operation for an
 already-reviewed block withdraws the review and restores its previous tag.
 
 - Core collaborative source and review: `article.get`, `article.draft.get`,
-  `article.draft.flush`, `article.blocks.review`, `article.patches.list`, `article.patches.create`,
+  `article.draft.flush`, `article.abstract.flush`, `article.paper-info.get`,
+  `article.paper-info.update`, `article.blocks.review`, `article.patches.list`, `article.patches.create`,
   `article.chapter_tags.list`, `article.chapter_tags.create`, `article.chapter_tags.get`,
   `article.chapter_tags.update`, `article.chapter_tags.delete`, and `article.chapter_tags.review`,
   `article.patches.review`, `article.references.list`,

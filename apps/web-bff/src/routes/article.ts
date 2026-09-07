@@ -32,6 +32,10 @@ export function registerArticleRoutes(
           if (name === "draft/flush" && method === "POST") {
             return collaboration.flush(await roomContext(coreClient, request));
           }
+          if (name === "abstract/flush" && method === "POST") {
+            // The barrier covers both documents: body and abstract.
+            return collaboration.flush(await roomContext(coreClient, request));
+          }
           let body: Record<string, unknown> | undefined;
           if (
             method === "POST" &&
@@ -74,6 +78,8 @@ export function registerArticleRoutes(
   );
   collection("draft", ["GET"]);
   collection("draft/flush", ["POST"]);
+  collection("abstract/flush", ["POST"]);
+  collection("paper-info", ["GET", "PUT"]);
   collection("chapter-tags", ["GET", "POST"]);
   collection("patches", ["GET", "POST"]);
   collection("references", ["GET", "POST"]);

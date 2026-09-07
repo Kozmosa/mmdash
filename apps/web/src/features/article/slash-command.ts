@@ -6,11 +6,28 @@ export const openArtifactLibraryEvent = "mmdash:article-open-artifact";
 export const openArticleImageUploadEvent = "mmdash:article-upload-image";
 export const openArticleSidebarEvent = "mmdash:article-open-sidebar";
 
-type SlashItem = {
+export type SlashItem = {
   action: (editor: Editor) => void;
   keywords: string;
   label: string;
 };
+
+// Optional per-feature slash entries (e.g. CUMCM environments). Feature
+// modules register items while their UI is mounted so the "/" menu only
+// offers them when the project actually uses the feature.
+const featureSlashItems = new Map<string, SlashItem[]>();
+
+export function setSlashFeatureItems(feature: string, items: SlashItem[]) {
+  featureSlashItems.set(feature, items);
+}
+
+export function clearSlashFeatureItems(feature: string) {
+  featureSlashItems.delete(feature);
+}
+
+function activeSlashItems(): SlashItem[] {
+  return [...slashItems, ...[...featureSlashItems.values()].flat()];
+}
 
 export function nextSlashSelection(
   selected: number,
@@ -160,7 +177,7 @@ export const SlashCommand = Extension.create({
         shouldShow: ({ transaction }) => !isChangeOrigin(transaction),
         items: ({ query }) => {
           const normalized = query.trim().toLowerCase();
-          return slashItems.filter(
+          return activeSlashItems().filter(
             (item) =>
               !normalized ||
               `${item.label} ${item.keywords}`
@@ -265,7 +282,9 @@ export function runSlashItemForTest(
   editor: Editor,
   range: Range,
 ): void {
-  const item = slashItems.find((candidate) => candidate.label === label);
+  const item = activeSlashItems().find(
+    (candidate) => candidate.label === label,
+  );
   if (!item) throw new Error(`Unknown slash item: ${label}`);
   editor.chain().focus().deleteRange(range).run();
   item.action(editor);

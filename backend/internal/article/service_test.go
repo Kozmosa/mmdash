@@ -97,6 +97,24 @@ func (store *articleTestStore) PersistDraft(_ context.Context, projectID, _ stri
 	store.draft = Draft{ProjectID: projectID, DraftRevision: input.ExpectedRevision + 1, StateVector: input.StateVector, YjsUpdate: input.YjsUpdate, TiptapJSON: input.TiptapJSON, Markdown: markdown, Blocks: blocks, Manifest: manifest, ReferencesBIB: references}
 	return store.draft, nil
 }
+func (store *articleTestStore) PersistAbstract(_ context.Context, projectID, _ string, input AbstractFlushInput) (Draft, error) {
+	if store.draft.AbstractRevision != input.ExpectedRevision {
+		return Draft{}, ErrConflict
+	}
+	store.draft.ProjectID = projectID
+	store.draft.AbstractMarkdown = input.Markdown
+	store.draft.AbstractRevision = input.ExpectedRevision + 1
+	store.draft.AbstractYjsUpdate = input.YjsUpdate
+	store.draft.AbstractStateVec = input.StateVector
+	store.draft.AbstractTiptapJSO = input.TiptapJSON
+	return store.draft, nil
+}
+func (store *articleTestStore) PersistPaperInfo(_ context.Context, projectID, _ string, paperInfo map[string]interface{}) (Draft, error) {
+	store.draft.ProjectID = projectID
+	store.draft.PaperInfo = paperInfo
+	store.draft.PaperInfoRevision++
+	return store.draft, nil
+}
 func (store *articleTestStore) ReviewBlock(_ context.Context, _ string, blockID, expectedFingerprint, actorID string) (Block, error) {
 	for index := range store.draft.Blocks {
 		if store.draft.Blocks[index].BlockID == blockID {
@@ -271,7 +289,7 @@ type articleTestArtifacts struct {
 func (*articleTestArtifacts) ArticleTemplateGrant(context.Context, string, string, string) (map[string]interface{}, error) {
 	return map[string]interface{}{"method": "GET", "url": "https://grant.test/template"}, nil
 }
-func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, _, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, idempotencyKey, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
 	contents, err := io.ReadAll(input)
 	if err != nil {
 		return "", "", err
@@ -279,7 +297,13 @@ func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, 
 	if int64(len(contents)) != expectedSize || hashBytes(contents) != expectedSHA {
 		return "", "", errors.New("template integrity mismatch")
 	}
-	return "artifact-default", "version-default", nil
+	// Each built-in template owns its stable Artifact through its
+	// idempotency key; the default keeps its historical fixed IDs.
+	if idempotencyKey == "article-default-template:1.1.0" {
+		return "artifact-default", "version-default", nil
+	}
+	key := safeID(idempotencyKey)
+	return "artifact-" + key, "version-" + key, nil
 }
 func (artifacts *articleTestArtifacts) ArticleResourceGrant(_ context.Context, _, artifactID, versionID string) (map[string]interface{}, error) {
 	artifacts.resourceCalls = append(artifacts.resourceCalls, [2]string{artifactID, versionID})
@@ -302,7 +326,7 @@ func (workspace *articleTestWorkspace) Commit(_ context.Context, input repo.Work
 	return repo.CommitResult{CommitSHA: strings.Repeat("b", 40), PreviousCommitSHA: input.ExpectedHeadSHA, Workspace: repo.WorkspaceArticle}, nil
 }
 
-func TestCommitPinsOneDraftRevisionAndOnlyThreeEditableFiles(t *testing.T) {
+func TestCommitPinsOneDraftRevisionAndOnlyEditableFiles(t *testing.T) {
 	store := &articleTestStore{draft: draftAt(4), references: []Reference{{CitationKey: "ref", ReferenceType: "model_snapshot", SourceObjectID: "model", SourceVersionID: "v3", Title: "Model"}}}
 	workspace := &articleTestWorkspace{}
 	service := testService(store, workspace)
@@ -311,10 +335,10 @@ func TestCommitPinsOneDraftRevisionAndOnlyThreeEditableFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(workspace.commits) != 1 || len(workspace.commits[0].Changes) != 3 {
-		t.Fatalf("Repo ArticleWorkspace did not receive exactly three files: %#v", workspace.commits)
+	if len(workspace.commits) != 1 || len(workspace.commits[0].Changes) != 4 {
+		t.Fatalf("Repo ArticleWorkspace did not receive exactly four files: %#v", workspace.commits)
 	}
-	wantPaths := []string{"manuscript.md", "references.bib", ".mmdash/article.json"}
+	wantPaths := []string{"manuscript.md", "abstract.md", "references.bib", ".mmdash/article.json"}
 	for index, change := range workspace.commits[0].Changes {
 		if change.Path != wantPaths[index] || change.Operation != "put" {
 			t.Fatalf("unexpected change: %#v", change)
@@ -607,6 +631,151 @@ func TestFormalWorkerInputUsesCommitFrozenArtifactVersion(t *testing.T) {
 	resource := input.Resources[0]
 	if resource["sha256"] != strings.Repeat("a", 64) || resource["filename"] != "figure.png" {
 		t.Fatalf("worker input lost fixed Artifact integrity metadata: %#v", resource)
+	}
+}
+
+func TestFlushAbstractDerivesMarkdownWithIndependentRevision(t *testing.T) {
+	store := &articleTestStore{draft: draftAt(4)}
+	service := testService(store, &articleTestWorkspace{})
+
+	draft, err := service.FlushAbstract(context.Background(), human(), "project-1", AbstractFlushInput{
+		ExpectedRevision: 0, StateVector: "QUJD", YjsUpdate: "AQID",
+		TiptapJSON: map[string]interface{}{
+			"type": "doc",
+			"content": []interface{}{
+				map[string]interface{}{"type": "heading", "attrs": map[string]interface{}{"level": float64(2), "id": "abs-1"}, "content": []interface{}{map[string]interface{}{"type": "text", "text": "背景"}}},
+				map[string]interface{}{"type": "paragraph", "content": []interface{}{map[string]interface{}{"type": "text", "text": "摘要正文"}}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.AbstractRevision != 1 || draft.DraftRevision != 4 {
+		t.Fatalf("abstract revision must move independently of the body: %#v", draft)
+	}
+	if draft.AbstractMarkdown != "## 背景\n\n摘要正文\n" {
+		t.Fatalf("abstract markdown projection is wrong: %q", draft.AbstractMarkdown)
+	}
+	if draft.AbstractYjsUpdate != "AQID" || draft.AbstractStateVec != "QUJD" {
+		t.Fatalf("abstract collaborative state was not persisted: %#v", draft)
+	}
+	if _, err = service.FlushAbstract(context.Background(), human(), "project-1", AbstractFlushInput{ExpectedRevision: 2, StateVector: "QUJD", YjsUpdate: "AQID", TiptapJSON: map[string]interface{}{"type": "doc"}}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale abstract revision was accepted: %v", err)
+	}
+}
+
+func TestUpdatePaperInfoNormalizesClosedFieldSet(t *testing.T) {
+	store := &articleTestStore{draft: draftAt(1)}
+	service := testService(store, &articleTestWorkspace{})
+
+	draft, err := service.UpdatePaperInfo(context.Background(), human(), "project-1", map[string]interface{}{
+		"schema_version": "1.0",
+		"fields": map[string]interface{}{
+			"team_number": map[string]interface{}{"enabled": true, "value": "T2603001"},
+			"title":       map[string]interface{}{"enabled": false, "value": "保留但不输出"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if draft.PaperInfoRevision != 1 {
+		t.Fatalf("paper info revision did not move: %#v", draft)
+	}
+	fields := draft.PaperInfo["fields"].(map[string]interface{})
+	if fields["team_number"].(map[string]interface{})["enabled"] != true {
+		t.Fatalf("enabled field was not preserved: %#v", fields)
+	}
+	if _, ok := fields["title"]; !ok {
+		t.Fatal("disabled fields must stay saved, only excluded from TeX")
+	}
+
+	if _, err = service.UpdatePaperInfo(context.Background(), human(), "project-1", map[string]interface{}{
+		"schema_version": "1.0",
+		"fields":         map[string]interface{}{"custom_field": map[string]interface{}{"enabled": true, "value": "x"}},
+	}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unknown paper info field was accepted: %v", err)
+	}
+}
+
+func TestHeadingInfosFreezeOnlyTopLevelHeadings(t *testing.T) {
+	blocks := []Block{
+		{BlockID: "p-1", NodeType: "paragraph", Ordinal: 0},
+		{BlockID: "h1", NodeType: "heading", Ordinal: 1, Text: "引言", Attrs: map[string]interface{}{"level": float64(1)}},
+		{BlockID: "h3", NodeType: "heading", Ordinal: 2, Text: "子节", Attrs: map[string]interface{}{"level": float64(3)}},
+		{BlockID: "h2", NodeType: "heading", Ordinal: 3, Text: "模型", Attrs: map[string]interface{}{"level": float64(2)}},
+		{NodeType: "heading", Ordinal: 4, Text: "无身份", Attrs: map[string]interface{}{"level": float64(2)}},
+	}
+	headings := headingInfos(blocks)
+	if len(headings) != 2 {
+		t.Fatalf("only H1/H2 with block identity may freeze: %#v", headings)
+	}
+	if headings[0]["block_id"] != "h1" || headings[0]["level"] != 1 || headings[1]["block_id"] != "h2" || headings[1]["level"] != 2 {
+		t.Fatalf("heading identity or level is wrong: %#v", headings)
+	}
+}
+
+func TestFormalWorkerInputFreezesAbstractPaperInfoAndHeadings(t *testing.T) {
+	commitSHA := strings.Repeat("c", 40)
+	store := &articleTestStore{
+		builds:   []Build{{BuildID: "build-1", ProjectID: "project-1", BuildKind: BuildFormal, CommitID: "commit-1", JobID: "job-1", TemplateID: "template-1", Engine: "auto", BibliographyTool: "auto"}},
+		commit:   Commit{CommitID: "commit-1", CommitSHA: commitSHA, FrozenReferences: []Reference{}},
+		template: Template{TemplateID: "template-1", ArtifactID: "template-artifact", VersionID: "template-version", Manifest: TemplateManifest{Name: "Template"}},
+	}
+	workspace := &articleTestWorkspace{files: map[string]string{
+		"manuscript.md":        "# 引言\n正文\n",
+		"abstract.md":          "摘要内容\n",
+		"references.bib":       "",
+		".mmdash/article.json": `{"schema_version":"1.0","paper_info":{"schema_version":"1.0","fields":{"team_number":{"enabled":true,"value":"T2603001"}}},"headings":[{"block_id":"h1","level":1,"ordinal":0,"text":"引言"}]}`,
+	}}
+	service := testService(store, workspace)
+	service.Artifacts = &articleTestArtifacts{}
+	service.JobAccess = articleTestJobAccess{job: jobs.Job{ID: "job-1", JobType: JobTypeBuild, ProjectID: "project-1", Payload: map[string]interface{}{"build_id": "build-1"}}}
+
+	input, err := service.WorkerInput(context.Background(), human(), "job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Abstract != "摘要内容\n" {
+		t.Fatalf("frozen abstract was not passed to the Worker: %q", input.Abstract)
+	}
+	fields := input.PaperInfo["fields"].(map[string]interface{})
+	if fields["team_number"].(map[string]interface{})["value"] != "T2603001" {
+		t.Fatalf("frozen paper info was not passed to the Worker: %#v", input.PaperInfo)
+	}
+	if len(input.Headings) != 1 || input.Headings[0].BlockID != "h1" || input.Headings[0].Level != 1 {
+		t.Fatalf("frozen headings were not passed to the Worker: %#v", input.Headings)
+	}
+}
+
+func TestTemplateTestWorkerInputExercisesBibliographyChain(t *testing.T) {
+	newService := func(tool string) *Service {
+		store := &articleTestStore{
+			builds:   []Build{{BuildID: "build-1", ProjectID: "project-1", BuildKind: BuildTemplateTest, JobID: "job-1", TemplateID: "template-1", Engine: "auto", BibliographyTool: tool}},
+			template: Template{TemplateID: "template-1", ArtifactID: "template-artifact", VersionID: "template-version", Manifest: TemplateManifest{Name: "Template"}},
+		}
+		service := testService(store, &articleTestWorkspace{})
+		service.Artifacts = &articleTestArtifacts{}
+		service.JobAccess = articleTestJobAccess{job: jobs.Job{ID: "job-1", JobType: JobTypeBuild, ProjectID: "project-1", Payload: map[string]interface{}{"build_id": "build-1"}}}
+		return service
+	}
+
+	for _, tool := range []string{"auto", "bibtex", "biber"} {
+		input, err := newService(tool).WorkerInput(context.Background(), human(), "job-1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(input.Manuscript, "[@"+templateTestCitationKey+"]") || !strings.Contains(input.ReferencesBIB, templateTestCitationKey+",") {
+			t.Fatalf("template test with tool %q did not exercise the bibliography chain: %q %q", tool, input.Manuscript, input.ReferencesBIB)
+		}
+	}
+
+	input, err := newService("none").WorkerInput(context.Background(), human(), "job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(input.Manuscript, "[@") || input.ReferencesBIB != "" {
+		t.Fatalf("citation-free template test received bibliography input: %q %q", input.Manuscript, input.ReferencesBIB)
 	}
 }
 

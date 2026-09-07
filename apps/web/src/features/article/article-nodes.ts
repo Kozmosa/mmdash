@@ -124,6 +124,34 @@ export const MathBlock = Node.create({
   },
 });
 
+// Raw TeX block for template-specific environments (CUMCM assumption,
+// problem, theorem, ...). The text content is stored verbatim and the Core
+// Markdown projection emits it unescaped so Pandoc's raw_tex reader picks
+// it up; templates without the environment fail their own build loudly.
+export const LatexBlock = Node.create({
+  name: "latexBlock",
+  content: "text*",
+  marks: "",
+  code: true,
+  defining: true,
+  isolating: true,
+  parseHTML() {
+    return [{ tag: "pre[data-latex-block]" }];
+  },
+  renderHTML() {
+    return [
+      "pre",
+      {
+        "data-latex-block": "true",
+        class:
+          "my-4 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs",
+        spellcheck: "false",
+      },
+      ["code", 0],
+    ];
+  },
+});
+
 function versionedReference(name: string, dataAttribute: string) {
   return Node.create({
     name,
@@ -437,6 +465,7 @@ export function createArticleNodes(projectId: string) {
     ZoteroCitation,
     MathInline,
     MathBlock,
+    LatexBlock,
     ArticleImage,
     ArticleImageGroup,
     ArticleTable.configure({ resizable: true, View: ArticleTableView }),

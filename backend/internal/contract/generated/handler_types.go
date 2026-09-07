@@ -2822,6 +2822,69 @@ func (request PersistArticleDraftRequest) Validate() error {
 	return nil
 }
 
+// PersistArticleAbstractRequest is generated from the Core request-body schema.
+type PersistArticleAbstractRequest struct {
+	ExpectedRevision int64                  `json:"expected_revision"`
+	YjsUpdate        string                 `json:"yjs_update"`
+	StateVector      string                 `json:"state_vector"`
+	TiptapJson       map[string]interface{} `json:"tiptap_json"`
+	ActorKind        *string                `json:"actor_kind,omitempty"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request PersistArticleAbstractRequest) Validate() error {
+	if request.ExpectedRevision < 0 {
+		return fmt.Errorf("expected_revision is below its minimum")
+	}
+	if request.YjsUpdate == "" {
+		return fmt.Errorf("yjs_update is required")
+	}
+	if len(request.YjsUpdate) < 1 {
+		return fmt.Errorf("yjs_update is too short")
+	}
+	if len(request.YjsUpdate) > 16777216 {
+		return fmt.Errorf("yjs_update is too long")
+	}
+	if request.StateVector == "" {
+		return fmt.Errorf("state_vector is required")
+	}
+	if len(request.StateVector) < 1 {
+		return fmt.Errorf("state_vector is too short")
+	}
+	if len(request.StateVector) > 1048576 {
+		return fmt.Errorf("state_vector is too long")
+	}
+	if request.TiptapJson == nil {
+		return fmt.Errorf("tiptap_json is required")
+	}
+	if request.ActorKind != nil {
+		if *request.ActorKind != "human" && *request.ActorKind != "ai" && *request.ActorKind != "restore" {
+			return fmt.Errorf("actor_kind has an unsupported value")
+		}
+	}
+	return nil
+}
+
+// ArticlePaperInfo is generated from the Core request-body schema.
+type ArticlePaperInfo struct {
+	SchemaVersion string                 `json:"schema_version"`
+	Fields        map[string]interface{} `json:"fields"`
+}
+
+// Validate applies the OpenAPI field constraints before a handler runs.
+func (request ArticlePaperInfo) Validate() error {
+	if request.SchemaVersion == "" {
+		return fmt.Errorf("schema_version is required")
+	}
+	if request.SchemaVersion != "1.0" {
+		return fmt.Errorf("schema_version has an unsupported value")
+	}
+	if request.Fields == nil {
+		return fmt.Errorf("fields is required")
+	}
+	return nil
+}
+
 // ReviewArticleBlockRequest is generated from the Core request-body schema.
 type ReviewArticleBlockRequest struct {
 	ContentFingerprint string `json:"content_fingerprint"`

@@ -1,0 +1,30 @@
+ALTER TABLE article_commit_operations
+    DROP COLUMN paper_info_sha256,
+    DROP COLUMN paper_info_revision,
+    DROP COLUMN paper_info,
+    DROP COLUMN abstract_yjs_update,
+    DROP COLUMN abstract_state_vector,
+    DROP COLUMN abstract_tiptap_json,
+    DROP COLUMN abstract_sha256,
+    DROP COLUMN abstract_revision,
+    DROP COLUMN abstract_markdown;
+
+ALTER TABLE article_commits
+    DROP COLUMN paper_info_sha256,
+    DROP COLUMN paper_info_revision,
+    DROP COLUMN paper_info,
+    DROP COLUMN abstract_yjs_update,
+    DROP COLUMN abstract_state_vector,
+    DROP COLUMN abstract_tiptap_json,
+    DROP COLUMN abstract_sha256,
+    DROP COLUMN abstract_revision,
+    DROP COLUMN abstract_markdown;
+
+ALTER TABLE article_drafts
+    DROP COLUMN paper_info_revision,
+    DROP COLUMN paper_info,
+    DROP COLUMN abstract_revision,
+    DROP COLUMN abstract_state_vector,
+    DROP COLUMN abstract_yjs_update,
+    DROP COLUMN abstract_tiptap_json,
+    DROP COLUMN abstract_markdown;

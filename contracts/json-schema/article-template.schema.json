@@ -16,7 +16,7 @@
     "bibliography_tool"
   ],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "enum": ["1.0", "1.1"] },
     "name": { "type": "string", "minLength": 1, "maxLength": 120 },
     "version": {
       "type": "string",
@@ -35,7 +35,16 @@
       "maxLength": 255
     },
     "engine": { "enum": ["auto", "pdflatex", "xelatex", "lualatex"] },
-    "bibliography_tool": { "enum": ["auto", "bibtex", "biber", "none"] }
+    "bibliography_tool": { "enum": ["auto", "bibtex", "biber", "none"] },
+    "abstract_target": { "$ref": "#/$defs/relativeTexPath" },
+    "body_layout": { "enum": ["single", "sections"] },
+    "field_profile": { "enum": ["default", "cumcm"] },
+    "figure_dir": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9._/-]+$",
+      "maxLength": 120
+    },
+    "bibliography_mode": { "enum": ["inline", "native"] }
   },
   "$defs": {
     "relativeTexPath": {

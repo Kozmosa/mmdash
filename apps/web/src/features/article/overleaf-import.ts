@@ -8,11 +8,21 @@ const MAX_FILES = 5_000;
 const FORBIDDEN =
   /(^|\/)(?:makefile|latexmkrc|\.latexmkrc)$|\.(?:bat|cmd|com|dll|exe|jar|js|pl|ps1|py|rb|sh)$/i;
 
+export type OverleafTemplateProfile = {
+  engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
+  bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+};
+
 export type OverleafInspection = {
   candidates: string[];
   fileCount: number;
   expandedBytes: number;
+  profiles: Record<string, OverleafTemplateProfile>;
 };
+
+const PACKAGE = /\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\{([^}]*)\}/g;
+const LUALATEX_PACKAGES = /luatexja|luacode|luaotfload|luamplib|\bluatex\b/;
+const XELATEX_PACKAGES = /\bctex|xeCJK|fontspec|polyglossia|unicode-math\b/;
 
 export async function inspectOverleafZip(
   file: File,
@@ -41,10 +51,17 @@ export function inspectOverleafBytes(
     );
   if (!candidates.length)
     throw new Error("ZIP 中没有包含 \\begin{document} 的 TeX 主文件");
+  const styleText = readStyleText(entries);
+  const profiles: Record<string, OverleafTemplateProfile> = {};
+  for (const candidate of candidates)
+    profiles[candidate] = inferTemplateProfile(
+      `${decode(entries[candidate]!)}\n${styleText}`,
+    );
   return {
     candidates,
     fileCount: Object.keys(entries).length,
     expandedBytes: totalBytes(entries),
+    profiles,
   };
 }
 
@@ -174,6 +191,53 @@ function safePath(name: string) {
     !name.split("/").includes("..")
   );
 }
+function readStyleText(entries: Record<string, Uint8Array>): string {
+  let text = "";
+  for (const [name, value] of Object.entries(entries)) {
+    if (!/\.(?:cls|sty)$/i.test(name)) continue;
+    try {
+      text += `\n${strFromU8(value)}`;
+    } catch {
+      // Non-UTF-8 style files carry no scannable inference hints.
+    }
+  }
+  return text;
+}
+
+function inferTemplateProfile(text: string): OverleafTemplateProfile {
+  const source = text
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*%/.test(line))
+    .join("\n");
+  let engine: OverleafTemplateProfile["engine"] = "pdflatex";
+  if (/\\directlua\b/.test(source) || packagesIn(source, LUALATEX_PACKAGES))
+    engine = "lualatex";
+  else if (
+    /\\documentclass(?:\[[^\]]*\])?\{ctex/.test(source) ||
+    /\\setCJKmainfont\b/.test(source) ||
+    packagesIn(source, XELATEX_PACKAGES)
+  )
+    engine = "xelatex";
+  let bibliography_tool: OverleafTemplateProfile["bibliography_tool"] = "none";
+  if (packagesIn(source, /\bbiblatex\b/))
+    bibliography_tool = /backend\s*=\s*bibtex\b/i.test(source)
+      ? "bibtex"
+      : "biber";
+  else if (
+    /\\bibliographystyle\s*\{[^}]+\}/.test(source) ||
+    /\\bibliography\s*\{[^}]+\}/.test(source)
+  )
+    bibliography_tool = "bibtex";
+  return { engine, bibliography_tool };
+}
+
+function packagesIn(source: string, pattern: RegExp): boolean {
+  for (const match of source.matchAll(PACKAGE)) {
+    if (pattern.test(match[1] ?? "")) return true;
+  }
+  return false;
+}
+
 function totalBytes(entries: Record<string, Uint8Array>) {
   return Object.values(entries).reduce(
     (total, value) => total + value.byteLength,

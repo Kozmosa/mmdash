@@ -420,3 +420,21 @@ func TestReconcileBlockTagsPreservesReviewAndMarksEditedBlocksAsRevisions(t *tes
 		t.Fatalf("edited reviewed block was not reclassified: %#v", result[1])
 	}
 }
+
+func TestNormalizeDocumentPassesLatexBlockThroughUnescaped(t *testing.T) {
+	latex := "\\begin{assumption}\n本文假设……\n\\label{asu:1}\n\\end{assumption}"
+	document := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{"type": "heading", "attrs": map[string]interface{}{"level": float64(1), "id": "h1"}, "content": []interface{}{map[string]interface{}{"type": "text", "text": "模型假设"}}},
+		map[string]interface{}{"type": "latexBlock", "attrs": map[string]interface{}{"id": "tex1"}, "content": []interface{}{map[string]interface{}{"type": "text", "text": latex}}},
+	}}
+	markdown, _, err := NormalizeDocument(document, nil, "human", map[string]interface{}{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(markdown, "# 模型假设") || !strings.Contains(markdown, latex) {
+		t.Fatalf("latexBlock was not passed through verbatim:\n%s", markdown)
+	}
+	if strings.Contains(markdown, `\\begin`) || strings.Contains(markdown, `\textbackslash`) {
+		t.Fatalf("latexBlock text was escaped:\n%s", markdown)
+	}
+}

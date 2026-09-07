@@ -1,3 +1,294 @@
+# mmdash v0.1 Article CUMCM built-in template (parallel to the default template)
+
+- Updated: 2026-09-07
+- Branch: `main` (uncommitted working tree on top of the abstract/paper-info
+  changes described in the next entry below)
+- Scope: user-provided `cumcm模板.zip` (latexstudio `cumcmthesis.cls` plus its
+  `main.tex` and nine `texfile/*.tex` scaffolds). The user explicitly asked
+  for a parallel, isolated adaptation for immediate use instead of
+  generalizing the template module; the default template path stays
+  untouched and generalization is deferred.
+- Delivery: a second built-in template registered beside the default one
+  through the existing template pipeline (Artifact archive → template
+  registration → `template_test` build). No new routes, tables, or
+  migrations; the Worker and Web changes made for the editing experience and
+  the convergence goals are documented in their own sections below.
+  - New `backend/internal/article/cumcm_template.go` plus
+    `templates/cumcm/cumcmthesis.cls`: the class ships byte-for-byte via
+    `go:embed`; `cumcmTemplateArchive()` builds a deterministic ZIP
+    (`main.tex`, `cumcmthesis.cls`, `mmdash-template.json`);
+    `ensureCumcmTemplate()` mirrors `ensureDefaultTemplate` as a deliberate
+    code copy so the two built-ins stay independent until the module is
+    generalized. New `cumcm_template_test.go` covers determinism, manifest
+    agreement, main.tex slot wiring, byte-identical cls embedding, and
+    idempotent coexistence with the default template.
+  - `main.tex` is rewritten for mmdash slots while following the user's
+    `main.tex`: `\documentclass[withoutpreface,bwprint]{cumcmthesis}`,
+    `\input{.mmdash/metadata}` before `\begin{document}`, `\maketitle`, an
+    `\ifmmdashabstract`-guarded `abstract` environment containing
+    `.mmdash/abstract-block` + `.mmdash/keywords-block`, `generated-content`,
+    and native bibliography wiring (`\bibliographystyle{gbt7714-numerical}` +
+    `\bibliography{references}`; the shipped `.bst` renders GB/T 7714). The
+    original `texfile/` scaffolds are intentionally not shipped; abstract/
+    body/keywords come from the Article tabs and paper-info dialog.
+  - Shims: `\renewcommand*{\@title}{}` keeps `\maketitle` legal when the
+    title field is disabled (validation builds select no paper-info fields).
+    The former `\nianyue` shim is gone: the Worker now probes the template
+    for each CUMCM field command and skips fields the template cannot render.
+  - Manifest 1.1: name `CUMCM 国赛论文模板（cumcmthesis）`, version 1.1.0,
+    engine `xelatex`, `bibliography_tool: bibtex`, `bibliography_mode:
+    native`, `field_profile: cumcm`, `body_layout: single`, `abstract_target
+    .mmdash/abstract-block.tex`; idempotency key
+    `article-cumcm-template:1.1.0` (bumped with the native/GB-T-7714 switch;
+    older 1.0.0 copies collapse out of the aggregate by the shared
+    Name+Version rule). `gbt7714-numerical.bst` v2.1.5 (LPPL 1.3c) ships in
+    the ZIP because the pinned Worker image has no gbt7714 package and the
+    bibliography style belongs to the template.
+  - Only existing-file change: `service.go` Aggregate bootstrap calls
+    `ensureCumcmTemplate` after `ensureDefaultTemplate` with its own warning
+    key `templates.cumcm_bootstrap`; a CUMCM bootstrap failure appends a
+    warning and never breaks the aggregate or the default template.
+- CUMCM-specific editing experience (second user request: chapter navigation
+  like the texfile scaffolds, Markdown editing, and the cls environments
+  such as assumption/problem; also a preset skeleton derived from the
+  texfiles). Everything is gated on the project having the CUMCM template
+  registered; other projects see no change.
+  - New raw TeX passthrough: `LatexBlock` Tiptap node (`article-nodes.ts`,
+    content-carrying `pre[data-latex-block]`, added to UniqueID types) and a
+    `latexBlock` case in the Core Markdown projection (`document.go`)
+    emitting its text content unescaped so Pandoc's `raw_tex` reader passes
+    `\begin{assumption}`-style environments to cumcmthesis.cls verbatim.
+    Plain editor text stays escaped (`\` → `\\`), so raw environments can
+    only enter through this node.
+  - New `article-cumcm.ts`: chapter skeleton mirroring the texfile scaffold
+    (问题重述 with problem environments, 问题分析, 模型假设/符号说明 with an
+    assumption example and a booktabs tabular, 模型建立与求解, 结果分析与
+    检验 + 模型的评价与推广, AI 使用说明, 附录; 参考文献 intentionally absent
+    because Zotero citations generate it), the twelve cls `\newtheorem`
+    environments with labels (asu/pro/thm/lem/cor/def/sol/prf/exa/con/axi/pri),
+    and Tiptap-JSON node builders.
+  - New `article-cumcm-panel.tsx` sidebar tab 国赛 (workbench tab added only
+    when a `ready` template has `field_profile: cumcm`): per-chapter status
+    against the live outline with 插入/定位, one-click 插入全部章节, and
+    environment buttons. Insertion flows through a window event consumed by
+    the article editor; the existing left 目录 doubles as the chapter
+    selector once the skeleton is inserted. The panel also registers the
+    environments as "/" slash items via a new per-feature registration
+    (`setSlashFeatureItems`/`clearSlashFeatureItems` in `slash-command.ts`),
+    so typing "/" filters e.g. CUMCM 模型假设 in CUMCM projects only.
+  - Test fake `ArchiveArticleTemplate` in `service_test.go` now derives
+    stable Artifact IDs from the idempotency key (the default template keeps
+    its historical `artifact-default`/`version-default`), so the two
+    built-ins register independently in tests.
+- Pre-existing support confirmed, not modified: Worker
+  `CUMCM_FIELD_COMMANDS` maps problem_number→`\tihao`, team_number→
+  `\baominghao`, captain→`\membera`, member2/member3→`\memberb`/`\memberc`,
+  supervisor→`\supervisor`, school→`\schoolname`, submit_date→`\nianyue`
+  (enabled fields only); Web types and the 论文信息 dialog already expose the
+  CUMCM fields; `article-template.schema.json` already accepts
+  `field_profile: cumcm`.
+- Convergence toward the user's "template owns its styles, the system only
+  fills slots" principle (approved plan, 2026-09-07):
+  - Native bibliography (Goal 1): inline citeproc rendered Chicago-style
+    references; the template now declares `bibliography_mode: native` +
+    `bibliography_tool: bibtex` and carries the `\bibliographystyle/
+    \bibliography` wiring itself, so Pandoc keeps `[@key]` as `\cite{key}`
+    (abstract and body alike) and the shipped GB/T 7714 numerical style
+    renders the reference list.
+  - Field probing (Goal 2, `handler.py`): `_defined_template_commands`
+    scans the template's .cls/.sty/.tex for command definitions
+    (`\newcommand/\renewcommand/\providecommand` with or without braces,
+    `\def`, `\let`) and the cumcm metadata branch emits a field only when
+    the template defines its target command, so `submit_date` is dropped
+    against cumcmthesis.cls instead of crashing the build. The default
+    profile is unaffected (no probing).
+  - Keywords (Goal 3): when the template defines `\keywords`, the cumcm
+    keywords block emits the official command (黑体 `关键字：` inside the
+    abstract); otherwise the generic bold `关键词：` line remains.
+- Known design gaps (deliberate, user to decide later):
+  - `withoutpreface` follows the user's own `main.tex`: no 承诺书/编号
+    cover, so tihao/baominghao/member fields are stored but not rendered
+    anywhere in the PDF; a withpreface variant can be added later on the
+    same parallel path (explicitly out of scope for this goal).
+- Verification status: `go test ./internal/article/ -count=1` passes with the
+  full pixi toolchain found under
+  `.testenv/cache/pixi/pkgs/go-1.26.5-*/` (the launcher is `<pkg>/bin/go.exe`
+  with `GOROOT=<pkg>/go`; the installed `.testenv/.pixi` go.exe is a trimmed
+  distribution). Passing tests: `cumcm_template_test.go` (determinism,
+  manifest native/bibtex agreement, bst embedding, native wiring, no-nianyue,
+  byte-identical cls, idempotent coexistence), `TestNormalizeDocument...`
+  latexBlock passthrough, and the worker suite 69/69 including the updated
+  `test_article_manifest11.py` (stub-class probing semantics: defined
+  commands emitted, `\nianyue`/submit_date skipped, `\keywords` used when
+  the class defines it, generic fallback otherwise; the probe was also run
+  against the real `cumcmthesis.cls`: tihao/baominghao/schoolname/membera/
+  supervisor/keywords detected, nianyue absent). Web: `article-cumcm.test.ts`
+  (6 vitest cases) passes; `tsc --noEmit` reports no errors in changed files
+  (the 7 pre-existing `test/*.test.tsx` errors remain untouched); eslint and
+  prettier clean on changed files.
+- Real compile validation (local TeX Live 2025, `latexmk -xelatex`, exact
+  template ZIP contents plus worker-style slots): ① non-empty bib with two
+  entries → bibtex renders a GB/T 7714 list (`刘海洋. LaTeX 入门[M]. 北京:
+  电子工业出版社, 2013.` with [M]/[Z] type markers), abstract + body
+  `\cite` resolve, exit 0; ② empty `references.bib` → build still succeeds;
+  ③ registration-test equivalent (`\cite{mmdash-template-test}` + the
+  Core-injected `@misc` entry) → resolved and compiled. The former
+  `-bibtex-` case (bibliography_tool none) is no longer this template's
+  mode.
+- Remaining: `pnpm check` full gate and the Docker acceptance path on this
+  host remain outstanding (Docker daemon not running here); one compile
+  inside the pinned Worker image (TeX Live 2022/Debian) is still required to
+  confirm the class's package set and the shipped gbt7714 `.bst` on the
+  exact frozen toolchain; update `docs/article/template-spec.md`; the only
+  remaining design decision is the withpreface 承诺书 variant (explicitly
+  deferred).
+
+# mmdash v0.1 Article abstract, paper info, and template manifest 1.1
+
+- Updated: 2026-09-06
+- Branch: `main` (uncommitted working tree on top of `8d2dfaa`)
+- Scope: implement
+  `docs/article/abstract-template-bibliography-plan.md` — the abstract becomes
+  an independent collaborative Markdown document, a structured 论文信息
+  document (generic + CUMCM fields) drives generated TeX metadata, and the
+  template manifest gains backward-compatible 1.1 extensions
+  (`abstract_target`, `body_layout`, `field_profile`, `figure_dir`,
+  `bibliography_mode`).
+- Contracts: `article-template.schema.json` accepts schema_version 1.0/1.1
+  (all new fields optional; 1.0 stays valid). Core OpenAPI adds
+  `article.abstract.flush` (POST via BFF, PUT to Core),
+  `article.paper-info.get`, `article.paper-info.update`, extends
+  `ArticleDraft` with abstract/paper-info fields, and generated clients were
+  regenerated (`pnpm contracts:generate`); API catalog now covers 544
+  operations.
+- Migration `000055_article_abstract_paper_info`: article_drafts gains
+  abstract_markdown/abstract_tiptap_json/abstract_yjs_update/
+  abstract_state_vector/abstract_revision and paper_info/paper_info_revision;
+  article_commits and article_commit_operations gain the frozen equivalents
+  plus sha256 columns.
+- Core: `FlushAbstract` derives the Markdown projection from Tiptap JSON with
+  a dedicated CAS revision; `UpdatePaperInfo` normalizes a closed field set
+  (title/author/date/abstract/keywords + CUMCM
+  problem_number/team_number/school/captain/member2/member3/supervisor/
+  submit_date; unknown fields rejected, disabled fields kept but unrendered).
+  `prepareCommitSnapshot` freezes abstract, paper info, and heading identity
+  (H1/H2 block IDs) into `.mmdash/article.json`; commits write four files
+  (manuscript.md, abstract.md, references.bib, .mmdash/article.json) through
+  both the legacy Commit path and the durable CommitOperation coordinator;
+  WorkerInput carries Abstract/PaperInfo/Headings for formal and preview
+  builds.
+- Worker: emits `.mmdash/metadata.tex` (`\newif\ifmmdashabstract` +
+  `\title`/`\author`/`\date` for enabled generic fields, `\baominghao`/
+  `\membera`/`\memberb`/`\memberc`/`\supervisor`/`\tihao`/`\schoolname`/
+  `\nianyue` only for `field_profile: cumcm`), `.mmdash/title-block.tex`
+  (`\maketitle` only when title/author/date selected), `.mmdash/
+  keywords-block.tex`, `.mmdash/abstract-block.tex` (Pandoc-rendered abstract
+  content, empty when disabled), and `.mmdash/bibliography-block.tex`
+  (empty for inline mode; native mode trusts template wiring and falls back to
+  `\bibliographystyle{gbt7714-numerical}` + `\bibliography` only when the
+  entrypoint has no wiring). `body_layout: sections` splits the Markdown at
+  frozen H1/H2 headings into `sections/<block_id>.tex` files referenced by
+  `content_target` and only runs for native-bibliography templates (citeproc
+  must render one list per document, so sections+inline degrades to single).
+  `figure_dir` replaces the hardcoded `figures/` prefix.
+- Default template upgraded to manifest 1.1.0 (idempotency key
+  `article-default-template:1.1.0`): main.tex inputs metadata/title/abstract/
+  keywords/bibliography blocks; the abstract environment is wrapped in
+  `\ifmmdashabstract` so a disabled abstract produces no empty heading.
+  Projects with the old 1.0.2 default keep it as a regular template.
+- Web: new 摘要 tab (dedicated Tiptap/Collaboration editor, no block review),
+  已启用/未启用 badge, and a 论文信息 dialog (generic + CUMCM field
+  checkboxes and values). The BFF runs a second collaboration room
+  `article-abstract:<projectId>` with its own CAS revision and the flush
+  barrier now freezes both rooms before commit/publication operations.
+- Known limitations: abstract citations in `inline` mode render as plain
+  `\cite` (citeproc runs on the body only); preview builds fall back to
+  single-file layout when headings are absent; CUMCM command coverage against
+  the real `cumcmthesis.cls` needs the user-provided regression templates;
+  Docker smoke (`pnpm smoke:article-worker`) and `caddy:check` remain blocked
+  on this Windows host.
+- Verification: `go build ./...`, `go test ./internal/article/` (includes new
+  FlushAbstract/UpdatePaperInfo/headingInfos/formal-input tests),
+  `go test ./internal/contract/`; worker pytest 67/67 (new
+  `test_article_manifest11.py` covering 1.1 validation, CUMCM mapping,
+  bibliography modes, section splitting, LaTeX escaping); web vitest 14/14
+  and BFF vitest 76/76 (dual-room flush barrier); eslint whole repo,
+  prettier, gofmt, ruff, contract checks, 544-operation API catalog; full TS
+  build (`next build` included), Go build, and `uv build --package
+  mmdash-worker` all pass.
+
+# mmdash v0.1 Article template import auto-detection (template fix 2 of 3)
+
+- Updated: 2026-09-06
+- Branch: `main`; delivery commit `d4322db`, merged with upstream `db52e7e`
+  (commit-operations, block-review, and Artifact-folder work) with no code
+  conflicts; post-merge verification below.
+- Scope: the second of three planned Article template fixes ("毛病二"): the
+  Overleaf import wizard no longer requires the user to know the TeX engine
+  and bibliography tool. The wizard now infers both from the template
+  content, pre-fills editable selects, and the registration test build
+  actually exercises the bibliography chain so a wrong combination fails at
+  registration instead of at the user's first real build.
+- Web inference (`apps/web/src/features/article/overleaf-import.ts`):
+  `inspectOverleafBytes` now returns per-entrypoint `profiles`. Engine
+  inference: `luatexja`/`luacode`/`luaotfload`/`luamplib`/`\directlua` →
+  lualatex; `ctex` document class or package, `xeCJK`, `fontspec`,
+  `polyglossia`, `unicode-math`, or `\setCJKmainfont` → xelatex; otherwise
+  pdflatex. Bibliography tool inference: `biblatex` (with `backend=bibtex`
+  checked) → biber/bibtex; `\bibliographystyle`/`\bibliography` → bibtex;
+  otherwise none. The scan covers the entrypoint plus every `.cls`/`.sty`
+  file (matching both `\usepackage` and `\RequirePackage`) and ignores
+  whole-line `%` comments.
+- Web form (`article-workbench.tsx`): the Overleaf wizard pre-fills
+  engine/bibliography_tool after ZIP inspection and re-infers when the
+  entrypoint changes; the two selects are now rendered in BOTH the Overleaf
+  wizard and the standard registration form (previously these manifest
+  fields had no input at all and were always the hidden `auto` default);
+  a hint explains that a mismatched combination fails the registration test
+  build.
+- Core (`backend/internal/article/service.go`): the `template_test` build
+  input now embeds one citation `[@mmdash-template-test]` plus a dummy
+  `@misc` BibTeX entry whenever the registered `bibliography_tool` is not
+  `none`. This exercises the citation chain (currently the pandoc citeproc
+  path) during template validation.
+- Tests: 7 new vitest cases in `overleaf-import.test.ts` (ctex+biblatex →
+  xelatex/biber, luatexja → lualatex, `\bibliographystyle` → pdflatex/bibtex,
+  `backend=bibtex` → bibtex, no wiring → none, commented packages ignored,
+  `.cls` scanning); new Go test
+  `TestTemplateTestWorkerInputExercisesBibliographyChain` (auto/bibtex/biber
+  include the citation, `none` stays citation-free).
+- Verification: targeted vitest (26 article tests pass), `go test
+  ./internal/article/`, eslint (whole repo), prettier, gofmt/vet,
+  `check-contracts` (2 OpenAPI docs), API catalog (535 operations), ruff,
+  and the full build phase (`pnpm -r --if-present build` including
+  `next build`, plus `go build` and `uv build --package mmdash-worker`) all
+  pass. Full `pnpm test` was run through the Pixi toolchain: the TS phase
+  passed and the Go phase passed except one flaky
+  `TestManagedRuntimeInitializesAndCommitsAllWorkspaces` failure under
+  parallel Windows load that passes standalone and on package rerun
+  (unrelated to this change); Python 59/59 passed.
+- Environment notes: `caddy:check` requires a Docker daemon and is blocked
+  on this Windows workstation (documented limitation; Caddyfile untouched).
+  `tsc -p tsconfig.json` in apps/web reports 7 pre-existing type errors in
+  `apps/web/test/*.test.tsx` (untouched by this change) that do not affect
+  the build gate. The real-container `pnpm smoke:article-worker` acceptance
+  for the new template-test citation input remains pending on the Linux
+  server, consistent with the existing handoff practice.
+- Remaining template fixes: "毛病一" (native bibliography wiring — rewrite
+  `\bibliography`/`\addbibresource`/`\printbibliography` to the generated
+  `.mmdash/references.bib` at import, add `bibliography_mode` to the
+  manifest schema, and let the Worker emit `\cite` commands instead of
+  citeproc rendering) and "毛病三" (article title/author metadata injection
+  into `\title`/`\author`). The template-test citation introduced here
+  becomes a native bibtex/biber chain test once 毛病一 lands.
+- Post-merge verification (after combining with upstream `db52e7e`): the
+  auto-merged `article-workbench.tsx`, `service.go`, and `service_test.go`
+  keep every change above intact; `go build ./backend/...`, `go test
+  ./internal/article/`, 29 article-related vitest tests (including the 9
+  overleaf-import cases), gofmt, and prettier all pass. Upstream grew the
+  API catalog to 541 operations; the 535 count in this entry is the
+  pre-merge state at delivery time.
+
 # mmdash v0.1 Progress evaluation unattended-run resilience
 
 - Updated: 2026-09-07

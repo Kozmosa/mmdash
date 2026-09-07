@@ -38,6 +38,9 @@ describe("Article browser routes", () => {
         revision = 5;
         return Response.json(draft(revision));
       }
+      if (url.endsWith("/article/abstract/flush") && init?.method === "PUT") {
+        return Response.json(draft(revision));
+      }
       if (
         url.endsWith("/article/commit-operations") &&
         init?.method === "POST"
@@ -77,6 +80,8 @@ describe("Article browser routes", () => {
       `http://core.test/v1/projects/${projectId}/article/draft`,
       `http://core.test/v1/projects/${projectId}/article/draft/flush`,
       `http://core.test/v1/projects/${projectId}/article/draft`,
+      `http://core.test/v1/projects/${projectId}/article/abstract/flush`,
+      `http://core.test/v1/projects/${projectId}/article/draft`,
       `http://core.test/v1/projects/${projectId}/article/commit-operations`,
     ]);
   });
@@ -101,6 +106,8 @@ describe("Article browser routes", () => {
         revision = 3;
         return Response.json(draft(revision));
       }
+      if (url.endsWith("/article/abstract/flush") && init?.method === "PUT")
+        return Response.json(draft(revision));
       if (
         url.endsWith("/article/publication-operations") &&
         init?.method === "POST"
@@ -165,6 +172,8 @@ describe("Article browser routes", () => {
       }
       if (url.endsWith("/article/draft")) return Response.json(draft(1));
       if (url.endsWith("/article/draft/flush")) return Response.json(draft(2));
+      if (url.endsWith("/article/abstract/flush"))
+        return Response.json(draft(2));
       if (url.endsWith("/article/commits"))
         return Response.json(
           {
@@ -325,11 +334,14 @@ describe("Article collaboration", () => {
     let persisted: { tiptap_json?: Record<string, unknown> } | undefined;
     const coreClient = {
       async request(
-        _path: string,
+        path: string,
         options: { body?: unknown; method?: string },
       ) {
         if (options.method === "GET") {
           return { ...draft(4), tiptap_json: legacy };
+        }
+        if (String(path).endsWith("/article/abstract/flush")) {
+          return draft(5);
         }
         persisted = options.body as { tiptap_json: Record<string, unknown> };
         return {
@@ -469,7 +481,9 @@ describe("Article collaboration", () => {
         (request) =>
           (request.body as { expected_revision: number }).expected_revision,
       );
-    expect(expectedRevisions).toEqual([1, 3]);
+    // The body room retries its CAS conflict (1 -> 3); the abstract room then
+    // persists its own untouched revision (0) through the same barrier.
+    expect(expectedRevisions).toEqual([1, 3, 0]);
   });
 
   it("caps each project at 32 live browser connections", async () => {
@@ -527,6 +541,10 @@ function draft(revision: number) {
     state_vector: "",
     tiptap_json: { content: [], type: "doc" },
     yjs_update: "",
+    abstract_revision: 0,
+    abstract_state_vector: "",
+    abstract_tiptap_json: { content: [], type: "doc" },
+    abstract_yjs_update: "",
   };
 }
 

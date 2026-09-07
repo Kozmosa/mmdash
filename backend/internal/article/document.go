@@ -271,6 +271,12 @@ func renderBlock(node map[string]interface{}) (string, error) {
 		return "  \n", nil
 	case "mathBlock", "blockMath":
 		return "$$\n" + stringAttr(attrs, "latex") + "\n$$", nil
+	case "latexBlock":
+		// Raw TeX passthrough for template-specific environments such as the
+		// CUMCM assumption/problem/theorem blocks. The text content is emitted
+		// unescaped so Pandoc's raw_tex reader treats it as LaTeX; templates
+		// that do not define the environment fail their own build loudly.
+		return strings.TrimRight(plainText(node), "\n"), nil
 	case "image":
 		return "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")", nil
 	case "articleImage":

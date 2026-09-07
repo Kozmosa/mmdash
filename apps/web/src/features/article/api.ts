@@ -8,6 +8,7 @@ import type {
   ArticleChapterTag,
   ArticleCommitOperation,
   ArticleDraft,
+  ArticlePaperInfo,
   ArticleReference,
   ArticleRelease,
   ArticleTemplate,
@@ -28,6 +29,22 @@ export const articleApi = {
     await flushArticleCollaboration(projectId);
     return apiClient.request<ArticleDraft>(`${base(projectId)}/draft/flush`, {
       method: "POST",
+    });
+  },
+  async flushAbstract(projectId: string) {
+    await flushArticleCollaboration(projectId);
+    return apiClient.request<ArticleDraft>(
+      `${base(projectId)}/abstract/flush`,
+      { method: "POST" },
+    );
+  },
+  paperInfo(projectId: string) {
+    return apiClient.request<ArticlePaperInfo>(`${base(projectId)}/paper-info`);
+  },
+  updatePaperInfo(projectId: string, paperInfo: ArticlePaperInfo) {
+    return apiClient.request<ArticleDraft>(`${base(projectId)}/paper-info`, {
+      body: paperInfo,
+      method: "PUT",
     });
   },
   createCommit(projectId: string, draftRevision: number, message: string) {

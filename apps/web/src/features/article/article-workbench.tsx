@@ -68,7 +68,12 @@ import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-client";
 
 import { articleApi } from "./api";
-import { registerArticleCollaborationProvider } from "./article-collaboration-sync";
+import {
+  registerArticleAbstractCollaborationProvider,
+  registerArticleCollaborationProvider,
+} from "./article-collaboration-sync";
+import { abstractEnabled, PaperInfoDialog } from "./article-paper-info-dialog";
+import { ArticleAbstractEditor } from "./article-abstract-editor";
 import { ArticleAggregateWarnings } from "./article-aggregate-warnings";
 import { ArticleReferencePanel } from "./article-reference-panel";
 import { visibleArticleOutline } from "./article-outline";
@@ -82,6 +87,7 @@ import {
   clampArticleSidebarRatio,
 } from "./article-layout";
 import { ArticleOutlineResizeHandle } from "./article-outline-resize-handle";
+import { ArticleCumcmPanel } from "./article-cumcm-panel";
 import { ArticleSidebarResizeHandle } from "./article-sidebar-resize-handle";
 import {
   copiedTemplateManifest,
@@ -97,7 +103,11 @@ import {
   type ArticleOutlineItem,
   type ArticleZoteroDrop,
 } from "./article-editor";
-import { convertOverleafZip, inspectOverleafZip } from "./overleaf-import";
+import {
+  convertOverleafZip,
+  inspectOverleafZip,
+  type OverleafTemplateProfile,
+} from "./overleaf-import";
 import {
   forwardSyncPoint,
   parseSyncTex,
@@ -117,11 +127,14 @@ import type {
   ZoteroItem,
 } from "./types";
 import {
+  clearSlashFeatureItems,
   openArticleSidebarEvent,
   openArtifactLibraryEvent,
+  setSlashFeatureItems,
 } from "./slash-command";
+import { cumcmSlashFeatureItems } from "./article-cumcm";
 
-type WorkspaceTab = "write" | "history" | "templates";
+type WorkspaceTab = "write" | "abstract" | "history" | "templates";
 type ConnectionState =
   WebSocketStatus | "offline" | "syncing" | "synced" | "failed";
 type PresenceUser = { clientId: number; color: string; name: string };
@@ -144,6 +157,9 @@ export function ArticleWorkbench() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<WorkspaceTab>("write");
   const [provider, setProvider] = useState<HocuspocusProvider>();
+  const [abstractProvider, setAbstractProvider] =
+    useState<HocuspocusProvider>();
+  const [paperInfoOpen, setPaperInfoOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>(
     WebSocketStatus.Connecting,
   );
@@ -238,6 +254,16 @@ export function ArticleWorkbench() {
     });
     const unregisterCollaborationProvider =
       registerArticleCollaborationProvider(project.id, next);
+    const abstractDocument = new Y.Doc();
+    const abstractNext = new HocuspocusProvider({
+      document: abstractDocument,
+      flushDelay: 250,
+      name: `article-abstract:${project.id}`,
+      token: "browser-session",
+      url: `${protocol}//${window.location.host}/api/projects/${encodeURIComponent(project.id)}/article/collaboration`,
+    });
+    const unregisterAbstractProvider =
+      registerArticleAbstractCollaborationProvider(project.id, abstractNext);
     const offline = () => setConnection("offline");
     const online = () => {
       setConnection(WebSocketStatus.Connecting);
@@ -246,13 +272,18 @@ export function ArticleWorkbench() {
     window.addEventListener("offline", offline);
     window.addEventListener("online", online);
     setProvider(next);
+    setAbstractProvider(abstractNext);
     return () => {
       unregisterCollaborationProvider();
+      unregisterAbstractProvider();
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);
       next.destroy();
       document.destroy();
+      abstractNext.destroy();
+      abstractDocument.destroy();
       setProvider(undefined);
+      setAbstractProvider(undefined);
     };
   }, [project.id, queryClient]);
 
@@ -305,6 +336,13 @@ export function ArticleWorkbench() {
           </p>
         </div>
         <SyncBadge connection={connection} pending={unsyncedChanges} />
+        <Button
+          onClick={() => setPaperInfoOpen(true)}
+          size="sm"
+          variant="outline"
+        >
+          论文信息
+        </Button>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <Users className="size-4" />
           {presence.length || 1} 人在线
@@ -317,7 +355,8 @@ export function ArticleWorkbench() {
       >
         {(
           [
-            ["write", "写作"],
+            ["write", "正文"],
+            ["abstract", "摘要"],
             ["history", "版本历史"],
             ["templates", "模板"],
           ] as const
@@ -357,6 +396,32 @@ export function ArticleWorkbench() {
           onOpenTemplates={() => setTab("templates")}
           provider={provider}
           synced={synced}
+        />
+      ) : null}
+      {tab === "abstract" && abstractProvider ? (
+        <section className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex shrink-0 items-center gap-2">
+            <Badge>
+              {abstractEnabled(data.draft.paper_info) ? "已启用" : "未启用"}
+            </Badge>
+            <p className="text-xs text-muted-foreground">
+              摘要是独立文档，构建时经模板摘要插槽输出；关闭输出不影响内容保存。
+            </p>
+          </div>
+          <ArticleAbstractEditor
+            canEdit={canEdit}
+            projectId={project.id}
+            provider={abstractProvider}
+          />
+        </section>
+      ) : null}
+      {paperInfoOpen ? (
+        <PaperInfoDialog
+          canEdit={canEdit}
+          info={data.draft.paper_info}
+          onClose={() => setPaperInfoOpen(false)}
+          projectId={project.id}
+          showCumcm
         />
       ) : null}
       {tab === "history" ? (
@@ -406,11 +471,26 @@ export function WritingWorkspace({
 }>) {
   const queryClient = useQueryClient();
   const [panel, setPanel] = useState<
-    "reference" | "artifact" | "zotero" | "pdf"
+    "reference" | "artifact" | "zotero" | "pdf" | "cumcm"
   >("reference");
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarRatio, setSidebarRatio] = useState(articleSidebarDefaultRatio);
   const [outline, setOutline] = useState<ArticleOutlineItem[]>([]);
+  // CUMCM support is parallel to the generic flow: the extra sidebar tab and
+  // its "/" menu items appear only when the project registered the CUMCM
+  // built-in template, and nothing changes for other projects.
+  const hasCumcmTemplate = data.templates.some(
+    (template) =>
+      template.status === "ready" &&
+      template.manifest?.field_profile === "cumcm",
+  );
+  // The "/" environment entries stay available across the whole writing view,
+  // not only while the 国赛 sidebar tab is open.
+  useEffect(() => {
+    if (!hasCumcmTemplate || !canEdit) return;
+    setSlashFeatureItems("cumcm", cumcmSlashFeatureItems());
+    return () => clearSlashFeatureItems("cumcm");
+  }, [canEdit, hasCumcmTemplate]);
   const [activeOutlineId, setActiveOutlineId] = useState("");
   const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(
     () => new Set(),
@@ -617,6 +697,7 @@ export function WritingWorkspace({
                     ["artifact", "Artifact"],
                     ["zotero", "Zotero"],
                     ["pdf", "PDF"],
+                    ...(hasCumcmTemplate ? ([["cumcm", "国赛"]] as const) : []),
                   ] as const
                 ).map(([value, label]) => (
                   <Button
@@ -692,6 +773,9 @@ export function WritingWorkspace({
                     onRefresh={onRefresh}
                     projectId={projectId}
                   />
+                ) : null}
+                {panel === "cumcm" && hasCumcmTemplate ? (
+                  <ArticleCumcmPanel canEdit={canEdit} outline={outline} />
                 ) : null}
               </div>
               <ArticleOutlineResizeHandle
@@ -2632,6 +2716,17 @@ function TemplateWorkspace({
   const [candidates, setCandidates] = useState<string[]>([]);
   const [entrypoint, setEntrypoint] = useState("");
   const [inspection, setInspection] = useState("");
+  const [profiles, setProfiles] = useState<
+    Record<string, OverleafTemplateProfile>
+  >({});
+  const applyProfile = (profile?: OverleafTemplateProfile) => {
+    if (!profile) return;
+    setManifest((current) => ({
+      ...current,
+      engine: profile.engine,
+      bibliography_tool: profile.bibliography_tool,
+    }));
+  };
   const register = useMutation({
     mutationFn: () =>
       articleApi.registerTemplate(
@@ -2699,11 +2794,14 @@ function TemplateWorkspace({
     setCandidates([]);
     setEntrypoint("");
     setInspection("");
+    setProfiles({});
     if (!file) return;
     try {
       const value = await inspectOverleafZip(file);
       setCandidates(value.candidates);
       setEntrypoint(value.candidates[0] ?? "");
+      setProfiles(value.profiles);
+      applyProfile(value.profiles[value.candidates[0] ?? ""]);
       setInspection(
         `${value.fileCount} 个文件 · 解压 ${formatBytes(value.expandedBytes)}`,
       );
@@ -2711,6 +2809,49 @@ function TemplateWorkspace({
       setInspection(error instanceof Error ? error.message : "ZIP 检查失败");
     }
   };
+  const engineFields = (
+    <div className="grid grid-cols-2 gap-2">
+      <label className="space-y-1">
+        <span className="text-xs text-muted-foreground">编译器</span>
+        <select
+          aria-label="编译引擎"
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          onChange={(event) =>
+            setManifest((current) => ({
+              ...current,
+              engine: event.target.value as ArticleTemplateManifest["engine"],
+            }))
+          }
+          value={manifest.engine}
+        >
+          <option value="auto">自动</option>
+          <option value="pdflatex">pdfLaTeX</option>
+          <option value="xelatex">XeLaTeX</option>
+          <option value="lualatex">LuaLaTeX</option>
+        </select>
+      </label>
+      <label className="space-y-1">
+        <span className="text-xs text-muted-foreground">参考文献工具</span>
+        <select
+          aria-label="参考文献工具"
+          className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          onChange={(event) =>
+            setManifest((current) => ({
+              ...current,
+              bibliography_tool: event.target
+                .value as ArticleTemplateManifest["bibliography_tool"],
+            }))
+          }
+          value={manifest.bibliography_tool}
+        >
+          <option value="auto">自动</option>
+          <option value="bibtex">BibTeX</option>
+          <option value="biber">Biber</option>
+          <option value="none">无</option>
+        </select>
+      </label>
+    </div>
+  );
   return (
     <div className="grid gap-5 xl:grid-cols-[25rem_minmax(0,1fr)]">
       <Card>
@@ -2771,6 +2912,7 @@ function TemplateWorkspace({
                   }
                 />
               ))}
+              {engineFields}
               <Button
                 className="w-full"
                 disabled={
@@ -2810,7 +2952,10 @@ function TemplateWorkspace({
                 <select
                   aria-label="TeX 主文件"
                   className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                  onChange={(event) => setEntrypoint(event.target.value)}
+                  onChange={(event) => {
+                    setEntrypoint(event.target.value);
+                    applyProfile(profiles[event.target.value]);
+                  }}
                   value={entrypoint}
                 >
                   {candidates.map((item) => (
@@ -2840,6 +2985,12 @@ function TemplateWorkspace({
                 placeholder="版本"
                 value={manifest.version}
               />
+              {engineFields}
+              {candidates.length ? (
+                <p className="text-xs text-muted-foreground">
+                  编译器与参考文献工具已按模板内容自动识别，可手动修改；不匹配的组合会在注册前的测试构建中报错。
+                </p>
+              ) : null}
               <Button
                 className="w-full"
                 disabled={

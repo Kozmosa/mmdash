@@ -22,7 +22,9 @@ manuscript,references_bib,manifest_bytes,frozen_references,message,
 manuscript_sha256,references_sha256,manifest_sha256,status,stage,
 COALESCE(commit_sha,''),COALESCE(previous_commit_sha,''),COALESCE(error_code,''),
 attempts,max_attempts,next_attempt_at,COALESCE(locked_by,''),lease_expires_at,
-created_by,created_at,updated_at,finished_at FROM article_commit_operations`
+created_by,created_at,updated_at,finished_at,
+abstract_markdown,abstract_revision,abstract_state_vector,abstract_yjs_update,
+abstract_tiptap_json,paper_info,paper_info_revision FROM article_commit_operations`
 
 func (store PostgresStore) CreateCommitOperation(
 	ctx context.Context,
@@ -48,6 +50,14 @@ func (store PostgresStore) CreateCommitOperation(
 	if err != nil {
 		return CommitOperation{}, false, ErrInvalid
 	}
+	abstractTiptap, err := json.Marshal(item.AbstractTiptapJSO)
+	if err != nil {
+		return CommitOperation{}, false, ErrInvalid
+	}
+	paperInfo := item.PaperInfoJSON
+	if paperInfo == nil {
+		paperInfo = []byte(`{"schema_version":"1.0","fields":{}}`)
+	}
 	created := false
 	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		result, err := tx.ExecContext(ctx, `INSERT INTO article_commit_operations(
@@ -57,12 +67,14 @@ func (store PostgresStore) CreateCommitOperation(
 			state_vector,yjs_update,tiptap_json,manuscript,references_bib,
 			manifest_bytes,frozen_references,message,manuscript_sha256,references_sha256,
 			manifest_sha256,status,stage,attempts,max_attempts,next_attempt_at,created_by,
-			created_at,updated_at
+			created_at,updated_at,
+			abstract_markdown,abstract_revision,abstract_state_vector,abstract_yjs_update,
+			abstract_tiptap_json,paper_info,paper_info_revision
 		) VALUES($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,''),
 			NULLIF($8,'')::uuid,NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),
 			NULLIF($12,''),CASE WHEN $4='publication' THEN $13 ELSE NULL END,
 			$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
-			'queued','queued',0,$28,$29,$30,$31,$31)
+			'queued','queued',0,$28,$29,$30,$31,$31,$32,$33,$34,$35,$36,$37,$38)
 		ON CONFLICT(project_id,idempotency_key) DO NOTHING`,
 			item.OperationID, item.CommitID, item.ProjectID, item.OperationKind,
 			item.IdempotencyKey, item.PublicationID, item.PublicationKey,
@@ -72,7 +84,9 @@ func (store PostgresStore) CreateCommitOperation(
 			item.Manuscript, item.ReferencesBIB, item.ManifestBytes, frozen,
 			item.Message, item.ManuscriptSHA256, item.ReferencesSHA256,
 			item.ManifestSHA256, item.MaxAttempts, item.NextAttemptAt.UTC(), item.CreatedBy,
-			item.CreatedAt.UTC())
+			item.CreatedAt.UTC(),
+			item.AbstractMarkdown, item.AbstractRevision, item.AbstractStateVec,
+			item.AbstractYjsUpdate, abstractTiptap, paperInfo, item.PaperInfoRevision)
 		if err != nil {
 			return err
 		}
@@ -207,17 +221,28 @@ func (store PostgresStore) BindCommitOperation(
 ) (Commit, error) {
 	frozen, _ := json.Marshal(item.FrozenReferences)
 	tiptap, _ := json.Marshal(item.TiptapJSON)
+	abstractTiptap, _ := json.Marshal(item.AbstractTiptapJSON)
+	paperInfo := item.PaperInfoJSON
+	if paperInfo == nil {
+		paperInfo = []byte(`{"schema_version":"1.0","fields":{}}`)
+	}
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		result, err := tx.ExecContext(ctx, `INSERT INTO article_commits(
 			commit_id,project_id,draft_revision,state_vector,yjs_update,tiptap_json,
 			git_commit_sha,previous_git_commit_sha,message,manuscript_sha256,
-			references_sha256,manifest_sha256,frozen_references,created_by,created_at
-		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+			references_sha256,manifest_sha256,frozen_references,created_by,created_at,
+			abstract_markdown,abstract_revision,abstract_sha256,abstract_tiptap_json,
+			abstract_state_vector,abstract_yjs_update,paper_info,paper_info_revision,
+			paper_info_sha256
+		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
 		ON CONFLICT(project_id,git_commit_sha) DO NOTHING`, item.CommitID,
 			item.ProjectID, item.DraftRevision, item.StateVector, item.YjsUpdate,
 			tiptap, item.CommitSHA, item.PreviousCommitSHA, item.Message,
 			item.ManuscriptSHA256, item.ReferencesSHA256, item.ManifestSHA256,
-			frozen, item.CreatedBy, item.CreatedAt.UTC())
+			frozen, item.CreatedBy, item.CreatedAt.UTC(),
+			item.AbstractMarkdown, item.AbstractRevision, item.AbstractSHA256,
+			abstractTiptap, item.AbstractStateVector, item.AbstractYjsUpdate,
+			paperInfo, item.PaperInfoRevision, item.PaperInfoSHA256)
 		if err != nil {
 			return err
 		}
@@ -301,7 +326,7 @@ func (store PostgresStore) FailCommitOperation(
 
 func scanCommitOperation(scan func(...interface{}) error) (CommitOperation, error) {
 	var item CommitOperation
-	var tiptap, frozen []byte
+	var tiptap, frozen, abstractTiptap, paperInfo []byte
 	err := scan(&item.OperationID, &item.CommitID, &item.ProjectID,
 		&item.OperationKind, &item.IdempotencyKey, &item.PublicationID,
 		&item.PublicationKey, &item.TemplateID, &item.Engine,
@@ -314,12 +339,16 @@ func scanCommitOperation(scan func(...interface{}) error) (CommitOperation, erro
 		&item.PreviousCommitSHA, &item.ErrorCode, &item.Attempts,
 		&item.MaxAttempts, &item.NextAttemptAt, &item.LockedBy,
 		&item.LeaseExpiresAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
-		&item.FinishedAt)
+		&item.FinishedAt, &item.AbstractMarkdown, &item.AbstractRevision,
+		&item.AbstractStateVec, &item.AbstractYjsUpdate, &abstractTiptap,
+		&paperInfo, &item.PaperInfoRevision)
 	if err != nil {
 		return CommitOperation{}, err
 	}
 	if json.Unmarshal(tiptap, &item.TiptapJSON) != nil ||
-		json.Unmarshal(frozen, &item.FrozenReferences) != nil {
+		json.Unmarshal(frozen, &item.FrozenReferences) != nil ||
+		json.Unmarshal(abstractTiptap, &item.AbstractTiptapJSO) != nil ||
+		json.Unmarshal(paperInfo, &item.PaperInfoJSON) != nil {
 		return CommitOperation{}, ErrInvalid
 	}
 	return item, nil
@@ -478,6 +507,7 @@ func (coordinator CommitOperationCoordinator) process(
 				ActorName: "mmdash Article",
 				Changes: []repo.FileChange{
 					{Path: "manuscript.md", Operation: "put", Content: []byte(operation.Manuscript)},
+					{Path: "abstract.md", Operation: "put", Content: []byte(operation.AbstractMarkdown)},
 					{Path: "references.bib", Operation: "put", Content: []byte(operation.ReferencesBIB)},
 					{Path: ".mmdash/article.json", Operation: "put", Content: operation.ManifestBytes},
 				},
@@ -498,6 +528,15 @@ func (coordinator CommitOperationCoordinator) process(
 				ManifestSHA256:   operation.ManifestSHA256,
 				FrozenReferences: operation.FrozenReferences,
 				CreatedBy:        operation.CreatedBy, CreatedAt: operation.CreatedAt,
+				AbstractMarkdown:    operation.AbstractMarkdown,
+				AbstractRevision:    operation.AbstractRevision,
+				AbstractSHA256:      operation.AbstractSHA256,
+				AbstractTiptapJSON:  operation.AbstractTiptapJSO,
+				AbstractStateVector: operation.AbstractStateVec,
+				AbstractYjsUpdate:   operation.AbstractYjsUpdate,
+				PaperInfoJSON:       operation.PaperInfoJSON,
+				PaperInfoRevision:   operation.PaperInfoRevision,
+				PaperInfoSHA256:     operation.PaperInfoSHA256,
 			}
 		}
 	} else {

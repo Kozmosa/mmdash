@@ -5,34 +5,57 @@ export type ArticleCollaborationSyncProvider = Pick<
   "flushPendingUpdates" | "hasUnsyncedChanges"
 >;
 
+// Both collaborative documents must finish syncing before a commit barrier:
+// the body room and the independent abstract room.
 const providers = new Map<string, ArticleCollaborationSyncProvider>();
 
 const syncTimeoutMs = 5_000;
 const syncPollIntervalMs = 20;
 
+function bodyKey(projectId: string): string {
+  return `article:${projectId}`;
+}
+
+function abstractKey(projectId: string): string {
+  return `article-abstract:${projectId}`;
+}
+
 export function registerArticleCollaborationProvider(
   projectId: string,
   provider: ArticleCollaborationSyncProvider,
 ): () => void {
-  providers.set(projectId, provider);
-
+  providers.set(bodyKey(projectId), provider);
   return () => {
-    if (providers.get(projectId) === provider) {
-      providers.delete(projectId);
-    }
+    if (providers.get(bodyKey(projectId)) === provider)
+      providers.delete(bodyKey(projectId));
+  };
+}
+
+export function registerArticleAbstractCollaborationProvider(
+  projectId: string,
+  provider: ArticleCollaborationSyncProvider,
+): () => void {
+  providers.set(abstractKey(projectId), provider);
+  return () => {
+    if (providers.get(abstractKey(projectId)) === provider)
+      providers.delete(abstractKey(projectId));
   };
 }
 
 export async function flushArticleCollaboration(
   projectId: string,
 ): Promise<void> {
-  const provider = providers.get(projectId);
-  if (!provider) return;
+  const registered = [bodyKey(projectId), abstractKey(projectId)]
+    .map((key) => providers.get(key))
+    .filter((provider): provider is ArticleCollaborationSyncProvider =>
+      Boolean(provider),
+    );
+  if (!registered.length) return;
 
-  provider.flushPendingUpdates();
+  for (const provider of registered) provider.flushPendingUpdates();
 
   const deadline = Date.now() + syncTimeoutMs;
-  while (provider.hasUnsyncedChanges) {
+  while (registered.some((provider) => provider.hasUnsyncedChanges)) {
     if (Date.now() >= deadline) {
       throw new Error("草稿同步超时，请检查网络连接后重试");
     }
