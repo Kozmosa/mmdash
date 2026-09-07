@@ -54,9 +54,11 @@ func New(config Config) (*Adapter, error) {
 		instanceID: strings.TrimSpace(config.InstanceID),
 		profile:    profile,
 		runtime: &apiClient{
-			connector:   runtimeConnector,
-			bearerToken: config.APIKey,
-			profile:     profile,
+			connector:              runtimeConnector,
+			bearerToken:            config.APIKey,
+			profile:                profile,
+			cloudflareClientID:     config.CloudflareClientID,
+			cloudflareClientSecret: config.CloudflareClientSecret,
 		},
 	}
 	if config.Management != nil && strings.TrimSpace(config.Management.URL) != "" && config.Management.DashboardSessionToken != "" {

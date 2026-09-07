@@ -52,13 +52,14 @@ const httpUrlSchema = z
 const displayNameSchema = z.string().trim().min(1).max(120);
 const profileIdPattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const reservedProfileNames = new Set(["hermes", "test", "tmp", "root", "sudo"]);
-const profileSchema = z
+const namedProfileSchema = z
   .string()
   .regex(profileIdPattern, "Invalid Hermes profile")
   .refine(
     (value) => !reservedProfileNames.has(value),
     "Reserved Hermes profile",
   );
+const profileSchema = z.union([z.literal(""), namedProfileSchema]);
 const hermesApiKeySchema = z.string().min(16).max(4_096);
 const dashboardSessionTokenSchema = z.string().min(16).max(4_096);
 const cloudflareClientIdSchema = z.string().min(1).max(4_096);
@@ -121,14 +122,10 @@ const createInstanceSchema = z
           path: ["dashboard_session_token"],
         });
       }
-    } else if (
-      value.dashboard_session_token ||
-      value.cloudflare_access_client_id ||
-      value.cloudflare_access_client_secret
-    ) {
+    } else if (value.dashboard_session_token) {
       context.addIssue({
         code: "custom",
-        message: "Manual management must not submit Dashboard credentials",
+        message: "Manual management must not submit a Dashboard session token",
         path: ["management_mode"],
       });
     }
@@ -174,13 +171,11 @@ const updateInstanceSchema = z
     }
     if (
       value.management_mode === "manual" &&
-      (value.dashboard_session_token ||
-        value.cloudflare_access_client_id ||
-        value.cloudflare_access_client_secret)
+      value.dashboard_session_token
     ) {
       context.addIssue({
         code: "custom",
-        message: "Manual management must not submit Dashboard credentials",
+        message: "Manual management must not submit a Dashboard session token",
         path: ["management_mode"],
       });
     }

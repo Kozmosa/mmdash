@@ -91,7 +91,7 @@ func (module Module) handleInstances(
 				DashboardURL:           optional(body.ManagementURL),
 				DisplayName:            body.DisplayName,
 				ManagementMode:         body.ManagementMode,
-				Profile:                optionalDefault(body.Profile, "default"),
+				Profile:                optional(body.Profile),
 				RequestTimeoutSeconds:  optionalIntValue(body.RequestTimeoutSeconds),
 				RuntimeURL:             body.RuntimeURL,
 			},

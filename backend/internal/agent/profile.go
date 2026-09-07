@@ -12,8 +12,8 @@ var hermesReservedProfiles = map[string]struct{}{
 }
 
 // ValidateHermesProfile enforces the canonical profile identifier accepted by
-// Hermes. An empty value represents an omitted/default profile for internal
-// adapter configuration; explicit identifiers must already be lowercase.
+// Hermes. An empty value selects Hermes' unscoped API; explicit identifiers
+// select /p/{profile} routes and must already be lowercase.
 func ValidateHermesProfile(profile string) error {
 	if profile == "" || profile == "default" {
 		return nil

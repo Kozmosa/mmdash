@@ -210,6 +210,11 @@ export function createServiceConfiguration(
     environment.MMDASH_PUBLIC_URL ??
     webUrl;
   const mcpUrl = `http://${host}:${ports.mcp}/mcp`;
+  const agentMcpGatewayUrl =
+    environment.AGENT_MCP_GATEWAY_URL ??
+    (publicUrl === webUrl
+      ? mcpUrl
+      : `${publicUrl.replace(/\/$/u, "")}/mcp`);
   const containerAccessRequired = workerMode === "docker";
   const coreBindHost = containerAccessRequired ? "0.0.0.0" : host;
   const minioBindHost = containerAccessRequired ? "0.0.0.0" : host;
@@ -240,7 +245,7 @@ export function createServiceConfiguration(
     environments: {
       core: {
         ARTIFACT_STORAGE_BACKEND: "minio",
-        AGENT_MCP_GATEWAY_URL: environment.AGENT_MCP_GATEWAY_URL ?? mcpUrl,
+        AGENT_MCP_GATEWAY_URL: agentMcpGatewayUrl,
         ARTIFACT_WEB_ORIGIN:
           environment.MMDASH_TESTENV_ARTIFACT_WEB_ORIGIN ?? publicUrl,
         CORE_ADDR: `${coreBindHost}:${ports.core}`,

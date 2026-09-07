@@ -55,11 +55,11 @@ status/category rather than per-operation evidence.
 An Agent instance has one Project Grant, one exact Tool allowlist, and one of
 two management modes:
 
-Its Hermes `profile` is a canonical lowercase identifier matching
-`[a-z0-9][a-z0-9_-]{0,63}`. The special `default` profile is valid; `hermes`,
-`test`, `tmp`, `root`, and `sudo` are reserved. Profile input is never silently
-trimmed or lowercased. When `profile` is omitted while creating an instance,
-the `default` profile is used.
+Its Hermes `profile` is either empty for the unscoped API or a canonical
+lowercase identifier matching `[a-z0-9][a-z0-9_-]{0,63}`. The explicit
+`default` profile is valid; `hermes`, `test`, `tmp`, `root`, and `sudo` are
+reserved. Profile input is never silently trimmed or lowercased. When
+`profile` is omitted while creating an instance, the unscoped API is used.
 
 | Mode     | mmdash responsibility | User responsibility |
 | -------- | --------------------- | ------------------- |
@@ -67,10 +67,12 @@ the `default` profile is used.
 | `auto`   | Use an authenticated Dashboard management connection to install a versioned MCP entry, verify it, activate the Token, and safely retire the old entry | Supply an address and management credentials reachable from the Adapter process |
 
 The optional manual `management_url` is a browser convenience link only. Its
-presence does not authorize Core to change Hermes configuration. Auto mode
-requires the Dashboard management API and may additionally use Cloudflare
-Access service credentials. A Dashboard Session Token alone does not make an
-otherwise exposed non-loopback Dashboard safe.
+presence does not authorize Core to change Hermes configuration. Cloudflare
+Access service credentials may be supplied in either mode when the Hermes
+Runtime API is protected by Cloudflare Access; Core sends them with Runtime
+requests. In auto mode, the same credentials are also used for the Dashboard
+management API when that endpoint is protected. A Dashboard Session Token
+alone does not make an otherwise exposed non-loopback Dashboard safe.
 
 All server-side management requests enforce URL parsing, approved schemes and
 ports, DNS resolution, redirect, timeout, response-size, loopback, private

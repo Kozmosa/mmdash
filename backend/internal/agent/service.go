@@ -156,9 +156,6 @@ func (service Service) CreateInstance(
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.RuntimeURL = strings.TrimSpace(input.RuntimeURL)
 	input.DashboardURL = strings.TrimSpace(input.DashboardURL)
-	if input.Profile == "" {
-		input.Profile = "default"
-	}
 	if err := ValidateHermesProfile(input.Profile); err != nil {
 		return InstanceResult{}, ErrInvalid
 	}
@@ -173,8 +170,10 @@ func (service Service) CreateInstance(
 		(input.DashboardURL == "" || input.DashboardToken == "") {
 		return InstanceResult{}, ErrInvalid
 	}
-	if input.ManagementMode == ManagementManual &&
-		(input.DashboardToken != "" || input.CloudflareClientID != "" || input.CloudflareClientSecret != "") {
+	if (input.CloudflareClientID == "") != (input.CloudflareClientSecret == "") {
+		return InstanceResult{}, ErrInvalid
+	}
+	if input.ManagementMode == ManagementManual && input.DashboardToken != "" {
 		return InstanceResult{}, ErrInvalid
 	}
 	if input.RequestTimeoutSeconds < 0 || input.RequestTimeoutSeconds > 300 {
@@ -300,7 +299,7 @@ func (service Service) UpdateInstance(
 	if err != nil {
 		return InstanceResult{}, err
 	}
-	if input.Profile != nil && (*input.Profile == "" || ValidateHermesProfile(*input.Profile) != nil) {
+	if input.Profile != nil && ValidateHermesProfile(*input.Profile) != nil {
 		return InstanceResult{}, ErrInvalid
 	}
 	resolved, err := service.Settings.ResolveResource(ctx, settings.ScopeProject,
@@ -377,7 +376,11 @@ func (service Service) UpdateInstance(
 	applySecret(settingCFClientSecret, input.CloudflareClientSecret)
 	if input.Profile != nil {
 		item.Profile = *input.Profile
-		patch[settingProfile] = item.Profile
+		if item.Profile == "" {
+			patch[settingProfile] = nil
+		} else {
+			patch[settingProfile] = item.Profile
+		}
 	}
 	if input.RequestTimeoutSeconds != nil {
 		if *input.RequestTimeoutSeconds < 1 || *input.RequestTimeoutSeconds > 300 {
@@ -388,14 +391,10 @@ func (service Service) UpdateInstance(
 	}
 	if item.ManagementMode == ManagementManual {
 		patch[settingDashboardToken] = nil
-		patch[settingCFClientID] = nil
-		patch[settingCFClientSecret] = nil
 		prospectiveSecrets[settingDashboardToken] = ""
-		prospectiveSecrets[settingCFClientID] = ""
-		prospectiveSecrets[settingCFClientSecret] = ""
 		item.ManagementPath = "unreachable"
 	}
-	if item.Profile == "" || prospectiveSecrets[settingAPIKey] == "" {
+	if prospectiveSecrets[settingAPIKey] == "" {
 		return InstanceResult{}, ErrInvalid
 	}
 	if item.ManagementMode == ManagementAuto &&
@@ -1960,20 +1959,22 @@ func normalizeTools(values []string) ([]string, error) {
 func settingsPatch(input CreateInstanceInput) map[string]interface{} {
 	patch := map[string]interface{}{
 		settingAPIKey:         input.APIKey,
-		settingProfile:        input.Profile,
 		settingRequestTimeout: float64(input.RequestTimeoutSeconds),
+	}
+	if input.Profile != "" {
+		patch[settingProfile] = input.Profile
 	}
 	if input.RequestTimeoutSeconds <= 0 {
 		patch[settingRequestTimeout] = float64(30)
 	}
 	if input.ManagementMode == ManagementAuto {
 		patch[settingDashboardToken] = input.DashboardToken
-		if input.CloudflareClientID != "" {
-			patch[settingCFClientID] = input.CloudflareClientID
-		}
-		if input.CloudflareClientSecret != "" {
-			patch[settingCFClientSecret] = input.CloudflareClientSecret
-		}
+	}
+	if input.CloudflareClientID != "" {
+		patch[settingCFClientID] = input.CloudflareClientID
+	}
+	if input.CloudflareClientSecret != "" {
+		patch[settingCFClientSecret] = input.CloudflareClientSecret
 	}
 	return patch
 }

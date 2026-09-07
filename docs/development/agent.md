@@ -53,8 +53,9 @@ Notification, and Project data.
 Auth owns Token generation, SHA-256 hashing, authentication, activation, and
 revocation. Settings owns encryption and authorized reads for the Hermes API
 Key, Dashboard Session Token, and optional Cloudflare Access Service Token.
-Agent coordinates those boundaries but never stores plaintext in its own
-tables.
+The Cloudflare Access service token authenticates Runtime API requests in both
+management modes and is reused for Dashboard requests in auto mode. Agent
+coordinates those boundaries but never stores plaintext in its own tables.
 
 ## Adapter and Hermes mock contracts
 

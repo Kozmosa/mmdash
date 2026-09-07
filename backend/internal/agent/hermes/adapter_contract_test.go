@@ -118,6 +118,65 @@ func TestRuntimeProbeDoesNotDependOnDashboardManagement(t *testing.T) {
 	}
 }
 
+func TestRuntimeProbeUsesCloudflareAccessServiceCredentialsAfterChallenge(t *testing.T) {
+	var calls []bool
+	var mutex sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		hasCloudflareHeaders := request.Header.Get("CF-Access-Client-Id") == "cf-client" &&
+			request.Header.Get("CF-Access-Client-Secret") == "cf-secret"
+		mutex.Lock()
+		calls = append(calls, hasCloudflareHeaders)
+		mutex.Unlock()
+		if !hasCloudflareHeaders {
+			response.Header().Set("Server", "cloudflare")
+			response.Header().Set("CF-Ray", "runtime-proxy-SHA")
+			response.Header().Set("Location", "https://team.cloudflareaccess.com/cdn-cgi/access/login")
+			response.WriteHeader(http.StatusFound)
+			return
+		}
+		assertRuntimeAuth(t, request)
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/health":
+			writeJSON(t, response, map[string]any{"status": "ok", "platform": "hermes-agent", "version": "2026.8.3"})
+		case "/health/detailed":
+			writeJSON(t, response, map[string]any{"status": "ready"})
+		case "/v1/capabilities":
+			writeJSON(t, response, authoritativeCapabilities())
+		case "/api/sessions":
+			writeJSON(t, response, map[string]any{"data": []any{}, "limit": 1, "offset": 0, "has_more": false})
+		case "/api/jobs":
+			writeJSON(t, response, map[string]any{"jobs": []any{}})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	policy := loopbackPolicy(t, server.URL)
+	adapter, err := New(Config{
+		InstanceID: "instance", RuntimeURL: server.URL, APIKey: "runtime-secret",
+		CloudflareClientID: "cf-client", CloudflareClientSecret: "cf-secret",
+		RuntimePolicy: policy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.Probe(context.Background()); err != nil {
+		t.Fatalf("runtime probe through Cloudflare Access failed: %v", err)
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if len(calls) != 6 || calls[0] || !calls[1] {
+		t.Fatalf("unexpected Cloudflare runtime request sequence: %#v", calls)
+	}
+	for index, hasHeaders := range calls[2:] {
+		if !hasHeaders {
+			t.Fatalf("runtime request %d omitted Cloudflare Access headers after challenge: %#v", index+2, calls)
+		}
+	}
+}
+
 func TestCheckRuntimeExercisesLiveSessionRunSSEStatusStopAndCleanup(t *testing.T) {
 	var calls []string
 	var mu sync.Mutex
