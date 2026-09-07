@@ -142,7 +142,10 @@ class ArticleBuildHandler:
         self.client.update_article_build_progress(context.job_id, 10, "preparing")
         limits = _limits(build)
         with tempfile.TemporaryDirectory(prefix="mmdash-article-") as temporary:
-            root = Path(temporary)
+            # Resolve once so _safe_child outputs (always resolved) stay
+            # relative_to-compatible with template_root on hosts where the
+            # temp dir lives behind a symlink (macOS /var -> /private/var).
+            root = Path(temporary).resolve()
             template_zip = root / "template.zip"
             template = _mapping(build["template"])
             self.client.download_transfer(
