@@ -438,3 +438,28 @@ func TestNormalizeDocumentPassesLatexBlockThroughUnescaped(t *testing.T) {
 		t.Fatalf("latexBlock text was escaped:\n%s", markdown)
 	}
 }
+
+func TestCodeMarkTextStaysLiteralInProjection(t *testing.T) {
+	now := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
+	document := map[string]interface{}{
+		"type": "doc",
+		"content": []interface{}{
+			map[string]interface{}{"type": "paragraph", "attrs": map[string]interface{}{"id": "p"}, "content": []interface{}{
+				map[string]interface{}{"type": "text", "text": "plain_x*1*"},
+				map[string]interface{}{"type": "text", "marks": []interface{}{map[string]interface{}{"type": "code"}}, "text": "code_x[1]*2*"},
+				map[string]interface{}{"type": "text", "marks": []interface{}{map[string]interface{}{"type": "bold"}}, "text": "bold_x"},
+			}},
+		},
+	}
+
+	markdown, _, err := NormalizeDocument(document, &sequentialIDs{}, "human", map[string]interface{}{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Markdown code spans treat backslashes literally, so code-marked text must
+	// enter the projection unescaped; plain and bold text keep escaping.
+	want := "plain\\_x\\*1\\*`code_x[1]*2*`**bold\\_x**\n"
+	if markdown != want {
+		t.Fatalf("unexpected markdown:\n%q\nwant:\n%q", markdown, want)
+	}
+}

@@ -360,8 +360,14 @@ func renderInlineChildren(node map[string]interface{}) string {
 		value := ""
 		switch typeName {
 		case "text":
-			value, _ = child["text"].(string)
-			value = escapeMarkdown(value)
+			raw, _ := child["text"].(string)
+			if hasMark(child["marks"], "code") {
+				// Markdown code spans treat backslashes literally; pre-escaping
+				// would leak \* \_ \[ \] into the rendered code text.
+				value = raw
+			} else {
+				value = escapeMarkdown(raw)
+			}
 		case "hardBreak":
 			value = "  \n"
 		case "mathInline", "inlineMath":
@@ -584,6 +590,20 @@ func renderTable(node map[string]interface{}) string {
 		return "Table: " + caption + "\n\n" + table
 	}
 	return table
+}
+
+func hasMark(raw interface{}, kind string) bool {
+	marks, _ := interfaceSlice(raw)
+	for _, markRaw := range marks {
+		mark, ok := markRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if name, _ := mark["type"].(string); name == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func applyMarks(value string, raw interface{}) string {
