@@ -1,3 +1,36 @@
+# mmdash v0.1 PR #84 merge integration and macOS temp-path repair
+
+- Updated: 2026-09-07
+- Branch: `main` (merge commit of PR #84 `feat/article-cumcm-template`)
+- Merge resolution: the only textual conflict was this file (both sides
+  append entries at the top); the PR's three article entries now sit above
+  the progress-evaluation entry. The auto-merged `contracts/openapi/core.yaml`
+  and generated clients were re-verified with `pnpm contracts:generate`
+  (zero diff, so the combined contract is consistent and generated code is
+  not stale).
+- macOS portability fix (`workers/mmdash-worker/.../article/handler.py`,
+  commit `fix(article): resolve worker temp root so template paths stay
+  relative on macOS`): `TemporaryDirectory` returns `/var/folders/...` while
+  `_safe_child` resolves to `/private/var/...`, so
+  `entrypoint.relative_to(template_root)` in `_create_source_zip` raised on
+  macOS (invisible on Windows/Linux where the temp prefix has no symlink).
+  The build root is now resolved once at creation. Worker pytest is 69/69
+  after the fix.
+- Gate: full `pnpm check` on macOS arm64 — eslint/ruff/gofmt, TS tests
+  (web 253, web-bff 76, mcp-gateway 39, core-client 7, scripts 26), Go
+  tests (all backend/box/cli packages including `internal/article` and
+  `internal/agent`), production builds (next, tsc, go build, uv wheel),
+  contracts + compatibility baseline, and the 544-operation API catalog all
+  pass. Environment notes: `proxy.golang.org` is unreachable here, so Go
+  phases needed `GOPROXY=https://goproxy.cn,direct` (module downloads only;
+  no config changed); `caddy:check` fragment checks pass for both
+  Caddyfiles but syntax validation cannot run because this host has no
+  caddy CLI and no Docker — no Caddy or deploy file was touched by the
+  merge, same accepted limitation as the previous two handoff entries.
+- Still pending from the PR: the fixed 2022/Debian Worker image compile
+  re-verification of the CUMCM template (needs the Linux Docker host) and
+  the `template-spec.md` update the author listed as deferred.
+
 # mmdash v0.1 Article CUMCM built-in template (parallel to the default template)
 
 - Updated: 2026-09-07
