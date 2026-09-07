@@ -132,6 +132,11 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 		} else {
 			warnings = appendAggregateWarning(warnings, "templates.bootstrap")
 		}
+		if ensured, ensureErr := service.ensureCumcmTemplate(ctx, caller.ActorID(), projectID, templates); ensureErr == nil {
+			templates = ensured
+		} else {
+			warnings = appendAggregateWarning(warnings, "templates.cumcm_bootstrap")
+		}
 	}
 	unreviewed := 0
 	completed := 0

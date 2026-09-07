@@ -289,7 +289,7 @@ type articleTestArtifacts struct {
 func (*articleTestArtifacts) ArticleTemplateGrant(context.Context, string, string, string) (map[string]interface{}, error) {
 	return map[string]interface{}{"method": "GET", "url": "https://grant.test/template"}, nil
 }
-func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, _, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
+func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, idempotencyKey, expectedSHA string, expectedSize int64, input io.Reader) (string, string, error) {
 	contents, err := io.ReadAll(input)
 	if err != nil {
 		return "", "", err
@@ -297,7 +297,13 @@ func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, 
 	if int64(len(contents)) != expectedSize || hashBytes(contents) != expectedSHA {
 		return "", "", errors.New("template integrity mismatch")
 	}
-	return "artifact-default", "version-default", nil
+	// Each built-in template owns its stable Artifact through its
+	// idempotency key; the default keeps its historical fixed IDs.
+	if idempotencyKey == "article-default-template:1.1.0" {
+		return "artifact-default", "version-default", nil
+	}
+	key := safeID(idempotencyKey)
+	return "artifact-" + key, "version-" + key, nil
 }
 func (artifacts *articleTestArtifacts) ArticleResourceGrant(_ context.Context, _, artifactID, versionID string) (map[string]interface{}, error) {
 	artifacts.resourceCalls = append(artifacts.resourceCalls, [2]string{artifactID, versionID})

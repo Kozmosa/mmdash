@@ -87,6 +87,7 @@ import {
   clampArticleSidebarRatio,
 } from "./article-layout";
 import { ArticleOutlineResizeHandle } from "./article-outline-resize-handle";
+import { ArticleCumcmPanel } from "./article-cumcm-panel";
 import { ArticleSidebarResizeHandle } from "./article-sidebar-resize-handle";
 import {
   copiedTemplateManifest,
@@ -126,9 +127,12 @@ import type {
   ZoteroItem,
 } from "./types";
 import {
+  clearSlashFeatureItems,
   openArticleSidebarEvent,
   openArtifactLibraryEvent,
+  setSlashFeatureItems,
 } from "./slash-command";
+import { cumcmSlashFeatureItems } from "./article-cumcm";
 
 type WorkspaceTab = "write" | "abstract" | "history" | "templates";
 type ConnectionState =
@@ -467,11 +471,26 @@ export function WritingWorkspace({
 }>) {
   const queryClient = useQueryClient();
   const [panel, setPanel] = useState<
-    "reference" | "artifact" | "zotero" | "pdf"
+    "reference" | "artifact" | "zotero" | "pdf" | "cumcm"
   >("reference");
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarRatio, setSidebarRatio] = useState(articleSidebarDefaultRatio);
   const [outline, setOutline] = useState<ArticleOutlineItem[]>([]);
+  // CUMCM support is parallel to the generic flow: the extra sidebar tab and
+  // its "/" menu items appear only when the project registered the CUMCM
+  // built-in template, and nothing changes for other projects.
+  const hasCumcmTemplate = data.templates.some(
+    (template) =>
+      template.status === "ready" &&
+      template.manifest?.field_profile === "cumcm",
+  );
+  // The "/" environment entries stay available across the whole writing view,
+  // not only while the 国赛 sidebar tab is open.
+  useEffect(() => {
+    if (!hasCumcmTemplate || !canEdit) return;
+    setSlashFeatureItems("cumcm", cumcmSlashFeatureItems());
+    return () => clearSlashFeatureItems("cumcm");
+  }, [canEdit, hasCumcmTemplate]);
   const [activeOutlineId, setActiveOutlineId] = useState("");
   const [collapsedOutlineIds, setCollapsedOutlineIds] = useState<Set<string>>(
     () => new Set(),
@@ -678,6 +697,7 @@ export function WritingWorkspace({
                     ["artifact", "Artifact"],
                     ["zotero", "Zotero"],
                     ["pdf", "PDF"],
+                    ...(hasCumcmTemplate ? ([["cumcm", "国赛"]] as const) : []),
                   ] as const
                 ).map(([value, label]) => (
                   <Button
@@ -753,6 +773,9 @@ export function WritingWorkspace({
                     onRefresh={onRefresh}
                     projectId={projectId}
                   />
+                ) : null}
+                {panel === "cumcm" && hasCumcmTemplate ? (
+                  <ArticleCumcmPanel canEdit={canEdit} outline={outline} />
                 ) : null}
               </div>
               <ArticleOutlineResizeHandle

@@ -66,6 +66,13 @@ import { MultipartUploadTask } from "@/features/artifact/multipart-upload";
 import { optionalRequest } from "@/features/repo/optional-request";
 import { apiClient } from "@/lib/api-client";
 
+import {
+  articleCumcmInsertEvent,
+  cumcmChapterNodes,
+  cumcmEnvironmentNode,
+  cumcmSkeletonNodes,
+  type ArticleCumcmInsertDetail,
+} from "./article-cumcm";
 import { createArticleNodes } from "./article-nodes";
 import {
   convertArticleBlock,
@@ -756,6 +763,7 @@ export function ArticleEditor({
             "codeBlock",
             "mathBlock",
             "blockMath",
+            "latexBlock",
             "table",
             "articleImage",
             "articleImageGroup",
@@ -1672,6 +1680,32 @@ export function ArticleEditor({
     window.addEventListener(articleInsertReferenceEvent, insertReference);
     return () => {
       window.removeEventListener(articleInsertReferenceEvent, insertReference);
+    };
+  }, [canEdit, editor]);
+
+  useEffect(() => {
+    if (!editor || !canEdit) return;
+    const insertCumcm = (event: Event) => {
+      const detail = (
+        event as CustomEvent<ArticleCumcmInsertDetail | undefined>
+      ).detail;
+      if (!detail) return;
+      const nodes =
+        detail.kind === "env"
+          ? [cumcmEnvironmentNode(detail.key)]
+          : detail.kind === "chapter"
+            ? cumcmChapterNodes(detail.key)
+            : cumcmSkeletonNodes();
+      if (!nodes.length) return;
+      editor
+        .chain()
+        .focus()
+        .insertContent([...nodes, { type: "paragraph" }])
+        .run();
+    };
+    window.addEventListener(articleCumcmInsertEvent, insertCumcm);
+    return () => {
+      window.removeEventListener(articleCumcmInsertEvent, insertCumcm);
     };
   }, [canEdit, editor]);
 

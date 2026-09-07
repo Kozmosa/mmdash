@@ -778,6 +778,39 @@ CUMCM_FIELD_COMMANDS = {
 }
 
 
+_TEMPLATE_COMMAND_DEFINITION = re.compile(
+    r"\\(?:newcommand|renewcommand|providecommand)\*?\s*\{?\\([A-Za-z@]+)\}?"
+    r"|\\def\\([A-Za-z@]+)"
+    r"|\\let\\([A-Za-z@]+)",
+)
+
+
+def _defined_template_commands(template_root: Path) -> set[str]:
+    """Return the command names defined by the template's TeX sources.
+
+    Templates own their commands: a paper-info field whose target command the
+    template never defines must be skipped rather than emitted, or the build
+    would fail with an undefined control sequence. Extraction already bounds
+    the source count and sizes, so scanning the text sources is safe.
+    """
+    names: set[str] = set()
+    for source in template_root.rglob("*"):
+        if (
+            not source.is_file()
+            or source.suffix.lower() not in {".cls", ".sty", ".tex"}
+        ):
+            continue
+        try:
+            text = source.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _TEMPLATE_COMMAND_DEFINITION.finditer(text):
+            for group in match.groups():
+                if group:
+                    names.add(group)
+    return names
+
+
 def _write_metadata_blocks(
     template_root: Path,
     manifest: Mapping[str, Any],
@@ -788,7 +821,9 @@ def _write_metadata_blocks(
 
     Only fields compatible with the template profile are emitted; unknown or
     incompatible selections are skipped silently because the product already
-    warned the user at save time.
+    warned the user at save time. Under the cumcm profile a field is emitted
+    only when the template actually defines its target command (e.g.
+    cumcmthesis.cls has no \\nianyue, so submit_date is dropped).
     """
     generated = template_root / ".mmdash"
     generated.mkdir(parents=True, exist_ok=True)
@@ -797,6 +832,7 @@ def _write_metadata_blocks(
         "\\mmdashabstracttrue" if abstract_enabled else "\\mmdashabstractfalse",
     ]
     profile = str(manifest.get("field_profile", "default"))
+    defined = _defined_template_commands(template_root) if profile == "cumcm" else set()
     if "title" in fields:
         lines.append(f"\\title{{{_latex_escape(fields['title']['value'])}}}")
     if "author" in fields:
@@ -805,16 +841,19 @@ def _write_metadata_blocks(
         lines.append(f"\\date{{{_latex_escape(fields['date']['value'])}}}")
     if profile == "cumcm":
         for key, command in CUMCM_FIELD_COMMANDS.items():
-            if key in fields:
+            if key in fields and command in defined:
                 lines.append(f"\\{command}{{{_latex_escape(fields[key]['value'])}}}")
     (generated / "metadata.tex").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     title_block = "\\maketitle\n" if {"title", "author", "date"} & fields.keys() else ""
     (generated / "title-block.tex").write_text(title_block, encoding="utf-8", newline="\n")
     keywords_line = ""
     if "keywords" in fields:
-        keywords_line = (
-            f"\\noindent\\textbf{{关键词：}}{_latex_escape(fields['keywords']['value'])}\n"
-        )
+        keywords_value = _latex_escape(fields["keywords"]["value"])
+        if profile == "cumcm" and "keywords" in defined:
+            # The class renders its official bold heading inside the abstract.
+            keywords_line = f"\\keywords{{{keywords_value}}}\n"
+        else:
+            keywords_line = f"\\noindent\\textbf{{关键词：}}{keywords_value}\n"
     (generated / "keywords-block.tex").write_text(keywords_line, encoding="utf-8", newline="\n")
 
 

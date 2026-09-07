@@ -56,6 +56,24 @@ def test_manifest_11_validates_optional_extensions(tmp_path: Path) -> None:
     assert caught.value.code == "ARTICLE_TEMPLATE_UNSAFE"
 
 
+CUMCM_STUB_CLS = r"""
+% Minimal stand-in mirroring cumcmthesis.cls command definitions. \nianyue
+% is deliberately absent to mirror the real class.
+\newcommand*\tihao[1]{}
+\newcommand*\baominghao[1]{}
+\newcommand*\schoolname[1]{}
+\newcommand*\membera[1]{}
+\newcommand*\memberb[1]{}
+\newcommand*\memberc[1]{}
+\newcommand*\supervisor[1]{}
+\newcommand\keywords[1]{}
+"""
+
+
+def _write_cumcm_stub_cls(root: Path) -> None:
+    (root / "cumcmthesis.cls").write_text(CUMCM_STUB_CLS, encoding="utf-8")
+
+
 def test_paper_fields_return_enabled_entries_only() -> None:
     build = {
         "paper_info": {
@@ -75,6 +93,7 @@ def test_paper_fields_return_enabled_entries_only() -> None:
 
 def test_metadata_blocks_map_cumcm_fields_and_skip_unselected(tmp_path: Path) -> None:
     manifest = {**MANIFEST_11, "field_profile": "cumcm"}
+    _write_cumcm_stub_cls(tmp_path)
     fields = {
         "team_number": {"value": "T2603001"},
         "keywords": {"value": "优化; 排队论_100"},
@@ -86,13 +105,14 @@ def test_metadata_blocks_map_cumcm_fields_and_skip_unselected(tmp_path: Path) ->
     keywords_block = (tmp_path / ".mmdash" / "keywords-block.tex").read_text(encoding="utf-8")
 
     # Selecting only 队伍编号 generates only \baominghao: no empty title,
-    # author, date, or abstract commands ride along.
+    # author, date, or abstract commands ride along. The class defines
+    # \keywords, so keywords render through the official command.
     assert "\\baominghao{T2603001}" in metadata
     assert "\\title" not in metadata
     assert "\\author" not in metadata
     assert "\\date" not in metadata
     assert title_block == ""
-    assert "关键词：" in keywords_block
+    assert "\\keywords{优化; 排队论\\_100}" in keywords_block
     assert "\\mmdashabstracttrue" in metadata
 
     _write_metadata_blocks(tmp_path, manifest, {}, abstract_enabled=False)
@@ -104,6 +124,36 @@ def test_metadata_blocks_map_cumcm_fields_and_skip_unselected(tmp_path: Path) ->
     metadata = (tmp_path / ".mmdash" / "metadata.tex").read_text(encoding="utf-8")
     # The default profile does not understand CUMCM commands.
     assert "baominghao" not in metadata
+
+
+def test_metadata_blocks_skip_fields_without_template_commands(tmp_path: Path) -> None:
+    manifest = {**MANIFEST_11, "field_profile": "cumcm"}
+    _write_cumcm_stub_cls(tmp_path)
+    fields = {
+        "problem_number": {"value": "B"},
+        "submit_date": {"value": "2026年9月7日"},
+    }
+    _write_metadata_blocks(tmp_path, manifest, fields, abstract_enabled=True)
+
+    metadata = (tmp_path / ".mmdash" / "metadata.tex").read_text(encoding="utf-8")
+    # cumcmthesis.cls defines \tihao but has no \nianyue, so the submit date
+    # is dropped instead of failing the build with an undefined command.
+    assert "\\tihao{B}" in metadata
+    assert "nianyue" not in metadata
+    assert "2026年9月7日" not in metadata
+
+
+def test_metadata_blocks_keywords_fall_back_without_class_keywords(tmp_path: Path) -> None:
+    manifest = {**MANIFEST_11, "field_profile": "cumcm"}
+    # A profile class without \keywords keeps the generic bold line.
+    (tmp_path / "custom.cls").write_text(
+        "\\newcommand*\\baominghao[1]{}\n", encoding="utf-8"
+    )
+    _write_metadata_blocks(
+        tmp_path, manifest, {"keywords": {"value": "优化"}}, abstract_enabled=True
+    )
+    keywords_block = (tmp_path / ".mmdash" / "keywords-block.tex").read_text(encoding="utf-8")
+    assert keywords_block == "\\noindent\\textbf{关键词：}优化\n"
 
 
 def test_latex_escape_covers_specials_including_backslash() -> None:
