@@ -61,6 +61,9 @@ func (store PostgresStore) UpdateSettings(
 	patch SettingsPatch,
 	now time.Time,
 ) (Settings, error) {
+	if store.Transaction.DB == nil {
+		return Settings{}, ErrInvalid
+	}
 	current, err := store.GetSettings(ctx, projectID)
 	if err != nil {
 		return Settings{}, err
@@ -81,17 +84,69 @@ func (store PostgresStore) UpdateSettings(
 	if err != nil {
 		return Settings{}, err
 	}
-	_, err = store.DB.ExecContext(ctx, `
-		UPDATE experiment_project_settings
-		SET timezone=$2,default_runtime_policy=$3,default_limits=$4,
-			git_large_file_threshold_bytes=$5,updated_by=$6,updated_at=$7
-		WHERE project_id=$1
-	`, projectID, current.Timezone, current.DefaultRuntimePolicy, limitsJSON,
-		current.GitLargeFileThresholdBytes, updatedBy, now)
+	var updated Settings
+	err = store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE experiment_project_settings
+			SET timezone=$2,default_runtime_policy=$3,default_limits=$4,
+				git_large_file_threshold_bytes=$5,updated_by=$6,updated_at=$7
+			WHERE project_id=$1
+		`, projectID, current.Timezone, current.DefaultRuntimePolicy, limitsJSON,
+			current.GitLargeFileThresholdBytes, updatedBy, now); err != nil {
+			return err
+		}
+		var err error
+		updated, err = scanSettings(tx.QueryRowContext(ctx, `
+			SELECT project_id,timezone,default_runtime_policy,default_limits,
+				git_large_file_threshold_bytes,updated_by,updated_at
+			FROM experiment_project_settings WHERE project_id=$1
+		`, projectID))
+		if err != nil {
+			return err
+		}
+		return store.recordSettingsUpdated(ctx, tx, updated, updatedBy, now)
+	})
 	if err != nil {
 		return Settings{}, err
 	}
-	return store.GetSettings(ctx, projectID)
+	return updated, nil
+}
+
+func (store PostgresStore) recordSettingsUpdated(
+	ctx context.Context,
+	tx transaction.Tx,
+	item Settings,
+	updatedBy string,
+	now time.Time,
+) error {
+	if store.Audit != nil {
+		if err := store.Audit.RecordInTransaction(ctx, tx, audit.Event{
+			Action: "experiment.settings.updated", ActorID: updatedBy, ActorKind: "user",
+			Category: "experiment", Outcome: "success", ProjectID: item.ProjectID,
+			ResourceID: item.ProjectID, ResourceType: "experiment_settings", Source: "core",
+			OccurredAt: now,
+			Metadata: map[string]interface{}{
+				"timezone":                       item.Timezone,
+				"default_runtime_policy":         item.DefaultRuntimePolicy,
+				"git_large_file_threshold_bytes": item.GitLargeFileThresholdBytes,
+			},
+		}); err != nil {
+			return err
+		}
+	}
+	return store.writeEvent(ctx, tx, outbox.Event{
+		Actor:     map[string]string{"user_id": updatedBy},
+		EventType: "experiment.settings.updated", Producer: "experiment",
+		ProjectID: item.ProjectID, OccurredAt: now,
+		Payload: map[string]interface{}{
+			"resource_id":                    item.ProjectID,
+			"resource_type":                  "experiment_settings",
+			"timezone":                       item.Timezone,
+			"default_runtime_policy":         item.DefaultRuntimePolicy,
+			"default_limits":                 item.DefaultLimits,
+			"git_large_file_threshold_bytes": item.GitLargeFileThresholdBytes,
+		},
+	})
 }
 
 func scanSettings(row scanner) (Settings, error) {

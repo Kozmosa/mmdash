@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.moe/contracts/mcp/experiment.settings.json",
+  "title": "Read experiment settings",
+  "description": "Return the Project-level experiment defaults: timezone, default Runtime policy, default resource limits, and the Git large-file threshold.",
+  "x-operation-id": "experiment.settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" }
+  }
+}

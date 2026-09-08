@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mmdash.dev/contracts/events/experiment.settings.updated.schema.json",
+  "title": "experiment.settings.updated payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resource_id",
+    "resource_type",
+    "timezone",
+    "default_runtime_policy",
+    "default_limits",
+    "git_large_file_threshold_bytes"
+  ],
+  "properties": {
+    "resource_id": { "type": "string", "format": "uuid" },
+    "resource_type": { "const": "experiment_settings" },
+    "timezone": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "default_runtime_policy": {
+      "type": "string",
+      "enum": ["auto", "local-docker", "e2b", "local-process"]
+    },
+    "default_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_millis",
+        "memory_bytes",
+        "timeout_seconds",
+        "disk_bytes",
+        "pids",
+        "network"
+      ],
+      "properties": {
+        "cpu_millis": { "type": "integer", "minimum": 1 },
+        "memory_bytes": { "type": "integer", "minimum": 1048576 },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "disk_bytes": { "type": "integer", "minimum": 1048576 },
+        "pids": { "type": "integer", "minimum": 1 },
+        "network": {
+          "type": "string",
+          "enum": ["disabled", "restricted", "enabled"]
+        }
+      }
+    },
+    "git_large_file_threshold_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5368709120
+    }
+  }
+}

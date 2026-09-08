@@ -284,6 +284,7 @@ Target MCP Tools:
 experiment.create
 experiment.run
 experiment.status
+experiment.settings
 experiment.result.bind
 result.get
 artifact.upload
@@ -303,6 +304,10 @@ MCP request/response behavior is frozen as follows:
   returns the authoritative Experiment, bounded recent persisted logs,
   `logs_truncated`, progress, failure, and retry guidance. `self` never claims
   that managed logs exist.
+- `experiment.settings` accepts `{project_id}` and returns the Project
+  defaults (timezone, `default_runtime_policy`, `default_limits`, Git
+  large-file threshold) so callers can decide whether to override
+  `runtime_policy`/`limits` on create or run.
 - `experiment.result.bind` accepts
   `{project_id, experiment_id, commit_sha, idempotency_key}`. It is valid only
   for `self` in `awaiting_result`, requires a full SHA already reachable on the
