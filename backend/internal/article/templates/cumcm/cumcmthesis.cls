@@ -152,12 +152,17 @@ Just choose `xelatex', no `pdflatex' or `latex' and so on.}
 % 每行缩进两个汉字
 \setlength\parindent{2em}
 % 设置字体
-\setmainfont{Times New Roman}
+% mmdash note: the four declarations below gain conditional fallbacks so the
+% class also builds on Linux toolchains without the licensed Windows fonts.
+% When the original font exists (e.g. on Windows) it is used unchanged; the
+% fallbacks are metric-compatible open clones shipped in TeX Live
+% (TeX Gyre Termes/Heros, FandolKai/FandolSong).
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{TeX Gyre Termes}}
 %\setmonofont{Courier New}
-\setsansfont{Arial}
-\setCJKfamilyfont{kai}[AutoFakeBold]{simkai.ttf}
+\IfFontExistsTF{Arial}{\setsansfont{Arial}}{\setsansfont{TeX Gyre Heros}}
+\IfFontExistsTF{simkai.ttf}{\setCJKfamilyfont{kai}[AutoFakeBold]{simkai.ttf}}{\setCJKfamilyfont{kai}[AutoFakeBold]{FandolKai-Regular.otf}}
 \newcommand*{\kai}{\CJKfamily{kai}}
-\setCJKfamilyfont{song}[AutoFakeBold]{SimSun}
+\IfFontExistsTF{SimSun}{\setCJKfamilyfont{song}[AutoFakeBold]{SimSun}}{\setCJKfamilyfont{song}[AutoFakeBold, BoldFont={FandolSong-Bold.otf}]{FandolSong-Regular.otf}}
 \newcommand*{\song}{\CJKfamily{song}}
 
 \renewcommand\normalsize{%

@@ -12,7 +12,7 @@ import (
 
 const (
 	cumcmTemplateFilename       = "mmdash-cumcm-template.zip"
-	cumcmTemplateIdempotencyKey = "article-cumcm-template:1.1.0"
+	cumcmTemplateIdempotencyKey = "article-cumcm-template:1.4.0"
 )
 
 // cumcmTemplateCls ships the original contest class byte-for-byte so the
@@ -31,14 +31,14 @@ func cumcmTemplateManifest() TemplateManifest {
 	return TemplateManifest{
 		SchemaVersion:      "1.1",
 		Name:               "CUMCM 国赛论文模板（cumcmthesis）",
-		Version:            "1.1.0",
+		Version:            "1.4.0",
 		Entrypoint:         "main.tex",
 		Output:             "main.pdf",
 		ContentTarget:      "generated-content.tex",
 		BibliographyTarget: "references.bib",
 		Engine:             "xelatex",
 		BibliographyTool:   "bibtex",
-		AbstractTarget:     ".mmdash/abstract-block.tex",
+		AbstractTarget:     "mmdash/abstract-block.tex",
 		BodyLayout:         "single",
 		FieldProfile:       "cumcm",
 		FigureDir:          "figures",
@@ -69,7 +69,7 @@ const cumcmTemplateMainTex = `% !TeX program = xelatex
 \makeatletter
 \renewcommand*{\@title}{}
 \makeatother
-\input{.mmdash/metadata}
+\input{mmdash/metadata}
 
 \begin{document}
 
@@ -77,8 +77,8 @@ const cumcmTemplateMainTex = `% !TeX program = xelatex
 
 \ifmmdashabstract
 \begin{abstract}
-\input{.mmdash/abstract-block}
-\input{.mmdash/keywords-block}
+\input{mmdash/abstract-block}
+\input{mmdash/keywords-block}
 \end{abstract}
 \fi
 
