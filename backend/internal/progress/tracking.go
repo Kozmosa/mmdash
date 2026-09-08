@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mmdash/mmdash/backend/internal/audit"
 	"github.com/mmdash/mmdash/backend/internal/auth"
@@ -557,7 +558,7 @@ func decodeEvaluationResult(result map[string]interface{}) (EvaluationOutput, er
 	}
 	output.Stage = strings.TrimSpace(output.Stage)
 	output.Summary = strings.TrimSpace(output.Summary)
-	if output.Stage == "" || len(output.Stage) > 100 || output.Summary == "" || len(output.Summary) > 10000 ||
+	if output.Stage == "" || utf8.RuneCountInString(output.Stage) > 100 || output.Summary == "" || utf8.RuneCountInString(output.Summary) > 10000 ||
 		len(output.ChangesSinceLast) > 200 || len(output.CompletedItems) > 200 || len(output.InProgressItems) > 200 ||
 		len(output.Blockers) > 200 || len(output.PendingQuestions) > 200 || len(output.Risks) > 100 || len(output.WorkStateUpdates) > 200 || len(output.Suggestions) > 100 {
 		return EvaluationOutput{}, ErrInvalidEvaluationOutput

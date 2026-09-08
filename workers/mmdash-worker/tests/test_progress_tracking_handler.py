@@ -156,3 +156,73 @@ def test_invalid_agent_json_is_safe_non_retryable_failure() -> None:
         )
     assert caught.value.code == "PROGRESS_INVALID_OUTPUT"
     assert caught.value.retryable is False
+
+
+def test_core_agent_defaults_missing_empty_arrays() -> None:
+    client = FakeClient()
+    client.execution["output"] = json.dumps(
+        {
+            "stage": "execution",
+            "summary": "One blocker",
+            "in_progress_items": ["Blocked"],
+        },
+        ensure_ascii=False,
+    )
+    result = asyncio.run(
+        ProgressEvaluationHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+    )
+    assert result["output"]["changes_since_last"] == []
+    assert result["output"]["completed_items"] == []
+    assert result["output"]["blockers"] == []
+    assert result["output"]["risks"] == []
+    assert result["output"]["work_state_updates"] == []
+    assert result["output"]["suggestions"] == []
+    assert result["output"]["pending_questions"] == []
+
+
+def test_core_agent_drops_unknown_top_level_keys() -> None:
+    client = FakeClient()
+    payload = json.loads(client.execution["output"])
+    payload["status"] = "ok"
+    payload["notes"] = ["内部备注"]
+    client.execution["output"] = json.dumps(payload, ensure_ascii=False)
+    result = asyncio.run(
+        ProgressEvaluationHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+    )
+    assert result["output"]["summary"] == "One blocker"
+    assert "status" not in result["output"]
+    assert "notes" not in result["output"]
+
+
+def test_core_agent_prefers_stage_when_detected_stage_also_present() -> None:
+    client = FakeClient()
+    payload = json.loads(client.execution["output"])
+    payload["detected_stage"] = "legacy-stage"
+    client.execution["output"] = json.dumps(payload, ensure_ascii=False)
+    result = asyncio.run(
+        ProgressEvaluationHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+    )
+    assert result["output"]["stage"] == "execution"
+    assert "detected_stage" not in result["output"]
+
+
+def test_core_agent_rejects_duplicate_suggestion_keys_before_reporting() -> None:
+    client = FakeClient()
+    suggestion = {
+        "key": "task.create:archive",
+        "proposal_type": "task.create",
+        "title": "归档实验",
+        "rationale": "需要可追溯记录。",
+        "changes": {"title": "归档实验", "status": "todo"},
+    }
+    payload = json.loads(client.execution["output"])
+    payload["suggestions"] = [suggestion, dict(suggestion)]
+    client.execution["output"] = json.dumps(payload, ensure_ascii=False)
+    with pytest.raises(HandlerError) as caught:
+        asyncio.run(
+            ProgressEvaluationHandler(client)(
+                HandlerContext(job_id="job-1", worker_id="worker-1"), {}
+            )
+        )
+    assert caught.value.code == "PROGRESS_INVALID_OUTPUT"
+    assert "unique" in str(caught.value)

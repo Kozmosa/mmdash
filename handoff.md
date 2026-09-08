@@ -1,3 +1,43 @@
+# mmdash v0.1 Progress evaluation output-gate tolerance repair (issue #85)
+
+- Updated: 2026-09-08
+- Branch: `fix/progress-evaluation-output-tolerance`
+- Scope: fixes for the repeated `判定输出不合规` rejections observed during
+  live end-to-end testing after the issue #85 stuck-evaluation repair. A
+  41-sample mock replay (no Hermes needed) through the real Worker
+  `_parse_agent_output` and Core `decodeEvaluationResult` gates showed 13/41
+  realistic outputs surviving both gates; findings and the fix plan are
+  commented on issue #85
+  (https://github.com/Kozmosa/mmdash/issues/85#issuecomment-5574005070).
+- Core length bounds (`tracking.go`): `stage`/`summary` are now bounded with
+  `utf8.RuneCountInString` (100/10 000) to match the OpenAPI `maxLength`
+  character semantics; the previous `len()` byte check capped a Chinese stage
+  at ~33 characters and rejected a contract-valid 100-character stage
+  (`INVALID_EVALUATION_OUTPUT`).
+- Worker normalization (`progress_tracking/handler.py`): every missing list
+  field defaults to `[]` (previously only `work_state_updates`/`suggestions`),
+  unknown top-level keys such as an appended `status`/`notes` are dropped the
+  same way nested extras were already tolerated, and duplicate suggestion keys
+  are rejected at the Worker (`PROGRESS_INVALID_OUTPUT: ... not unique`)
+  instead of surfacing later as Core `INVALID_EVALUATION_OUTPUT`.
+- Item-scoped reference failures (`tracking_postgres.go`): automatic
+  work-state updates and suggestions whose references are hallucinated,
+  malformed, or since-deleted now skip that single item (the original stays in
+  `output_snapshot`) instead of rolling back the whole
+  `CompleteEvaluation`; infrastructure failures still fail the evaluation.
+  The human proposal-apply API path keeps `ErrReferenceInvalid` semantics.
+- Replay after the fixes: 25/41 pass the Worker gate and 23/41 pass both;
+  every remaining rejection is contract-correct (truncated/corrupt JSON,
+  trailing commentary, invalid enums, over-limit lengths, duplicate keys).
+- Tests: Go adds `TestDecodeEvaluationResultBoundsStageAndSummaryInRunes` and
+  gated integration `TestPostgresProgressTrackingSkipsUnresolvableAgentReferences`;
+  Worker adds four normalization/uniqueness cases. Full backend `go test`,
+  gated Progress integration suite against PostgreSQL 16
+  (`MMDASH_TEST_DATABASE_URL`, ephemeral `pixi exec` instance), Worker pytest
+  (75 passed), ruff, and gofmt pass. No contract, migration, or API change.
+- Live end-to-end acceptance against a real Hermes instance remains the open
+  follow-up from issue #85.
+
 # mmdash v0.1 md→tex fragment contract repairs (issue #87)
 
 - Updated: 2026-09-07

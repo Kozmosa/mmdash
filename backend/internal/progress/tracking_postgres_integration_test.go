@@ -532,3 +532,50 @@ func (fixture trackingPostgresFixture) finalizeEventEvaluation(t *testing.T, inp
 	}
 	return *evaluation
 }
+
+func TestPostgresProgressTrackingSkipsUnresolvableAgentReferences(t *testing.T) {
+	fixture := newTrackingPostgresFixture(t)
+	evaluation := fixture.queueEvaluation(t, map[string]interface{}{"version": "hallucinated-references"})
+	job, err := fixture.jobs.Get(fixture.ctx, evaluation.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.Attempts, job.Status = 1, jobs.StatusRunning
+	result := map[string]interface{}{
+		"evaluator_mode": "core_agent",
+		"output": map[string]interface{}{
+			"stage": "execution", "summary": "Assessment survives hallucinated references",
+			"changes_since_last": []string{}, "completed_items": []string{}, "in_progress_items": []string{}, "blockers": []string{},
+			"pending_questions": []string{}, "risks": []interface{}{},
+			"work_state_updates": []interface{}{
+				map[string]interface{}{"task_id": "00000000-0000-4000-8000-00000000dead", "state": TaskInProgress},
+				map[string]interface{}{"task_id": "not-a-uuid", "state": TaskBlocked},
+			},
+			"suggestions": []interface{}{
+				map[string]interface{}{"key": "update-missing", "proposal_type": "task.update", "target_id": "00000000-0000-4000-8000-00000000beef", "title": "Update missing task", "rationale": "hallucinated target", "changes": map[string]interface{}{"title": "x"}},
+				map[string]interface{}{"key": "complete-with-changes", "proposal_type": "task.complete", "target_id": "00000000-0000-4000-8000-00000000beef", "title": "Complete with changes", "rationale": "invalid shape", "changes": map[string]interface{}{"title": "y"}},
+				map[string]interface{}{"key": "milestone-create", "proposal_type": "milestone.create", "title": "Valid proposal", "rationale": "kept", "changes": map[string]interface{}{"title": "Valid proposal"}},
+			},
+		},
+	}
+	if err := fixture.store.Transaction.Within(fixture.ctx, nil, func(tx transaction.Tx) error {
+		if err := fixture.store.MarkEvaluationRunning(fixture.ctx, tx, job); err != nil {
+			return err
+		}
+		return fixture.store.CompleteEvaluation(fixture.ctx, tx, job, result)
+	}); err != nil {
+		t.Fatalf("hallucinated references must not discard the assessment: %v", err)
+	}
+	completed, err := fixture.store.GetEvaluation(fixture.ctx, fixture.projectID, evaluation.ID)
+	if err != nil || completed.Status != "succeeded" {
+		t.Fatalf("completed evaluation: evaluation=%#v err=%v", completed, err)
+	}
+	proposals, err := fixture.store.ListProposals(fixture.ctx, fixture.projectID)
+	if err != nil || len(proposals) != 1 || proposals[0].SourceKey != "milestone-create" {
+		t.Fatalf("only the resolvable proposal landed: proposals=%#v err=%v", proposals, err)
+	}
+	var taskUpdates int
+	if err := fixture.db.QueryRowContext(fixture.ctx, `SELECT count(*) FROM system_outbox WHERE project_id=$1 AND event_type='progress.task.updated'`, fixture.projectID).Scan(&taskUpdates); err != nil || taskUpdates != 0 {
+		t.Fatalf("hallucinated work-state references mutated tasks: count=%d err=%v", taskUpdates, err)
+	}
+}

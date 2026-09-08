@@ -2,6 +2,7 @@ package progress
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,26 @@ func TestDecodeEvaluationResultRejectsDuplicateSuggestionKeys(t *testing.T) {
 	}})
 	if err != ErrInvalidEvaluationOutput {
 		t.Fatalf("duplicate suggestion keys returned %v", err)
+	}
+}
+
+func TestDecodeEvaluationResultBoundsStageAndSummaryInRunes(t *testing.T) {
+	// The OpenAPI contract bounds detected_stage at maxLength 100 characters,
+	// which in JSON Schema counts Unicode characters, not bytes: a 100-character
+	// Chinese stage is 300 bytes on the wire.
+	base := func(stage string) map[string]interface{} {
+		return map[string]interface{}{"output": map[string]interface{}{
+			"stage": stage, "summary": "summary", "changes_since_last": []string{},
+			"completed_items": []string{}, "in_progress_items": []string{}, "blockers": []string{},
+			"risks": []interface{}{}, "pending_questions": []string{},
+			"work_state_updates": []interface{}{}, "suggestions": []interface{}{},
+		}}
+	}
+	if _, err := decodeEvaluationResult(base(strings.Repeat("阶", 100))); err != nil {
+		t.Fatalf("100-rune stage rejected: %v", err)
+	}
+	if _, err := decodeEvaluationResult(base(strings.Repeat("阶", 101))); err != ErrInvalidEvaluationOutput {
+		t.Fatalf("101-rune stage returned %v", err)
 	}
 }
 
