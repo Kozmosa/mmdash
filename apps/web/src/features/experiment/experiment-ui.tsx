@@ -67,6 +67,130 @@ export const rerunnableStatuses: ExperimentStatus[] = [
   "timed_out",
 ];
 
+// The pipeline a managed Experiment walks through; `created` and terminal
+// states anchor both ends. `awaiting_result` only applies to self runs, so it
+// sits between processing and verification in the shared strip.
+export const stageSequence: ExperimentStatus[] = [
+  "created",
+  "queued",
+  "preparing",
+  "running",
+  "uploading",
+  "processing_result",
+  "verifying_result",
+  "succeeded",
+];
+
+export function ExperimentStageStrip({
+  projectId,
+  status,
+}: Readonly<{ projectId: string; status: ExperimentStatus }>) {
+  const label: Record<ExperimentStatus, string> = {
+    archived: "已归档",
+    awaiting_result: "等待结果",
+    canceled: "已取消",
+    created: "待确认",
+    failed: "失败",
+    preparing: "准备中",
+    processing_result: "处理结果",
+    queued: "排队中",
+    running: "运行中",
+    succeeded: "已完成",
+    timed_out: "超时",
+    uploading: "上传结果",
+    verifying_result: "验证结果",
+  };
+  const broken = status === "failed" || status === "canceled" ||
+    status === "timed_out";
+  const archived = status === "archived";
+  const awaiting = status === "awaiting_result";
+  // Terminal failures and archives stop at the last stage the run reached;
+  // the server progress percentage is not available here, so a failed run
+  // marks the pre-terminal stages as passed conservatively.
+  const currentIndex = (() => {
+    if (awaiting) return stageSequence.indexOf("processing_result");
+    if (broken || archived) return stageSequence.length - 2;
+    return stageSequence.indexOf(status);
+  })();
+  return (
+    <div
+      aria-label={`阶段进度：${label[status]}`}
+      className="mt-3 flex h-1.5 gap-0.5 overflow-hidden rounded-full"
+    >
+      {stageSequence.map((stage, index) => {
+        const reached = index < currentIndex;
+        const active = index === currentIndex;
+        return (
+          <span
+            className={cn(
+              "h-full flex-1 rounded-full transition-colors",
+              reached && "bg-primary",
+              active && !broken && !archived && "animate-pulse bg-primary",
+              active && broken && "bg-destructive",
+              active && archived && "bg-muted-foreground/50",
+              !reached && !active && "bg-muted",
+            )}
+            key={`${projectId}-${stage}`}
+            title={label[stage]}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+export function ExperimentRetryChain({
+  item,
+  projectId,
+}: Readonly<{ item: Experiment; projectId: string }>) {
+  const retry = item.retry;
+  if (retry.retry_sequence === 0 && !retry.superseded_by_experiment_id) {
+    return null;
+  }
+  const href = (id: string) =>
+    `/projects/${encodeURIComponent(projectId)}/experiments/${encodeURIComponent(id)}`;
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      {retry.retry_sequence > 0 ? (
+        <>
+          <span>
+            重跑链 第 {retry.retry_sequence} 次 · 根
+            <Link
+              className="mx-0.5 font-mono underline-offset-2 hover:underline"
+              href={href(retry.root_experiment_id)}
+            >
+              {retry.root_experiment_id.slice(0, 8)}
+            </Link>
+          </span>
+          {retry.retry_of_experiment_id ? (
+            <span>
+              · 基于
+              <Link
+                className="mx-0.5 font-mono underline-offset-2 hover:underline"
+                href={href(retry.retry_of_experiment_id)}
+              >
+                {retry.retry_of_experiment_id.slice(0, 8)}
+              </Link>
+            </span>
+          ) : null}
+        </>
+      ) : null}
+      {retry.superseded_by_experiment_id ? (
+        <span className="text-amber-600">
+          已被重跑
+          <Link
+            className="mx-0.5 font-mono underline-offset-2 hover:underline"
+            href={href(retry.superseded_by_experiment_id)}
+          >
+            {retry.superseded_by_experiment_id.slice(0, 8)}
+          </Link>
+          取代
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
 export function ExperimentCard({
   checked,
   compareMode,
@@ -104,12 +228,10 @@ export function ExperimentCard({
             {new Date(item.updated_at).toLocaleString()}
           </span>
         </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }}
-          />
-        </div>
+        <ExperimentStageStrip
+          projectId={item.project_id}
+          status={item.execution_status}
+        />
         <p className="mt-2 text-xs text-muted-foreground">
           {item.source_commit.slice(0, 12)} · {item.entrypoint} ·{" "}
           {item.actual_runtime ?? item.requested_runtime_policy}
@@ -130,6 +252,7 @@ export function ExperimentCard({
             已有更新的重跑记录：{item.retry.latest_experiment_id}
           </p>
         ) : null}
+        <ExperimentRetryChain item={item} projectId={item.project_id} />
       </Link>
       <div className="mt-3 flex flex-wrap gap-2">
         {item.execution_status === "created" ? (
@@ -222,6 +345,57 @@ export function ExperimentDetail({ item }: Readonly<{ item: Experiment }>) {
         <code className="break-all">
           {item.result_commit_sha ?? "尚未绑定"}
         </code>
+        {item.retry.retry_sequence > 0 ||
+        item.retry.superseded_by_experiment_id ? (
+          <>
+            <span className="text-muted-foreground">重跑关系</span>
+            <span className="flex flex-wrap gap-x-3 gap-y-1">
+              <span>
+                第 {item.retry.retry_sequence} 次 · 根{" "}
+                <Link
+                  className="font-mono underline-offset-2 hover:underline"
+                  href={`/projects/${encodeURIComponent(item.project_id)}/experiments/${encodeURIComponent(item.retry.root_experiment_id)}`}
+                >
+                  {item.retry.root_experiment_id.slice(0, 8)}
+                </Link>
+              </span>
+              {item.retry.retry_of_experiment_id ? (
+                <span>
+                  基于{" "}
+                  <Link
+                    className="font-mono underline-offset-2 hover:underline"
+                    href={`/projects/${encodeURIComponent(item.project_id)}/experiments/${encodeURIComponent(item.retry.retry_of_experiment_id)}`}
+                  >
+                    {item.retry.retry_of_experiment_id.slice(0, 8)}
+                  </Link>
+                </span>
+              ) : null}
+              {item.retry.superseded_by_experiment_id ? (
+                <span>
+                  已被{" "}
+                  <Link
+                    className="font-mono underline-offset-2 hover:underline"
+                    href={`/projects/${encodeURIComponent(item.project_id)}/experiments/${encodeURIComponent(item.retry.superseded_by_experiment_id)}`}
+                  >
+                    {item.retry.superseded_by_experiment_id.slice(0, 8)}
+                  </Link>{" "}
+                  取代
+                </span>
+              ) : null}
+              {item.retry.warning_code ? (
+                <span className="text-amber-600">
+                  最新重跑{" "}
+                  <Link
+                    className="font-mono underline-offset-2 hover:underline"
+                    href={`/projects/${encodeURIComponent(item.project_id)}/experiments/${encodeURIComponent(item.retry.latest_experiment_id)}`}
+                  >
+                    {item.retry.latest_experiment_id.slice(0, 8)}
+                  </Link>
+                </span>
+              ) : null}
+            </span>
+          </>
+        ) : null}
         {item.result_contract ? (
           <>
             <span className="text-muted-foreground">自行运行说明</span>

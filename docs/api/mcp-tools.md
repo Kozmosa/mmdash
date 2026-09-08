@@ -19,6 +19,7 @@ machine-readable schemas live under `contracts/json-schema/mcp-tools`.
 | `experiment.create`      | Register a managed or self-run Experiment            | Yes            | CLI, Agent  | `experiment.create.json`      | Stage 8 mutation        |
 | `experiment.run`         | Queue a frozen managed Experiment                    | Yes            | CLI, Agent  | `experiment.run.json`         | Stage 8 mutation        |
 | `experiment.status`      | Read status, logs, failure, and retry guidance       | Yes            | CLI, Agent  | `experiment.status.json`      | Stage 8 read            |
+| `experiment.settings`    | Read Project experiment defaults (runtime/limits)    | Yes            | CLI, Agent  | `experiment.settings.json`    | Stage 8 read            |
 | `experiment.result.bind` | Bind a pushed self-run result Commit                 | Yes            | CLI, Agent  | `experiment.result.bind.json` | Stage 8 mutation        |
 | `result.get`             | Read a verified result tree and Artifact pointers    | Yes            | CLI, Agent  | `result.get.json`             | Stage 8 read            |
 | `system.echo`            | Verify the complete MCP Gateway boundary             | Yes            | CLI, Agent  | `system.echo.json`            | Foundation test tool    |

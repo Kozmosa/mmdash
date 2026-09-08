@@ -207,6 +207,32 @@ export const experimentStatusTool: ToolModule = {
   },
 };
 
+export const experimentSettingsTool: ToolModule = {
+  name: "experiment.settings",
+  register(server, context) {
+    server.registerTool(
+      this.name,
+      {
+        annotations: {
+          destructiveHint: false,
+          idempotentHint: true,
+          readOnlyHint: true,
+          title: "Read experiment settings",
+        },
+        description:
+          "Read the Project-level experiment defaults: timezone, default Runtime policy (auto/e2b/local-docker/local-process), default resource limits (cpu/memory/timeout/disk/pids/network), and the Git large-file threshold. Consult these before overriding runtime_policy or limits on experiment.create or experiment.run.",
+        inputSchema: z.object({
+          project_id: projectId,
+        }),
+      },
+      async ({ project_id }) =>
+        execute(context, this.name, project_id, async (requestContext) =>
+          context.coreClient.getExperimentSettings(project_id, requestContext),
+        ),
+    );
+  },
+};
+
 export const resultGetTool: ToolModule = {
   name: "result.get",
   register(server, context) {

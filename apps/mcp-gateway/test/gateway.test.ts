@@ -105,6 +105,7 @@ describe("MCP Gateway", () => {
       "experiment.create",
       "experiment.result.bind",
       "experiment.run",
+      "experiment.settings",
       "experiment.status",
       "progress.get",
       "progress.recalculate",
@@ -266,6 +267,55 @@ describe("MCP Gateway", () => {
       experimentId,
       expect.objectContaining({ accessToken: cliToken, projectId }),
       { limit: 25, tail: true },
+    );
+  });
+
+  it("returns project experiment defaults through the settings tool", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000085";
+    const getExperimentSettings = vi.fn().mockResolvedValue({
+      default_limits: {
+        cpu_millis: 2000,
+        disk_bytes: 10_737_418_240,
+        memory_bytes: 1_073_741_824,
+        network: "disabled",
+        pids: 128,
+        timeout_seconds: 1800,
+      },
+      default_runtime_policy: "local-docker",
+      git_large_file_threshold_bytes: 52_428_800,
+      project_id: projectId,
+      timezone: "Asia/Shanghai",
+    });
+    const gateway = buildGateway({
+      config: testConfig,
+      coreClient: { getExperimentSettings } as unknown as CoreClient,
+    });
+    gateways.push(gateway);
+    const sessionFetch = createSessionFetch(gateway, cliToken);
+    const client = new Client(
+      { name: "mmdash-experiment-settings-test", version: "0.1.0" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), {
+        fetch: sessionFetch.fetch,
+      }),
+    );
+
+    const result = await client.callTool({
+      arguments: { project_id: projectId },
+      name: "experiment.settings",
+    });
+    await client.close();
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      default_runtime_policy: "local-docker",
+      timezone: "Asia/Shanghai",
+    });
+    expect(getExperimentSettings).toHaveBeenCalledWith(
+      projectId,
+      expect.objectContaining({ accessToken: cliToken, projectId }),
     );
   });
 

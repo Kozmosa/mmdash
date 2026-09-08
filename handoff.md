@@ -1,3 +1,45 @@
+# mmdash v0.1 Stage 8 Experiment settings completion (issue #40)
+
+- Updated: 2026-09-08
+- Branch: `feat/experiment-settings-completion`
+- Scope: issue #40 triage concluded the complaint was stale —
+  `ExperimentSettingsPanel` and `ProjectBoxSettingsPanel` are wired into the
+  settings page sandbox tab, the settings backend (table `000044`, Core
+  `GET/PATCH /v1/projects/{id}/experiments/settings`, BFF, scheduling-time
+  auto/e2b/local-docker resolution) is complete, and all nine Web acceptance
+  items from `docs/development/experiment.md` are implemented. This PR closes
+  the remaining conformance gaps plus the agreed enhancements.
+- Settings mutation now emits `experiment.settings.updated` (new event schema
+  - catalog entry) and an `experiment.settings.updated` audit row inside the
+    same transaction as the UPDATE (`experiment/postgres.go`); previously the
+    mutation was a bare UPDATE with no event and no audit. Phase transitions
+    remain outbox-only by design (machine-driven).
+- New read-only MCP tool `experiment.settings`
+  (`contracts/json-schema/mcp-tools/experiment.settings.json`, gateway
+  registration, `docs/api/mcp-tools.md`, `docs/development/experiment.md`)
+  so Agents can consult Project defaults before overriding
+  runtime/limits on create/run.
+- Web enhancements: ExperimentCard renders a segmented per-stage strip
+  (created→…→succeeded, broken/archived states highlighted) instead of a bare
+  percentage bar, and both the card and the detail card render the retry
+  chain (第 N 次 / root / 基于 / 已被取代, all navigable links).
+- Tests: new gated integration
+  `TestPostgresUpdateSettingsEmitsEventAndAudit`; repaired the stale
+  `TestPostgresApplyTaskStatusPersistsExperimentLifecycle` fixture (it still
+  inserted the pre-000043 `box_nodes(project_id)` shape and asserted the
+  removed `experiment.preparing` audit action) — both pass against a real
+  PostgreSQL; three new web suites (experiment settings save/readonly, box
+  panel assign/remove/permissions, card stage strip + retry chain); MCP
+  gateway tool-list and settings-tool cases.
+- Docs: `docs/api/endpoints.md` searchable table now includes all 31 Core
+  experiment/box rows, 21 BFF rows, and the six experiment MCP tools
+  (545 operations); `docs/api/settings.md` stale "Project-scoped Box tokens"
+  sentence corrected to the account-level Box-token architecture.
+- Verification: `pnpm lint/test/build`, `contracts:check`, `api:check`
+  (545), backend `go test ./internal/...` green; Caddyfiles unchanged and
+  validated via `pixi exec caddy validate` (the gate script needs a local
+  caddy/docker binary this macOS host lacks). No migration or OpenAPI change.
+
 # mmdash v0.1 migration 000057 repair and prod.mmdash.moe verification deploy
 
 - Updated: 2026-09-08
@@ -6,8 +48,8 @@
   `prod.mmdash.moe`, compose project `mmdash-prod`) from `3d3b3af` tripped
   migration `000057`: the NOT NULL sha256 columns had no defaults, so any
   database with existing Article commits failed (`abstract_sha256 contains
-  null values`). PR #89 (`fix(article): make migration 000057 safe for
-  existing commits`) adds the empty-payload digest as a transient DEFAULT and
+null values`). PR #89 (`fix(article): make migration 000057 safe for
+existing commits`) adds the empty-payload digest as a transient DEFAULT and
   drops it after the backfill; fresh databases, databases that already applied
   the original file, and databases with legacy rows end schema-identical.
   Verified on a scratch PostgreSQL 16 reproducing the host failure exactly
@@ -135,7 +177,7 @@
   not stale).
 - macOS portability fix (`workers/mmdash-worker/.../article/handler.py`,
   commit `fix(article): resolve worker temp root so template paths stay
-  relative on macOS`): `TemporaryDirectory` returns `/var/folders/...` while
+relative on macOS`): `TemporaryDirectory` returns `/var/folders/...` while
   `_safe_child` resolves to `/private/var/...`, so
   `entrypoint.relative_to(template_root)` in `_create_source_zip` raised on
   macOS (invisible on Windows/Linux where the temp prefix has no symlink).
@@ -200,8 +242,8 @@
     for each CUMCM field command and skips fields the template cannot render.
   - Manifest 1.1: name `CUMCM 国赛论文模板（cumcmthesis）`, version 1.1.0,
     engine `xelatex`, `bibliography_tool: bibtex`, `bibliography_mode:
-    native`, `field_profile: cumcm`, `body_layout: single`, `abstract_target
-    .mmdash/abstract-block.tex`; idempotency key
+native`, `field_profile: cumcm`, `body_layout: single`, `abstract_target
+.mmdash/abstract-block.tex`; idempotency key
     `article-cumcm-template:1.1.0` (bumped with the native/GB-T-7714 switch;
     older 1.0.0 copies collapse out of the aggregate by the shared
     Name+Version rule). `gbt7714-numerical.bst` v2.1.5 (LPPL 1.3c) ships in
@@ -255,7 +297,7 @@
   - Native bibliography (Goal 1): inline citeproc rendered Chicago-style
     references; the template now declares `bibliography_mode: native` +
     `bibliography_tool: bibtex` and carries the `\bibliographystyle/
-    \bibliography` wiring itself, so Pandoc keeps `[@key]` as `\cite{key}`
+\bibliography` wiring itself, so Pandoc keeps `[@key]` as `\cite{key}`
     (abstract and body alike) and the shipped GB/T 7714 numerical style
     renders the reference list.
   - Field probing (Goal 2, `handler.py`): `_defined_template_commands`
@@ -292,7 +334,7 @@
 - Real compile validation (local TeX Live 2025, `latexmk -xelatex`, exact
   template ZIP contents plus worker-style slots): ① non-empty bib with two
   entries → bibtex renders a GB/T 7714 list (`刘海洋. LaTeX 入门[M]. 北京:
-  电子工业出版社, 2013.` with [M]/[Z] type markers), abstract + body
+电子工业出版社, 2013.` with [M]/[Z] type markers), abstract + body
   `\cite` resolve, exit 0; ② empty `references.bib` → build still succeeds;
   ③ registration-test equivalent (`\cite{mmdash-template-test}` + the
   Core-injected `@misc` entry) → resolved and compiled. The former
@@ -345,7 +387,7 @@
   `\membera`/`\memberb`/`\memberc`/`\supervisor`/`\tihao`/`\schoolname`/
   `\nianyue` only for `field_profile: cumcm`), `.mmdash/title-block.tex`
   (`\maketitle` only when title/author/date selected), `.mmdash/
-  keywords-block.tex`, `.mmdash/abstract-block.tex` (Pandoc-rendered abstract
+keywords-block.tex`, `.mmdash/abstract-block.tex` (Pandoc-rendered abstract
   content, empty when disabled), and `.mmdash/bibliography-block.tex`
   (empty for inline mode; native mode trusts template wiring and falls back to
   `\bibliographystyle{gbt7714-numerical}` + `\bibliography` only when the
@@ -378,7 +420,7 @@
   and BFF vitest 76/76 (dual-room flush barrier); eslint whole repo,
   prettier, gofmt, ruff, contract checks, 544-operation API catalog; full TS
   build (`next build` included), Go build, and `uv build --package
-  mmdash-worker` all pass.
+mmdash-worker` all pass.
 
 # mmdash v0.1 Article template import auto-detection (template fix 2 of 3)
 
@@ -421,7 +463,7 @@
   `TestTemplateTestWorkerInputExercisesBibliographyChain` (auto/bibtex/biber
   include the citation, `none` stays citation-free).
 - Verification: targeted vitest (26 article tests pass), `go test
-  ./internal/article/`, eslint (whole repo), prettier, gofmt/vet,
+./internal/article/`, eslint (whole repo), prettier, gofmt/vet,
   `check-contracts` (2 OpenAPI docs), API catalog (535 operations), ruff,
   and the full build phase (`pnpm -r --if-present build` including
   `next build`, plus `go build` and `uv build --package mmdash-worker`) all
@@ -447,7 +489,7 @@
 - Post-merge verification (after combining with upstream `db52e7e`): the
   auto-merged `article-workbench.tsx`, `service.go`, and `service_test.go`
   keep every change above intact; `go build ./backend/...`, `go test
-  ./internal/article/`, 29 article-related vitest tests (including the 9
+./internal/article/`, 29 article-related vitest tests (including the 9
   overleaf-import cases), gofmt, and prettier all pass. Upstream grew the
   API catalog to 541 operations; the 535 count in this entry is the
   pre-merge state at delivery time.

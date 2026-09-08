@@ -77,8 +77,10 @@ Project settings use Project RBAC:
 | owner, maintainer          | yes  | yes           |
 | editor, viewer, agent, box | yes  | no            |
 
-Project-scoped Agent and Box tokens remain constrained to their own
-`project_id`.
+Project-scoped Agent tokens remain constrained to their own `project_id`.
+Box tokens are account-level identities (see
+`docs/development/box.md`); they carry no `project_id` and reach Projects only
+through explicit Box-to-Project assignments.
 
 ## Connection-test convention
 

@@ -43,6 +43,7 @@ import {
   experimentCreateTool,
   experimentResultBindTool,
   experimentRunTool,
+  experimentSettingsTool,
   experimentStatusTool,
   resultGetTool,
 } from "./tools/experiment.js";
@@ -149,6 +150,7 @@ function createDefaultToolRegistry(): ToolRegistry {
   registry.register(experimentCreateTool);
   registry.register(experimentResultBindTool);
   registry.register(experimentRunTool);
+  registry.register(experimentSettingsTool);
   registry.register(experimentStatusTool);
   registry.register(dataListTool);
   registry.register(dataReadTool);
