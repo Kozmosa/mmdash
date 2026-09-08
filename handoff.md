@@ -1,3 +1,40 @@
+# mmdash v0.1 migration 000057 repair and prod.mmdash.moe verification deploy
+
+- Updated: 2026-09-08
+- Branch: `main` at `a339750` (PR #89)
+- Scope: upgrading the shared verification host (`Chen-External-8xA100`,
+  `prod.mmdash.moe`, compose project `mmdash-prod`) from `3d3b3af` tripped
+  migration `000057`: the NOT NULL sha256 columns had no defaults, so any
+  database with existing Article commits failed (`abstract_sha256 contains
+  null values`). PR #89 (`fix(article): make migration 000057 safe for
+  existing commits`) adds the empty-payload digest as a transient DEFAULT and
+  drops it after the backfill; fresh databases, databases that already applied
+  the original file, and databases with legacy rows end schema-identical.
+  Verified on a scratch PostgreSQL 16 reproducing the host failure exactly
+  (migrate to 000056, seed a legacy commit, migrate through 000057), plus
+  `go test ./internal/article/`.
+- Deploy result: host is at `a339750` (includes PR #86, #88, #89); migrations
+  through `000057` applied; the six legacy Article commits backfilled with
+  `e3b0c442…`; all `mmdash-prod-*` containers healthy; tunnel returns 200;
+  Core/Worker logs clean.
+- Live pipeline verification on that host (evaluator temporarily switched to
+  `mock` via a removed `compose.override.yaml`; Core hardcodes
+  `MMDASH_PROGRESS_EVALUATOR_MODE: core_agent` in `deploy/production/compose.yaml`):
+  login → new project → tracking enabled → task creation fired
+  `progress.task.created` → debounced request → Job → Worker evaluation →
+  `succeeded` with `trigger_kind=event`, `evaluator_mode=mock`,
+  `detected_stage=planning`, one attempt, no error. Evaluator mode was
+  reverted to `core_agent` afterwards; both verification projects were
+  trashed; server working tree is clean. This verifies the event-trigger
+  restoration and the full completion lifecycle on the deployed stack; the
+  real-Hermes output path remains covered by the PR #88 replay suites and
+  still awaits imouup's live acceptance (issue #85).
+- Ops note: `docker compose up -d` does NOT recreate the Worker — it carries
+  the `worker` profile; deploy it with
+  `docker compose --env-file deploy/production/.env.production -f deploy/production/compose.yaml --profile worker up -d --build worker`.
+  Also: GitHub HTTPS from that host is intermittent; git updates are
+  transferred via `git bundle` + `scp` (fetch bundle, ff-merge).
+
 # mmdash v0.1 Progress evaluation output-gate tolerance repair (issue #85)
 
 - Updated: 2026-09-08
