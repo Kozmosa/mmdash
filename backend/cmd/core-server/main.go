@@ -12,6 +12,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	// Embed the IANA timezone database: the runtime image is Alpine without
+	// the tzdata package, and Experiment settings validation plus frozen
+	// result-directory timestamps call time.LoadLocation with Project
+	// timezones like Asia/Shanghai.
+	_ "time/tzdata"
 
 	"github.com/mmdash/mmdash/backend/internal/agent"
 	"github.com/mmdash/mmdash/backend/internal/agent/hermes"
