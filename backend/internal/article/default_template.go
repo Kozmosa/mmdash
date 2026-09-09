@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultTemplateFilename       = "mmdash-default-template.zip"
-	defaultTemplateIdempotencyKey = "article-default-template:1.1.0"
+	defaultTemplateIdempotencyKey = "article-default-template:1.1.1"
 )
 
 var defaultTemplateTimestamp = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -20,14 +20,14 @@ func defaultTemplateManifest() TemplateManifest {
 	return TemplateManifest{
 		SchemaVersion:      "1.1",
 		Name:               "mmdash 默认论文模板",
-		Version:            "1.1.0",
+		Version:            "1.1.1",
 		Entrypoint:         "main.tex",
 		Output:             "main.pdf",
 		ContentTarget:      "generated-content.tex",
 		BibliographyTarget: "references.bib",
 		Engine:             "xelatex",
 		BibliographyTool:   "none",
-		AbstractTarget:     ".mmdash/abstract-block.tex",
+		AbstractTarget:     "mmdash/abstract-block.tex",
 		BodyLayout:         "single",
 		FieldProfile:       "default",
 		FigureDir:          "figures",
@@ -59,17 +59,17 @@ func defaultTemplateArchive() ([]byte, string, error) {
 \usepackage{hyperref}
 \usepackage{xcolor}
 \providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\input{.mmdash/metadata}
+\input{mmdash/metadata}
 \begin{document}
-\input{.mmdash/title-block}
+\input{mmdash/title-block}
 \ifmmdashabstract
 \begin{abstract}
-\input{.mmdash/abstract-block}
+\input{mmdash/abstract-block}
 \end{abstract}
 \fi
-\input{.mmdash/keywords-block}
+\input{mmdash/keywords-block}
 \input{generated-content}
-\input{.mmdash/bibliography-block}
+\input{mmdash/bibliography-block}
 \end{document}
 `),
 		},

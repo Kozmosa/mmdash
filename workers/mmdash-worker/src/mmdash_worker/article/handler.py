@@ -869,7 +869,7 @@ def _write_metadata_blocks(
     only when the template actually defines its target command (e.g.
     cumcmthesis.cls has no \\nianyue, so submit_date is dropped).
     """
-    generated = template_root / ".mmdash"
+    generated = template_root / "mmdash"
     generated.mkdir(parents=True, exist_ok=True)
     lines = [
         "\\newif\\ifmmdashabstract",
@@ -965,7 +965,7 @@ def _inject_bibliography_block(
     template without any bibliography command receives the GB/T 7714 numeric
     fallback pointing at the generated .bib file.
     """
-    generated = template_root / ".mmdash"
+    generated = template_root / "mmdash"
     generated.mkdir(parents=True, exist_ok=True)
     body = ""
     if str(manifest.get("bibliography_mode", "inline")) == "native":

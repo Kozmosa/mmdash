@@ -25,6 +25,7 @@ RUN sed -i \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
       biber=2.18-1 \
+      fonts-texgyre=20180621-6 \
       latexmk=1:4.79-1 \
       pandoc=2.17.1.1-2~deb12u1 \
       texlive-fonts-recommended=2022.20230122-3 \
@@ -33,6 +34,7 @@ RUN sed -i \
       texlive-latex-recommended=2022.20230122-3 \
       texlive-lang-chinese=2022.20230122-1 \
       texlive-luatex=2022.20230122-3 \
+      texlive-plain-generic=2022.20230122-4 \
       texlive-xetex=2022.20230122-3 \
     && pandoc --version | grep -F 'pandoc 2.17.1.1' \
     && latexmk -v | grep -F 'Version 4.79' \
@@ -40,6 +42,10 @@ RUN sed -i \
     && xelatex --version | grep -F 'TeX Live 2022/Debian' \
     && lualatex --version | grep -F 'TeX Live 2022/Debian' \
     && kpsewhich ctexart.cls | grep -F '/ctex/ctexart.cls' \
+    && kpsewhich ulem.sty | grep -F 'ulem.sty' \
+    && printf '\\documentclass{article}\\usepackage{fontspec}\\begin{document}\\setmainfont{TeX Gyre Termes}x\\end{document}' > /tmp/fontcheck.tex \
+    && xelatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp /tmp/fontcheck.tex >/dev/null \
+    && test -f /tmp/fontcheck.pdf \
     && rm -rf /var/lib/apt/lists/*
 
 ARG PYPI_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/

@@ -80,7 +80,10 @@ func (store PostgresStore) PersistAbstract(ctx context.Context, projectID, actor
 }
 
 // PersistPaperInfo saves the structured 论文信息 document with a dedicated
-// revision so commits and builds can freeze it like any other input.
+// revision so commits and builds can freeze it like any other input. Projects
+// whose draft row has not been created yet (no collaborative flush happened)
+// still save their paper info: the row is inserted with defaults, matching
+// the PersistDraft upsert behavior.
 func (store PostgresStore) PersistPaperInfo(ctx context.Context, projectID, actorID string, paperInfo map[string]interface{}) (Draft, error) {
 	err := store.Transaction.Within(ctx, nil, func(tx transaction.Tx) error {
 		var current int64
@@ -94,11 +97,8 @@ func (store PostgresStore) PersistPaperInfo(ctx context.Context, projectID, acto
 		if err != nil {
 			return ErrInvalid
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE article_drafts SET paper_info=$3,paper_info_revision=$4,updated_at=$5 WHERE project_id=$1 AND paper_info_revision=$2`, projectID, current, encoded, current+1, store.now())
+		_, err = tx.ExecContext(ctx, `INSERT INTO article_drafts(project_id,paper_info,paper_info_revision,updated_by,updated_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id) DO UPDATE SET paper_info=EXCLUDED.paper_info,paper_info_revision=EXCLUDED.paper_info_revision,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at`, projectID, encoded, current+1, actorID, store.now())
 		if err != nil {
-			return err
-		}
-		if err := requireArticleAffected(result, err); err != nil {
 			return err
 		}
 		return store.record(ctx, tx, "article.draft.flushed", projectID, actorID, "paper_info", projectID, map[string]interface{}{"paper_info_revision": current + 1, "status": "synced"})

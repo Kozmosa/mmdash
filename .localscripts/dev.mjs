@@ -182,6 +182,14 @@ async function main() {
     );
     const workerBuildContext = prepareWorkerBuildContext();
     try {
+      const debianMirror = mirrorUrlOrThrow(
+        environment.MMDASH_DEV_DEBIAN_MIRROR,
+        "MMDASH_DEV_DEBIAN_MIRROR",
+      );
+      const debianSecurityMirror = mirrorUrlOrThrow(
+        environment.MMDASH_DEV_DEBIAN_SECURITY_MIRROR,
+        "MMDASH_DEV_DEBIAN_SECURITY_MIRROR",
+      );
       const workerBuildArguments = ["build"];
       if (dockerProxyUrl) {
         workerBuildArguments.push(
@@ -189,6 +197,18 @@ async function main() {
           `HTTP_PROXY=${dockerProxyUrl}`,
           "--build-arg",
           `HTTPS_PROXY=${dockerProxyUrl}`,
+        );
+      }
+      if (debianMirror) {
+        workerBuildArguments.push(
+          "--build-arg",
+          `DEBIAN_MIRROR=${debianMirror}`,
+        );
+      }
+      if (debianSecurityMirror) {
+        workerBuildArguments.push(
+          "--build-arg",
+          `DEBIAN_SECURITY_MIRROR=${debianSecurityMirror}`,
         );
       }
       workerBuildArguments.push(
@@ -356,8 +376,11 @@ async function main() {
       MMDASH_CORE_URL: dockerAccessibleUrl(environment.MMDASH_CORE_URL),
       MMDASH_WORKER_API_TOKEN: workerToken,
       MMDASH_WORKER_ID: developmentWorkerContainerName,
+      // Worker transfers (template/resource downloads and output uploads)
+      // are signed against Core's internal origin, not the object storage
+      // endpoint, so the container-visible override must target Core.
       MMDASH_WORKER_TRANSFER_ORIGIN_OVERRIDE: dockerAccessibleUrl(
-        environment.OBJECT_STORAGE_PUBLIC_ENDPOINT,
+        environment.CORE_BASE_URL,
       ),
     };
     startManaged(
@@ -622,6 +645,22 @@ function developmentPort(environment, name, fallback) {
   }
   environment[name] = String(value);
   return value;
+}
+
+function mirrorUrlOrThrow(value, name) {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return undefined;
+  const parsed = new URL(trimmed);
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error(
+      `${name} must be an HTTP(S) URL without embedded credentials`,
+    );
+  }
+  return trimmed;
 }
 
 async function resolveDevelopmentWorkerMode(environment) {

@@ -100,9 +100,9 @@ def test_metadata_blocks_map_cumcm_fields_and_skip_unselected(tmp_path: Path) ->
     }
     _write_metadata_blocks(tmp_path, manifest, fields, abstract_enabled=True)
 
-    metadata = (tmp_path / ".mmdash" / "metadata.tex").read_text(encoding="utf-8")
-    title_block = (tmp_path / ".mmdash" / "title-block.tex").read_text(encoding="utf-8")
-    keywords_block = (tmp_path / ".mmdash" / "keywords-block.tex").read_text(encoding="utf-8")
+    metadata = (tmp_path / "mmdash" / "metadata.tex").read_text(encoding="utf-8")
+    title_block = (tmp_path / "mmdash" / "title-block.tex").read_text(encoding="utf-8")
+    keywords_block = (tmp_path / "mmdash" / "keywords-block.tex").read_text(encoding="utf-8")
 
     # Selecting only 队伍编号 generates only \baominghao: no empty title,
     # author, date, or abstract commands ride along. The class defines
@@ -116,12 +116,12 @@ def test_metadata_blocks_map_cumcm_fields_and_skip_unselected(tmp_path: Path) ->
     assert "\\mmdashabstracttrue" in metadata
 
     _write_metadata_blocks(tmp_path, manifest, {}, abstract_enabled=False)
-    metadata = (tmp_path / ".mmdash" / "metadata.tex").read_text(encoding="utf-8")
+    metadata = (tmp_path / "mmdash" / "metadata.tex").read_text(encoding="utf-8")
     assert "\\mmdashabstractfalse" in metadata
 
     default_manifest = {**MANIFEST_11, "field_profile": "default"}
     _write_metadata_blocks(tmp_path, default_manifest, {"team_number": {"value": "T1"}}, True)
-    metadata = (tmp_path / ".mmdash" / "metadata.tex").read_text(encoding="utf-8")
+    metadata = (tmp_path / "mmdash" / "metadata.tex").read_text(encoding="utf-8")
     # The default profile does not understand CUMCM commands.
     assert "baominghao" not in metadata
 
@@ -135,7 +135,7 @@ def test_metadata_blocks_skip_fields_without_template_commands(tmp_path: Path) -
     }
     _write_metadata_blocks(tmp_path, manifest, fields, abstract_enabled=True)
 
-    metadata = (tmp_path / ".mmdash" / "metadata.tex").read_text(encoding="utf-8")
+    metadata = (tmp_path / "mmdash" / "metadata.tex").read_text(encoding="utf-8")
     # cumcmthesis.cls defines \tihao but has no \nianyue, so the submit date
     # is dropped instead of failing the build with an undefined command.
     assert "\\tihao{B}" in metadata
@@ -152,7 +152,7 @@ def test_metadata_blocks_keywords_fall_back_without_class_keywords(tmp_path: Pat
     _write_metadata_blocks(
         tmp_path, manifest, {"keywords": {"value": "优化"}}, abstract_enabled=True
     )
-    keywords_block = (tmp_path / ".mmdash" / "keywords-block.tex").read_text(encoding="utf-8")
+    keywords_block = (tmp_path / "mmdash" / "keywords-block.tex").read_text(encoding="utf-8")
     assert keywords_block == "\\noindent\\textbf{关键词：}优化\n"
 
 
@@ -169,7 +169,7 @@ def test_bibliography_block_modes(tmp_path: Path) -> None:
     _inject_bibliography_block(
         tmp_path, {"bibliography_mode": "inline"}, entrypoint.read_text(), target
     )
-    block = (tmp_path / ".mmdash" / "bibliography-block.tex").read_text(encoding="utf-8")
+    block = (tmp_path / "mmdash" / "bibliography-block.tex").read_text(encoding="utf-8")
     assert block == ""
 
     # Native mode trusts existing wiring; only unwired templates get the
@@ -177,13 +177,13 @@ def test_bibliography_block_modes(tmp_path: Path) -> None:
     _inject_bibliography_block(
         tmp_path, {"bibliography_mode": "native"}, entrypoint.read_text(), target
     )
-    block = (tmp_path / ".mmdash" / "bibliography-block.tex").read_text(encoding="utf-8")
+    block = (tmp_path / "mmdash" / "bibliography-block.tex").read_text(encoding="utf-8")
     assert "gbt7714-numerical" in block
     assert "\\bibliography{references-zotero}" in block
 
     wired = "\\begin{document}\\bibliographystyle{plain}\\bibliography{refs}\\end{document}"
     _inject_bibliography_block(tmp_path, {"bibliography_mode": "native"}, wired, target)
-    block = (tmp_path / ".mmdash" / "bibliography-block.tex").read_text(encoding="utf-8")
+    block = (tmp_path / "mmdash" / "bibliography-block.tex").read_text(encoding="utf-8")
     assert block == ""
 
 

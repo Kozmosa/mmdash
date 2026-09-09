@@ -47,10 +47,10 @@ func TestCumcmTemplateArchiveIsDeterministicAndSelfDescribing(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`\documentclass[withoutpreface,bwprint]{cumcmthesis}`,
-		`\input{.mmdash/metadata}`,
+		`\input{mmdash/metadata}`,
 		`\begin{abstract}`,
-		`\input{.mmdash/abstract-block}`,
-		`\input{.mmdash/keywords-block}`,
+		`\input{mmdash/abstract-block}`,
+		`\input{mmdash/keywords-block}`,
 		`\input{generated-content}`,
 		`\bibliographystyle{gbt7714-numerical}`,
 		`\bibliography{references}`,
@@ -59,6 +59,9 @@ func TestCumcmTemplateArchiveIsDeterministicAndSelfDescribing(t *testing.T) {
 		if !bytes.Contains(entries["main.tex"], []byte(expected)) {
 			t.Fatalf("CUMCM main.tex lacks %q: %s", expected, entries["main.tex"])
 		}
+	}
+	if bytes.Contains(entries["main.tex"], []byte(`\input{.mmdash/`)) {
+		t.Fatal("dot directories are rejected by openin_any=p; generated blocks must live under mmdash/")
 	}
 	if bytes.Contains(entries["main.tex"], []byte(`\nianyue`)) {
 		t.Fatal("the nianyue shim must not come back; the worker probes field commands")
@@ -70,7 +73,19 @@ func TestCumcmTemplateArchiveIsDeterministicAndSelfDescribing(t *testing.T) {
 		t.Fatal("CUMCM main.tex must not input the original scaffold sections")
 	}
 	if !bytes.Contains(entries["cumcmthesis.cls"], []byte(`\newcommand\keywords[1]{%`)) {
-		t.Fatal("cumcmthesis.cls was not embedded byte-for-byte")
+		t.Fatal("cumcmthesis.cls was not embedded intact")
+	}
+	// The only deliberate class divergence: conditional font fallbacks so the
+	// class also builds on the Linux toolchain without licensed Windows fonts.
+	for _, expected := range []string{
+		`\IfFontExistsTF{Times New Roman}`,
+		`\IfFontExistsTF{Arial}`,
+		`\IfFontExistsTF{simkai.ttf}`,
+		`\IfFontExistsTF{SimSun}`,
+	} {
+		if !bytes.Contains(entries["cumcmthesis.cls"], []byte(expected)) {
+			t.Fatalf("cumcmthesis.cls lacks the font fallback guard %q", expected)
+		}
 	}
 	var manifest TemplateManifest
 	if err = json.Unmarshal(entries["mmdash-template.json"], &manifest); err != nil {
@@ -82,7 +97,7 @@ func TestCumcmTemplateArchiveIsDeterministicAndSelfDescribing(t *testing.T) {
 	expected := cumcmTemplateManifest()
 	if expected.SchemaVersion != "1.1" || expected.Engine != "xelatex" || expected.BibliographyTool != "bibtex" ||
 		expected.FieldProfile != "cumcm" || expected.BibliographyMode != "native" || expected.BodyLayout != "single" ||
-		expected.AbstractTarget != ".mmdash/abstract-block.tex" || expected.ContentTarget == expected.Entrypoint {
+		expected.AbstractTarget != "mmdash/abstract-block.tex" || expected.ContentTarget == expected.Entrypoint {
 		t.Fatalf("built-in CUMCM manifest does not match the template spec: %#v", expected)
 	}
 }
