@@ -537,10 +537,14 @@ func renderImageGroup(node map[string]interface{}) string {
 		if rowIndex > 0 {
 			builder.WriteString("\n\\par\\medskip\n")
 		}
+		// Keep each editor row explicit. The trailing percent below suppresses
+		// source whitespace between adjacent subfigures so LaTeX cannot wrap an
+		// otherwise complete row early.
+		builder.WriteString("\\noindent\n")
 		rowLen := len(row)
 		for itemIndex, item := range row {
 			if itemIndex > 0 {
-				builder.WriteString("\n\\hfill\n")
+				builder.WriteString("\n\\hspace{0.02\\linewidth}\n")
 			}
 			widthStr := subfigureWidth(rowLen)
 			if item.width >= 10 && item.width < 100 {
@@ -555,6 +559,9 @@ func renderImageGroup(node map[string]interface{}) string {
 				builder.WriteString(fmt.Sprintf("\n  \\caption{%s}", escapedSubCaption))
 			}
 			builder.WriteString("\n\\end{subfigure}")
+			if itemIndex < rowLen-1 {
+				builder.WriteString("%")
+			}
 		}
 	}
 

@@ -12,7 +12,7 @@ import (
 
 const (
 	cumcm2026TemplateFilename       = "mmdash-cumcm2026-template.zip"
-	cumcm2026TemplateIdempotencyKey = "article-cumcm2026-template:1.0.0"
+	cumcm2026TemplateIdempotencyKey = "article-cumcm2026-template:1.0.1"
 	// cumcm2026RetiredTemplateName identifies the superseded built-in whose
 	// rows stay persisted for old builds but disappear from the template list.
 	cumcm2026RetiredTemplateName = "CUMCM 国赛论文模板（cumcmthesis）"
@@ -35,7 +35,7 @@ func cumcm2026TemplateManifest() TemplateManifest {
 	return TemplateManifest{
 		SchemaVersion:      "1.1",
 		Name:               "CUMCM 2026 国赛论文模板（cumcm2026）",
-		Version:            "1.0.0",
+		Version:            "1.0.1",
 		Entrypoint:         "main.tex",
 		Output:             "main.pdf",
 		ContentTarget:      "texfile/body.tex",

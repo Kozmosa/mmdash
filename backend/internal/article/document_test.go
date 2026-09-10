@@ -280,7 +280,7 @@ func TestNormalizeDocumentRendersWrappingImageGroupAndSanitizesChildren(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "\\begin{figure}[htbp]\n\\centering\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{mmdash://artifact/artifact-1/versions/version-2}\n  \\caption{子图 B}\n\\end{subfigure}\n\\par\\medskip\n\\begin{subfigure}[b]{0.98\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{about:blank}\n\\end{subfigure}\n\\caption{组合大题注}\n\\end{figure}\n"
+	want := "\\begin{figure}[htbp]\n\\centering\n\\noindent\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}%\n\\hspace{0.02\\linewidth}\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{mmdash://artifact/artifact-1/versions/version-2}\n  \\caption{子图 B}\n\\end{subfigure}\n\\par\\medskip\n\\noindent\n\\begin{subfigure}[b]{0.98\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{about:blank}\n\\end{subfigure}\n\\caption{组合大题注}\n\\end{figure}\n"
 	if markdown != want {
 		t.Fatalf("unexpected image group markdown:\n%s\nwant:\n%s", markdown, want)
 	}
@@ -318,9 +318,57 @@ func TestNormalizeDocumentImageGroupPreservesReorderedSequenceAndAdaptiveWidths(
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "\\begin{figure}[htbp]\n\\centering\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/c.png}\n  \\caption{子图 C}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/b.png}\n  \\caption{子图 B}\n\\end{subfigure}\n\\caption{重排组合}\n\\end{figure}\n"
+	want := "\\begin{figure}[htbp]\n\\centering\n\\noindent\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/c.png}\n  \\caption{子图 C}\n\\end{subfigure}%\n\\hspace{0.02\\linewidth}\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}%\n\\hspace{0.02\\linewidth}\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/b.png}\n  \\caption{子图 B}\n\\end{subfigure}\n\\caption{重排组合}\n\\end{figure}\n"
 	if markdown != want {
 		t.Fatalf("unexpected reordered image group markdown:\n%s\nwant:\n%s", markdown, want)
+	}
+}
+
+func TestNormalizeDocumentImageGroupPreservesEditorRows(t *testing.T) {
+	labels := []string{"C", "A", "E", "B", "D"}
+	content := make([]interface{}, 0, len(labels))
+	for _, label := range labels {
+		content = append(content, map[string]interface{}{
+			"type": "articleImage",
+			"attrs": map[string]interface{}{
+				"alt":     "图片 " + label,
+				"caption": "子图 " + label,
+				"id":      "image-" + strings.ToLower(label),
+				"src":     "https://example.test/" + strings.ToLower(label) + ".png",
+			},
+		})
+	}
+	document := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{
+			"type":    "articleImageGroup",
+			"attrs":   map[string]interface{}{"caption": "两列组合", "columns": 2, "id": "image-group-rows"},
+			"content": content,
+		},
+	}}
+
+	markdown, _, err := NormalizeDocument(document, nil, "human", map[string]interface{}{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := strings.Split(markdown, "\n\\par\\medskip\n")
+	if len(rows) != 3 {
+		t.Fatalf("expected three editor rows, got %d:\n%s", len(rows), markdown)
+	}
+	for index, wantCount := range []int{2, 2, 1} {
+		if got := strings.Count(rows[index], "\\begin{subfigure}"); got != wantCount {
+			t.Fatalf("row %d has %d subfigures, want %d:\n%s", index+1, got, wantCount, markdown)
+		}
+	}
+	if got := strings.Count(markdown, "\\hspace{0.02\\linewidth}"); got != 2 {
+		t.Fatalf("expected one fixed gap between each pair of same-row subfigures, got %d:\n%s", got, markdown)
+	}
+	previous := -1
+	for _, label := range labels {
+		position := strings.Index(markdown, "\\caption{子图 "+label+"}")
+		if position <= previous {
+			t.Fatalf("subfigure order changed for %s:\n%s", label, markdown)
+		}
+		previous = position
 	}
 }
 
