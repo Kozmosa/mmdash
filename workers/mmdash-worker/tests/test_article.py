@@ -19,6 +19,7 @@ from mmdash_worker.article import handler as handler_module
 from mmdash_worker.article.handler import (
     ArticleBuildHandler,
     _beautify_longtables,
+    _center_standalone_images,
     _CommandFailure,
     _convert_resource_for_latex,
     _extract_template,
@@ -504,6 +505,39 @@ def test_includegraphics_width_keeps_aspect_ratio(tmp_path: Path) -> None:
     assert fragment.read_text(encoding="utf-8") == (
         "\\includegraphics[width=0.5\\textwidth]{figures/a.jpg}\n"
         "\\includegraphics[height=0.5\\textheight]{figures/b.jpg}\n"
+    )
+
+
+def test_center_standalone_images_without_touching_figures_or_subfigures(tmp_path: Path) -> None:
+    fragment = tmp_path / "section.tex"
+    fragment.write_text(
+        "text before\n\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/single.jpg}\n\n"
+        "\\begin{figure}[htbp]\n"
+        "\\centering\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/captioned.jpg}\n"
+        "\\caption{已有图注}\n"
+        "\\end{figure}\n\n"
+        "\\begin{subfigure}[b]{0.45\\linewidth}\n"
+        "  \\includegraphics[width=\\linewidth]{figures/grouped.jpg}\n"
+        "\\end{subfigure}\n",
+        encoding="utf-8",
+    )
+
+    _center_standalone_images(fragment)
+
+    assert fragment.read_text(encoding="utf-8") == (
+        "text before\n\n"
+        "{\\centering\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/single.jpg}\\par}\n\n"
+        "\\begin{figure}[htbp]\n"
+        "\\centering\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/captioned.jpg}\n"
+        "\\caption{已有图注}\n"
+        "\\end{figure}\n\n"
+        "\\begin{subfigure}[b]{0.45\\linewidth}\n"
+        "  \\includegraphics[width=\\linewidth]{figures/grouped.jpg}\n"
+        "\\end{subfigure}\n"
     )
 
 

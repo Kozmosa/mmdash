@@ -342,6 +342,7 @@ class ArticleBuildHandler:
                     # split section file, and the abstract alike.
                     _beautify_longtables(fragment_path)
                     _preserve_image_aspect_ratios(fragment_path)
+                    _center_standalone_images(fragment_path)
                 if (
                     bibliography.stat().st_size
                     and bibliography_mode != "native"
@@ -555,6 +556,9 @@ def _prepare_native_citations(markdown: str, _manifest: Mapping[str, Any]) -> st
 
 
 _INCLUDEGRAPHICS_WITH_OPTIONS = re.compile(r"(\\includegraphics)\[([^\]]*)\](\{[^{}\n]+\})")
+_STANDALONE_INCLUDEGRAPHICS = re.compile(
+    r"^\\includegraphics(?:\[[^\]\r\n]*\])?\{[^{}\r\n]+\}\s*$"
+)
 
 
 def _preserve_image_aspect_ratios(target: Path) -> None:
@@ -581,6 +585,41 @@ def _preserve_image_aspect_ratios(target: Path) -> None:
         raise HandlerError(
             "ARTICLE_BUILD_FAILED",
             "Pandoc image output could not be prepared for LaTeX",
+        ) from error
+
+
+def _center_standalone_images(target: Path) -> None:
+    r"""Center Pandoc images emitted as a bare block without a caption.
+
+    Pandoc creates a centered ``figure`` for an image caption, but emits a
+    naked ``\\includegraphics`` line when the caption is empty. Article images
+    default to center alignment in the editor, so keep that invariant in the
+    generated LaTeX without touching grouped subfigures or existing figures.
+    """
+    try:
+        generated = target.read_text(encoding="utf-8")
+        lines = generated.splitlines(keepends=True)
+        updated: list[str] = []
+        changed = False
+        for index, line in enumerate(lines):
+            body = line.rstrip("\r\n")
+            previous_blank = not updated or not updated[-1].rstrip("\r\n").strip()
+            next_blank = index + 1 == len(lines) or not lines[index + 1].rstrip("\r\n").strip()
+            if (
+                _STANDALONE_INCLUDEGRAPHICS.fullmatch(body)
+                and previous_blank
+                and next_blank
+            ):
+                updated.extend(["{\\centering\n", body + "\\par}\n"])
+                changed = True
+            else:
+                updated.append(line)
+        if changed:
+            target.write_text("".join(updated), encoding="utf-8", newline="\n")
+    except OSError as error:
+        raise HandlerError(
+            "ARTICLE_BUILD_FAILED",
+            "Pandoc image output could not be centered for LaTeX",
         ) from error
 
 
