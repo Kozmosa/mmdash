@@ -62,6 +62,15 @@ const mockItemsRoot: ZoteroItem[] = [
     version: 2,
     year: "2025",
   },
+  {
+    authors: [],
+    citation_key: "Attachment2025",
+    item_key: "attachment-1",
+    item_type: "attachment",
+    raw: { key: "attachment-1", title: "Hidden PDF attachment" },
+    title: "Hidden PDF attachment",
+    version: 3,
+  },
 ];
 
 const mockItemsDL: ZoteroItem[] = [
@@ -125,6 +134,7 @@ describe("Article Writing Workspace Zotero panel", () => {
       screen.getByText("Foundations of Deep Learning"),
     ).toBeInTheDocument();
     expect(screen.getByText("Discrete Math Models")).toBeInTheDocument();
+    expect(screen.queryByText("Hidden PDF attachment")).toBeNull();
 
     // Verify there is NO "固定引用" or "固定并置入" button
     expect(screen.queryByRole("button", { name: "固定引用" })).toBeNull();

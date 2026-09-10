@@ -1601,6 +1601,9 @@ func (service *Service) ListZoteroItems(ctx context.Context, caller auth.Identit
 	items := make([]ZoteroItem, 0, len(raw))
 	for _, entry := range raw {
 		data := object(entry["data"])
+		if isZoteroAttachment(data) {
+			continue
+		}
 		item := ZoteroItem{
 			ItemKey:     stringValue(entry["key"]),
 			Version:     int64Value(entry["version"]),
@@ -1635,6 +1638,10 @@ func (service *Service) ListZoteroItems(ctx context.Context, caller auth.Identit
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func isZoteroAttachment(data map[string]interface{}) bool {
+	return strings.EqualFold(stringValue(data["itemType"]), "attachment")
 }
 
 func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, projectID, query string) ([]ZoteroItem, error) {

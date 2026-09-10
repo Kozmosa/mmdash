@@ -98,8 +98,46 @@ func TestBibliographyFreezesStableVersionPointers(t *testing.T) {
 		{CitationKey: "zeta", ReferenceType: "zotero", SourceObjectID: "item", SourceVersionID: "7", Title: "Z"},
 		{CitationKey: "alpha", ReferenceType: "experiment_result", SourceObjectID: "run", SourceVersionID: "v2", Title: "A"},
 	})
-	if strings.Index(value, "@misc{alpha") > strings.Index(value, "@misc{zeta") || !strings.Contains(value, "experiment_result:run@v2") || !strings.Contains(value, "zotero:item@7") {
+	if strings.Index(value, "@misc{alpha") > strings.Index(value, "@misc{zeta") || !strings.Contains(value, "experiment\\_result:run@v2") || !strings.Contains(value, "zotero:item@7") {
 		t.Fatalf("bibliography is not deterministic/frozen:\n%s", value)
+	}
+}
+
+func TestBibliographyIncludesZoteroBibFields(t *testing.T) {
+	value := Bibliography([]Reference{
+		{
+			CitationKey:     "rossRadiativeForcingCaused2014",
+			ReferenceType:   "zotero",
+			SourceObjectID:  "WQCYFP2Q",
+			SourceVersionID: "476",
+			Title:           "Radiative forcing caused by rocket engine emissions",
+			Metadata: map[string]interface{}{"data": map[string]interface{}{
+				"itemType":         "journalArticle",
+				"title":            "Radiative forcing caused by rocket engine emissions",
+				"publicationTitle": "Earth System Dynamics",
+				"date":             "2014-07-08",
+				"DOI":              "10.5194/esd-5-365-2014",
+				"url":              "https://example.test/rocket_emissions",
+				"creators": []interface{}{
+					map[string]interface{}{"creatorType": "author", "firstName": "Martin", "lastName": "Ross"},
+					map[string]interface{}{"creatorType": "author", "firstName": "Michael", "lastName": "Mills"},
+					map[string]interface{}{"creatorType": "editor", "firstName": "Ignored", "lastName": "Editor"},
+				},
+			}},
+		},
+	})
+	for _, want := range []string{
+		"@article{rossRadiativeForcingCaused2014,",
+		"author = {Martin Ross and Michael Mills}",
+		"journal = {Earth System Dynamics}",
+		"year = {2014}",
+		"doi = {10.5194/esd-5-365-2014}",
+		"url = {https://example.test/rocket\\_emissions}",
+		"note = {mmdash zotero:WQCYFP2Q@476}",
+	} {
+		if !strings.Contains(value, want) {
+			t.Fatalf("bibliography missing %q:\n%s", want, value)
+		}
 	}
 }
 

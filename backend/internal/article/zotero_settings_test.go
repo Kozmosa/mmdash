@@ -52,3 +52,12 @@ func TestZoteroSettingConnectionUsesReadOnlyLibraryRequest(t *testing.T) {
 		t.Fatalf("unexpected Zotero checks: %#v, %v", checks, err)
 	}
 }
+
+func TestZoteroAttachmentItemsAreHiddenFromArticlePicker(t *testing.T) {
+	if !isZoteroAttachment(map[string]interface{}{"itemType": "attachment"}) {
+		t.Fatal("Zotero attachment item was not recognized")
+	}
+	if isZoteroAttachment(map[string]interface{}{"itemType": "journalArticle"}) {
+		t.Fatal("regular Zotero bibliographic item was hidden")
+	}
+}

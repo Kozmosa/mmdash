@@ -687,15 +687,133 @@ func Bibliography(references []Reference) string {
 		if reference.CitationKey == "" {
 			continue
 		}
-		entryType := "misc"
-		if value, ok := reference.Metadata["bibtex_type"].(string); ok && value != "" {
-			entryType = value
+		result.WriteString("@" + bibEntryType(reference) + "{" + safeCitationKey(reference.CitationKey) + ",\n")
+		fields := bibFields(reference)
+		for index, field := range fields {
+			comma := ","
+			if index == len(fields)-1 {
+				comma = ""
+			}
+			result.WriteString("  " + field.name + " = {" + escapeBib(field.value) + "}" + comma + "\n")
 		}
-		result.WriteString("@" + entryType + "{" + safeCitationKey(reference.CitationKey) + ",\n")
-		result.WriteString("  title = {" + escapeBib(reference.Title) + "},\n")
-		result.WriteString("  note = {mmdash " + escapeBib(reference.ReferenceType+":"+reference.SourceObjectID+"@"+reference.SourceVersionID) + "}\n}\n\n")
+		result.WriteString("}\n\n")
 	}
 	return result.String()
+}
+
+type bibField struct {
+	name  string
+	value string
+}
+
+func bibEntryType(reference Reference) string {
+	if value, ok := reference.Metadata["bibtex_type"].(string); ok && safeID(value) == value && value != "" {
+		return value
+	}
+	if reference.ReferenceType != "zotero" {
+		return "misc"
+	}
+	switch strings.TrimSpace(stringValue(zoteroData(reference.Metadata)["itemType"])) {
+	case "journalArticle", "preprint":
+		return "article"
+	case "book", "bookSection":
+		return "book"
+	case "conferencePaper":
+		return "inproceedings"
+	case "thesis":
+		return "phdthesis"
+	case "report":
+		return "techreport"
+	default:
+		return "misc"
+	}
+}
+
+func bibFields(reference Reference) []bibField {
+	fields := []bibField{}
+	data := zoteroData(reference.Metadata)
+	add := func(name, value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			fields = append(fields, bibField{name: name, value: value})
+		}
+	}
+	title := stringValue(data["title"])
+	if title == "" {
+		title = reference.Title
+	}
+	add("title", title)
+	if reference.ReferenceType == "zotero" {
+		add("author", zoteroCreators(data, "author"))
+		add("editor", zoteroCreators(data, "editor"))
+		add("journal", stringValue(data["publicationTitle"]))
+		add("booktitle", firstNonEmpty(stringValue(data["proceedingsTitle"]), stringValue(data["conferenceName"])))
+		add("publisher", stringValue(data["publisher"]))
+		add("institution", firstNonEmpty(stringValue(data["institution"]), stringValue(data["university"])))
+		add("address", stringValue(data["place"]))
+		add("volume", stringValue(data["volume"]))
+		add("number", firstNonEmpty(stringValue(data["issue"]), stringValue(data["number"])))
+		add("pages", stringValue(data["pages"]))
+		add("year", yearFromDate(stringValue(data["date"])))
+		add("doi", stringValue(data["DOI"]))
+		add("url", stringValue(data["url"]))
+		add("isbn", stringValue(data["ISBN"]))
+		add("issn", stringValue(data["ISSN"]))
+	}
+	add("note", "mmdash "+reference.ReferenceType+":"+reference.SourceObjectID+"@"+reference.SourceVersionID)
+	return fields
+}
+
+func zoteroData(metadata map[string]interface{}) map[string]interface{} {
+	data := object(metadata["data"])
+	if len(data) > 0 {
+		return data
+	}
+	return metadata
+}
+
+func zoteroCreators(data map[string]interface{}, creatorType string) string {
+	creators, ok := data["creators"].([]interface{})
+	if !ok {
+		return ""
+	}
+	names := []string{}
+	for _, rawCreator := range creators {
+		creator := object(rawCreator)
+		if stringValue(creator["creatorType"]) != creatorType {
+			continue
+		}
+		name := strings.TrimSpace(stringValue(creator["firstName"]) + " " + stringValue(creator["lastName"]))
+		if name == "" {
+			name = stringValue(creator["name"])
+		}
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, " and ")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func yearFromDate(value string) string {
+	for index := 0; index+4 <= len(value); index++ {
+		candidate := value[index : index+4]
+		if candidate[0] >= '0' && candidate[0] <= '9' &&
+			candidate[1] >= '0' && candidate[1] <= '9' &&
+			candidate[2] >= '0' && candidate[2] <= '9' &&
+			candidate[3] >= '0' && candidate[3] <= '9' {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func interfaceSlice(value interface{}) ([]interface{}, bool) {
@@ -751,7 +869,17 @@ func escapeMarkdown(value string) string {
 	return replacer.Replace(value)
 }
 func escapeBib(value string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(value, "\\", "\\textbackslash{}"), "{", "\\{")
+	replacer := strings.NewReplacer(
+		`\`, `\textbackslash{}`,
+		`{`, `\{`,
+		`}`, `\}`,
+		`%`, `\%`,
+		`$`, `\$`,
+		`&`, `\&`,
+		`#`, `\#`,
+		`_`, `\_`,
+	)
+	return replacer.Replace(value)
 }
 func safeTarget(value string) string {
 	value = strings.TrimSpace(value)

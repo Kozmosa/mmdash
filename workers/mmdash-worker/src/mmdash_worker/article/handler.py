@@ -297,6 +297,8 @@ class ArticleBuildHandler:
                 latexmk.insert(-1, "-bibtex-")
             try:
                 for run_index, (source_text, output_path) in enumerate(pandoc_runs):
+                    if bibliography_mode == "native":
+                        source_text = _prepare_native_citations(source_text, manifest)
                     source_file = root / f"chunk-{run_index:04d}.md"
                     source_file.write_text(source_text, encoding="utf-8", newline="\n")
                     command = [
@@ -339,6 +341,7 @@ class ArticleBuildHandler:
                     # with a bold header row. Applies to the body, every
                     # split section file, and the abstract alike.
                     _beautify_longtables(fragment_path)
+                    _preserve_image_aspect_ratios(fragment_path)
                 if (
                     bibliography.stat().st_size
                     and bibliography_mode != "native"
@@ -528,6 +531,59 @@ def _strip_csl_references(target: Path) -> None:
         ) from error
 
 
+_NATIVE_CITATION = re.compile(
+    r"(?<!\\)\[([^\[\]\n]*@[A-Za-z0-9][A-Za-z0-9_.:-]*"
+    r"(?:\s*;\s*[^\[\]\n]*@[A-Za-z0-9][A-Za-z0-9_.:-]*)*)\](?!\()"
+)
+_CITATION_KEY = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.:-]*)")
+
+
+def _prepare_native_citations(markdown: str, _manifest: Mapping[str, Any]) -> str:
+    r"""Convert Markdown citations into template-native LaTeX commands.
+
+    Pandoc's citeproc path owns inline references, but BibTeX/native templates
+    need literal citation commands in the generated fragment.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        keys = _CITATION_KEY.findall(match.group(1))
+        if not keys:
+            return match.group(0)
+        return "\\cite{" + ",".join(keys) + "}"
+
+    return _NATIVE_CITATION.sub(replace, markdown)
+
+
+_INCLUDEGRAPHICS_WITH_OPTIONS = re.compile(r"(\\includegraphics)\[([^\]]*)\](\{[^{}\n]+\})")
+
+
+def _preserve_image_aspect_ratios(target: Path) -> None:
+    r"""Drop Pandoc's synthetic image height when width already constrains it."""
+    try:
+        generated = target.read_text(encoding="utf-8")
+        if "\\includegraphics[" not in generated:
+            return
+
+        def replace(match: re.Match[str]) -> str:
+            options = [part.strip() for part in match.group(2).split(",") if part.strip()]
+            has_width = any(part.startswith("width=") for part in options)
+            if not has_width:
+                return match.group(0)
+            kept = [part for part in options if not part.startswith("height=")]
+            if kept == options:
+                return match.group(0)
+            return f"{match.group(1)}[{','.join(kept)}]{match.group(3)}"
+
+        updated = _INCLUDEGRAPHICS_WITH_OPTIONS.sub(replace, generated)
+        if updated != generated:
+            target.write_text(updated, encoding="utf-8", newline="\n")
+    except OSError as error:
+        raise HandlerError(
+            "ARTICLE_BUILD_FAILED",
+            "Pandoc image output could not be prepared for LaTeX",
+        ) from error
+
+
 _LONGTABLE_HEADER_BLOCK = re.compile(
     r"(\\toprule\n)((?:[^\n]*\\\\\n)+)(\\midrule\n\\end(?:firsthead|head))"
 )
@@ -543,7 +599,7 @@ def _bold_longtable_header_line(line: str) -> str:
     stripped = line.rstrip("\n")
     if not stripped.endswith("\\\\"):
         return line
-    body = stripped[: -2].rstrip()
+    body = stripped[:-2].rstrip()
     cells = [
         f"\\textbf{{{cell}}}"
         if cell
@@ -571,14 +627,12 @@ def _beautify_longtables(target: Path) -> None:
             return
         generated = generated.replace(
             "\\begin{longtable}",
-            "\\setlength\\LTleft{\\fill}\\setlength\\LTright{\\fill}\n"
-            "\\begin{longtable}",
+            "\\setlength\\LTleft{\\fill}\\setlength\\LTright{\\fill}\n\\begin{longtable}",
         )
 
         def bold_header(match: re.Match[str]) -> str:
             header = "".join(
-                _bold_longtable_header_line(line)
-                for line in match.group(2).splitlines()
+                _bold_longtable_header_line(line) for line in match.group(2).splitlines()
             )
             return match.group(1) + header + match.group(3)
 

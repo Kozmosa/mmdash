@@ -1266,7 +1266,9 @@ function WritingZoteroPanel({
   });
 
   const collections = collectionsQuery.data?.items ?? [];
-  const items = itemsQuery.data?.items ?? [];
+  const items = (itemsQuery.data?.items ?? []).filter(
+    (item) => item.item_type.toLowerCase() !== "attachment",
+  );
 
   const currentCollection = collections.find(
     (c) => c.collection_key === selectedCollectionKey,

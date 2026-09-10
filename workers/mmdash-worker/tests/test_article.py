@@ -22,6 +22,8 @@ from mmdash_worker.article.handler import (
     _CommandFailure,
     _convert_resource_for_latex,
     _extract_template,
+    _prepare_native_citations,
+    _preserve_image_aspect_ratios,
     _replace_resource_references,
     _resource_filename,
     _validate_template,
@@ -483,6 +485,28 @@ def test_split_sections_downgrades_for_inline_bibliography(tmp_path: Path) -> No
     assert not any(name.startswith("texfile/") and name != "texfile/body.tex" for name in files)
 
 
+def test_native_citations_use_plain_cite_command() -> None:
+    rendered = _prepare_native_citations(
+        "正文引用 [@rossRadiativeForcingCaused2014; @smithModel2026].",
+        {"bibliography_mode": "native", "field_profile": "cumcm"},
+    )
+    assert rendered == "正文引用 \\cite{rossRadiativeForcingCaused2014,smithModel2026}."
+
+
+def test_includegraphics_width_keeps_aspect_ratio(tmp_path: Path) -> None:
+    fragment = tmp_path / "section.tex"
+    fragment.write_text(
+        "\\includegraphics[width=0.5\\textwidth,height=\\textheight]{figures/a.jpg}\n"
+        "\\includegraphics[height=0.5\\textheight]{figures/b.jpg}\n",
+        encoding="utf-8",
+    )
+    _preserve_image_aspect_ratios(fragment)
+    assert fragment.read_text(encoding="utf-8") == (
+        "\\includegraphics[width=0.5\\textwidth]{figures/a.jpg}\n"
+        "\\includegraphics[height=0.5\\textheight]{figures/b.jpg}\n"
+    )
+
+
 def create_template(path: Path) -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("mmdash-template.json", json.dumps(MANIFEST, sort_keys=True))
@@ -698,9 +722,10 @@ def test_beautify_longtables_centers_and_bolds_contest_headers(tmp_path: Path) -
 
     body = fragment.read_text(encoding="utf-8")
     # A narrower-than-textwidth longtable must center on the page.
-    assert body.count(
-        "\\setlength\\LTleft{\\fill}\\setlength\\LTright{\\fill}\n\\begin{longtable}"
-    ) == 1
+    assert (
+        body.count("\\setlength\\LTleft{\\fill}\\setlength\\LTright{\\fill}\n\\begin{longtable}")
+        == 1
+    )
     # Both the first-page header and the page-continuation header are bold.
     assert body.count("\\textbf{符号} & \\textbf{意义} & \\textbf{单位} \\\\") == 2
     # Body rows stay untouched.
