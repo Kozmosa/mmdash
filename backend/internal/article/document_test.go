@@ -204,7 +204,7 @@ func TestNormalizeDocumentRendersArticleImageTableCaptionAndZoteroCitation(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Table: 实验结果\n\n| 值 |\n| :---: |\n\n![结果图](https://example.test/result.png)\n\n图 1：结果\n\n参考 [@Smith2026]\n"
+	want := "Table: 实验结果\n\n| 值 |\n| :---: |\n\n![图 1：结果](https://example.test/result.png)\n\n参考 [@Smith2026]\n"
 	if markdown != want {
 		t.Fatalf("unexpected article markdown:\n%s", markdown)
 	}
@@ -327,7 +327,7 @@ func TestNormalizeDocumentImageGroupPreservesReorderedSequenceAndAdaptiveWidths(
 func TestNormalizeDocumentEmitsImageWidthPercentages(t *testing.T) {
 	document := map[string]interface{}{"type": "doc", "content": []interface{}{
 		map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
-			"id": "image-wide", "alt": "全宽", "src": "https://example.test/full.png", "width": 100,
+			"id": "image-wide", "alt": "全宽", "caption": "全宽图注", "src": "https://example.test/full.png", "width": 100,
 		}},
 		map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
 			"id": "image-half", "alt": "半宽", "src": "https://example.test/half.png", "width": 45,
@@ -357,13 +357,13 @@ func TestNormalizeDocumentEmitsImageWidthPercentages(t *testing.T) {
 	}
 	// Full-width images stay attribute-free; narrower ones carry the Pandoc
 	// width attribute that maps to a fraction of \linewidth.
-	if !strings.Contains(markdown, "![全宽](https://example.test/full.png)\n") {
+	if !strings.Contains(markdown, "![全宽图注](https://example.test/full.png)\n") {
 		t.Fatalf("full-width image gained an attribute: %s", markdown)
 	}
-	if !strings.Contains(markdown, "![半宽](https://example.test/half.png){width=45%}") {
+	if !strings.Contains(markdown, "![](https://example.test/half.png){width=45%}") {
 		t.Fatalf("single-image width attribute missing: %s", markdown)
 	}
-	if !strings.Contains(markdown, "![结果](mmdash://artifact/artifact-9/versions/version-9){width=30%}") {
+	if !strings.Contains(markdown, "![](mmdash://artifact/artifact-9/versions/version-9){width=30%}") {
 		t.Fatalf("artifact image width attribute missing: %s", markdown)
 	}
 	// Per-sub-image widths override the equal row split; the editor default
@@ -425,7 +425,7 @@ func TestNormalizeDocumentRemovesTransientArtifactPreviewAttrs(t *testing.T) {
 	if strings.Contains(markdown, "signed.example.test") {
 		t.Fatalf("transient artifact URL leaked into markdown: %q", markdown)
 	}
-	if markdown != "![结果图](mmdash://artifact/artifact-1/versions/version-1)\n\n图 2\n" {
+	if markdown != "![图 2](mmdash://artifact/artifact-1/versions/version-1)\n" {
 		t.Fatalf("artifact image did not serialize to its immutable resource URI: %q", markdown)
 	}
 }
@@ -473,9 +473,9 @@ func TestNormalizeDocumentAllowsOnlySafeImageTargets(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"![http](http://example.test/a.png)",
-		"![artifact](mmdash://artifact/artifact-1/versions/version-1)",
+		"![](mmdash://artifact/artifact-1/versions/version-1)",
 		"![javascript](about:blank)",
-		"![data](about:blank)",
+		"![](about:blank)",
 	} {
 		if !strings.Contains(markdown, expected) {
 			t.Fatalf("expected safe image serialization %q in:\n%s", expected, markdown)

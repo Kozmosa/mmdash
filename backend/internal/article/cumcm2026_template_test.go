@@ -78,6 +78,9 @@ func TestCumcm2026TemplateArchiveIsDeterministicAndSelfDescribing(t *testing.T) 
 	if !bytes.Contains(entries["cumcmthesis.cls"], []byte(`\newcommand\keywords[1]{%`)) {
 		t.Fatal("cumcmthesis.cls was not embedded intact")
 	}
+	if !bytes.Contains(entries["cumcmthesis.cls"], []byte(`\RequirePackage[numbers,sort&compress]{natbib}`)) {
+		t.Fatal("cumcmthesis.cls must load natbib for numeric compressed citations")
+	}
 	// The only deliberate class divergence: conditional font fallbacks so the
 	// class also builds on the Linux toolchain without licensed Windows fonts.
 	for _, expected := range []string{

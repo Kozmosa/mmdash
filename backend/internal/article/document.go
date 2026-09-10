@@ -280,11 +280,7 @@ func renderBlock(node map[string]interface{}) (string, error) {
 	case "image":
 		return imageMarkdown(attrs, "alt", "src"), nil
 	case "articleImage":
-		value := imageMarkdown(attrs, "alt", "src")
-		if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
-			value += "\n\n" + caption
-		}
-		return value, nil
+		return imageMarkdownWithCaption(attrs, "src", stringAttr(attrs, "caption")), nil
 	case "articleImageGroup":
 		return renderImageGroup(node), nil
 	case "tableCaption":
@@ -296,11 +292,7 @@ func renderBlock(node map[string]interface{}) (string, error) {
 		}
 		if strings.HasPrefix(stringAttr(attrs, "mimeType"), "image/") {
 			target := fmt.Sprintf("mmdash://artifact/%s/versions/%s", safeID(artifactID), safeID(stringAttr(attrs, "versionId")))
-			value := "![" + escapeMarkdown(stringAttr(attrs, "title")) + "](" + target + ")" + imageWidthSuffix(attrs)
-			if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
-				value += "\n\n" + caption
-			}
-			return value, nil
+			return imageMarkdownValue(markdownCaption(stringAttr(attrs, "caption")), target, attrs), nil
 		}
 		return fmt.Sprintf("[Artifact %s@%s](mmdash://artifact/%s/versions/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(artifactID), safeID(stringAttr(attrs, "versionId"))), nil
 	case "experimentResult":
@@ -317,8 +309,15 @@ func renderBlock(node map[string]interface{}) (string, error) {
 // \includegraphics[width=0.45\linewidth]{src}, matching the editor's
 // page-width-percentage semantics.
 func imageMarkdown(attrs map[string]interface{}, altKey, srcKey string) string {
-	value := "![" + escapeMarkdown(stringAttr(attrs, altKey)) + "](" + safeImageTarget(stringAttr(attrs, srcKey)) + ")"
-	return value + imageWidthSuffix(attrs)
+	return imageMarkdownValue(escapeMarkdown(stringAttr(attrs, altKey)), safeImageTarget(stringAttr(attrs, srcKey)), attrs)
+}
+
+func imageMarkdownWithCaption(attrs map[string]interface{}, srcKey, captionKey string) string {
+	return imageMarkdownValue(markdownCaption(captionKey), safeImageTarget(stringAttr(attrs, srcKey)), attrs)
+}
+
+func imageMarkdownValue(altOrCaption, target string, attrs map[string]interface{}) string {
+	return "![" + altOrCaption + "](" + target + ")" + imageWidthSuffix(attrs)
 }
 
 // imageWidthSuffix returns the Pandoc width attribute for images configured at
