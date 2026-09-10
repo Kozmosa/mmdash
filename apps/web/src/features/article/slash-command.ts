@@ -107,6 +107,28 @@ const slashItems: SlashItem[] = [
     },
   },
   {
+    label: "LaTeX 块",
+    keywords: "latex raw tex environment 环境 模板",
+    action: (editor) => {
+      editor
+        .chain()
+        .focus()
+        .insertContent([
+          {
+            type: "latexBlock",
+            content: [
+              {
+                type: "text",
+                text: "\\begin{center}\n在此填写 LaTeX 源码\n\\end{center}",
+              },
+            ],
+          },
+          { type: "paragraph" },
+        ])
+        .run();
+    },
+  },
+  {
     label: "表格",
     keywords: "table 表格",
     action: (editor) => {

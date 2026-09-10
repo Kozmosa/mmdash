@@ -73,7 +73,10 @@ import {
   cumcmSkeletonNodes,
   type ArticleCumcmInsertDetail,
 } from "./article-cumcm";
-import { createArticleNodes } from "./article-nodes";
+import {
+  createArticleNodes,
+  paragraphAsRawTexEnvironment,
+} from "./article-nodes";
 import {
   convertArticleBlock,
   deleteArticleBlock,
@@ -269,6 +272,66 @@ export function migrateLegacyTableCaptions(editor: Editor): boolean {
       pair.tableAttrs,
     );
     transaction.delete(pair.captionPos, pair.captionPos + pair.captionSize);
+  }
+  transaction.setMeta("addToHistory", false);
+  editor.view.dispatch(transaction);
+  return true;
+}
+
+// Heals documents written before latexBlock joined the block group: CUMCM
+// environment inserts from that era were silently downgraded to paragraphs
+// holding the raw TeX as plain text, which the Markdown projection then
+// escaped into literal body text. Legacy mathBlock/mathInline names from the
+// same era are renamed in the same pass.
+export function migrateLegacyArticleBlocks(editor: Editor): boolean {
+  const replacements: {
+    attrs: Record<string, unknown>;
+    pos: number;
+    type: "blockMath" | "inlineMath";
+  }[] = [];
+  const rawTexParagraphs: {
+    id: string;
+    pos: number;
+    size: number;
+    text: string;
+  }[] = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "mathBlock")
+      replacements.push({ attrs: node.attrs, pos, type: "blockMath" });
+    if (node.type.name === "mathInline")
+      replacements.push({ attrs: node.attrs, pos, type: "inlineMath" });
+    const rawTex = paragraphAsRawTexEnvironment(node);
+    if (rawTex !== undefined) {
+      rawTexParagraphs.push({
+        id: String(node.attrs.id ?? ""),
+        pos,
+        size: node.nodeSize,
+        text: rawTex,
+      });
+    }
+  });
+  if (!replacements.length && !rawTexParagraphs.length) return false;
+  const transaction = editor.state.tr;
+  const latexType = editor.schema.nodes.latexBlock;
+  // Apply from the document end backwards so no step shifts the positions
+  // the remaining steps still target.
+  for (const paragraph of rawTexParagraphs.reverse()) {
+    if (!latexType) break;
+    transaction.replaceWith(
+      paragraph.pos,
+      paragraph.pos + paragraph.size,
+      latexType.create(
+        paragraph.id ? { id: paragraph.id } : null,
+        paragraph.text ? editor.schema.text(paragraph.text) : null,
+      ),
+    );
+  }
+  for (const replacement of replacements.reverse()) {
+    transaction.setNodeMarkup(
+      replacement.pos,
+      editor.schema.nodes[replacement.type],
+      replacement.attrs,
+    );
   }
   transaction.setMeta("addToHistory", false);
   editor.view.dispatch(transaction);
@@ -1971,28 +2034,7 @@ export function ArticleEditor({
     if (!editor || !canEdit) return;
     const migrate = ({ state }: { state: boolean }) => {
       if (!state) return;
-      const replacements: {
-        attrs: Record<string, unknown>;
-        pos: number;
-        type: "blockMath" | "inlineMath";
-      }[] = [];
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === "mathBlock")
-          replacements.push({ attrs: node.attrs, pos, type: "blockMath" });
-        if (node.type.name === "mathInline")
-          replacements.push({ attrs: node.attrs, pos, type: "inlineMath" });
-      });
-      if (!replacements.length) return;
-      const transaction = editor.state.tr;
-      for (const replacement of replacements.reverse()) {
-        transaction.setNodeMarkup(
-          replacement.pos,
-          editor.schema.nodes[replacement.type],
-          replacement.attrs,
-        );
-      }
-      transaction.setMeta("addToHistory", false);
-      editor.view.dispatch(transaction);
+      migrateLegacyArticleBlocks(editor);
     };
     provider.on("synced", migrate);
     if (provider.synced) migrate({ state: true });
