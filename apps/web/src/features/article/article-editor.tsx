@@ -325,27 +325,19 @@ type TableDragSession = {
   targetIndex: number;
 };
 
-function pointIsOverEditableText(
+// Text blocks own their whole element box, including the blank areas right of
+// a line and between wrapped lines; the browser places the caret at the
+// nearest text position there, so the block marquee must never claim those
+// presses.
+const articleTextBlockSelector =
+  "p, h1, h2, h3, h4, h5, h6, pre, li, blockquote, [data-type='codeBlock']";
+
+function pointTargetInsideTextBlock(
   editorRoot: HTMLElement,
-  clientX: number,
-  clientY: number,
+  target: Element | null,
 ): boolean {
-  const range = document.caretRangeFromPoint?.(clientX, clientY);
-  if (!range || !editorRoot.contains(range.startContainer)) return false;
-  const text = range.startContainer;
-  if (text.nodeType !== Node.TEXT_NODE || !text.textContent?.length)
-    return false;
-  const offset = Math.min(range.startOffset, text.textContent.length - 1);
-  const probe = document.createRange();
-  probe.setStart(text, Math.max(0, offset));
-  probe.setEnd(text, Math.min(text.textContent.length, offset + 1));
-  return Array.from(probe.getClientRects()).some(
-    (rect) =>
-      clientX >= rect.left - 2 &&
-      clientX <= rect.right + 2 &&
-      clientY >= rect.top - 2 &&
-      clientY <= rect.bottom + 2,
-  );
+  const textBlock = target?.closest(articleTextBlockSelector);
+  return textBlock instanceof Element && editorRoot.contains(textBlock);
 }
 
 export function parseArticleArtifactDrop(raw: string): ArticleArtifactDrop {
@@ -1345,20 +1337,21 @@ export function ArticleEditor({
       const target = document.elementFromPoint(clientX, clientY);
       if (!(target instanceof Element) || !editor.view.dom.contains(target))
         return false;
-      const textBlockSelector =
-        "p, h1, h2, h3, h4, h5, h6, pre, [data-type='codeBlock']";
-      let textBlock = target.closest(textBlockSelector);
+      let textBlock = target.closest(articleTextBlockSelector);
       if (!textBlock || !editor.view.dom.contains(textBlock)) {
         let topLevel: Element | null = target;
         while (
-          topLevel?.parentElement &&
+          topLevel &&
+          topLevel !== editor.view.dom &&
+          topLevel.parentElement &&
           topLevel.parentElement !== editor.view.dom
         ) {
           topLevel = topLevel.parentElement;
         }
-        const candidates = topLevel
-          ? Array.from(topLevel.querySelectorAll(textBlockSelector))
-          : [];
+        const candidates =
+          topLevel && editor.view.dom.contains(topLevel)
+            ? Array.from(topLevel.querySelectorAll(articleTextBlockSelector))
+            : [];
         textBlock =
           candidates.find((candidate) => {
             const rect = candidate.getBoundingClientRect();
@@ -1369,13 +1362,24 @@ export function ArticleEditor({
       }
       if (!textBlock) return false;
       try {
-        const endPosition = editor.view.posAtDOM(
-          textBlock,
-          textBlock.childNodes.length,
-        );
+        // Resolve the caret from the clicked point so blank-area clicks land
+        // at the nearest text position (the end of the clicked line) instead
+        // of jumping to the end of the whole block.
+        const coordinates = editor.view.posAtCoords({
+          left: clientX,
+          top: clientY,
+        });
+        const position = coordinates
+          ? coordinates.pos
+          : editor.view.posAtDOM(textBlock, textBlock.childNodes.length);
         editor.view.dispatch(
           editor.state.tr.setSelection(
-            TextSelection.near(editor.state.doc.resolve(endPosition), -1),
+            TextSelection.near(
+              editor.state.doc.resolve(
+                Math.min(Math.max(position, 0), editor.state.doc.content.size),
+              ),
+              -1,
+            ),
           ),
         );
         editor.view.focus();
@@ -1440,7 +1444,7 @@ export function ArticleEditor({
         target.closest(
           "button, input, textarea, select, a, [role='menu'], .drag-handle, [data-article-table-controls], [data-type='inline-math'], [data-type='block-math'], table, figure",
         ) ||
-        pointIsOverEditableText(editor.view.dom, event.clientX, event.clientY)
+        pointTargetInsideTextBlock(editor.view.dom, target)
       ) {
         return;
       }
