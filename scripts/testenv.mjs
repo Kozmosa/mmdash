@@ -489,7 +489,7 @@ export function developmentPortChecks(
   { cloudflareTunnel = false, workerMode = "native" } = {},
 ) {
   const containerAccessRequired = workerMode === "docker";
-  return [
+  const checks = [
     { host, name: "postgres", port: ports.postgres },
     {
       host: containerAccessRequired ? allInterfacesHost : host,
@@ -510,6 +510,12 @@ export function developmentPortChecks(
       port: ports.web,
     },
   ];
+  for (const check of [...checks]) {
+    if (check.host === allInterfacesHost) {
+      checks.push({ ...check, host, name: `${check.name}-loopback` });
+    }
+  }
+  return checks;
 }
 
 export function cloudflareTunnelArguments(containerName, webUrl) {
@@ -903,10 +909,30 @@ async function isPortAvailable(port, bindHost = host) {
   });
 }
 
-async function assertPortsAvailable(checks) {
+async function isPortConnectable(port, connectHost = host) {
+  return await new Promise((resolve) => {
+    const socket = net.createConnection({ host: connectHost, port });
+    socket.unref();
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
+    socket.setTimeout(500, () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+export async function assertPortsAvailable(checks) {
   const occupied = [];
   for (const { host: bindHost, name, port } of checks) {
-    if (!(await isPortAvailable(port, bindHost))) {
+    const connectHost = bindHost === allInterfacesHost ? host : bindHost;
+    if (
+      (await isPortConnectable(port, connectHost)) ||
+      !(await isPortAvailable(port, bindHost))
+    ) {
       occupied.push(`${name}=${bindHost}:${port}`);
     }
   }
@@ -1005,6 +1031,7 @@ async function waitForHttp(url, service, shutdownRequested) {
     service,
     shutdownRequested,
   );
+  await waitForProcessStable(service, shutdownRequested, 500);
 }
 
 async function waitForPostgres(port, service, shutdownRequested, environment) {
@@ -1116,6 +1143,39 @@ function isProcessAlive(pid) {
   } catch {
     return false;
   }
+}
+
+function nextDevLockPath(layout) {
+  return path.join(layout.repositoryRoot, "apps", "web", ".next", "dev", "lock");
+}
+
+export async function assertNextDevServerAvailable(layout) {
+  const lockPath = nextDevLockPath(layout);
+  let contents;
+  try {
+    contents = await readFile(lockPath, "utf8");
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "ENOENT") {
+      return;
+    }
+    if (
+      error &&
+      typeof error === "object" &&
+      (error.code === "EACCES" || error.code === "EPERM")
+    ) {
+      throw new Error(
+        `A Next dev server lock is held at ${lockPath}. Stop the existing apps/web next dev process before running testenv dev again.`,
+      );
+    }
+    throw error;
+  }
+  const pid = Number.parseInt(contents.trim(), 10);
+  if (isProcessAlive(pid)) {
+    throw new Error(
+      `A Next dev server is already running for apps/web as PID ${pid}. Stop it before running testenv dev again.`,
+    );
+  }
+  await rm(lockPath, { force: true });
 }
 
 async function readSupervisorLock(layout) {
@@ -1305,6 +1365,7 @@ async function startDevelopmentEnvironment(
   await assertPortsAvailable(
     developmentPortChecks(ports, { cloudflareTunnel, workerMode }),
   );
+  await assertNextDevServerAvailable(layout);
   await acquireSupervisorLock(layout);
 
   const namedTunnel = cloudflareTunnel

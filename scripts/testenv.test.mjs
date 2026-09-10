@@ -1,8 +1,13 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import net from "node:net";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  assertPortsAvailable,
+  assertNextDevServerAvailable,
   assertPathWithin,
   cloudflareTunnelArguments,
   cloudflareNamedTunnelArguments,
@@ -106,6 +111,64 @@ describe("isolated Pixi development environment", () => {
     expect(
       dockerChecks.find((check) => check.name === "minio"),
     ).toMatchObject({ host: "0.0.0.0", port: 19_000 });
+    expect(
+      dockerChecks.find((check) => check.name === "core-loopback"),
+    ).toMatchObject({ host: "127.0.0.1", port: 18_080 });
+    expect(
+      dockerChecks.find((check) => check.name === "minio-loopback"),
+    ).toMatchObject({ host: "127.0.0.1", port: 19_000 });
+  });
+
+  it("rejects an already reachable development port", async () => {
+    const server = net.createServer();
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+
+      await expect(
+        assertPortsAvailable([{ host: "127.0.0.1", name: "core", port }]),
+      ).rejects.toThrow(`core=127.0.0.1:${port}`);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it("rejects a live Next dev lock before starting services", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mmdash-testenv-"));
+    try {
+      const layout = createLayout(root);
+      const lock = path.join(root, "apps", "web", ".next", "dev", "lock");
+      await mkdir(path.dirname(lock), { recursive: true });
+      await writeFile(lock, `${process.pid}\n`, "utf8");
+
+      await expect(assertNextDevServerAvailable(layout)).rejects.toThrow(
+        `PID ${process.pid}`,
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("removes a stale Next dev lock during preflight", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mmdash-testenv-"));
+    try {
+      const layout = createLayout(root);
+      const lock = path.join(root, "apps", "web", ".next", "dev", "lock");
+      await mkdir(path.dirname(lock), { recursive: true });
+      await writeFile(lock, "999999999\n", "utf8");
+
+      await assertNextDevServerAvailable(layout);
+
+      await expect(readFile(lock, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it("builds loopback-only service configuration", () => {
