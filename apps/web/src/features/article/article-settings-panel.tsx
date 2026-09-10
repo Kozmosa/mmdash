@@ -46,6 +46,7 @@ export function ArticleSettingsPanel() {
   const [collectionKey, setCollectionKey] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [renderTheme, setRenderTheme] = useState<ArticleRenderTheme>("md");
+  const [splitSections, setSplitSections] = useState(true);
   const [testResult, setTestResult] = useState<ConnectionTest>();
   const initialized = useRef<string | undefined>(undefined);
   const configuredSecret = useRef(false);
@@ -65,6 +66,7 @@ export function ArticleSettingsPanel() {
     setRenderTheme(
       renderingSetting.data?.values.theme === "latex" ? "latex" : "md",
     );
+    setSplitSections(renderingSetting.data?.values.split_sections !== false);
   }, [renderingSetting.data]);
 
   useEffect(() => {
@@ -160,6 +162,22 @@ export function ArticleSettingsPanel() {
       });
       window.dispatchEvent(new Event(ARTICLE_RENDER_THEME_EVENT));
       toast.success("Article 渲染主题已保存到项目设置");
+    },
+  });
+  const saveSplitSections = useMutation({
+    mutationFn: (split: boolean) =>
+      apiClient.request<ArticleProjectSetting>(renderingPath, {
+        // theme is a required field of article.rendering, so every patch
+        // carries the currently selected theme alongside the toggle.
+        body: { values: { split_sections: split, theme: renderTheme } },
+        method: "PATCH",
+      }),
+    onSuccess: async (result) => {
+      setSplitSections(result.values.split_sections !== false);
+      await queryClient.invalidateQueries({
+        queryKey: ["article-rendering-setting", project.id],
+      });
+      toast.success("已保存 Section 拆分设置");
     },
   });
   const error = setting.error ?? save.error ?? test.error ?? disconnect.error;
@@ -321,6 +339,30 @@ export function ArticleSettingsPanel() {
               <option value="md">默认 md</option>
               <option value="latex">LaTeX 风格 md</option>
             </select>
+          </label>
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              aria-label="拆分 Section 到 TeX 文件"
+              checked={splitSections}
+              className="mt-0.5 size-4 accent-foreground"
+              disabled={
+                !canManage ||
+                renderingSetting.isPending ||
+                saveSplitSections.isPending
+              }
+              onChange={(event) =>
+                saveSplitSections.mutate(event.target.checked)
+              }
+              type="checkbox"
+            />
+            <span className="space-y-1">
+              <span className="block font-medium">拆分 Section 到 TeX 文件</span>
+              <span className="block text-xs text-muted-foreground">
+                构建 LaTeX 时把每个一级标题的内容输出到独立的
+                texfile/N-标题.tex，并按顺序 input 回正文；默认开启。使用
+                inline 参考文献的模板会自动回退为单文件正文。
+              </span>
+            </span>
           </label>
           <p className="text-xs text-muted-foreground">
             LaTeX

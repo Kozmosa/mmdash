@@ -396,6 +396,10 @@ type BuildJobInput struct {
 	// Headings carries the stable block identity of every H1/H2 heading in
 	// document order so the Worker can split sections deterministically.
 	Headings []HeadingInfo `json:"headings,omitempty"`
+	// SplitSections mirrors the article.rendering split_sections setting:
+	// enabled by default, the Worker splits every H1 section into its own TeX
+	// file next to the template's content target.
+	SplitSections *bool `json:"split_sections,omitempty"`
 }
 
 // HeadingInfo anchors a generated section file to the collaborative block

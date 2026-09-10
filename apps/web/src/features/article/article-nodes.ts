@@ -130,6 +130,11 @@ export const MathBlock = Node.create({
 // it up; templates without the environment fail their own build loudly.
 export const LatexBlock = Node.create({
   name: "latexBlock",
+  // Without the block group the node can never fit the doc's `block*`
+  // content slot, and every insertContent/replace silently downgrades it to
+  // a plain paragraph (raw TeX text then reaches the Markdown projection
+  // escaped and renders as literal body text in builds).
+  group: "block",
   content: "text*",
   marks: "",
   code: true,
@@ -151,6 +156,34 @@ export const LatexBlock = Node.create({
     ];
   },
 });
+
+// An older editor schema registered latexBlock without the block group, so
+// CUMCM environment inserts silently downgraded to paragraphs holding the
+// raw TeX as plain text (hard breaks where newlines used to be). Recognize
+// that shape so the collaboration sync migration can restore the node.
+const rawTexEnvironmentPattern =
+  /^\\begin\{([A-Za-z][A-Za-z*]*)\}(?:\[[^\]]*\])?[\s\S]*\\end\{\1\}$/;
+
+export function paragraphAsRawTexEnvironment(
+  node: ProseMirrorNode,
+): string | undefined {
+  if (node.type.name !== "paragraph" || node.childCount === 0) {
+    return undefined;
+  }
+  let text = "";
+  for (let index = 0; index < node.childCount; index += 1) {
+    const child = node.child(index);
+    if (child.isText && child.marks.length === 0) {
+      text += child.text ?? "";
+    } else if (child.type.name === "hardBreak") {
+      text += "\n";
+    } else {
+      return undefined;
+    }
+  }
+  const trimmed = text.replace(/\s+$/, "");
+  return rawTexEnvironmentPattern.test(trimmed) ? trimmed : undefined;
+}
 
 function versionedReference(name: string, dataAttribute: string) {
   return Node.create({

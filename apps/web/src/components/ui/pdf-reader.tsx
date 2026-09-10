@@ -11,6 +11,18 @@ type PDFReaderProps = Readonly<{
   };
 }>;
 
+function isAbortError(reason: unknown): boolean {
+  if (
+    typeof reason === "object" &&
+    reason !== null &&
+    "name" in reason &&
+    reason.name === "AbortError"
+  ) {
+    return true;
+  }
+  return reason instanceof Error && /aborted/i.test(reason.message);
+}
+
 export function PDFReader({ className, title, transfer }: PDFReaderProps) {
   const [objectURL, setObjectURL] = useState<string>();
   const [error, setError] = useState<string>();
@@ -20,13 +32,21 @@ export function PDFReader({ className, title, transfer }: PDFReaderProps) {
     let active = true;
     let nextObjectURL = "";
     const controller = new AbortController();
+    const dispose = () => {
+      active = false;
+      if (!controller.signal.aborted) {
+        try {
+          controller.abort("PDFReader effect disposed");
+        } catch {
+          // Cleanup must not turn a normal unmount into a runtime error.
+        }
+      }
+      if (nextObjectURL) URL.revokeObjectURL(nextObjectURL);
+    };
     setObjectURL(undefined);
     setError(undefined);
     if (!transfer) {
-      return () => {
-        active = false;
-        controller.abort();
-      };
+      return dispose;
     }
     void fetch(transfer.url, {
       headers: transfer.headers,
@@ -46,17 +66,10 @@ export function PDFReader({ className, title, transfer }: PDFReaderProps) {
         setObjectURL(url);
       })
       .catch((reason: unknown) => {
-        if (
-          active &&
-          !(reason instanceof DOMException && reason.name === "AbortError")
-        )
+        if (active && !isAbortError(reason))
           setError(reason instanceof Error ? reason.message : "PDF 读取失败");
       });
-    return () => {
-      active = false;
-      controller.abort();
-      if (nextObjectURL) URL.revokeObjectURL(nextObjectURL);
-    };
+    return dispose;
   }, [headersKey, transfer?.url]);
 
   if (error)

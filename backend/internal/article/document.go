@@ -278,13 +278,9 @@ func renderBlock(node map[string]interface{}) (string, error) {
 		// that do not define the environment fail their own build loudly.
 		return strings.TrimRight(plainText(node), "\n"), nil
 	case "image":
-		return "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")", nil
+		return imageMarkdown(attrs, "alt", "src"), nil
 	case "articleImage":
-		value := "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")"
-		if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
-			value += "\n\n" + caption
-		}
-		return value, nil
+		return imageMarkdownWithCaption(attrs, "src", stringAttr(attrs, "caption")), nil
 	case "articleImageGroup":
 		return renderImageGroup(node), nil
 	case "tableCaption":
@@ -296,11 +292,7 @@ func renderBlock(node map[string]interface{}) (string, error) {
 		}
 		if strings.HasPrefix(stringAttr(attrs, "mimeType"), "image/") {
 			target := fmt.Sprintf("mmdash://artifact/%s/versions/%s", safeID(artifactID), safeID(stringAttr(attrs, "versionId")))
-			value := "![" + escapeMarkdown(stringAttr(attrs, "title")) + "](" + target + ")"
-			if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
-				value += "\n\n" + caption
-			}
-			return value, nil
+			return imageMarkdownValue(markdownCaption(stringAttr(attrs, "caption")), target, attrs), nil
 		}
 		return fmt.Sprintf("[Artifact %s@%s](mmdash://artifact/%s/versions/%s)", escapeMarkdown(stringAttr(attrs, "title")), escapeMarkdown(stringAttr(attrs, "versionId")), safeID(artifactID), safeID(stringAttr(attrs, "versionId"))), nil
 	case "experimentResult":
@@ -310,6 +302,33 @@ func renderBlock(node map[string]interface{}) (string, error) {
 	default:
 		return renderInlineChildren(node), nil
 	}
+}
+
+// imageMarkdown renders a block image with its optional width attribute.
+// Pandoc's link_attributes turns `![alt](src){width=45%}` into
+// \includegraphics[width=0.45\linewidth]{src}, matching the editor's
+// page-width-percentage semantics.
+func imageMarkdown(attrs map[string]interface{}, altKey, srcKey string) string {
+	return imageMarkdownValue(escapeMarkdown(stringAttr(attrs, altKey)), safeImageTarget(stringAttr(attrs, srcKey)), attrs)
+}
+
+func imageMarkdownWithCaption(attrs map[string]interface{}, srcKey, captionKey string) string {
+	return imageMarkdownValue(markdownCaption(captionKey), safeImageTarget(stringAttr(attrs, srcKey)), attrs)
+}
+
+func imageMarkdownValue(altOrCaption, target string, attrs map[string]interface{}) string {
+	return "![" + altOrCaption + "](" + target + ")" + imageWidthSuffix(attrs)
+}
+
+// imageWidthSuffix returns the Pandoc width attribute for images configured at
+// less than full page width. Full width (or unset) stays attribute-free so the
+// default LaTeX emission is unchanged.
+func imageWidthSuffix(attrs map[string]interface{}) string {
+	width := integer(attrs["width"], 0)
+	if width < 10 || width >= 100 {
+		return ""
+	}
+	return fmt.Sprintf("{width=%d%%}", width)
 }
 
 func renderList(node map[string]interface{}, ordered bool) string {
@@ -448,6 +467,7 @@ type imageGroupCell struct {
 	target  string
 	alt     string
 	caption string
+	width   int
 }
 
 func extractImageGroupCell(node map[string]interface{}) (imageGroupCell, bool) {
@@ -474,7 +494,7 @@ func extractImageGroupCell(node map[string]interface{}) (imageGroupCell, bool) {
 		return imageGroupCell{}, false
 	}
 	caption := stringAttr(attrs, "caption")
-	return imageGroupCell{target: target, alt: alt, caption: caption}, true
+	return imageGroupCell{target: target, alt: alt, caption: caption, width: integer(attrs["width"], 0)}, true
 }
 
 func renderImageGroup(node map[string]interface{}) string {
@@ -517,11 +537,21 @@ func renderImageGroup(node map[string]interface{}) string {
 		if rowIndex > 0 {
 			builder.WriteString("\n\\par\\medskip\n")
 		}
+		// Keep each editor row explicit. The trailing percent below suppresses
+		// source whitespace between adjacent subfigures so LaTeX cannot wrap an
+		// otherwise complete row early.
+		builder.WriteString("\\noindent\n")
 		rowLen := len(row)
-		widthStr := subfigureWidth(rowLen)
 		for itemIndex, item := range row {
 			if itemIndex > 0 {
-				builder.WriteString("\n\\hfill\n")
+				builder.WriteString("\n\\hspace{0.02\\linewidth}\n")
+			}
+			widthStr := subfigureWidth(rowLen)
+			if item.width >= 10 && item.width < 100 {
+				// An explicit per-sub-image width is a page-width percentage and
+				// overrides the row's equal split. The editor's default 100
+				// counts as unset so untouched groups keep the adaptive split.
+				widthStr = fmt.Sprintf("%.2f\\linewidth", float64(item.width)/100.0)
 			}
 			builder.WriteString(fmt.Sprintf("\\begin{subfigure}[b]{%s}\n  \\centering\n  \\includegraphics[width=\\linewidth]{%s}", widthStr, item.target))
 			escapedSubCaption := escapeLaTeX(item.caption)
@@ -529,6 +559,9 @@ func renderImageGroup(node map[string]interface{}) string {
 				builder.WriteString(fmt.Sprintf("\n  \\caption{%s}", escapedSubCaption))
 			}
 			builder.WriteString("\n\\end{subfigure}")
+			if itemIndex < rowLen-1 {
+				builder.WriteString("%")
+			}
 		}
 	}
 
@@ -579,7 +612,10 @@ func renderTable(node map[string]interface{}) string {
 	}
 	separator := make([]string, columns)
 	for index := range separator {
-		separator[index] = "---"
+		// Centered columns are the math-modeling convention for symbol and
+		// result tables; Pandoc maps `:---:` to a `c` column so the built
+		// three-line table centers every column.
+		separator[index] = ":---:"
 	}
 	lines := []string{line(values[0]), line(separator)}
 	for _, row := range values[1:] {
@@ -657,15 +693,133 @@ func Bibliography(references []Reference) string {
 		if reference.CitationKey == "" {
 			continue
 		}
-		entryType := "misc"
-		if value, ok := reference.Metadata["bibtex_type"].(string); ok && value != "" {
-			entryType = value
+		result.WriteString("@" + bibEntryType(reference) + "{" + safeCitationKey(reference.CitationKey) + ",\n")
+		fields := bibFields(reference)
+		for index, field := range fields {
+			comma := ","
+			if index == len(fields)-1 {
+				comma = ""
+			}
+			result.WriteString("  " + field.name + " = {" + escapeBib(field.value) + "}" + comma + "\n")
 		}
-		result.WriteString("@" + entryType + "{" + safeCitationKey(reference.CitationKey) + ",\n")
-		result.WriteString("  title = {" + escapeBib(reference.Title) + "},\n")
-		result.WriteString("  note = {mmdash " + escapeBib(reference.ReferenceType+":"+reference.SourceObjectID+"@"+reference.SourceVersionID) + "}\n}\n\n")
+		result.WriteString("}\n\n")
 	}
 	return result.String()
+}
+
+type bibField struct {
+	name  string
+	value string
+}
+
+func bibEntryType(reference Reference) string {
+	if value, ok := reference.Metadata["bibtex_type"].(string); ok && safeID(value) == value && value != "" {
+		return value
+	}
+	if reference.ReferenceType != "zotero" {
+		return "misc"
+	}
+	switch strings.TrimSpace(stringValue(zoteroData(reference.Metadata)["itemType"])) {
+	case "journalArticle", "preprint":
+		return "article"
+	case "book", "bookSection":
+		return "book"
+	case "conferencePaper":
+		return "inproceedings"
+	case "thesis":
+		return "phdthesis"
+	case "report":
+		return "techreport"
+	default:
+		return "misc"
+	}
+}
+
+func bibFields(reference Reference) []bibField {
+	fields := []bibField{}
+	data := zoteroData(reference.Metadata)
+	add := func(name, value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			fields = append(fields, bibField{name: name, value: value})
+		}
+	}
+	title := stringValue(data["title"])
+	if title == "" {
+		title = reference.Title
+	}
+	add("title", title)
+	if reference.ReferenceType == "zotero" {
+		add("author", zoteroCreators(data, "author"))
+		add("editor", zoteroCreators(data, "editor"))
+		add("journal", stringValue(data["publicationTitle"]))
+		add("booktitle", firstNonEmpty(stringValue(data["proceedingsTitle"]), stringValue(data["conferenceName"])))
+		add("publisher", stringValue(data["publisher"]))
+		add("institution", firstNonEmpty(stringValue(data["institution"]), stringValue(data["university"])))
+		add("address", stringValue(data["place"]))
+		add("volume", stringValue(data["volume"]))
+		add("number", firstNonEmpty(stringValue(data["issue"]), stringValue(data["number"])))
+		add("pages", stringValue(data["pages"]))
+		add("year", yearFromDate(stringValue(data["date"])))
+		add("doi", stringValue(data["DOI"]))
+		add("url", stringValue(data["url"]))
+		add("isbn", stringValue(data["ISBN"]))
+		add("issn", stringValue(data["ISSN"]))
+	}
+	add("note", "mmdash "+reference.ReferenceType+":"+reference.SourceObjectID+"@"+reference.SourceVersionID)
+	return fields
+}
+
+func zoteroData(metadata map[string]interface{}) map[string]interface{} {
+	data := object(metadata["data"])
+	if len(data) > 0 {
+		return data
+	}
+	return metadata
+}
+
+func zoteroCreators(data map[string]interface{}, creatorType string) string {
+	creators, ok := data["creators"].([]interface{})
+	if !ok {
+		return ""
+	}
+	names := []string{}
+	for _, rawCreator := range creators {
+		creator := object(rawCreator)
+		if stringValue(creator["creatorType"]) != creatorType {
+			continue
+		}
+		name := strings.TrimSpace(stringValue(creator["firstName"]) + " " + stringValue(creator["lastName"]))
+		if name == "" {
+			name = stringValue(creator["name"])
+		}
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, " and ")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func yearFromDate(value string) string {
+	for index := 0; index+4 <= len(value); index++ {
+		candidate := value[index : index+4]
+		if candidate[0] >= '0' && candidate[0] <= '9' &&
+			candidate[1] >= '0' && candidate[1] <= '9' &&
+			candidate[2] >= '0' && candidate[2] <= '9' &&
+			candidate[3] >= '0' && candidate[3] <= '9' {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func interfaceSlice(value interface{}) ([]interface{}, bool) {
@@ -721,7 +875,17 @@ func escapeMarkdown(value string) string {
 	return replacer.Replace(value)
 }
 func escapeBib(value string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(value, "\\", "\\textbackslash{}"), "{", "\\{")
+	replacer := strings.NewReplacer(
+		`\`, `\textbackslash{}`,
+		`{`, `\{`,
+		`}`, `\}`,
+		`%`, `\%`,
+		`$`, `\$`,
+		`&`, `\&`,
+		`#`, `\#`,
+		`_`, `\_`,
+	)
+	return replacer.Replace(value)
 }
 func safeTarget(value string) string {
 	value = strings.TrimSpace(value)

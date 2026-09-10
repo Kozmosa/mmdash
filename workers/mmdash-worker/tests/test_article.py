@@ -18,9 +18,13 @@ from PIL import Image
 from mmdash_worker.article import handler as handler_module
 from mmdash_worker.article.handler import (
     ArticleBuildHandler,
+    _beautify_longtables,
+    _center_standalone_images,
     _CommandFailure,
     _convert_resource_for_latex,
     _extract_template,
+    _prepare_native_citations,
+    _preserve_image_aspect_ratios,
     _replace_resource_references,
     _resource_filename,
     _validate_template,
@@ -330,6 +334,213 @@ def test_build_rejects_toolchain_drift_before_running_template(tmp_path: Path) -
     command.assert_not_called()
 
 
+SPLIT_MANIFEST = {
+    **MANIFEST,
+    "schema_version": "1.1",
+    "content_target": "texfile/body.tex",
+    "bibliography_mode": "native",
+    "body_layout": "single",
+}
+
+SPLIT_MANUSCRIPT = "# 问题重述\n\n正文A\n\n## 子节留在本文件\n\n内容\n\n# 模型求解\n\n正文B\n"
+SPLIT_HEADINGS = [
+    {"block_id": "h1-restatement", "level": 1, "text": "问题重述", "ordinal": 0},
+    {"block_id": "h2-sub", "level": 2, "text": "子节留在本文件", "ordinal": 1},
+    {"block_id": "h1-solving", "level": 1, "text": "模型求解", "ordinal": 2},
+]
+
+
+class SplitArticleClient(FakeArticleClient):
+    def __init__(
+        self,
+        template_zip: Path,
+        split_sections: bool | None = True,
+        manifest: dict | None = None,
+    ) -> None:
+        super().__init__(template_zip)
+        self.split_sections = split_sections
+        self.manifest = manifest if manifest is not None else SPLIT_MANIFEST
+
+    def get_article_build_input(self, _job_id: str) -> dict[str, Any]:
+        build = super().get_article_build_input(_job_id)
+        build["manuscript"] = SPLIT_MANUSCRIPT
+        build["headings"] = SPLIT_HEADINGS
+        if self.split_sections is not None:
+            build["split_sections"] = self.split_sections
+        build["template"]["manifest"] = self.manifest
+        return build
+
+
+def create_split_template(path: Path, manifest: dict | None = None) -> Path:
+    template_manifest = manifest if manifest is not None else SPLIT_MANIFEST
+    with zipfile.ZipFile(path, "w") as zipfile_open:
+        zipfile_open.writestr("mmdash-template.json", json.dumps(template_manifest, sort_keys=True))
+        zipfile_open.writestr(
+            "main.tex",
+            "\\documentclass{article}\\begin{document}\\input{texfile/body.tex}\\end{document}",
+        )
+    return path
+
+
+def run_split_build(tmp_path: Path, client: FakeArticleClient) -> dict[str, bytes]:
+    def fake_command(
+        arguments: list[str],
+        cwd: Path,
+        *,
+        timeout: int,
+        limits: Mapping[str, int] | None = None,
+    ) -> str:
+        del timeout, limits
+        if arguments[0] == "pandoc":
+            source = Path(arguments[1])
+            output = Path(arguments[arguments.index("--output") + 1])
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
+                "% pandoc:" + source.name + "\n" + source.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+        else:
+            (cwd / "paper.pdf").write_bytes(b"%PDF-1.7\narticle\n")
+        return "$ ok"
+
+    with (
+        patch("mmdash_worker.article.handler._run_command", side_effect=fake_command),
+        patch("mmdash_worker.article.handler._toolchain", return_value=PINNED_TOOLCHAIN),
+    ):
+        asyncio.run(
+            ArticleBuildHandler(client)(HandlerContext(job_id="job-1", worker_id="worker-1"), {})
+        )
+    source_zip = tmp_path / "split-result.zip"
+    source_zip.write_bytes(client.uploads["source_zip"])
+    files: dict[str, bytes] = {}
+    with zipfile.ZipFile(source_zip) as archive:
+        for name in archive.namelist():
+            if not name.endswith("/"):
+                files[name] = archive.read(name)
+    return files
+
+
+def test_split_sections_setting_writes_one_tex_file_per_h1(tmp_path: Path) -> None:
+    files = run_split_build(
+        tmp_path, SplitArticleClient(create_split_template(tmp_path / "template.zip"))
+    )
+
+    # One file per H1, named after the contest template convention.
+    assert "texfile/1-问题重述.tex" in files
+    assert "texfile/2-模型求解.tex" in files
+    # H2 headings stay inside their chapter file instead of starting one.
+    assert not any(name.startswith("texfile/2-子节") for name in files)
+    assert "## 子节留在本文件" in files["texfile/1-问题重述.tex"].decode("utf-8")
+    assert files["texfile/2-模型求解.tex"].decode("utf-8").count("正文B") == 1
+    # The content target becomes the ordered \input index into main.tex.
+    assert files["texfile/body.tex"].decode("utf-8").splitlines() == [
+        "\\input{texfile/1-问题重述}",
+        "\\input{texfile/2-模型求解}",
+    ]
+
+
+def test_split_sections_opt_out_keeps_single_content_target(tmp_path: Path) -> None:
+    sections_manifest = {**SPLIT_MANIFEST, "body_layout": "sections"}
+    files = run_split_build(
+        tmp_path,
+        SplitArticleClient(
+            create_split_template(tmp_path / "template.zip", sections_manifest),
+            split_sections=False,
+            manifest=sections_manifest,
+        ),
+    )
+    body = files["texfile/body.tex"].decode("utf-8")
+    assert "# 问题重述" in body
+    assert "# 模型求解" in body
+    assert not any(name.startswith("texfile/") and name != "texfile/body.tex" for name in files)
+
+
+def test_split_sections_missing_setting_falls_back_to_manifest(tmp_path: Path) -> None:
+    sections_manifest = {**SPLIT_MANIFEST, "body_layout": "sections"}
+    files = run_split_build(
+        tmp_path,
+        SplitArticleClient(
+            create_split_template(tmp_path / "template.zip", sections_manifest),
+            split_sections=None,
+            manifest=sections_manifest,
+        ),
+    )
+    assert "texfile/1-问题重述.tex" in files
+    assert files["texfile/body.tex"].decode("utf-8").splitlines()[0] == (
+        "\\input{texfile/1-问题重述}"
+    )
+
+
+def test_split_sections_downgrades_for_inline_bibliography(tmp_path: Path) -> None:
+    inline_manifest = {**SPLIT_MANIFEST, "bibliography_mode": "inline"}
+    inline_zip = tmp_path / "inline-template.zip"
+    with zipfile.ZipFile(inline_zip, "w") as archive:
+        archive.writestr("mmdash-template.json", json.dumps(inline_manifest, sort_keys=True))
+        archive.writestr(
+            "main.tex",
+            "\\documentclass{article}\\begin{document}\\input{texfile/body.tex}\\end{document}",
+        )
+    client = SplitArticleClient(inline_zip, manifest=inline_manifest)
+    files = run_split_build(tmp_path, client)
+    assert "# 问题重述" in files["texfile/body.tex"].decode("utf-8")
+    assert not any(name.startswith("texfile/") and name != "texfile/body.tex" for name in files)
+
+
+def test_native_citations_use_plain_cite_command() -> None:
+    rendered = _prepare_native_citations(
+        "正文引用 [@rossRadiativeForcingCaused2014; @smithModel2026].",
+        {"bibliography_mode": "native", "field_profile": "cumcm"},
+    )
+    assert rendered == "正文引用 \\cite{rossRadiativeForcingCaused2014,smithModel2026}."
+
+
+def test_includegraphics_width_keeps_aspect_ratio(tmp_path: Path) -> None:
+    fragment = tmp_path / "section.tex"
+    fragment.write_text(
+        "\\includegraphics[width=0.5\\textwidth,height=\\textheight]{figures/a.jpg}\n"
+        "\\includegraphics[height=0.5\\textheight]{figures/b.jpg}\n",
+        encoding="utf-8",
+    )
+    _preserve_image_aspect_ratios(fragment)
+    assert fragment.read_text(encoding="utf-8") == (
+        "\\includegraphics[width=0.5\\textwidth]{figures/a.jpg}\n"
+        "\\includegraphics[height=0.5\\textheight]{figures/b.jpg}\n"
+    )
+
+
+def test_center_standalone_images_without_touching_figures_or_subfigures(tmp_path: Path) -> None:
+    fragment = tmp_path / "section.tex"
+    fragment.write_text(
+        "text before\n\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/single.jpg}\n\n"
+        "\\begin{figure}[htbp]\n"
+        "\\centering\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/captioned.jpg}\n"
+        "\\caption{已有图注}\n"
+        "\\end{figure}\n\n"
+        "\\begin{subfigure}[b]{0.45\\linewidth}\n"
+        "  \\includegraphics[width=\\linewidth]{figures/grouped.jpg}\n"
+        "\\end{subfigure}\n",
+        encoding="utf-8",
+    )
+
+    _center_standalone_images(fragment)
+
+    assert fragment.read_text(encoding="utf-8") == (
+        "text before\n\n"
+        "{\\centering\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/single.jpg}\\par}\n\n"
+        "\\begin{figure}[htbp]\n"
+        "\\centering\n"
+        "\\includegraphics[width=0.45\\linewidth]{figures/captioned.jpg}\n"
+        "\\caption{已有图注}\n"
+        "\\end{figure}\n\n"
+        "\\begin{subfigure}[b]{0.45\\linewidth}\n"
+        "  \\includegraphics[width=\\linewidth]{figures/grouped.jpg}\n"
+        "\\end{subfigure}\n"
+    )
+
+
 def create_template(path: Path) -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("mmdash-template.json", json.dumps(MANIFEST, sort_keys=True))
@@ -492,9 +703,7 @@ def test_pandoc_fragment_stays_within_the_template_contract(tmp_path: Path) -> N
     if sys.platform == "darwin":
         # setrlimit(RLIMIT_AS) raises EINVAL on macOS; limits stay enforced in
         # the Linux worker image.
-        patches.append(
-            patch("mmdash_worker.article.handler._limit_process", lambda limits: None)
-        )
+        patches.append(patch("mmdash_worker.article.handler._limit_process", lambda limits: None))
     with ExitStack() as stack:
         for patcher in patches:
             stack.enter_context(patcher)
@@ -522,3 +731,63 @@ def test_pandoc_fragment_stays_within_the_template_contract(tmp_path: Path) -> N
     assert "\\begin{verbatim}" in fragments["generated-content.tex"]
     assert "CSLReferences" not in fragments[".mmdash/abstract-block.tex"]
     assert "CSLReferences" in fragments["generated-content.tex"]
+
+
+def test_beautify_longtables_centers_and_bolds_contest_headers(tmp_path: Path) -> None:
+    fragment = tmp_path / "fragment.tex"
+    fragment.write_text(
+        "\\begin{longtable}[]{@{}ccc@{}}\n"
+        "\\caption{符号说明}\\tabularnewline\n"
+        "\\toprule\n"
+        "符号 & 意义 & 单位 \\\\\n"
+        "\\midrule\n"
+        "\\endfirsthead\n"
+        "\\toprule\n"
+        "符号 & 意义 & 单位 \\\\\n"
+        "\\midrule\n"
+        "\\endhead\n"
+        "\\(t\\) & 当前时间 & s \\\\\n"
+        "\\bottomrule\n"
+        "\\end{longtable}\n",
+        encoding="utf-8",
+    )
+
+    _beautify_longtables(fragment)
+
+    body = fragment.read_text(encoding="utf-8")
+    # A narrower-than-textwidth longtable must center on the page.
+    assert (
+        body.count("\\setlength\\LTleft{\\fill}\\setlength\\LTright{\\fill}\n\\begin{longtable}")
+        == 1
+    )
+    # Both the first-page header and the page-continuation header are bold.
+    assert body.count("\\textbf{符号} & \\textbf{意义} & \\textbf{单位} \\\\") == 2
+    # Body rows stay untouched.
+    assert "\\(t\\) & 当前时间 & s \\\\" in body
+    assert "\\textbf{\\(t\\)}" not in body
+
+
+def test_beautify_longtables_keeps_author_bolding_and_skips_plain_fragments(
+    tmp_path: Path,
+) -> None:
+    bolded = tmp_path / "bolded.tex"
+    bolded.write_text(
+        "\\begin{longtable}[]{@{}cc@{}}\n"
+        "\\toprule\n"
+        "\\textbf{方法} & \\\\\n"
+        "\\midrule\n"
+        "\\endhead\n"
+        "A & B \\\\\n"
+        "\\bottomrule\n"
+        "\\end{longtable}\n",
+        encoding="utf-8",
+    )
+    _beautify_longtables(bolded)
+    body = bolded.read_text(encoding="utf-8")
+    assert "\\textbf{\\textbf{方法}}" not in body
+    assert body.count("\\textbf{方法}") == 1
+
+    plain = tmp_path / "plain.tex"
+    plain.write_text("no tables here\n", encoding="utf-8")
+    _beautify_longtables(plain)
+    assert plain.read_text(encoding="utf-8") == "no tables here\n"

@@ -299,7 +299,7 @@ func (*articleTestArtifacts) ArchiveArticleTemplate(_ context.Context, _, _, _, 
 	}
 	// Each built-in template owns its stable Artifact through its
 	// idempotency key; the default keeps its historical fixed IDs.
-	if idempotencyKey == "article-default-template:1.1.1" {
+	if idempotencyKey == "article-default-template:1.1.2" {
 		return "artifact-default", "version-default", nil
 	}
 	key := safeID(idempotencyKey)

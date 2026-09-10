@@ -70,6 +70,8 @@ Just choose `xelatex', no `pdflatex' or `latex' and so on.}
 \RequirePackage{xcolor}
 % 插入链接
 \RequirePackage{url}
+% 数字引用压缩排序
+\RequirePackage[numbers,sort&compress]{natbib}
 % 绘图的包
 %\RequirePackage{tikz}
 %\usetikzlibrary{snakes}

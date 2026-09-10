@@ -214,13 +214,19 @@ class ArticleBuildHandler:
             else:
                 abstract_enabled = bool(raw_abstract.strip())
             _write_metadata_blocks(template_root, manifest, _paper_fields(build), abstract_enabled)
-            body_layout = str(manifest.get("body_layout", "single"))
             bibliography_mode = str(manifest.get("bibliography_mode", "inline"))
-            if body_layout == "sections" and bibliography_mode == "inline":
+            # The article.rendering split_sections setting is authoritative:
+            # one TeX file per H1 section when on, a single body file when off.
+            # A missing flag (older Core during a rolling deploy) falls back to
+            # the template's declared body_layout.
+            split_sections = build.get("split_sections")
+            if split_sections is None:
+                split_sections = str(manifest.get("body_layout", "single")) == "sections"
+            if split_sections and bibliography_mode == "inline":
                 # citeproc must render the reference list once per document;
                 # a per-section split would duplicate or lose it. Sections are
                 # therefore only split for native-bibliography templates.
-                body_layout = "single"
+                split_sections = False
             _inject_bibliography_block(
                 template_root,
                 manifest,
@@ -228,17 +234,21 @@ class ArticleBuildHandler:
                 bibliography_target,
             )
             pandoc_runs: list[tuple[str, Path]] = []
-            if body_layout == "sections":
+            if split_sections:
                 chunks = _split_markdown_sections(
                     manuscript_text, [_mapping(h) for h in build.get("headings", [])]
                 )
                 input_lines: list[str] = []
                 front_chunks: list[str] = []
+                section_ordinal = 0
                 for block_id, chunk in chunks:
                     if not block_id:
                         front_chunks.append(chunk)
                         continue
-                    section_path = content_target.parent / f"{_section_filename(block_id)}.tex"
+                    section_ordinal += 1
+                    section_path = content_target.parent / (
+                        _section_filename(section_ordinal, block_id, chunk) + ".tex"
+                    )
                     if section_path == content_target:
                         front_chunks.append(chunk)
                         continue
@@ -287,6 +297,8 @@ class ArticleBuildHandler:
                 latexmk.insert(-1, "-bibtex-")
             try:
                 for run_index, (source_text, output_path) in enumerate(pandoc_runs):
+                    if bibliography_mode == "native":
+                        source_text = _prepare_native_citations(source_text, manifest)
                     source_file = root / f"chunk-{run_index:04d}.md"
                     source_file.write_text(source_text, encoding="utf-8", newline="\n")
                     command = [
@@ -324,6 +336,13 @@ class ArticleBuildHandler:
                             limits=limits,
                         )
                     )
+                for _, fragment_path in pandoc_runs:
+                    # Contest-style three-line tables: centered on the page
+                    # with a bold header row. Applies to the body, every
+                    # split section file, and the abstract alike.
+                    _beautify_longtables(fragment_path)
+                    _preserve_image_aspect_ratios(fragment_path)
+                    _center_standalone_images(fragment_path)
                 if (
                     bibliography.stat().st_size
                     and bibliography_mode != "native"
@@ -510,6 +529,158 @@ def _strip_csl_references(target: Path) -> None:
         raise HandlerError(
             "ARTICLE_BUILD_FAILED",
             "Pandoc citation output could not be prepared for LaTeX",
+        ) from error
+
+
+_NATIVE_CITATION = re.compile(
+    r"(?<!\\)\[([^\[\]\n]*@[A-Za-z0-9][A-Za-z0-9_.:-]*"
+    r"(?:\s*;\s*[^\[\]\n]*@[A-Za-z0-9][A-Za-z0-9_.:-]*)*)\](?!\()"
+)
+_CITATION_KEY = re.compile(r"@([A-Za-z0-9][A-Za-z0-9_.:-]*)")
+
+
+def _prepare_native_citations(markdown: str, _manifest: Mapping[str, Any]) -> str:
+    r"""Convert Markdown citations into template-native LaTeX commands.
+
+    Pandoc's citeproc path owns inline references, but BibTeX/native templates
+    need literal citation commands in the generated fragment.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        keys = _CITATION_KEY.findall(match.group(1))
+        if not keys:
+            return match.group(0)
+        return "\\cite{" + ",".join(keys) + "}"
+
+    return _NATIVE_CITATION.sub(replace, markdown)
+
+
+_INCLUDEGRAPHICS_WITH_OPTIONS = re.compile(r"(\\includegraphics)\[([^\]]*)\](\{[^{}\n]+\})")
+_STANDALONE_INCLUDEGRAPHICS = re.compile(
+    r"^\\includegraphics(?:\[[^\]\r\n]*\])?\{[^{}\r\n]+\}\s*$"
+)
+
+
+def _preserve_image_aspect_ratios(target: Path) -> None:
+    r"""Drop Pandoc's synthetic image height when width already constrains it."""
+    try:
+        generated = target.read_text(encoding="utf-8")
+        if "\\includegraphics[" not in generated:
+            return
+
+        def replace(match: re.Match[str]) -> str:
+            options = [part.strip() for part in match.group(2).split(",") if part.strip()]
+            has_width = any(part.startswith("width=") for part in options)
+            if not has_width:
+                return match.group(0)
+            kept = [part for part in options if not part.startswith("height=")]
+            if kept == options:
+                return match.group(0)
+            return f"{match.group(1)}[{','.join(kept)}]{match.group(3)}"
+
+        updated = _INCLUDEGRAPHICS_WITH_OPTIONS.sub(replace, generated)
+        if updated != generated:
+            target.write_text(updated, encoding="utf-8", newline="\n")
+    except OSError as error:
+        raise HandlerError(
+            "ARTICLE_BUILD_FAILED",
+            "Pandoc image output could not be prepared for LaTeX",
+        ) from error
+
+
+def _center_standalone_images(target: Path) -> None:
+    r"""Center Pandoc images emitted as a bare block without a caption.
+
+    Pandoc creates a centered ``figure`` for an image caption, but emits a
+    naked ``\\includegraphics`` line when the caption is empty. Article images
+    default to center alignment in the editor, so keep that invariant in the
+    generated LaTeX without touching grouped subfigures or existing figures.
+    """
+    try:
+        generated = target.read_text(encoding="utf-8")
+        lines = generated.splitlines(keepends=True)
+        updated: list[str] = []
+        changed = False
+        for index, line in enumerate(lines):
+            body = line.rstrip("\r\n")
+            previous_blank = not updated or not updated[-1].rstrip("\r\n").strip()
+            next_blank = index + 1 == len(lines) or not lines[index + 1].rstrip("\r\n").strip()
+            if (
+                _STANDALONE_INCLUDEGRAPHICS.fullmatch(body)
+                and previous_blank
+                and next_blank
+            ):
+                updated.extend(["{\\centering\n", body + "\\par}\n"])
+                changed = True
+            else:
+                updated.append(line)
+        if changed:
+            target.write_text("".join(updated), encoding="utf-8", newline="\n")
+    except OSError as error:
+        raise HandlerError(
+            "ARTICLE_BUILD_FAILED",
+            "Pandoc image output could not be centered for LaTeX",
+        ) from error
+
+
+_LONGTABLE_HEADER_BLOCK = re.compile(
+    r"(\\toprule\n)((?:[^\n]*\\\\\n)+)(\\midrule\n\\end(?:firsthead|head))"
+)
+
+
+def _bold_longtable_header_line(line: str) -> str:
+    r"""Bold one Pandoc longtable header row, cell by cell.
+
+    The row looks like `符号 & 意义 & 单位 \\`. Cells that already carry
+    \textbf (the author bolded them in the editor) or span macros keep
+    their formatting; empty cells stay empty.
+    """
+    stripped = line.rstrip("\n")
+    if not stripped.endswith("\\\\"):
+        return line
+    body = stripped[:-2].rstrip()
+    cells = [
+        f"\\textbf{{{cell}}}"
+        if cell
+        and "\\textbf" not in cell
+        and "\\multicolumn" not in cell
+        and "\\multirow" not in cell
+        else cell
+        for cell in body.split(" & ")
+    ]
+    return " & ".join(cells) + " \\\\\n"
+
+
+def _beautify_longtables(target: Path) -> None:
+    r"""Style Pandoc longtables for math-modeling papers.
+
+    Pandoc emits flush-left longtables with plain header cells, which reads
+    as unfinished next to a contest template's own \tabular tables: a
+    narrower-than-textwidth table must center on the page, and the header
+    row must be bold. Both fixes are fragment-local so every registered
+    template benefits without preamble changes.
+    """
+    try:
+        generated = target.read_text(encoding="utf-8")
+        if "\\begin{longtable}" not in generated:
+            return
+        generated = generated.replace(
+            "\\begin{longtable}",
+            "\\setlength\\LTleft{\\fill}\\setlength\\LTright{\\fill}\n\\begin{longtable}",
+        )
+
+        def bold_header(match: re.Match[str]) -> str:
+            header = "".join(
+                _bold_longtable_header_line(line) for line in match.group(2).splitlines()
+            )
+            return match.group(1) + header + match.group(3)
+
+        generated = _LONGTABLE_HEADER_BLOCK.sub(bold_header, generated)
+        target.write_text(generated, encoding="utf-8", newline="\n")
+    except OSError as error:
+        raise HandlerError(
+            "ARTICLE_BUILD_FAILED",
+            "Pandoc table output could not be prepared for LaTeX",
         ) from error
 
 
@@ -839,10 +1010,7 @@ def _defined_template_commands(template_root: Path) -> set[str]:
     """
     names: set[str] = set()
     for source in template_root.rglob("*"):
-        if (
-            not source.is_file()
-            or source.suffix.lower() not in {".cls", ".sty", ".tex"}
-        ):
+        if not source.is_file() or source.suffix.lower() not in {".cls", ".sty", ".tex"}:
             continue
         try:
             text = source.read_text(encoding="utf-8", errors="replace")
@@ -904,13 +1072,20 @@ def _write_metadata_blocks(
 def _split_markdown_sections(
     manuscript: str, headings: list[Mapping[str, Any]]
 ) -> list[tuple[str, str]]:
-    """Split the Markdown body into per-H1/H2 chunks keyed by block ID.
+    """Split the Markdown body into one chunk per H1 heading, keyed by block ID.
 
-    Fenced code blocks are tracked so a `#` line inside them can never start
-    a new section. Content before the first frozen heading becomes the
-    front-matter chunk with an empty block ID.
+    Only level-1 headings start a section: every H2/H3 stays inside the chunk
+    of the H1 that owns it, mirroring the contest template layout where each
+    top-level chapter lives in its own texfile. Fenced code blocks are tracked
+    so a `#` line inside them can never start a new section. Content before
+    the first frozen heading becomes the front-matter chunk with an empty
+    block ID.
     """
-    expected = [heading for heading in headings if heading.get("block_id")]
+    expected = [
+        heading
+        for heading in headings
+        if heading.get("block_id") and int(heading.get("level", 1) or 1) == 1
+    ]
     chunks: list[tuple[str, str]] = []
     current_id = ""
     current_lines: list[str] = []
@@ -926,8 +1101,7 @@ def _split_markdown_sections(
         else:
             if index < len(expected) and stripped.startswith("#"):
                 heading = expected[index]
-                level = int(heading.get("level", 1) or 1)
-                marker = "#" * level
+                marker = "#"
                 text = str(heading.get("text", "")).strip()
                 candidate = stripped[len(marker) :].strip()
                 if stripped.startswith(marker + " ") and candidate == text and text:
@@ -945,11 +1119,22 @@ def _split_markdown_sections(
     return chunks
 
 
-def _section_filename(block_id: str) -> str:
-    safe = [
-        character if character.isalnum() or character in "-_" else "-" for character in block_id
-    ]
-    return "".join(safe)[:120] or "section"
+def _section_filename(ordinal: int, block_id: str, chunk: str) -> str:
+    """Name a section file after the contest template: N-标题.
+
+    The heading text is taken from the chunk's first line (sections always
+    start with their H1) and sanitized to the same alphabet as block IDs;
+    unicode letters survive. The ordinal prefix keeps duplicate titles apart
+    and mirrors texfile/1问题重述.tex style numbering.
+    """
+    first_line = chunk.splitlines()[0].lstrip() if chunk else ""
+    title = first_line[2:].strip() if first_line.startswith("# ") else ""
+    source = title or block_id
+    safe = "".join(
+        character if character.isalnum() or character in "-_" else "-" for character in source
+    )
+    stem = safe[:100].strip("-") or "section"
+    return f"{ordinal}-{stem}"
 
 
 def _inject_bibliography_block(

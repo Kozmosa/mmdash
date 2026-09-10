@@ -132,7 +132,7 @@ func (service *Service) Aggregate(ctx context.Context, caller auth.Identity, pro
 		} else {
 			warnings = appendAggregateWarning(warnings, "templates.bootstrap")
 		}
-		if ensured, ensureErr := service.ensureCumcmTemplate(ctx, caller.ActorID(), projectID, templates); ensureErr == nil {
+		if ensured, ensureErr := service.ensureCumcm2026Template(ctx, caller.ActorID(), projectID, templates); ensureErr == nil {
 			templates = ensured
 		} else {
 			warnings = appendAggregateWarning(warnings, "templates.cumcm_bootstrap")
@@ -856,16 +856,17 @@ func (service *Service) CreateBuild(ctx context.Context, caller auth.Identity, p
 }
 
 type previewBuildSnapshot struct {
-	ArticleManifest    map[string]interface{} `json:"article_manifest"`
-	DraftRevision      int64                  `json:"draft_revision"`
-	Manuscript         string                 `json:"manuscript"`
-	ReferencesBIB      string                 `json:"references_bib"`
-	ResourceReferences []Reference            `json:"resource_references"`
-	SchemaVersion      string                 `json:"schema_version"`
-	Abstract           string                 `json:"abstract,omitempty"`
-	AbstractRevision   int64                  `json:"abstract_revision,omitempty"`
-	PaperInfo          map[string]interface{} `json:"paper_info,omitempty"`
-	PaperInfoRevision  int64                  `json:"paper_info_revision,omitempty"`
+	ArticleManifest    map[string]interface{}   `json:"article_manifest"`
+	DraftRevision      int64                    `json:"draft_revision"`
+	Manuscript         string                   `json:"manuscript"`
+	ReferencesBIB      string                   `json:"references_bib"`
+	ResourceReferences []Reference              `json:"resource_references"`
+	SchemaVersion      string                   `json:"schema_version"`
+	Abstract           string                   `json:"abstract,omitempty"`
+	AbstractRevision   int64                    `json:"abstract_revision,omitempty"`
+	PaperInfo          map[string]interface{}   `json:"paper_info,omitempty"`
+	PaperInfoRevision  int64                    `json:"paper_info_revision,omitempty"`
+	Headings           []map[string]interface{} `json:"headings,omitempty"`
 }
 
 func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity, projectID string, draftRevision int64, templateID, engine, bibliographyTool string) (Build, bool, error) {
@@ -921,6 +922,7 @@ func (service *Service) CreatePreview(ctx context.Context, caller auth.Identity,
 		AbstractRevision:   draft.AbstractRevision,
 		PaperInfo:          cloneObject(draft.PaperInfo),
 		PaperInfoRevision:  draft.PaperInfoRevision,
+		Headings:           headingInfos(draft.Blocks),
 	}
 	return service.Store.CreateBuild(ctx, item, jobInput, service.JobWriter)
 }
@@ -1200,6 +1202,12 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 	var headings []HeadingInfo
 	var frozenReferences []Reference
 	manifest := map[string]interface{}{}
+	splitSections := true
+	if service.Settings != nil {
+		if resolved, resolveErr := service.Settings.Resolve(ctx, settings.ScopeProject, job.ProjectID, SettingTypeRendering); resolveErr == nil {
+			splitSections = ResolveSplitSections(resolved, true)
+		}
+	}
 	switch build.BuildKind {
 	case BuildFormal:
 		commit, err := service.Store.GetCommit(ctx, job.ProjectID, build.CommitID)
@@ -1243,6 +1251,7 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			frozenReferences = snapshot.ResourceReferences
 			abstract = snapshot.Abstract
 			paperInfo = snapshot.PaperInfo
+			headings = headingInfosFromMaps(snapshot.Headings)
 		} else {
 			// Rolling-deploy compatibility for Preview jobs queued by an older
 			// Core before immutable job snapshots were introduced.
@@ -1260,6 +1269,7 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			}
 			abstract = draft.AbstractMarkdown
 			paperInfo = draft.PaperInfo
+			headings = headingInfosFromMaps(headingInfos(draft.Blocks))
 		}
 	case BuildTemplateTest:
 		manuscript = "# Template validation\n\nAn equation: $x^2$.\n"
@@ -1272,6 +1282,9 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 			referencesBIB = templateTestReference
 		}
 		manifest = map[string]interface{}{"schema_version": "1.0", "template_test": true}
+		// Exercise the section-split path during registration so a template
+		// that cannot compile split sections fails its own validation build.
+		headings = []HeadingInfo{{BlockID: "template-validation", Level: 1, Ordinal: 0, Text: "Template validation"}}
 	default:
 		return BuildJobInput{}, ErrInvalid
 	}
@@ -1302,7 +1315,24 @@ func (service *Service) WorkerInput(ctx context.Context, caller auth.Identity, j
 		})
 		seen[key] = struct{}{}
 	}
-	return BuildJobInput{BuildID: build.BuildID, ProjectID: job.ProjectID, BuildKind: build.BuildKind, Manuscript: manuscript, Abstract: abstract, PaperInfo: paperInfo, Headings: headings, ReferencesBIB: referencesBIB, ArticleManifest: manifest, Template: map[string]interface{}{"artifact_id": template.ArtifactID, "version_id": template.VersionID, "manifest": template.Manifest, "transfer": grant}, Engine: build.Engine, BibliographyTool: build.BibliographyTool, Limits: map[string]interface{}{"timeout_seconds": 600, "memory_bytes": 1073741824, "disk_bytes": int64(2 * 1024 * 1024 * 1024), "output_bytes": maxOutputBytes, "network": "none"}, Toolchain: map[string]interface{}{"pandoc": "pandoc 2.17.1.1", "latexmk": "Version 4.79", "texlive": "TeX Live 2022/Debian"}, Resources: resources}, nil
+	return BuildJobInput{BuildID: build.BuildID, ProjectID: job.ProjectID, BuildKind: build.BuildKind, Manuscript: manuscript, Abstract: abstract, PaperInfo: paperInfo, Headings: headings, SplitSections: &splitSections, ReferencesBIB: referencesBIB, ArticleManifest: manifest, Template: map[string]interface{}{"artifact_id": template.ArtifactID, "version_id": template.VersionID, "manifest": template.Manifest, "transfer": grant}, Engine: build.Engine, BibliographyTool: build.BibliographyTool, Limits: map[string]interface{}{"timeout_seconds": 600, "memory_bytes": 1073741824, "disk_bytes": int64(2 * 1024 * 1024 * 1024), "output_bytes": maxOutputBytes, "network": "none"}, Toolchain: map[string]interface{}{"pandoc": "pandoc 2.17.1.1", "latexmk": "Version 4.79", "texlive": "TeX Live 2022/Debian"}, Resources: resources}, nil
+}
+
+// headingInfosFromMaps rehydrates frozen heading identity (preview snapshots)
+// into the typed Worker input.
+func headingInfosFromMaps(raw []map[string]interface{}) []HeadingInfo {
+	headings := []HeadingInfo{}
+	for _, entry := range raw {
+		blockID, _ := entry["block_id"].(string)
+		level := integer(entry["level"], 0)
+		ordinal := integer(entry["ordinal"], 0)
+		text, _ := entry["text"].(string)
+		if blockID == "" || level < 1 {
+			continue
+		}
+		headings = append(headings, HeadingInfo{BlockID: blockID, Level: level, Ordinal: ordinal, Text: text})
+	}
+	return headings
 }
 
 // headingsFromManifest restores the frozen heading identity recorded in
@@ -1316,13 +1346,13 @@ func headingsFromManifest(manifest map[string]interface{}) []HeadingInfo {
 			continue
 		}
 		blockID, _ := entry["block_id"].(string)
-		level, _ := entry["level"].(float64)
-		ordinal, _ := entry["ordinal"].(float64)
+		level := integer(entry["level"], 0)
+		ordinal := integer(entry["ordinal"], 0)
 		text, _ := entry["text"].(string)
 		if blockID == "" || level < 1 {
 			continue
 		}
-		headings = append(headings, HeadingInfo{BlockID: blockID, Level: int(level), Ordinal: int(ordinal), Text: text})
+		headings = append(headings, HeadingInfo{BlockID: blockID, Level: level, Ordinal: ordinal, Text: text})
 	}
 	return headings
 }
@@ -1571,6 +1601,9 @@ func (service *Service) ListZoteroItems(ctx context.Context, caller auth.Identit
 	items := make([]ZoteroItem, 0, len(raw))
 	for _, entry := range raw {
 		data := object(entry["data"])
+		if isZoteroAttachment(data) {
+			continue
+		}
 		item := ZoteroItem{
 			ItemKey:     stringValue(entry["key"]),
 			Version:     int64Value(entry["version"]),
@@ -1605,6 +1638,10 @@ func (service *Service) ListZoteroItems(ctx context.Context, caller auth.Identit
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func isZoteroAttachment(data map[string]interface{}) bool {
+	return strings.EqualFold(stringValue(data["itemType"]), "attachment")
 }
 
 func (service *Service) SearchZotero(ctx context.Context, caller auth.Identity, projectID, query string) ([]ZoteroItem, error) {

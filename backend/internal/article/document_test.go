@@ -98,8 +98,46 @@ func TestBibliographyFreezesStableVersionPointers(t *testing.T) {
 		{CitationKey: "zeta", ReferenceType: "zotero", SourceObjectID: "item", SourceVersionID: "7", Title: "Z"},
 		{CitationKey: "alpha", ReferenceType: "experiment_result", SourceObjectID: "run", SourceVersionID: "v2", Title: "A"},
 	})
-	if strings.Index(value, "@misc{alpha") > strings.Index(value, "@misc{zeta") || !strings.Contains(value, "experiment_result:run@v2") || !strings.Contains(value, "zotero:item@7") {
+	if strings.Index(value, "@misc{alpha") > strings.Index(value, "@misc{zeta") || !strings.Contains(value, "experiment\\_result:run@v2") || !strings.Contains(value, "zotero:item@7") {
 		t.Fatalf("bibliography is not deterministic/frozen:\n%s", value)
+	}
+}
+
+func TestBibliographyIncludesZoteroBibFields(t *testing.T) {
+	value := Bibliography([]Reference{
+		{
+			CitationKey:     "rossRadiativeForcingCaused2014",
+			ReferenceType:   "zotero",
+			SourceObjectID:  "WQCYFP2Q",
+			SourceVersionID: "476",
+			Title:           "Radiative forcing caused by rocket engine emissions",
+			Metadata: map[string]interface{}{"data": map[string]interface{}{
+				"itemType":         "journalArticle",
+				"title":            "Radiative forcing caused by rocket engine emissions",
+				"publicationTitle": "Earth System Dynamics",
+				"date":             "2014-07-08",
+				"DOI":              "10.5194/esd-5-365-2014",
+				"url":              "https://example.test/rocket_emissions",
+				"creators": []interface{}{
+					map[string]interface{}{"creatorType": "author", "firstName": "Martin", "lastName": "Ross"},
+					map[string]interface{}{"creatorType": "author", "firstName": "Michael", "lastName": "Mills"},
+					map[string]interface{}{"creatorType": "editor", "firstName": "Ignored", "lastName": "Editor"},
+				},
+			}},
+		},
+	})
+	for _, want := range []string{
+		"@article{rossRadiativeForcingCaused2014,",
+		"author = {Martin Ross and Michael Mills}",
+		"journal = {Earth System Dynamics}",
+		"year = {2014}",
+		"doi = {10.5194/esd-5-365-2014}",
+		"url = {https://example.test/rocket\\_emissions}",
+		"note = {mmdash zotero:WQCYFP2Q@476}",
+	} {
+		if !strings.Contains(value, want) {
+			t.Fatalf("bibliography missing %q:\n%s", want, value)
+		}
 	}
 }
 
@@ -132,7 +170,7 @@ func TestNormalizeDocumentRendersGFMTableCodeAndOfficialMathNodes(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "| Name | Value |\n| --- | --- |\n| A\\|B | $x^2$ |\n\n```python\nprint('ok')\n```\n\n$$\n\\sum_i x_i\n$$\n"
+	want := "| Name | Value |\n| :---: | :---: |\n| A\\|B | $x^2$ |\n\n```python\nprint('ok')\n```\n\n$$\n\\sum_i x_i\n$$\n"
 	if markdown != want {
 		t.Fatalf("unexpected rich markdown:\n%s", markdown)
 	}
@@ -166,7 +204,7 @@ func TestNormalizeDocumentRendersArticleImageTableCaptionAndZoteroCitation(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Table: 实验结果\n\n| 值 |\n| --- |\n\n![结果图](https://example.test/result.png)\n\n图 1：结果\n\n参考 [@Smith2026]\n"
+	want := "Table: 实验结果\n\n| 值 |\n| :---: |\n\n![图 1：结果](https://example.test/result.png)\n\n参考 [@Smith2026]\n"
 	if markdown != want {
 		t.Fatalf("unexpected article markdown:\n%s", markdown)
 	}
@@ -195,7 +233,7 @@ func TestNormalizeDocumentRendersCaptionBoundToTableWithoutDuplication(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Table: 绑定表注\n\n| 值 |\n| --- |\n"
+	want := "Table: 绑定表注\n\n| 值 |\n| :---: |\n"
 	if markdown != want {
 		t.Fatalf("unexpected bound table caption markdown: %q", markdown)
 	}
@@ -242,7 +280,7 @@ func TestNormalizeDocumentRendersWrappingImageGroupAndSanitizesChildren(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "\\begin{figure}[htbp]\n\\centering\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{mmdash://artifact/artifact-1/versions/version-2}\n  \\caption{子图 B}\n\\end{subfigure}\n\\par\\medskip\n\\begin{subfigure}[b]{0.98\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{about:blank}\n\\end{subfigure}\n\\caption{组合大题注}\n\\end{figure}\n"
+	want := "\\begin{figure}[htbp]\n\\centering\n\\noindent\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}%\n\\hspace{0.02\\linewidth}\n\\begin{subfigure}[b]{0.48\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{mmdash://artifact/artifact-1/versions/version-2}\n  \\caption{子图 B}\n\\end{subfigure}\n\\par\\medskip\n\\noindent\n\\begin{subfigure}[b]{0.98\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{about:blank}\n\\end{subfigure}\n\\caption{组合大题注}\n\\end{figure}\n"
 	if markdown != want {
 		t.Fatalf("unexpected image group markdown:\n%s\nwant:\n%s", markdown, want)
 	}
@@ -280,9 +318,109 @@ func TestNormalizeDocumentImageGroupPreservesReorderedSequenceAndAdaptiveWidths(
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "\\begin{figure}[htbp]\n\\centering\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/c.png}\n  \\caption{子图 C}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/b.png}\n  \\caption{子图 B}\n\\end{subfigure}\n\\caption{重排组合}\n\\end{figure}\n"
+	want := "\\begin{figure}[htbp]\n\\centering\n\\noindent\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/c.png}\n  \\caption{子图 C}\n\\end{subfigure}%\n\\hspace{0.02\\linewidth}\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}%\n\\hspace{0.02\\linewidth}\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/b.png}\n  \\caption{子图 B}\n\\end{subfigure}\n\\caption{重排组合}\n\\end{figure}\n"
 	if markdown != want {
 		t.Fatalf("unexpected reordered image group markdown:\n%s\nwant:\n%s", markdown, want)
+	}
+}
+
+func TestNormalizeDocumentImageGroupPreservesEditorRows(t *testing.T) {
+	labels := []string{"C", "A", "E", "B", "D"}
+	content := make([]interface{}, 0, len(labels))
+	for _, label := range labels {
+		content = append(content, map[string]interface{}{
+			"type": "articleImage",
+			"attrs": map[string]interface{}{
+				"alt":     "图片 " + label,
+				"caption": "子图 " + label,
+				"id":      "image-" + strings.ToLower(label),
+				"src":     "https://example.test/" + strings.ToLower(label) + ".png",
+			},
+		})
+	}
+	document := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{
+			"type":    "articleImageGroup",
+			"attrs":   map[string]interface{}{"caption": "两列组合", "columns": 2, "id": "image-group-rows"},
+			"content": content,
+		},
+	}}
+
+	markdown, _, err := NormalizeDocument(document, nil, "human", map[string]interface{}{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := strings.Split(markdown, "\n\\par\\medskip\n")
+	if len(rows) != 3 {
+		t.Fatalf("expected three editor rows, got %d:\n%s", len(rows), markdown)
+	}
+	for index, wantCount := range []int{2, 2, 1} {
+		if got := strings.Count(rows[index], "\\begin{subfigure}"); got != wantCount {
+			t.Fatalf("row %d has %d subfigures, want %d:\n%s", index+1, got, wantCount, markdown)
+		}
+	}
+	if got := strings.Count(markdown, "\\hspace{0.02\\linewidth}"); got != 2 {
+		t.Fatalf("expected one fixed gap between each pair of same-row subfigures, got %d:\n%s", got, markdown)
+	}
+	previous := -1
+	for _, label := range labels {
+		position := strings.Index(markdown, "\\caption{子图 "+label+"}")
+		if position <= previous {
+			t.Fatalf("subfigure order changed for %s:\n%s", label, markdown)
+		}
+		previous = position
+	}
+}
+
+func TestNormalizeDocumentEmitsImageWidthPercentages(t *testing.T) {
+	document := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+			"id": "image-wide", "alt": "全宽", "caption": "全宽图注", "src": "https://example.test/full.png", "width": 100,
+		}},
+		map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+			"id": "image-half", "alt": "半宽", "src": "https://example.test/half.png", "width": 45,
+		}},
+		map[string]interface{}{"type": "artifactReference", "attrs": map[string]interface{}{
+			"id": "artifact-image", "artifactId": "artifact-9", "mimeType": "image/png",
+			"title": "结果", "versionId": "version-9", "width": 30,
+		}},
+		map[string]interface{}{"type": "articleImageGroup", "attrs": map[string]interface{}{
+			"id": "group-widths", "caption": "", "columns": 3,
+		}, "content": []interface{}{
+			map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+				"alt": "A", "src": "https://example.test/a.png", "width": 60,
+			}},
+			map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+				"alt": "B", "src": "https://example.test/b.png", "width": 100,
+			}},
+			map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+				"alt": "C", "src": "https://example.test/c.png",
+			}},
+		}},
+	}}
+
+	markdown, _, err := NormalizeDocument(document, nil, "human", map[string]interface{}{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Full-width images stay attribute-free; narrower ones carry the Pandoc
+	// width attribute that maps to a fraction of \linewidth.
+	if !strings.Contains(markdown, "![全宽图注](https://example.test/full.png)\n") {
+		t.Fatalf("full-width image gained an attribute: %s", markdown)
+	}
+	if !strings.Contains(markdown, "![](https://example.test/half.png){width=45%}") {
+		t.Fatalf("single-image width attribute missing: %s", markdown)
+	}
+	if !strings.Contains(markdown, "![](mmdash://artifact/artifact-9/versions/version-9){width=30%}") {
+		t.Fatalf("artifact image width attribute missing: %s", markdown)
+	}
+	// Per-sub-image widths override the equal row split; the editor default
+	// 100 and unset widths keep the adaptive split.
+	if !strings.Contains(markdown, "\\begin{subfigure}[b]{0.60\\linewidth}") {
+		t.Fatalf("sub-image width not honored: %s", markdown)
+	}
+	if got := strings.Count(markdown, "\\begin{subfigure}[b]{0.31\\linewidth}"); got != 2 {
+		t.Fatalf("default sub-image split not retained (got %d): %s", got, markdown)
 	}
 }
 
@@ -335,7 +473,7 @@ func TestNormalizeDocumentRemovesTransientArtifactPreviewAttrs(t *testing.T) {
 	if strings.Contains(markdown, "signed.example.test") {
 		t.Fatalf("transient artifact URL leaked into markdown: %q", markdown)
 	}
-	if markdown != "![结果图](mmdash://artifact/artifact-1/versions/version-1)\n\n图 2\n" {
+	if markdown != "![图 2](mmdash://artifact/artifact-1/versions/version-1)\n" {
 		t.Fatalf("artifact image did not serialize to its immutable resource URI: %q", markdown)
 	}
 }
@@ -383,9 +521,9 @@ func TestNormalizeDocumentAllowsOnlySafeImageTargets(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"![http](http://example.test/a.png)",
-		"![artifact](mmdash://artifact/artifact-1/versions/version-1)",
+		"![](mmdash://artifact/artifact-1/versions/version-1)",
 		"![javascript](about:blank)",
-		"![data](about:blank)",
+		"![](about:blank)",
 	} {
 		if !strings.Contains(markdown, expected) {
 			t.Fatalf("expected safe image serialization %q in:\n%s", expected, markdown)

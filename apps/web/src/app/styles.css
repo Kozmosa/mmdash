@@ -660,6 +660,14 @@ html {
 :is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) td {
   border: 0 !important;
   background: transparent;
+  /* The Markdown projection centers every table column, so the LaTeX-theme
+     preview mirrors the built booktabs table instead of the left-aligned
+     Markdown default. */
+  text-align: center;
+}
+
+:is(.article-rendered-document-latex, .article-theme-latex .ProseMirror) th {
+  font-weight: 600;
 }
 
 :is(.article-rendered-document-latex, .article-theme-latex .ProseMirror)

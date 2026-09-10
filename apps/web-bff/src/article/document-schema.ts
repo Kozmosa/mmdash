@@ -88,6 +88,15 @@ const nodes: Record<string, NodeSpec> = {
     atom: true,
     group: "block",
   },
+  latexBlock: {
+    attrs: blockAttrs,
+    content: "text*",
+    code: true,
+    marks: "",
+    defining: true,
+    isolating: true,
+    group: "block",
+  },
   blockMath: {
     attrs: { ...blockAttrs, latex: { default: "" } },
     atom: true,

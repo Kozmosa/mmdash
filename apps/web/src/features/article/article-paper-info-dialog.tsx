@@ -79,16 +79,28 @@ export function PaperInfoDialog({
       return seed;
     },
   );
-  const update = (key: string, patch: Partial<ArticlePaperInfoField>) =>
+  // Only fields that already exist in the stored document or were touched in
+  // this dialog may be saved. Seeding every field as {enabled:false} would
+  // materialize an explicit "off" choice for untouched fields and silently
+  // disable defaults such as the abstract (absent = render when it has
+  // content).
+  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
+  const update = (key: string, patch: Partial<ArticlePaperInfoField>) => {
+    setTouched((current) => new Set(current).add(key));
     setFields((current) => ({
       ...current,
       [key]: { ...current[key], ...patch },
     }));
+  };
   const save = useMutation({
     mutationFn: () =>
       articleApi.updatePaperInfo(projectId, {
         fields: Object.fromEntries(
-          Object.entries(fields).filter(([key]) => FIELD_KEYS.has(key)),
+          Object.entries(fields).filter(
+            ([key]) =>
+              FIELD_KEYS.has(key) &&
+              (touched.has(key) || info?.fields?.[key] !== undefined),
+          ),
         ),
         schema_version: "1.0",
       }),
