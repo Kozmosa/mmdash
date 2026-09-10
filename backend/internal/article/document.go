@@ -278,9 +278,9 @@ func renderBlock(node map[string]interface{}) (string, error) {
 		// that do not define the environment fail their own build loudly.
 		return strings.TrimRight(plainText(node), "\n"), nil
 	case "image":
-		return "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")", nil
+		return imageMarkdown(attrs, "alt", "src"), nil
 	case "articleImage":
-		value := "![" + escapeMarkdown(stringAttr(attrs, "alt")) + "](" + safeImageTarget(stringAttr(attrs, "src")) + ")"
+		value := imageMarkdown(attrs, "alt", "src")
 		if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
 			value += "\n\n" + caption
 		}
@@ -296,7 +296,7 @@ func renderBlock(node map[string]interface{}) (string, error) {
 		}
 		if strings.HasPrefix(stringAttr(attrs, "mimeType"), "image/") {
 			target := fmt.Sprintf("mmdash://artifact/%s/versions/%s", safeID(artifactID), safeID(stringAttr(attrs, "versionId")))
-			value := "![" + escapeMarkdown(stringAttr(attrs, "title")) + "](" + target + ")"
+			value := "![" + escapeMarkdown(stringAttr(attrs, "title")) + "](" + target + ")" + imageWidthSuffix(attrs)
 			if caption := markdownCaption(stringAttr(attrs, "caption")); caption != "" {
 				value += "\n\n" + caption
 			}
@@ -310,6 +310,26 @@ func renderBlock(node map[string]interface{}) (string, error) {
 	default:
 		return renderInlineChildren(node), nil
 	}
+}
+
+// imageMarkdown renders a block image with its optional width attribute.
+// Pandoc's link_attributes turns `![alt](src){width=45%}` into
+// \includegraphics[width=0.45\linewidth]{src}, matching the editor's
+// page-width-percentage semantics.
+func imageMarkdown(attrs map[string]interface{}, altKey, srcKey string) string {
+	value := "![" + escapeMarkdown(stringAttr(attrs, altKey)) + "](" + safeImageTarget(stringAttr(attrs, srcKey)) + ")"
+	return value + imageWidthSuffix(attrs)
+}
+
+// imageWidthSuffix returns the Pandoc width attribute for images configured at
+// less than full page width. Full width (or unset) stays attribute-free so the
+// default LaTeX emission is unchanged.
+func imageWidthSuffix(attrs map[string]interface{}) string {
+	width := integer(attrs["width"], 0)
+	if width < 10 || width >= 100 {
+		return ""
+	}
+	return fmt.Sprintf("{width=%d%%}", width)
 }
 
 func renderList(node map[string]interface{}, ordered bool) string {
@@ -448,6 +468,7 @@ type imageGroupCell struct {
 	target  string
 	alt     string
 	caption string
+	width   int
 }
 
 func extractImageGroupCell(node map[string]interface{}) (imageGroupCell, bool) {
@@ -474,7 +495,7 @@ func extractImageGroupCell(node map[string]interface{}) (imageGroupCell, bool) {
 		return imageGroupCell{}, false
 	}
 	caption := stringAttr(attrs, "caption")
-	return imageGroupCell{target: target, alt: alt, caption: caption}, true
+	return imageGroupCell{target: target, alt: alt, caption: caption, width: integer(attrs["width"], 0)}, true
 }
 
 func renderImageGroup(node map[string]interface{}) string {
@@ -518,10 +539,16 @@ func renderImageGroup(node map[string]interface{}) string {
 			builder.WriteString("\n\\par\\medskip\n")
 		}
 		rowLen := len(row)
-		widthStr := subfigureWidth(rowLen)
 		for itemIndex, item := range row {
 			if itemIndex > 0 {
 				builder.WriteString("\n\\hfill\n")
+			}
+			widthStr := subfigureWidth(rowLen)
+			if item.width >= 10 && item.width < 100 {
+				// An explicit per-sub-image width is a page-width percentage and
+				// overrides the row's equal split. The editor's default 100
+				// counts as unset so untouched groups keep the adaptive split.
+				widthStr = fmt.Sprintf("%.2f\\linewidth", float64(item.width)/100.0)
 			}
 			builder.WriteString(fmt.Sprintf("\\begin{subfigure}[b]{%s}\n  \\centering\n  \\includegraphics[width=\\linewidth]{%s}", widthStr, item.target))
 			escapedSubCaption := escapeLaTeX(item.caption)
@@ -579,7 +606,10 @@ func renderTable(node map[string]interface{}) string {
 	}
 	separator := make([]string, columns)
 	for index := range separator {
-		separator[index] = "---"
+		// Centered columns are the math-modeling convention for symbol and
+		// result tables; Pandoc maps `:---:` to a `c` column so the built
+		// three-line table centers every column.
+		separator[index] = ":---:"
 	}
 	lines := []string{line(values[0]), line(separator)}
 	for _, row := range values[1:] {

@@ -24,7 +24,8 @@ COALESCE(commit_sha,''),COALESCE(previous_commit_sha,''),COALESCE(error_code,'')
 attempts,max_attempts,next_attempt_at,COALESCE(locked_by,''),lease_expires_at,
 created_by,created_at,updated_at,finished_at,
 abstract_markdown,abstract_revision,abstract_state_vector,abstract_yjs_update,
-abstract_tiptap_json,paper_info,paper_info_revision FROM article_commit_operations`
+abstract_tiptap_json,paper_info,paper_info_revision,abstract_sha256,
+paper_info_sha256 FROM article_commit_operations`
 
 func (store PostgresStore) CreateCommitOperation(
 	ctx context.Context,
@@ -69,12 +70,13 @@ func (store PostgresStore) CreateCommitOperation(
 			manifest_sha256,status,stage,attempts,max_attempts,next_attempt_at,created_by,
 			created_at,updated_at,
 			abstract_markdown,abstract_revision,abstract_state_vector,abstract_yjs_update,
-			abstract_tiptap_json,paper_info,paper_info_revision
+			abstract_tiptap_json,paper_info,paper_info_revision,abstract_sha256,
+			paper_info_sha256
 		) VALUES($1,$2,$3,$4,$5,NULLIF($6,'')::uuid,NULLIF($7,''),
 			NULLIF($8,'')::uuid,NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),
 			NULLIF($12,''),CASE WHEN $4='publication' THEN $13 ELSE NULL END,
 			$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
-			'queued','queued',0,$28,$29,$30,$31,$31,$32,$33,$34,$35,$36,$37,$38)
+			'queued','queued',0,$28,$29,$30,$31,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
 		ON CONFLICT(project_id,idempotency_key) DO NOTHING`,
 			item.OperationID, item.CommitID, item.ProjectID, item.OperationKind,
 			item.IdempotencyKey, item.PublicationID, item.PublicationKey,
@@ -86,7 +88,8 @@ func (store PostgresStore) CreateCommitOperation(
 			item.ManifestSHA256, item.MaxAttempts, item.NextAttemptAt.UTC(), item.CreatedBy,
 			item.CreatedAt.UTC(),
 			item.AbstractMarkdown, item.AbstractRevision, item.AbstractStateVec,
-			item.AbstractYjsUpdate, abstractTiptap, paperInfo, item.PaperInfoRevision)
+			item.AbstractYjsUpdate, abstractTiptap, paperInfo, item.PaperInfoRevision,
+			item.AbstractSHA256, item.PaperInfoSHA256)
 		if err != nil {
 			return err
 		}
@@ -183,7 +186,11 @@ func (store PostgresStore) ClaimCommitOperations(
 	COALESCE(operation.error_code,''),operation.attempts,operation.max_attempts,
 	operation.next_attempt_at,COALESCE(operation.locked_by,''),
 	operation.lease_expires_at,operation.created_by,operation.created_at,
-	operation.updated_at,operation.finished_at`, now.UTC(), owner,
+	operation.updated_at,operation.finished_at,operation.abstract_markdown,
+	operation.abstract_revision,operation.abstract_state_vector,
+	operation.abstract_yjs_update,operation.abstract_tiptap_json,
+	operation.paper_info,operation.paper_info_revision,
+	operation.abstract_sha256,operation.paper_info_sha256`, now.UTC(), owner,
 		now.UTC().Add(lease), limit)
 	if err != nil {
 		return nil, err
@@ -341,16 +348,18 @@ func scanCommitOperation(scan func(...interface{}) error) (CommitOperation, erro
 		&item.LeaseExpiresAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
 		&item.FinishedAt, &item.AbstractMarkdown, &item.AbstractRevision,
 		&item.AbstractStateVec, &item.AbstractYjsUpdate, &abstractTiptap,
-		&paperInfo, &item.PaperInfoRevision)
+		&paperInfo, &item.PaperInfoRevision, &item.AbstractSHA256,
+		&item.PaperInfoSHA256)
 	if err != nil {
 		return CommitOperation{}, err
 	}
 	if json.Unmarshal(tiptap, &item.TiptapJSON) != nil ||
 		json.Unmarshal(frozen, &item.FrozenReferences) != nil ||
 		json.Unmarshal(abstractTiptap, &item.AbstractTiptapJSO) != nil ||
-		json.Unmarshal(paperInfo, &item.PaperInfoJSON) != nil {
+		!json.Valid(paperInfo) {
 		return CommitOperation{}, ErrInvalid
 	}
+	item.PaperInfoJSON = paperInfo
 	return item, nil
 }
 

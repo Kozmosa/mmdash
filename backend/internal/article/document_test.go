@@ -132,7 +132,7 @@ func TestNormalizeDocumentRendersGFMTableCodeAndOfficialMathNodes(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "| Name | Value |\n| --- | --- |\n| A\\|B | $x^2$ |\n\n```python\nprint('ok')\n```\n\n$$\n\\sum_i x_i\n$$\n"
+	want := "| Name | Value |\n| :---: | :---: |\n| A\\|B | $x^2$ |\n\n```python\nprint('ok')\n```\n\n$$\n\\sum_i x_i\n$$\n"
 	if markdown != want {
 		t.Fatalf("unexpected rich markdown:\n%s", markdown)
 	}
@@ -166,7 +166,7 @@ func TestNormalizeDocumentRendersArticleImageTableCaptionAndZoteroCitation(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Table: 实验结果\n\n| 值 |\n| --- |\n\n![结果图](https://example.test/result.png)\n\n图 1：结果\n\n参考 [@Smith2026]\n"
+	want := "Table: 实验结果\n\n| 值 |\n| :---: |\n\n![结果图](https://example.test/result.png)\n\n图 1：结果\n\n参考 [@Smith2026]\n"
 	if markdown != want {
 		t.Fatalf("unexpected article markdown:\n%s", markdown)
 	}
@@ -195,7 +195,7 @@ func TestNormalizeDocumentRendersCaptionBoundToTableWithoutDuplication(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Table: 绑定表注\n\n| 值 |\n| --- |\n"
+	want := "Table: 绑定表注\n\n| 值 |\n| :---: |\n"
 	if markdown != want {
 		t.Fatalf("unexpected bound table caption markdown: %q", markdown)
 	}
@@ -283,6 +283,58 @@ func TestNormalizeDocumentImageGroupPreservesReorderedSequenceAndAdaptiveWidths(
 	want := "\\begin{figure}[htbp]\n\\centering\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/c.png}\n  \\caption{子图 C}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/a.png}\n  \\caption{子图 A}\n\\end{subfigure}\n\\hfill\n\\begin{subfigure}[b]{0.31\\linewidth}\n  \\centering\n  \\includegraphics[width=\\linewidth]{https://example.test/b.png}\n  \\caption{子图 B}\n\\end{subfigure}\n\\caption{重排组合}\n\\end{figure}\n"
 	if markdown != want {
 		t.Fatalf("unexpected reordered image group markdown:\n%s\nwant:\n%s", markdown, want)
+	}
+}
+
+func TestNormalizeDocumentEmitsImageWidthPercentages(t *testing.T) {
+	document := map[string]interface{}{"type": "doc", "content": []interface{}{
+		map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+			"id": "image-wide", "alt": "全宽", "src": "https://example.test/full.png", "width": 100,
+		}},
+		map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+			"id": "image-half", "alt": "半宽", "src": "https://example.test/half.png", "width": 45,
+		}},
+		map[string]interface{}{"type": "artifactReference", "attrs": map[string]interface{}{
+			"id": "artifact-image", "artifactId": "artifact-9", "mimeType": "image/png",
+			"title": "结果", "versionId": "version-9", "width": 30,
+		}},
+		map[string]interface{}{"type": "articleImageGroup", "attrs": map[string]interface{}{
+			"id": "group-widths", "caption": "", "columns": 3,
+		}, "content": []interface{}{
+			map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+				"alt": "A", "src": "https://example.test/a.png", "width": 60,
+			}},
+			map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+				"alt": "B", "src": "https://example.test/b.png", "width": 100,
+			}},
+			map[string]interface{}{"type": "articleImage", "attrs": map[string]interface{}{
+				"alt": "C", "src": "https://example.test/c.png",
+			}},
+		}},
+	}}
+
+	markdown, _, err := NormalizeDocument(document, nil, "human", map[string]interface{}{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Full-width images stay attribute-free; narrower ones carry the Pandoc
+	// width attribute that maps to a fraction of \linewidth.
+	if !strings.Contains(markdown, "![全宽](https://example.test/full.png)\n") {
+		t.Fatalf("full-width image gained an attribute: %s", markdown)
+	}
+	if !strings.Contains(markdown, "![半宽](https://example.test/half.png){width=45%}") {
+		t.Fatalf("single-image width attribute missing: %s", markdown)
+	}
+	if !strings.Contains(markdown, "![结果](mmdash://artifact/artifact-9/versions/version-9){width=30%}") {
+		t.Fatalf("artifact image width attribute missing: %s", markdown)
+	}
+	// Per-sub-image widths override the equal row split; the editor default
+	// 100 and unset widths keep the adaptive split.
+	if !strings.Contains(markdown, "\\begin{subfigure}[b]{0.60\\linewidth}") {
+		t.Fatalf("sub-image width not honored: %s", markdown)
+	}
+	if got := strings.Count(markdown, "\\begin{subfigure}[b]{0.31\\linewidth}"); got != 2 {
+		t.Fatalf("default sub-image split not retained (got %d): %s", got, markdown)
 	}
 }
 

@@ -6833,6 +6833,27 @@ components:
               transfer: { $ref: "#/components/schemas/ArtifactTransferGrant" }
         engine: { type: string, enum: [auto, pdflatex, xelatex, lualatex] }
         bibliography_tool: { type: string, enum: [auto, bibtex, biber, none] }
+        abstract: { type: string, maxLength: 200000 }
+        paper_info:
+          type: object
+          additionalProperties: true
+        headings:
+          type: array
+          maxItems: 2000
+          items:
+            type: object
+            additionalProperties: false
+            required: [block_id, level, ordinal, text]
+            properties:
+              block_id: { type: string, minLength: 1, maxLength: 255 }
+              level: { type: integer, minimum: 1, maximum: 6 }
+              ordinal: { type: integer, minimum: 0 }
+              text: { type: string, maxLength: 500 }
+        split_sections:
+          {
+            type: boolean,
+            description: Requests one TeX file per H1 section; mirrors the article.rendering split_sections setting and defaults to true when omitted.
+          }
         limits:
           type: object
           additionalProperties: false

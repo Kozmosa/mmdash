@@ -489,12 +489,12 @@ func (store PostgresStore) ListCommitOperations(ctx context.Context, projectID s
 	return items, rows.Err()
 }
 
-const commitSelect = `SELECT c.commit_id,c.project_id,c.git_commit_sha,c.draft_revision,c.state_vector,c.manuscript_sha256,c.message,c.created_by,c.created_at,c.previous_git_commit_sha,c.references_sha256,c.manifest_sha256,c.frozen_references,c.yjs_update,c.tiptap_json,c.abstract_markdown,c.abstract_revision,c.abstract_state_vector,c.abstract_yjs_update,c.abstract_tiptap_json,c.paper_info,c.paper_info_revision FROM article_commits c`
+const commitSelect = `SELECT c.commit_id,c.project_id,c.git_commit_sha,c.draft_revision,c.state_vector,c.manuscript_sha256,c.message,c.created_by,c.created_at,c.previous_git_commit_sha,c.references_sha256,c.manifest_sha256,c.frozen_references,c.yjs_update,c.tiptap_json,c.abstract_markdown,c.abstract_revision,c.abstract_state_vector,c.abstract_yjs_update,c.abstract_tiptap_json,c.paper_info,c.paper_info_revision,c.abstract_sha256,c.paper_info_sha256 FROM article_commits c`
 
 func scanCommit(scan func(...interface{}) error) (Commit, error) {
 	var item Commit
 	var frozen, tiptap, abstractTiptap, paperInfo []byte
-	if err := scan(&item.CommitID, &item.ProjectID, &item.CommitSHA, &item.DraftRevision, &item.StateVector, &item.ManuscriptSHA256, &item.Message, &item.CreatedBy, &item.CreatedAt, &item.PreviousCommitSHA, &item.ReferencesSHA256, &item.ManifestSHA256, &frozen, &item.YjsUpdate, &tiptap, &item.AbstractMarkdown, &item.AbstractRevision, &item.AbstractStateVector, &item.AbstractYjsUpdate, &abstractTiptap, &paperInfo, &item.PaperInfoRevision); err != nil {
+	if err := scan(&item.CommitID, &item.ProjectID, &item.CommitSHA, &item.DraftRevision, &item.StateVector, &item.ManuscriptSHA256, &item.Message, &item.CreatedBy, &item.CreatedAt, &item.PreviousCommitSHA, &item.ReferencesSHA256, &item.ManifestSHA256, &frozen, &item.YjsUpdate, &tiptap, &item.AbstractMarkdown, &item.AbstractRevision, &item.AbstractStateVector, &item.AbstractYjsUpdate, &abstractTiptap, &paperInfo, &item.PaperInfoRevision, &item.AbstractSHA256, &item.PaperInfoSHA256); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Commit{}, ErrNotFound
 		}
@@ -503,7 +503,7 @@ func scanCommit(scan func(...interface{}) error) (Commit, error) {
 	_ = json.Unmarshal(frozen, &item.FrozenReferences)
 	_ = json.Unmarshal(tiptap, &item.TiptapJSON)
 	_ = json.Unmarshal(abstractTiptap, &item.AbstractTiptapJSON)
-	_ = json.Unmarshal(paperInfo, &item.PaperInfoJSON)
+	item.PaperInfoJSON = paperInfo
 	return item, nil
 }
 

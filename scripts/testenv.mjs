@@ -14,6 +14,7 @@ import process from "node:process";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const host = "127.0.0.1";
+const allInterfacesHost = "0.0.0.0";
 const pnpmVersion = "11.9.0";
 const workerBaseImage = "python:3.12.11-slim-bookworm";
 const workerBaseImageMirror =
@@ -483,6 +484,34 @@ export function parseDevelopmentArguments(arguments_ = []) {
   return { cloudflareTunnel: arguments_.includes("--cf") };
 }
 
+export function developmentPortChecks(
+  ports,
+  { cloudflareTunnel = false, workerMode = "native" } = {},
+) {
+  const containerAccessRequired = workerMode === "docker";
+  return [
+    { host, name: "postgres", port: ports.postgres },
+    {
+      host: containerAccessRequired ? allInterfacesHost : host,
+      name: "minio",
+      port: ports.minio,
+    },
+    { host, name: "minioConsole", port: ports.minioConsole },
+    {
+      host: containerAccessRequired ? allInterfacesHost : host,
+      name: "core",
+      port: ports.core,
+    },
+    { host, name: "web-bff", port: ports.bff },
+    { host, name: "mcp-gateway", port: ports.mcp },
+    {
+      host: cloudflareTunnel ? allInterfacesHost : host,
+      name: "web",
+      port: ports.web,
+    },
+  ];
+}
+
 export function cloudflareTunnelArguments(containerName, webUrl) {
   return [
     "run",
@@ -863,22 +892,22 @@ async function revokeDevelopmentWorkerToken(credential) {
   }
 }
 
-async function isPortAvailable(port) {
+async function isPortAvailable(port, bindHost = host) {
   return await new Promise((resolve) => {
     const server = net.createServer();
     server.unref();
     server.once("error", () => resolve(false));
-    server.listen({ exclusive: true, host, port }, () => {
+    server.listen({ exclusive: true, host: bindHost, port }, () => {
       server.close(() => resolve(true));
     });
   });
 }
 
-async function assertPortsAvailable(ports) {
+async function assertPortsAvailable(checks) {
   const occupied = [];
-  for (const [name, port] of Object.entries(ports)) {
-    if (!(await isPortAvailable(port))) {
-      occupied.push(`${name}=${port}`);
+  for (const { host: bindHost, name, port } of checks) {
+    if (!(await isPortAvailable(port, bindHost))) {
+      occupied.push(`${name}=${bindHost}:${port}`);
     }
   }
   if (occupied.length > 0) {
@@ -1272,7 +1301,10 @@ async function startDevelopmentEnvironment(
   { cloudflareTunnel = false, startupCheck = false } = {},
 ) {
   await ensureDirectories(layout);
-  await assertPortsAvailable(ports);
+  const workerMode = await resolveWorkerMode(environment);
+  await assertPortsAvailable(
+    developmentPortChecks(ports, { cloudflareTunnel, workerMode }),
+  );
   await acquireSupervisorLock(layout);
 
   const namedTunnel = cloudflareTunnel
@@ -1340,7 +1372,6 @@ async function startDevelopmentEnvironment(
       );
     }
 
-    const workerMode = await resolveWorkerMode(environment);
     const configuration = createServiceConfiguration(
       ports,
       layout,

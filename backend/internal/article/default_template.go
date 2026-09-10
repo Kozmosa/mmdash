@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultTemplateFilename       = "mmdash-default-template.zip"
-	defaultTemplateIdempotencyKey = "article-default-template:1.1.1"
+	defaultTemplateIdempotencyKey = "article-default-template:1.1.2"
 )
 
 var defaultTemplateTimestamp = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -20,7 +20,7 @@ func defaultTemplateManifest() TemplateManifest {
 	return TemplateManifest{
 		SchemaVersion:      "1.1",
 		Name:               "mmdash 默认论文模板",
-		Version:            "1.1.1",
+		Version:            "1.1.2",
 		Entrypoint:         "main.tex",
 		Output:             "main.pdf",
 		ContentTarget:      "generated-content.tex",
@@ -58,6 +58,10 @@ func defaultTemplateArchive() ([]byte, string, error) {
 \usepackage{subcaption}
 \usepackage{hyperref}
 \usepackage{xcolor}
+\usepackage{etoolbox}
+% Pandoc 渲染的 longtable 三线表默认行距偏紧；与中文正文行距匹配的
+% 1.35 倍行距更接近论文排版习惯，且作用域限定在表格环境内。
+\AtBeginEnvironment{longtable}{\renewcommand{\arraystretch}{1.35}}
 \providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 \input{mmdash/metadata}
 \begin{document}

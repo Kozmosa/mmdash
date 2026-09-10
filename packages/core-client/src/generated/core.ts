@@ -5180,6 +5180,18 @@ export interface components {
       engine: "auto" | "pdflatex" | "xelatex" | "lualatex";
       /** @enum {string} */
       bibliography_tool: "auto" | "bibtex" | "biber" | "none";
+      abstract?: string;
+      paper_info?: {
+        [key: string]: unknown;
+      };
+      headings?: {
+        block_id: string;
+        level: number;
+        ordinal: number;
+        text: string;
+      }[];
+      /** @description Requests one TeX file per H1 section; mirrors the article.rendering split_sections setting and defaults to true when omitted. */
+      split_sections?: boolean;
       limits: {
         timeout_seconds: number;
         /** Format: int64 */

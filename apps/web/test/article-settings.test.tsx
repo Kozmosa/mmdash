@@ -62,6 +62,44 @@ describe("Article Zotero settings", () => {
     ).toEqual({ values: { theme: "latex" } });
   });
 
+  it("persists the split-sections opt-out in Project settings", async () => {
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockImplementation(async (path, options) => {
+        if (path.endsWith("/settings/article.rendering")) {
+          return {
+            updated_at: "2026-08-19T00:00:00Z",
+            values: {
+              split_sections: options?.method === "PATCH" ? false : true,
+              theme: "md",
+            },
+            version: options?.method === "PATCH" ? 2 : 1,
+          } as never;
+        }
+        if (path.endsWith("/settings/article.zotero"))
+          return setting() as never;
+        throw new Error(`unexpected request ${path} ${options?.method}`);
+      });
+    render(
+      <TestQueryProvider>
+        <ArticleSettingsPanel />
+      </TestQueryProvider>,
+    );
+
+    const split = await screen.findByLabelText("拆分 Section 到 TeX 文件");
+    await waitFor(() => expect(split).toBeEnabled());
+    expect(split).toBeChecked();
+    fireEvent.click(split);
+    await waitFor(() => expect(split).not.toBeChecked());
+    expect(
+      request.mock.calls.find(
+        ([path, options]) =>
+          path.endsWith("/settings/article.rendering") &&
+          options?.method === "PATCH",
+      )?.[1]?.body,
+    ).toEqual({ values: { split_sections: false, theme: "md" } });
+  });
+
   it("keeps the encrypted key redacted while saving and testing all registered fields", async () => {
     const request = vi
       .spyOn(apiClient, "request")

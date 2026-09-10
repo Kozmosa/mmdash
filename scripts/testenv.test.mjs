@@ -9,6 +9,7 @@ import {
   createIsolatedEnvironment,
   createLayout,
   createServiceConfiguration,
+  developmentPortChecks,
   dockerAccessibleUrl,
   parseDotEnv,
   parseDevelopmentArguments,
@@ -83,10 +84,34 @@ describe("isolated Pixi development environment", () => {
     ).toThrow("must be unique");
   });
 
+  it("checks the actual development service bind hosts", () => {
+    const ports = resolvePorts({});
+
+    expect(
+      developmentPortChecks(ports).find((check) => check.name === "web"),
+    ).toMatchObject({ host: "127.0.0.1", port: 13_000 });
+    expect(
+      developmentPortChecks(ports, { cloudflareTunnel: true }).find(
+        (check) => check.name === "web",
+      ),
+    ).toMatchObject({ host: "0.0.0.0", port: 13_000 });
+
+    const dockerChecks = developmentPortChecks(ports, {
+      workerMode: "docker",
+    });
+    expect(dockerChecks.find((check) => check.name === "core")).toMatchObject({
+      host: "0.0.0.0",
+      port: 18_080,
+    });
+    expect(
+      dockerChecks.find((check) => check.name === "minio"),
+    ).toMatchObject({ host: "0.0.0.0", port: 19_000 });
+  });
+
   it("builds loopback-only service configuration", () => {
     const layout = createLayout(path.resolve("C:/workspace/mmdash"));
     const ports = resolvePorts({});
-    const configuration = createServiceConfiguration(ports, layout);
+    const configuration = createServiceConfiguration(ports, layout, {});
 
     expect(configuration.databaseUrl).toContain("127.0.0.1:15432");
     expect(configuration.coreUrl).toBe("http://127.0.0.1:18080");

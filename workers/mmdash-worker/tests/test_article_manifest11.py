@@ -17,17 +17,15 @@ from mmdash_worker.article.handler import (
 from mmdash_worker.jobs.handlers import HandlerError
 
 MANIFEST_11 = {
-    
-        "schema_version": "1.1",
-        "name": "cumcm-template",
-        "version": "1.1.0",
-        "entrypoint": "main.tex",
-        "output": "paper.pdf",
-        "content_target": "sections/body.tex",
-        "bibliography_target": ".mmdash/references-zotero.bib",
-        "engine": "xelatex",
-        "bibliography_tool": "bibtex"
-    ,
+    "schema_version": "1.1",
+    "name": "cumcm-template",
+    "version": "1.1.0",
+    "entrypoint": "main.tex",
+    "output": "paper.pdf",
+    "content_target": "sections/body.tex",
+    "bibliography_target": ".mmdash/references-zotero.bib",
+    "engine": "xelatex",
+    "bibliography_tool": "bibtex",
     "abstract_target": ".mmdash/abstract-block.tex",
     "body_layout": "sections",
     "field_profile": "cumcm",
@@ -146,9 +144,7 @@ def test_metadata_blocks_skip_fields_without_template_commands(tmp_path: Path) -
 def test_metadata_blocks_keywords_fall_back_without_class_keywords(tmp_path: Path) -> None:
     manifest = {**MANIFEST_11, "field_profile": "cumcm"}
     # A profile class without \keywords keeps the generic bold line.
-    (tmp_path / "custom.cls").write_text(
-        "\\newcommand*\\baominghao[1]{}\n", encoding="utf-8"
-    )
+    (tmp_path / "custom.cls").write_text("\\newcommand*\\baominghao[1]{}\n", encoding="utf-8")
     _write_metadata_blocks(
         tmp_path, manifest, {"keywords": {"value": "优化"}}, abstract_enabled=True
     )
@@ -188,15 +184,18 @@ def test_bibliography_block_modes(tmp_path: Path) -> None:
 
 
 def test_section_filenames_are_stable_and_safe() -> None:
-    assert _section_filename("block_2026") == "block_2026"
+    # Names mirror the contest template: ordinal + heading title, with the
+    # frozen block ID as the fallback when the heading text is unavailable.
+    assert _section_filename(1, "block_2026", "# 问题重述\n正文") == "1-问题重述"
     # Unicode letters survive; path separators and dots collapse to dashes.
-    assert _section_filename("中文/../block") == "中文----block"
-    assert _section_filename("") == "section"
-    long = _section_filename("x" * 500)
-    assert len(long) == 120
+    assert _section_filename(2, "中文/../block", "# 中文/../标题\n") == "2-中文----标题"
+    assert _section_filename(3, "fallback", "") == "3-fallback"
+    assert _section_filename(4, "", "") == "4-section"
+    long = _section_filename(5, "x" * 500, "# " + "x" * 500 + "\n")
+    assert len(long) <= 102 and long.startswith("5-")
 
 
-def test_split_markdown_sections_keeps_fence_hash_lines_and_h3() -> None:
+def test_split_markdown_sections_splits_only_h1() -> None:
     manuscript = (
         "# 引言\n"
         "正文A\n"
@@ -215,13 +214,15 @@ def test_split_markdown_sections_keeps_fence_hash_lines_and_h3() -> None:
     ]
     chunks = _split_markdown_sections(manuscript, headings)
 
-    assert [block_id for block_id, _ in chunks] == ["h1", "h2-model", "h2-solve"]
-    assert "正文A" in chunks[0][1]
-    assert "# 这不是新章节" in chunks[1][1]
-    assert "### 子节保留在本文件" in chunks[1][1]
-    assert "结论" in chunks[2][1]
-    # H3 headings never start their own file.
-    assert "### " in chunks[1][1]
+    # H2/H3 headings never start their own file; the whole body stays in the
+    # single H1 chunk so sub-sections compile inside their chapter file.
+    assert [block_id for block_id, _ in chunks] == ["h1"]
+    body = chunks[0][1]
+    assert "正文A" in body
+    assert "# 这不是新章节" in body
+    assert "### 子节保留在本文件" in body
+    assert "## 求解" in body
+    assert "结论" in body
 
 
 def test_split_markdown_sections_front_matter_lands_in_content_target() -> None:
